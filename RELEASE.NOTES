@@ -1,0 +1,64 @@
+2013-06-11 - Snort 2.9.5
+
+[*] New additions
+
+* Added tracking of FTP data channel for file transfers as file_data
+  for Snort rules.
+
+* Add support for doing PAF based on services loaded thru the
+  attribute table and hardened PAF code/removed --disable-paf
+
+* Added decoding support for Cisco ERSPAN
+
+* Added tracking of HTTP uploads as file_data for Snort rules.
+
+* Added ability to use event filters with PPM rules
+
+* Added a control channel command to reload the Snort configuration to
+  give feedback on new configuration.  This improves on the older sigHUP
+  which would just result in Snort exiting and restarting if the new
+  configuration required a restart.
+
+* Added a configuration option to perfmon to write flow-ip data to a file
+
+* New decoding alert for IPv6 Routing type 0 header.
+
+* Added the ability to sync basic session state from one Snort to another
+  via a side channel communication between the two Snort instances.  NOTE:
+  This is currently experimental.
+
+[*] Improvements
+
+* Improved Stream's midstream pickup handling for TCP state processing,
+  sequence validation, and reassembly. 
+
+* Improved HTTP PAF reassembly capabilities to be better aligned on PDU
+  boundaries, terminate if not actually HTTP, and to include all appropriate
+  line feeds.
+
+* Hardened the code related to dynamic modules.  Removed --disable-dynamicplugin
+  configuration option since rule and preprocessor shared libraries are here
+  to stay.
+
+* Added a parse error for a rule if there is a relative content used
+  after a content that is 'fast_pattern only'.
+
+* Improved parsing of IP lists for reputation
+
+* Update to Teredo processing and Snort rule evaluation when the inner
+  IPv6 packet doesn't have payload
+
+* Improved logging of packets associated with alerts when a Stream 
+  reassembled packet triggers multiple Snort rules.
+
+* Improvements to the Snort manual including documentation of specific rule
+  options and configuration items.
+
+* Removed a bunch of dead code paths, updated to use more current memory
+  functions for easier code maintenance and portability.
+
+[*] Deletions
+
+* Remove deprecated unified support, use unified2 for all of your
+  logging needs.
+
