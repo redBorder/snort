@@ -13,3 +13,8 @@ snort_preproc.pc
 snort_side_channel.pc
 .deps
 stamp-h1
+/tools/u2boat/u2boat
+/tools/u2boat/u2boat-u2boat.o
+/tools/u2spewfoo/u2spewfoo
+/tools/u2spewfoo/u2spewfoo-u2spewfoo.o
+
