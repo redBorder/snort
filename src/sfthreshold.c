@@ -412,7 +412,8 @@ int sfthreshold_create(struct _SnortConfig *sc, ThresholdConfig *thd_config, THD
                                   thdx->priority,
                                   thdx->count,
                                   thdx->seconds,
-                                  thdx->ip_address);
+                                  thdx->ip_address,
+                                  thdx->dst_ip_address);
 }
 
 /*

@@ -447,6 +447,7 @@ static int sfthd_create_threshold_local(SnortConfig *sc, ThresholdObjects *thd_o
     sfthd_node->count     = config->count;
     sfthd_node->seconds   = config->seconds;
     sfthd_node->ip_address= config->ip_address;
+    sfthd_node->dst_ip_address= config->dst_ip_address;
 
     if( config->type == THD_TYPE_SUPPRESS )
     {
@@ -637,7 +638,8 @@ int sfthd_create_threshold(SnortConfig *sc,
                            int priority,
                            int count,
                            int seconds,
-                           IpAddrSet* ip_address)
+                           IpAddrSet* ip_address,
+                           IpAddrSet* dst_ip_address)
 {
     //allocate memory fpr sfthd_array if needed.
     tSfPolicyId policyId = getParserPolicy(sc);
@@ -655,6 +657,7 @@ int sfthd_create_threshold(SnortConfig *sc,
     sfthd_node.count     = count;
     sfthd_node.seconds   = seconds;
     sfthd_node.ip_address= ip_address;
+    sfthd_node.dst_ip_address= dst_ip_address;
 
     sfDynArrayCheckBounds ((void **)&thd_objs->sfthd_garray, policyId, &thd_objs->numPoliciesAllocated);
     if (thd_objs->sfthd_garray[policyId] == NULL)
@@ -701,19 +704,36 @@ int sfthd_test_rule(SFXHASH *rule_hash, THD_NODE *sfthd_node,
 
 static inline int sfthd_test_suppress (
     THD_NODE* sfthd_node,
-    snort_ip_p ip)
+    snort_ip_p sip, snort_ip_p dip)
 {
-    if ( !sfthd_node->ip_address ||
-         IpAddrSetContains(sfthd_node->ip_address, ip) )
-    {
+    if (sfthd_node->tracking == THD_TRK_SRCDST){
+        if( !sfthd_node->ip_address || !sfthd_node->dst_ip_address
+            || (IpAddrSetContains(sfthd_node->ip_address,sip) && IpAddrSetContains(sfthd_node->dst_ip_address,dip)))
+        {
 #ifdef THD_DEBUG
-        printf("THD_DEBUG: SUPPRESS NODE, do not log events with this IP\n");
-        fflush(stdout);
+            printf("THD_DEBUG: SUPPRESS NODE, do not log events with this sIP->dIP combination\n");
+            fflush(stdout);
 #endif
-        /* Don't log, and stop looking( event's to this address
-         * for this gen_id+sig_id) */
-        sfthd_node->filtered++;
-        return -1;
+            /* Don't log, and stop looking( event's to this address
+             * for this gen_id+sig_id) */
+            sfthd_node->filtered++;
+            return -1;
+        }
+    }
+    else
+    {
+        if ( !sfthd_node->ip_address ||
+             IpAddrSetContains(sfthd_node->ip_address, sfthd_node->tracking == THD_TRK_SRC ? sip : dip) )
+        {
+#ifdef THD_DEBUG
+            printf("THD_DEBUG: SUPPRESS NODE, do not log events with this IP\n");
+            fflush(stdout);
+#endif
+            /* Don't log, and stop looking( event's to this address
+             * for this gen_id+sig_id) */
+            sfthd_node->filtered++;
+            return -1;
+        }
     }
     return 1; /* Keep looking for other suppressors */
 }
@@ -916,13 +936,6 @@ int sfthd_test_local(
         return 0;
     }
 
-    /*
-     *  Get The correct IP
-     */
-    if (sfthd_node->tracking == THD_TRK_SRC)
-       ip = sip;
-    else
-       ip = dip;
 
     /*
      *  Check for and test Suppression of this event to this IP
@@ -932,8 +945,16 @@ int sfthd_test_local(
 #ifdef THD_DEBUG
         printf("THD_DEBUG: SUPPRESS NODE Testing...\n");fflush(stdout);
 #endif
-        return sfthd_test_suppress(sfthd_node, ip);
+        return sfthd_test_suppress(sfthd_node, sip,dip);
     }
+
+    /*
+     *  Get The correct IP
+     */
+    if (sfthd_node->tracking == THD_TRK_SRC)
+       ip = sip;
+    else
+       ip = dip;
 
     /*
     *  Go on and do standard thresholding
@@ -1012,11 +1033,6 @@ static inline int sfthd_test_global(
         return 0;
     }
 
-    /* Get The correct IP */
-    if (sfthd_node->tracking == THD_TRK_SRC)
-       ip = sip;
-    else
-       ip = dip;
 
     /* Check for and test Suppression of this event to this IP */
     if( sfthd_node->type == THD_TYPE_SUPPRESS )
@@ -1024,8 +1040,14 @@ static inline int sfthd_test_global(
 #ifdef THD_DEBUG
         printf("THD_DEBUG: G-SUPPRESS NODE Testing...\n");fflush(stdout);
 #endif
-        return sfthd_test_suppress(sfthd_node, ip);
+        return sfthd_test_suppress(sfthd_node, sip,dip);
     }
+
+    /* Get The correct IP */
+    if (sfthd_node->tracking == THD_TRK_SRC)
+       ip = sip;
+    else
+       ip = dip;
 
     /*
     *  Go on and do standard thresholding

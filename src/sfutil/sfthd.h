@@ -74,7 +74,8 @@ enum
 {
     THD_TRK_NONE,  // suppress only
     THD_TRK_SRC,
-    THD_TRK_DST
+    THD_TRK_DST,
+    THD_TRK_SRCDST
 };
 
 
@@ -130,13 +131,14 @@ typedef struct {
     int      thd_id;   /* Id of this node */
     unsigned gen_id;   /* Keep these around if needed */
     unsigned sig_id;
-    int      tracking; /* by_src, by_dst */
+    int      tracking; /* by_src, by_dst, by_src_dst */
     int      type;
     int      priority;
     int      count;
     unsigned seconds;
     uint64_t filtered;
     IpAddrSet* ip_address;
+    IpAddrSet* dst_ip_address;
 
 } THD_NODE;
 
@@ -176,6 +178,7 @@ typedef struct _THDX_STRUCT
     int  count;
     unsigned int  seconds;
     IpAddrSet* ip_address;
+    IpAddrSet* dst_ip_address;
 
 } THDX_STRUCT;
 
@@ -253,7 +256,8 @@ int sfthd_create_threshold(
     int          priority,
     int          count,
     int          seconds,
-    IpAddrSet*   ip_address
+    IpAddrSet*   ip_address,
+    IpAddrSet*   aux_ip_address
 );
 
 //  1: don't log due to event_filter
