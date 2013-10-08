@@ -87,6 +87,11 @@ static void ReputationCleanExit(int, void *);
 static inline IPrepInfo*  ReputationLookup(snort_ip_p ip);
 static inline IPdecision GetReputation(IPrepInfo *, SFSnortPacket *, uint32_t *);
 
+#ifdef REPUTATION_GEOIP
+static inline IPdecision GetGeoReputation(snort_ip_p ip, SFSnortPacket *p, uint32_t *listid);
+#endif
+
+
 #ifdef SHARED_REP
 Swith_State switch_state = NO_SWITCH;
 int available_segment = NO_DATASEG;
@@ -513,6 +518,11 @@ static void ReputationInit(struct _SnortConfig *sc, char *argp)
         _dpd.addPostConfigFunc(sc, initShareMemory, pPolicyConfig);
 #endif
 
+#ifdef REPUTATION_GEOIP
+    if (pPolicyConfig->geoip_db && pPolicyConfig->geoip_path) //Processing white and black list geoip files
+        _dpd.addPostConfigFunc(sc, initGeoFilesWithManifiest, pPolicyConfig);
+#endif
+
 }
 
 #ifdef REG_TEST
@@ -585,6 +595,12 @@ static inline IPdecision GetReputation(  IPrepInfo * repInfo,
             if (listInfo[list_index].zones[ingressZone] || listInfo[list_index].zones[egressZone])
 #endif
             {
+                //redBorder: If the decision must be ordered and it has taken a decision it will return this one
+                if (reputation_eval_config->ordered && ((IPdecision)listInfo[list_index].listType) != DECISION_NULL ) {
+                    *listid = listInfo[list_index].listId;
+                    return  ((IPdecision)listInfo[list_index].listType);
+                }
+
                 if (WHITELISTED_UNBLACK == (IPdecision)listInfo[list_index].listType)
                     return DECISION_NULL;
                 if (reputation_eval_config->priority == (IPdecision)listInfo[list_index].listType )
@@ -681,19 +697,32 @@ static inline IPdecision ReputationDecision(SFSnortPacket *p)
                 return decision;
             decision_final = decision;
         }
+#ifdef REPUTATION_GEOIP
+        else {
+            decision_final = GetGeoReputation(ip, p, &p->iplist_id);
+        }
+#endif
 
-        ip = GET_INNER_DST_IP(((SFSnortPacket *)p));
-        result = ReputationLookup(ip);
-        if(result)
+        if (!reputation_eval_config->ordered || (reputation_eval_config->ordered && !decision_final))
         {
-            DEBUG_WRAP(ReputationPrintRepInfo(result,(uint8_t *) reputation_eval_config->iplist););
-            decision = GetReputation(result,p, &p->iplist_id);
+            ip = GET_INNER_DST_IP(((SFSnortPacket *)p));
+            result = ReputationLookup(ip);
+            if(result)
+            {
+                DEBUG_WRAP(ReputationPrintRepInfo(result,(uint8_t *) reputation_eval_config->iplist););
+                decision = GetReputation(result,p, &p->iplist_id);
 
-            p->iprep_layer = IP_INNER_LAYER;
-            p->flags &=~FLAG_IPREP_SOURCE_TRIGGERED;
-            if ( reputation_eval_config->priority == decision)
-                return decision;
-            decision_final = decision;
+                p->iprep_layer = IP_INNER_LAYER;
+                p->flags &=~FLAG_IPREP_SOURCE_TRIGGERED;
+                if ( reputation_eval_config->priority == decision)
+                    return decision;
+                decision_final = decision;
+            }
+#ifdef REPUTATION_GEOIP
+            else {
+                decision_final = GetGeoReputation(ip, p, &p->iplist_id);
+            }
+#endif
         }
     }
     /*Check OUTER IP*/
@@ -713,21 +742,34 @@ static inline IPdecision ReputationDecision(SFSnortPacket *p)
                 return decision;
             decision_final = decision;
         }
-
-        ip = GET_OUTER_DST_IP(((SFSnortPacket *)p));
-        result = ReputationLookup(ip);
-        if(result)
-        {
-            decision = GetReputation(result,p, &p->iplist_id);
-
-            p->iprep_layer = IP_OUTTER_LAYER;
-            p->flags &=~FLAG_IPREP_SOURCE_TRIGGERED;
-            if ( reputation_eval_config->priority == decision)
-                return decision;
-            decision_final = decision;
+#ifdef REPUTATION_GEOIP
+        else {
+            decision_final = GetGeoReputation(ip, p, &p->iplist_id);
         }
+#endif
 
+        if (!reputation_eval_config->ordered || (reputation_eval_config->ordered && !decision_final))
+        {
+            ip = GET_OUTER_DST_IP(((SFSnortPacket *)p));
+            result = ReputationLookup(ip);
+            if(result)
+            {
+                decision = GetReputation(result,p, &p->iplist_id);
+
+                p->iprep_layer = IP_OUTTER_LAYER;
+                p->flags &=~FLAG_IPREP_SOURCE_TRIGGERED;
+                if ( reputation_eval_config->priority == decision)
+                    return decision;
+                decision_final = decision;
+            }
+#ifdef REPUTATION_GEOIP
+            else {
+                decision_final = GetGeoReputation(ip, p, &p->iplist_id);
+            }
+#endif
+        }
     }
+
     return (decision_final);
 }
 
@@ -751,6 +793,18 @@ static inline void ReputationProcess(SFSnortPacket *p)
 
     reputation_eval_config->iplist = (table_flat_t *)*IPtables;
     decision = ReputationDecision(p);
+
+    //redBorder. If reputation_eval_config->whiteAction it will change WHITELISTED_UNBLACK for WHITELISTED_TRUST
+    if (reputation_eval_config->whiteAction && WHITELISTED_UNBLACK==decision) {
+      decision=WHITELISTED_TRUST; 
+    }
+
+    DEBUG_WRAP( DebugMessage(DEBUG_REPUTATION, "Final decision taken -> %d  (DECISION_NULL=%d,  MONITORED=%d, BLACKLISTED=%d, WHITELISTED_UNBLACK=%d, WHITELISTED_TRUST=%d)\n", decision, DECISION_NULL, MONITORED, BLACKLISTED, WHITELISTED_UNBLACK, WHITELISTED_TRUST););
+
+    //redBorder: If the user has specified a default action and it has no action defined it will use default action
+    if (DECISION_NULL == decision) {
+        decision=reputation_eval_config->defaultAction;
+    }
 
     if (DECISION_NULL == decision)
     {
@@ -968,6 +1022,13 @@ static void ReputationReload(struct _SnortConfig *sc, char *args, void **new_con
     }
     if ((policy_id != 0) &&(pDefaultPolicyConfig))
         pPolicyConfig->memcap = pDefaultPolicyConfig->memcap;
+
+    _dpd.addPreproc( sc, ReputationMain, PRIORITY_FIRST, PP_REPUTATION, PROTO_BIT__IP );
+
+#ifdef REPUTATION_GEOIP
+    if (pPolicyConfig->geoip_db && pPolicyConfig->geoip_path) //Processing white and black list geoip files
+        _dpd.addPostConfigFunc(sc, initGeoFilesWithManifiest, pPolicyConfig);
+#endif
 }
 
 static int ReputationReloadVerify(struct _SnortConfig *sc, void *swap_config)
@@ -1067,4 +1128,39 @@ static void ReputationReloadSwapFree(void *data)
 
     ReputationFreeConfig((tSfPolicyUserContextId)data);
 }
+#endif
+
+#ifdef REPUTATION_GEOIP
+
+/*********************************************************************
+ * Lookup the IP at GeoIP database and return the decissión read from 
+ *    geoip manifiest file
+ *
+ * Returns:
+ *  IPdecision -
+ *          DECISION_NULL
+ *          BLACKLISTED
+ *          WHITELISTED_UNBLACK
+ *          MONITORED
+ *          WHITELISTED_TRUST
+ *********************************************************************/
+
+static inline IPdecision GetGeoReputation(snort_ip_p ip, SFSnortPacket *p, uint32_t *listid) {
+    IPdecision decision = DECISION_NULL;
+
+    if (reputation_eval_config->geoip_actions && reputation_eval_config->geoip_enabled) {
+        if (!sfip_is_private(ip)) {
+            // Searching the country with the IP
+            int country_id = GeoIP_id_by_addr(reputation_eval_config->geoip, sfip_to_str(ip));
+            if (country_id>0) {
+                // GeoIP_id_by_addr(reputation_eval_config->geoip, 
+                decision = reputation_eval_config->geoip_actions[country_id];
+                DEBUG_WRAP( if (!decision) DebugMessage(DEBUG_REPUTATION, "Country founded for %s -> %s (action->%s)\n", sfip_to_str(ip), GeoIP_code_by_id(country_id), (reputation_eval_config->geoip_actions[country_id]==MONITORED?"monitored":(reputation_eval_config->geoip_actions[country_id]==BLACKLISTED?"drop":"bypass"))););
+            }
+        }
+    }
+
+    return decision;
+}
+
 #endif
