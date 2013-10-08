@@ -39,6 +39,8 @@
 #include "spp_reputation.h"
 #include "reputation_debug.h"
 #include "reputation_utils.h"
+#include "./shmem/shmem_common.h"
+#include "./shmem/shmem_datamgmt.h"
 #ifdef SHARED_REP
 #include "./shmem/shmem_mgmt.h"
 #include <sys/stat.h>
@@ -84,6 +86,26 @@ enum
 #define REPUTATION_SHAREDREFRESH_KEYWORD "shared_refresh"
 #define REPUTATION_WHITEACTION_KEYWORD   "white"
 
+//redBorder: New Options: default action, keep ordered and reputation geoip (this option must be enabled at configure)
+#define REPUTATION_DEFAULT_ACTION_KEYWORD  "default_action"
+#define REPUTATION_ORDERED_KEYWORD         "ordered"
+
+#ifdef REPUTATION_GEOIP
+
+#define REPUTATION_GEOIP_DB_KEYWORD                "geoip_db"
+#define REPUTATION_GEOIP_PATH_KEYWORD              "geoip_path"
+#define REPUTATION_GEOIP_MANIFEST_SEPARATORS       ",\r\n"
+#define REPUTATION_GEOIP_MIN_MANIFEST_COLUMNS      2
+
+#define REPUTATION_GEOIP_WHITE_TYPE_KEYWORD        "white"
+#define REPUTATION_GEOIP_BLACK_TYPE_KEYWORD        "block"
+#define REPUTATION_GEOIP_MONITOR_TYPE_KEYWORD      "monitor"
+#define GEOIP_MANIFEST_FILENAME                    "geo.info"
+
+#endif
+//end redBorder options
+
+
 #define REPUTATION_CONFIG_SECTION_SEPERATORS     ",;"
 #define REPUTATION_CONFIG_VALUE_SEPERATORS       " "
 #define REPUTATION_SEPARATORS                " \t\r\n"
@@ -126,6 +148,16 @@ static void IpListInit(uint32_t,ReputationConfig *config);
 static void LoadListFile(char *filename, INFO info, ReputationConfig *config);
 static void DisplayIPlistStats(ReputationConfig *);
 static void DisplayReputationConfig(ReputationConfig *);
+
+//redBorder GeoIP prototype funtions
+#ifdef REPUTATION_GEOIP
+static void DisplayGeoIPStats(ReputationConfig *config);
+void GeoReputationPrintRepInfo(ReputationConfig *config);
+char *ignoreStartSpace(char *str);
+#endif
+//end redBorder GeoIP prototype funtions
+
+
 
 /* ********************************************************************
  * Function: estimateSizeFromEntries
@@ -503,6 +535,20 @@ static void DisplayReputationConfig(ReputationConfig *config)
         _dpd.logMsg("    Shared memory is Not supported.\n");
 
     }
+
+    //redBorder: Print ordered option value
+    _dpd.logMsg("    Ordered Lists: %s\n",
+           config->ordered ? "ENABLED":"DISABLED (Default)");
+#ifdef REPUTATION_GEOIP
+    //redBorder: Print geolocalization info
+    if (config->geoip)
+    {
+        _dpd.logMsg("    Geolocalization DB: %s\n", config->geoip_db);
+        _dpd.logMsg("    Geolocalization Path: %s\n", config->geoip_path);
+    }
+#endif
+    //end of redBorder options
+
     _dpd.logMsg("\n");
 }
 
@@ -1383,6 +1429,29 @@ void Reputation_FreeConfig (ReputationConfig *config)
 
     if(config->sharedMem.path)
         free(config->sharedMem.path);
+
+#ifdef REPUTATION_GEOIP
+    if (config->geoip_db) {
+        free(config->geoip_db);
+        config->geoip_db = NULL;
+    }
+
+    if (config->geoip_path) {
+        free(config->geoip_path);
+        config->geoip_path = NULL;
+    }
+
+    if (config->geoip) {
+        free(config->geoip_actions);
+        config->geoip_actions = NULL;
+    }
+
+    if (config->geoip) {
+        GeoIP_delete(config->geoip);
+        config->geoip=NULL;
+    }
+#endif
+
     free(config);
 }
 
@@ -1658,6 +1727,12 @@ void ParseReputationArgs(ReputationConfig *config, u_char* argp)
         {
             config->scanlocal = 1;
         }
+        //redBorder REPUTATION_ORDERED_KEYWORD option process
+        else if ( !strcasecmp( cur_tokenp, REPUTATION_ORDERED_KEYWORD ))
+        {
+            config->ordered = 1;
+        }
+        //end of redBorder REPUTATION_ORDERED_KEYWORD option
         else if ( !strcasecmp( cur_tokenp, REPUTATION_MEMCAP_KEYWORD ))
         {
             cur_tokenp = strtok( NULL, REPUTATION_CONFIG_VALUE_SEPERATORS);
@@ -1779,6 +1854,76 @@ void ParseReputationArgs(ReputationConfig *config, u_char* argp)
             /* processed before */
 
         }
+        //redBorder: REPUTATION_DEFAULT_ACTION_KEYWORD option process
+        else if ( !strcasecmp( cur_tokenp, REPUTATION_DEFAULT_ACTION_KEYWORD ) )
+        {
+            cur_tokenp = strtok( NULL, REPUTATION_CONFIG_VALUE_SEPERATORS);
+            if (!cur_tokenp)
+            {
+                DynamicPreprocessorFatalMessage(" %s(%d) => Missing argument for %s\n",
+                                    *(_dpd.config_file), *(_dpd.config_line), REPUTATION_DEFAULT_ACTION_KEYWORD);  
+                return;
+            }
+            if((strlen(REPUTATION_BLACKLIST_KEYWORD) == strlen (cur_tokenp))
+                   && !strcasecmp(REPUTATION_BLACKLIST_KEYWORD,cur_tokenp))
+            {
+                config->defaultAction = BLACKLISTED;
+            }
+            else if((strlen(REPUTATION_WHITELIST_KEYWORD) == strlen (cur_tokenp))
+                   && !strcasecmp(REPUTATION_WHITELIST_KEYWORD,cur_tokenp))
+            {
+                config->defaultAction = WHITELISTED_TRUST;
+            } 
+            else if((strlen(REPUTATION_MONITORLIST_KEYWORD) == strlen (cur_tokenp))
+                   && !strcasecmp(REPUTATION_MONITORLIST_KEYWORD,cur_tokenp))
+            {
+                config->defaultAction = MONITORED;
+            }
+            else 
+            {
+                 DynamicPreprocessorFatalMessage(" %s(%d) => Invalid argument: %s for %s,"
+                     " Use [%s] or [%s] or [%s]\n",
+                     *(_dpd.config_file), *(_dpd.config_line), cur_tokenp,
+                     REPUTATION_DEFAULT_ACTION_KEYWORD,
+                     REPUTATION_BLACKLIST_KEYWORD, REPUTATION_WHITELIST_KEYWORD, REPUTATION_MONITORLIST_KEYWORD);
+                 return;
+            }
+        }
+        //redBorder: end of REPUTATION_DEFAULT_ACTION_KEYWORD option
+#ifdef REPUTATION_GEOIP
+        //redBorder: REPUTATION_GEOIP_DB_KEYWORD option process
+        else if ( !strcasecmp( cur_tokenp, REPUTATION_GEOIP_DB_KEYWORD ) )
+        {
+            cur_tokenp = strtok( NULL, REPUTATION_CONFIG_VALUE_SEPERATORS);
+            if (!cur_tokenp)
+            {
+                DynamicPreprocessorFatalMessage(" %s(%d) => Missing argument for %s\n",
+                                    *(_dpd.config_file), *(_dpd.config_line), REPUTATION_GEOIP_DB_KEYWORD);  
+                return;
+            }
+            config->geoip_db = (char *) malloc( (strlen(cur_tokenp) +1 )* sizeof(char) );
+            if (config->geoip_db)
+                strcpy(config->geoip_db, cur_tokenp);
+        }
+        //redBorder: end of REPUTATION_GEOIP_DB_KEYWORD option
+        
+        //redBorder: REPUTATION_GEOIP_PATH_KEYWORD option process
+        else if ( !strcasecmp( cur_tokenp, REPUTATION_GEOIP_PATH_KEYWORD ) )
+        {
+            cur_tokenp = strtok( NULL, REPUTATION_CONFIG_VALUE_SEPERATORS);
+            if (!cur_tokenp)
+            {
+                DynamicPreprocessorFatalMessage(" %s(%d) => Missing argument for %s\n",
+                                    *(_dpd.config_file), *(_dpd.config_line), REPUTATION_GEOIP_PATH_KEYWORD);  
+                return;
+            }
+            config->geoip_path = (char *) malloc( (strlen(cur_tokenp) +1 )* sizeof(char) );
+            if (config->geoip_path)
+                strcpy(config->geoip_path, cur_tokenp);
+        }
+        //redBorder: end of REPUTATION_GEOIP_DB_KEYWORD option
+#endif
+
 #ifdef SHARED_REP
         else if ( !strcasecmp( cur_tokenp, REPUTATION_SHAREMEM_KEYWORD ))
         {
@@ -1845,6 +1990,43 @@ void ParseReputationArgs(ReputationConfig *config, u_char* argp)
         cur_sectionp = strtok_r( next_sectionp, REPUTATION_CONFIG_SECTION_SEPERATORS, &next_sectionp);
         DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Arguments token: %s\n",cur_sectionp ););
     }
+
+#ifdef REPUTATION_GEOIP
+    //redBorder: Open GeoIP database
+    if (config->geoip_db) {
+        DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Reputation Info: Opening Geolocalization database on %s\n", config->geoip_db););
+        //config->geoip =  GeoIP_open(config->geoip_db, GEOIP_MEMORY_CACHE | GEOIP_CHECK_CACHE);    //need to check performance of this option
+        config->geoip = GeoIP_open(config->geoip_db, GEOIP_MEMORY_CACHE );  //160% more eficcient than before one -> http://www.maxmind.com/en/benchmark
+
+        if (config->geoip) {
+            //Check the database is correct.
+            const char * returnedCountry = GeoIP_country_code_by_addr(config->geoip,NULL);
+            if (returnedCountry!=NULL) {
+                GeoIP_delete(config->geoip);
+                config->geoip = NULL;
+                DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Reputation Info: Geolocalization disabled\n"););
+            } else {
+                //Inicialize geoip_actions to DECISION_NULL for all available countries. Total countries -> GeoIP_num_countries()
+                unsigned i;
+                config->geoip_actions = (IPdecision *) malloc(GeoIP_num_countries() * sizeof(IPdecision));
+
+                if (config->geoip_actions) {
+                    for ( i = 0; i < GeoIP_num_countries(); ++i)
+                    {
+                        config->geoip_actions[i] = DECISION_NULL;                    
+                    }
+                } else {
+                    GeoIP_delete(config->geoip);
+                    config->geoip = NULL;
+                    DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Reputation Info: Geolocalization disabled\n"););
+                }
+            }
+        } else {
+            DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Reputation Info: Geolocalization disabled\n"););
+        }
+    }
+#endif
+
     DisplayIPlistStats(config);
     DisplayReputationConfig(config);
     free(argcpyp);
@@ -1856,6 +2038,7 @@ void ReputationRepInfo(IPrepInfo * repInfo, uint8_t *base, char *repInfoBuff,
 
     char *index = repInfoBuff;
     int  len = bufLen -1 ;
+
     int writed;
 
     writed = snprintf(index, len, "Reputation Info: ");
@@ -1908,4 +2091,292 @@ void ReputationPrintRepInfo(IPrepInfo * repInfo, uint8_t *base)
     DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Reputation Info: %s \n",
             repInfoBuff););
 }
+#endif
+
+#ifdef REPUTATION_GEOIP
+//redBorder: GeoIP function definitions. Extracted most of them from sharedmem
+
+static void DisplayGeoIPStats(ReputationConfig *config)
+{
+    unsigned count_monitored = 0;
+    unsigned count_white     = 0;
+    unsigned count_black     = 0;
+    unsigned count_none      = 0;
+    unsigned count_total     = 0;
+    unsigned i;
+
+    for ( i = 0; i < GeoIP_num_countries(); ++i)
+    {
+        if (DECISION_NULL == config->geoip_actions[i]) {
+            count_none++;
+        } else if (MONITORED == config->geoip_actions[i]) {
+            count_monitored++;
+        } else if (BLACKLISTED == config->geoip_actions[i]) {
+            count_black++;
+        } else {
+            count_white++;
+        }
+
+        if (config->geoip_actions[i]!=DECISION_NULL)        
+            _dpd.logMsg("    %s -> %s\n", GeoIP_code_by_id(i), (config->geoip_actions[i]==MONITORED?"monitored":(config->geoip_actions[i]==BLACKLISTED?"drop":"bypass")));
+
+        count_total++;
+    }
+
+    /*Print out the summary*/
+    _dpd.logMsg("    Reputation GeoIP total countries loaded: %u, monitored: %u, black: %u, white: %u, none: %u\n", 
+            count_total, count_monitored, count_black, count_white, count_none);
+}
+
+char *ignoreStartSpace(char *str)
+{
+    while((*str) && (isspace((int)*str)))
+    {
+        str++;
+    }
+    return str;
+}
+
+int getGeoFileTypeFromName (char *typeName)
+{
+    int type = UNKNOWN_LIST;
+
+    /* Trim the starting spaces */
+    if (!typeName)
+        return type;
+
+    typeName = ignoreStartSpace(typeName);
+
+    if (strncasecmp(typeName, REPUTATION_GEOIP_WHITE_TYPE_KEYWORD, strlen(REPUTATION_GEOIP_WHITE_TYPE_KEYWORD)) == 0)
+    {
+        type = WHITE_LIST;
+        typeName += strlen(REPUTATION_GEOIP_WHITE_TYPE_KEYWORD);
+    }
+    else if (strncasecmp(typeName, REPUTATION_GEOIP_BLACK_TYPE_KEYWORD, strlen(REPUTATION_GEOIP_BLACK_TYPE_KEYWORD)) == 0)
+    {
+        type = BLACK_LIST;
+        typeName += strlen(REPUTATION_GEOIP_BLACK_TYPE_KEYWORD);
+    }
+    else if (strncasecmp(typeName, REPUTATION_GEOIP_MONITOR_TYPE_KEYWORD, strlen(REPUTATION_GEOIP_MONITOR_TYPE_KEYWORD)) == 0)
+    {
+        type = MONITOR_LIST;
+        typeName += strlen(REPUTATION_GEOIP_MONITOR_TYPE_KEYWORD);
+    }
+
+    if (UNKNOWN_LIST != type )
+    {
+        /*Ignore spaces in the end*/
+        typeName = ignoreStartSpace(typeName);
+
+        if ( *typeName )
+        {
+            type = UNKNOWN_LIST;
+        }
+    }
+    return type;
+}
+
+DataGeoFileList * processLineInGeoManifest(char *manifest, char *line, int linenumber, ReputationConfig *config)
+{
+    char* token;
+    int tokenIndex = 0;
+    char* nextPtr = line;
+    char filename[PATH_MAX];
+    DataGeoFileList * listItem;
+
+    if ((listItem = (DataGeoFileList*)calloc(1,sizeof(DataGeoFileList))) == NULL)
+    {
+        DynamicPreprocessorFatalMessage("%s(%d) => Cannot allocate memory to "
+                    "store geo reputation manifest file information\n", manifest, linenumber);
+        return NULL;
+    }
+
+    while((token = strtok_r(nextPtr, REPUTATION_GEOIP_MANIFEST_SEPARATORS, &nextPtr)) != NULL)
+    {
+        DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Process GeoIP reputation list token: %s\n", token););
+        switch (tokenIndex)
+        {
+        case 0:    /* File name */
+            DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Reputation GeoIP list filename: %s\n", token););
+            snprintf(filename, sizeof(filename), "%s/%s", config->geoip_path, token);
+            listItem->filename = strdup(filename);
+            if (listItem->filename == NULL)
+            {
+                DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory for "
+                        "reputation manifest\n", manifest, linenumber);
+            }
+            break;
+
+        case 1:    /* Action */
+            listItem->filetype = getGeoFileTypeFromName(token);
+            if (UNKNOWN_LIST == listItem->filetype)
+            {
+                DynamicPreprocessorFatalMessage(" %s(%d) => Unknown action specified (%s)."
+                     " Please specify a value: %s | %s | %s.\n", manifest, linenumber, token,
+                     REPUTATION_GEOIP_WHITE_TYPE_KEYWORD, REPUTATION_GEOIP_BLACK_TYPE_KEYWORD, REPUTATION_GEOIP_MONITOR_TYPE_KEYWORD);
+                                                        }
+            break;
+        }
+        tokenIndex++;
+    }
+ 
+    if (tokenIndex < REPUTATION_GEOIP_MIN_MANIFEST_COLUMNS)
+    {
+        /* Too few columns*/
+        free(listItem);
+        if (tokenIndex)
+        {
+            DynamicPreprocessorFatalMessage("%s(%d) => Too few columns in line: %s.\n ",
+                    manifest, linenumber, line);
+        }
+        return NULL;
+    }
+
+    return listItem;
+}
+
+void LoadGeoListFile(DataGeoFileList *listItem, ReputationConfig *config)
+{
+    FILE *fp;
+    char line[MAX_MANIFEST_LINE_LENGTH];
+
+    
+    DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Processing geoip file: %s\n", listItem->filename););
+
+
+    if ((fp = fopen(listItem->filename, "r")) == NULL)
+    {
+        DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Error opening file at: %s\n", listItem->filename););
+        return;
+    }
+
+    while (fgets(line, sizeof(line), fp))
+    {
+        char * nextPtr = line;
+        if (line!=NULL && strlen(line) >= 2) {
+
+            /* remove comments */
+            if((nextPtr = strchr(line, '#')) != NULL) {
+                *nextPtr = '\0';
+            }
+
+            nextPtr = ignoreStartSpace(line);
+
+            if (strlen(nextPtr) >= 2) {
+                char code[3];
+                 int id;
+                 code[0] = nextPtr[0];
+                 code[1] = nextPtr[1];
+                 code[2] = '\0';
+ 
+                 id = GeoIP_id_by_code(code);
+ 
+                 if (id>0) {
+                     DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Reputation GeoIP configurations: %s  (code: %d)\n", code, id););
+ 
+                     if (config->geoip_actions[id]==DECISION_NULL) {
+                         config->geoip_enabled = 1;
+                         
+                         if (WHITE_LIST == listItem->filetype) {
+                             config->geoip_actions[id] = WHITELISTED_TRUST;
+                         } else if (BLACK_LIST == listItem->filetype) {
+                             config->geoip_actions[id] = BLACKLISTED;
+                         } else {
+                             config->geoip_actions[id] = MONITORED;
+                         }
+                     }
+                 } else {
+                   DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Reputation GeoIP configurations: %s  (code: %d) -> IGNORED!!\n", code, id););
+                 }
+             }
+         }
+    }
+
+    fclose(fp);
+}
+
+void initGeoFilesWithManifiest(struct _SnortConfig * sc, void *conf)
+{
+    FILE *fp;
+    char line[MAX_MANIFEST_LINE_LENGTH];
+    char manifest_file[PATH_MAX];
+    int  counter  = 0;
+    int  line_number = 0;
+    ReputationConfig *config = (ReputationConfig *) conf;
+    
+    if (!config->geoip_path) {
+        DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Geolocalization not enabled (geoip_path is not present)\n"););
+        return;
+    }
+
+    snprintf(manifest_file, sizeof(manifest_file), "%s/%s", config->geoip_path, GEOIP_MANIFEST_FILENAME);
+
+    if ((fp = fopen(manifest_file, "r")) == NULL)
+    {
+        DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION,
+                "Error opening file at: %s\n", manifest_file););
+        return;
+    }
+
+    while (fgets(line, sizeof(line),fp))
+    {
+        char* nextPtr = NULL;
+        DataGeoFileList * listItem;
+
+        line_number++;
+
+        DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Reputation GeoIP manifest: %s\n",line ););
+        /* remove comments */
+        if((nextPtr = strchr(line, '#')) != NULL)
+        {
+            *nextPtr = '\0';
+        }
+
+        /* allocate memory if necessary*/
+        counter++;
+
+        /*Processing the line*/
+        listItem = processLineInGeoManifest(manifest_file, line, line_number, config);
+        
+        //process list item 
+        if (listItem)
+        {
+            LoadGeoListFile(listItem, config);
+            free(listItem);
+        } else {
+            DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Reputation GeoIP file ignored\n"););
+        }
+    }
+
+    fclose(fp);
+
+    DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Successfully processed GeoIP manifest file: %s\n", GEOIP_MANIFEST_FILENAME););
+
+    _dpd.logMsg("Reputation GeoIP files processed: \n");
+    DisplayGeoIPStats(config);
+
+#ifdef DEBUG_MSGS
+    GeoReputationPrintRepInfo(config);
+#endif
+
+}
+        
+void GeoReputationPrintRepInfo(ReputationConfig *config)
+{
+    int i;
+
+    if (config->geoip_actions && config->geoip_enabled) {
+        DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "GeoIP Reputation Info:\n"););
+        for ( i = 0; i < GeoIP_num_countries(); ++i)
+        {
+            if (config->geoip_actions[i] != DECISION_NULL) {
+                DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "    * %s -> %s\n", GeoIP_code_by_id(i), (config->geoip_actions[i]==MONITORED?"monitored":(config->geoip_actions[i]==BLACKLISTED?"drop":"bypass"))););
+            }
+        }
+    } else {
+        DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "GeoIP Reputation disabled because there is no valid countries\n"););
+    }
+}
+
+
 #endif
