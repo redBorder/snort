@@ -660,6 +660,8 @@ BUILD_PROCPIDSTATS_FALSE
 BUILD_PROCPIDSTATS_TRUE
 HAVE_TARGET_BASED_FALSE
 HAVE_TARGET_BASED_TRUE
+HAVE_REPUTATION_GEOIP_FALSE
+HAVE_REPUTATION_GEOIP_TRUE
 HAVE_ZLIB_FALSE
 HAVE_ZLIB_TRUE
 BUILD_DYNAMIC_EXAMPLES_FALSE
@@ -831,6 +833,7 @@ enable_zlib
 enable_gre
 enable_mpls
 enable_targetbased
+enable_reputationgeoip
 enable_ppm
 enable_perfprofiling
 enable_linux_smp_stats
@@ -1519,6 +1522,7 @@ Optional Features:
   --disable-gre            Disable GRE and IP in IP encapsulation support
   --disable-mpls           Disable MPLS support
   --disable-targetbased    Disable Target-Based Support in Stream, Frag, and Rules (adds pthread support implicitly)
+  --enable-reputationgeoip Enable Reputation GeoIP Support (adds GeoIP support implicitly)
   --disable-ppm            Disable packet/rule performance monitor
   --disable-perfprofiling  Disable preprocessor and rule performance profiling
   --enable-linux-smp-stats Enable statistics reporting through proc
@@ -15886,6 +15890,28 @@ if test "x$enable_targetbased" = "xyes"; then
     fi
 fi
 
+# Check whether --enable-reputationgeoip was given.
+if test "${enable_reputationgeoip+set}" = set; then :
+  enableval=$enable_reputationgeoip; enable_reputationgeoip="$enableval"
+else
+  enable_reputationgeoip="no"
+fi
+
+if test "x$enable_reputationgeoip" = "xyes"; then
+  HAVE_REPUTATION_GEOIP_TRUE=
+  HAVE_REPUTATION_GEOIP_FALSE='#'
+else
+  HAVE_REPUTATION_GEOIP_TRUE='#'
+  HAVE_REPUTATION_GEOIP_FALSE=
+fi
+
+if test "x$enable_reputationgeoip" = "xyes"; then
+    CONFIGFLAGS="$CONFIGFLAGS -DREPUTATION_GEOIP"
+    LIBS="$LIBS -lGeoIP"
+fi
+
+
+
 # Check whether --enable-ppm was given.
 if test "${enable_ppm+set}" = set; then :
   enableval=$enable_ppm; enable_ppm="$enableval"
@@ -15915,7 +15941,12 @@ else
   enable_linux_smp_stats="no"
 fi
 
- if test "x$enable_linux_smp_stats" = "xyes"; then
+if test -z "${HAVE_REPUTATION_GEOIP_TRUE}" && test -z "${HAVE_REPUTATION_GEOIP_FALSE}"; then
+  as_fn_error $? "conditional \"HAVE_REPUTATION_GEOIP\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+
+if test "x$enable_linux_smp_stats" = "xyes"; then
   BUILD_PROCPIDSTATS_TRUE=
   BUILD_PROCPIDSTATS_FALSE='#'
 else
