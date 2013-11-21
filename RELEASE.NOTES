@@ -1,3 +1,44 @@
+2013-10-29 - Snort 2.9.5.6
+[*] Improvements
+* Address issue with byte_extract values that cause a relative rule
+  option to search outside the packet payload.
+
+* Correct issue with DCE/RPC attempting to check PAF state before
+  a TCP session is created in Stream.
+
+* Address issue with HTTP pipelined requests when HTTP cookies are
+  being normalized.
+
+2013-09-12 - Snort 2.9.5.5
+[*] Improvements
+* Address issue with SMTP preprocessor and the ignore_tls_data configuration
+  to correctly stop inspection after an SMTP session is encrypted.
+
+* Disable all rule evaluation (as opposed to just rules with fast patterns)
+  for packets on a previously blocked session.
+
+* Corrected when perfmon preprocessor writes stats to occur as soon as
+  both the time and packet count criteria are met.
+
+* Enforce same restrictions on relative PCRE for HTTP buffers from
+  shared library rules as already existed with text rules.
+
+2013-07-22 - Snort 2.9.5.3
+
+[*] Improvements
+* Performance improvements to eliminate some unnecessary work, reduction
+  of sizes of data structures, and cleanup of processing for HTTP normalized
+  buffers.
+
+* Cap the number of expected connections (eg FTP data channel) to prevent
+  memory growth
+
+* Address issue with reloading reputation lookup tables when more addresses
+  are added.
+
+* Address issue with potential hang during shutdown of control socket config
+  reload processing thread.
+
 2013-06-11 - Snort 2.9.5
 
 [*] New additions

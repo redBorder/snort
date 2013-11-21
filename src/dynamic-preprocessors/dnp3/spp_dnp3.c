@@ -26,6 +26,7 @@
 #include "config.h"
 #endif /* HAVE_CONFIG_H */
 
+#include <assert.h>
 #include <string.h>
 
 #include "sf_types.h"
@@ -115,14 +116,10 @@ void SetupDNP3(void)
 /* Allocate memory for preprocessor config, parse the args, set up callbacks */
 static void DNP3Init(struct _SnortConfig *sc, char *argp)
 {
-    int first_init = 0;
     dnp3_config_t *dnp3_policy = NULL;
 
     if (dnp3_context_id == NULL)
-    {
-        first_init = 1;
         DNP3OneTimeInit(sc);
-    }
 
     dnp3_policy = DNP3PerPolicyInit(sc, dnp3_context_id);
 
@@ -464,15 +461,9 @@ static void ProcessDNP3(void *ipacketp, void *contextp)
     dnp3_session_data_t *sessp = NULL;
     PROFILE_VARS;
 
-    /* Sanity checks. Should this preprocessor run? */
-    if (( !packetp ) ||
-        ( !packetp->payload ) ||
-        ( !packetp->payload_size ) ||
-        ( !IPH_IS_VALID(packetp) ) ||
-        ( !packetp->tcp_header && !packetp->udp_header ))
-    {
-        return;
-    }
+    // preconditions - what we registered for
+    assert((IsUDP(packetp) || IsTCP(packetp)) &&
+        packetp->payload && packetp->payload_size);
 
     /* If TCP, require that PAF flushes full PDUs first. */
     if (packetp->tcp_header && !PacketHasFullPDU(packetp))

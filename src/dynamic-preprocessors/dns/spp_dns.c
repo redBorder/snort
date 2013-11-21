@@ -48,6 +48,7 @@
 #include "spp_dns.h"
 #include "sf_preproc_info.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <syslog.h>
 #include <string.h>
@@ -1437,9 +1438,8 @@ static void ProcessDNS( void* packetPtr, void* context )
 
     p = (SFSnortPacket*) packetPtr;
 
-    /* check if we have data to work with */
-    if ((p->payload_size == 0) || (!IsTCP(p) && !IsUDP(p)) || (p->payload == NULL))
-        return;
+    // preconditions - what we registered for
+    assert((IsUDP(p) || IsTCP(p)) && p->payload_size && p->payload);
 
     /* Attempt to get a previously allocated DNS block. If none exists,
      * allocate and register one with the stream layer. */

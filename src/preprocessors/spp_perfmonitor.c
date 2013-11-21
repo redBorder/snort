@@ -576,10 +576,6 @@ static void ProcessPerfMonitor(Packet *p, void *context)
 {
     static bool first = true;
     PROFILE_VARS;
-
-    if ((p == NULL) || (p->pkth == NULL))
-        return;
-
     PREPROC_PROFILE_START(perfmonStats);
 
     if (first)

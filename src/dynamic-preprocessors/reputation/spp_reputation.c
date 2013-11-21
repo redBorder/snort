@@ -109,9 +109,9 @@ static int ReputationReloadVerify(struct _SnortConfig *, void *);
 /* Called at preprocessor setup time. Links preprocessor keyword
  * to corresponding preprocessor initialization function.
  *
- * PARAMETERS:	None.
+ * PARAMETERS:  None.
  *
- * RETURNS:	Nothing.
+ * RETURNS:     Nothing.
  *
  */
 void SetupReputation(void)
@@ -779,41 +779,38 @@ static inline void ReputationProcess(SFSnortPacket *p)
  */
 static void ReputationMain( void* ipacketp, void* contextp )
 {
-
     PROFILE_VARS;
-
     DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "%s\n", REPUTATION_DEBUG__START_MSG));
 
-    if (!IsIP((SFSnortPacket*) ipacketp)
-            ||( ((SFSnortPacket*)ipacketp)->flags & FLAG_REBUILT_FRAG)
-            ||( ((SFSnortPacket*)ipacketp)->flags & FLAG_REBUILT_STREAM))
+    // preconditions - what we registered for
+    assert(IsIP((SFSnortPacket*)ipacketp));
+
+    if (
+        ((SFSnortPacket*)ipacketp)->flags & FLAG_REBUILT_FRAG ||
+        ((SFSnortPacket*)ipacketp)->flags & FLAG_REBUILT_STREAM )
     {
         DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION,"   -> spp_reputation: Not IP or Is a rebuilt packet\n"););
         DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "%s\n", REPUTATION_DEBUG__END_MSG));
         return;
     }
 
-
     reputation_eval_config = sfPolicyUserDataGetDefault(reputation_config);
 
     PREPROC_PROFILE_START(reputationPerfStats);
-    /*
-     * Start process
-     */
-
     ReputationProcess((SFSnortPacket*) ipacketp);
-
     DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "%s\n", REPUTATION_DEBUG__END_MSG));
-    PREPROC_PROFILE_END(reputationPerfStats);
 
+    PREPROC_PROFILE_END(reputationPerfStats);
 }
 
-static int ReputationCheckPolicyConfig(struct _SnortConfig *sc, tSfPolicyUserContextId config, tSfPolicyId policyId, void* pData)
+static int ReputationCheckPolicyConfig(
+    struct _SnortConfig *sc, tSfPolicyUserContextId config, tSfPolicyId policyId, void* pData)
 {
     _dpd.setParserPolicy(sc, policyId);
 
     return 0;
 }
+
 int ReputationCheckConfig(struct _SnortConfig *sc)
 {
     int rval;
@@ -823,7 +820,6 @@ int ReputationCheckConfig(struct _SnortConfig *sc)
 
     return 0;
 }
-
 
 static void ReputationCleanExit(int signal, void *data)
 {
@@ -841,6 +837,7 @@ static void ReputationCleanExit(int signal, void *data)
 #endif
     }
 }
+
 static int ReputationFreeConfigPolicy(
         tSfPolicyUserContextId config,
         tSfPolicyId policyId,

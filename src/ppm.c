@@ -179,7 +179,9 @@ void ppm_print_cfg(ppm_cfg_t *ppm_cfg)
         if(ppm_cfg->pkt_log&PPM_LOG_MESSAGE) LogMessage("log ");
         if(!ppm_cfg->pkt_log) LogMessage("none ");
         LogMessage("\n");
+#ifdef DEBUG
         LogMessage("  debug-pkts      : %s\n",(ppm_cfg->debug_pkts)? "enabled":"disabled");
+#endif
     }
 
     if( ppm_cfg->max_rule_ticks)
@@ -209,7 +211,9 @@ void ppm_print_cfg(ppm_cfg_t *ppm_cfg)
         if(ppm_cfg->rule_log&PPM_LOG_MESSAGE) LogMessage("log ");
         if(!ppm_cfg->rule_log) LogMessage("none ");
         LogMessage("\n");
+#ifdef DEBUG
         /*LogMessage("  debug-rules     : %s\n",(ppm_cfg->debug_rules)?"enabled":"disabled"); unsupported */
+#endif
     }
 }
 
@@ -672,6 +676,7 @@ void ppm_set_rule_threshold(ppm_cfg_t *ppm_cfg, unsigned int cnt)
     ppm_cfg->rule_threshold = cnt;
 }
 
+#ifdef DEBUG
 void ppm_set_debug_rules(ppm_cfg_t *ppm_cfg, int flag)
 {
     ppm_cfg->debug_rules = flag;
@@ -681,6 +686,7 @@ void ppm_set_debug_pkts(ppm_cfg_t *ppm_cfg, int flag)
 {
     ppm_cfg->debug_pkts = flag;
 }
+#endif
 
 #endif
 

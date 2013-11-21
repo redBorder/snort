@@ -303,12 +303,12 @@ int CheckUriLen(void *option_data, Packet *p)
 {
     UriLenCheckData *udata = (UriLenCheckData *)option_data;
     int rval = DETECTION_OPTION_NO_MATCH;
-    uint16_t uri_len = UriBufs[udata->uri_buf].length;
+    const HttpBuffer* hb = GetHttpBuffer(udata->uri_buf);
     PROFILE_VARS;
 
     PREPROC_PROFILE_START(urilenCheckPerfStats);
 
-    if (!p->uri_count || !uri_len)
+    if ( !hb )
     {
         PREPROC_PROFILE_END(urilenCheckPerfStats);
         return rval;
@@ -317,19 +317,19 @@ int CheckUriLen(void *option_data, Packet *p)
     switch (udata->oper)
     {
         case URILEN_CHECK_EQ:
-            if (udata->urilen == uri_len)
+            if (udata->urilen == hb->length)
                 rval = DETECTION_OPTION_MATCH;
             break;
         case URILEN_CHECK_GT:
-            if (udata->urilen < uri_len)
+            if (udata->urilen < hb->length)
                 rval = DETECTION_OPTION_MATCH;
             break;
         case URILEN_CHECK_LT:
-            if (udata->urilen > uri_len)
+            if (udata->urilen > hb->length)
                 rval = DETECTION_OPTION_MATCH;
             break;
         case URILEN_CHECK_RG:
-            if ((udata->urilen <= uri_len) && (udata->urilen2 >= uri_len))
+            if ((udata->urilen <= hb->length) && (udata->urilen2 >= hb->length))
                 rval = DETECTION_OPTION_MATCH;
             break;
         default:

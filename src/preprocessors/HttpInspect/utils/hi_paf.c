@@ -200,7 +200,7 @@ typedef enum {
 
 typedef struct {
     uint8_t action;
-    uint16_t next;
+    uint8_t next;
 } Cell;
 
 typedef struct {
@@ -214,9 +214,9 @@ static unsigned hi_fsm_size = 0;
 #define LWS ' '   // space or tab
 
 typedef struct {
-    uint16_t state;
-    uint16_t match;
-    uint16_t other;
+    uint8_t state;
+    uint8_t match;
+    uint8_t other;
     uint8_t action;
     const char* event;
 } HiRule;
@@ -468,7 +468,7 @@ static void hi_fsm_dump ()
 // fsm build
 //--------------------------------------------------------------------
 
-#define TBD 0xFFFF
+#define TBD 0xFF
 
 static void hi_load (State* state, int event, HiRule* rule)
 {
@@ -551,6 +551,8 @@ static bool hi_fsm_compile (void)
         i++;
     }
     hi_fsm_size = max + extra;
+    assert(hi_fsm_size < TBD);  // using uint8_t for Cell.next and Hi5State.fsm
+
     hi_fsm = malloc(hi_fsm_size*sizeof(*hi_fsm));
     next = max;
 

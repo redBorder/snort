@@ -613,10 +613,19 @@ char StreamExpectCheck(Packet *p, Stream5LWSession* lws)
     return StreamExpectProcessNode(p, lws, hash_node);
 }
 
-void StreamExpectInit(void)
+void StreamExpectInit (uint32_t max)
 {
-    channelHash = sfxhash_new(-EXPECT_HASH_SIZE, sizeof(ExpectHashKey), sizeof(ExpectNode), 0, 1,
-                              freeHashNode, freeHashNode, 1);
+    // number of entries * overhead per entry
+    max *= (sizeof(SFXHASH_NODE) + sizeof(long) + 
+        sizeof(ExpectHashKey) + sizeof(ExpectNode));
+ 
+    // add in fixed cost of hash table
+    max += (sizeof(SFXHASH_NODE**) * EXPECT_HASH_SIZE) + sizeof(long);
+
+    channelHash = sfxhash_new(
+        -EXPECT_HASH_SIZE, sizeof(ExpectHashKey), 
+        sizeof(ExpectNode), max, 1, freeHashNode, freeHashNode, 1);
+
     if (!channelHash)
         FatalError("Failed to create the expected channel hash table.\n");
 

@@ -46,7 +46,6 @@ void PayloadReplaceInit(struct _SnortConfig *sc, char *data, OptTreeNode * otn, 
 {
     static int warned = 0;
     PatternMatchData *idx;
-    PatternMatchData *test_idx;
 
     if( !ScInlineMode() )
         return;
@@ -79,7 +78,7 @@ void PayloadReplaceInit(struct _SnortConfig *sc, char *data, OptTreeNode * otn, 
                    file_name, file_line);
     }
 
-    test_idx = Replace_Parse(data, otn);
+    Replace_Parse(data, otn);
 
 }
 
@@ -101,7 +100,6 @@ static PatternMatchData * Replace_Parse(char *rule, OptTreeNode * otn)
     int pending = 0;
     int cnt = 0;
     int literal = 0;
-    int exception_flag = 0;
     PatternMatchData *ds_idx;
     int ret;
 
@@ -115,11 +113,6 @@ static PatternMatchData * Replace_Parse(char *rule, OptTreeNode * otn)
 
     while(isspace((int)*rule))
         rule++;
-
-    if(*rule == '!')
-    {
-        exception_flag = 1;
-    }
 
     /* find the start of the data */
     start_ptr = index(rule, '"');

@@ -32,12 +32,6 @@ typedef enum {
     SF_FLAG_DETECT_ALL         = 0xffff
 } SFDetectFlagType;
 
-typedef void (*LogMsgFunc)(const char *, ...);
-typedef void (*DebugMsgFunc)(uint64_t, char *, ...);
-typedef int (*GetAltDetectFunc)(uint8_t **, uint16_t *);
-typedef void (*SetAltDetectFunc)(uint8_t *,uint16_t );
-typedef int (*IsDetectFlagFunc)(SFDetectFlagType);
-typedef void (*DetectFlagDisableFunc)(SFDetectFlagType);
 #ifdef SF_WCHAR
 #include <wchar.h>
 typedef void (*DebugWideMsgFunc)(uint64_t, wchar_t *, ...);
@@ -48,29 +42,23 @@ typedef uint32_t (*GetSnortInstance)(void);
 
 #ifndef DECODE_BLEN
 #define DECODE_BLEN 65535
+// must be defined the same as in detection_util.h
 typedef enum
 {
+    HTTP_BUFFER_NONE,
     HTTP_BUFFER_URI,
-    HTTP_BUFFER_RAW_URI,
     HTTP_BUFFER_HEADER,
-    HTTP_BUFFER_RAW_HEADER,
     HTTP_BUFFER_CLIENT_BODY,
     HTTP_BUFFER_METHOD,
     HTTP_BUFFER_COOKIE,
-    HTTP_BUFFER_RAW_COOKIE,
     HTTP_BUFFER_STAT_CODE,
     HTTP_BUFFER_STAT_MSG,
+    HTTP_BUFFER_RAW_URI,
+    HTTP_BUFFER_RAW_HEADER,
+    HTTP_BUFFER_RAW_COOKIE,
     HTTP_BUFFER_MAX
 } HTTP_BUFFER;
 #endif
-
-typedef struct _UriInfo
-{
-    uint8_t *uriBuffer;
-    uint16_t uriLength;
-    uint32_t uriDecodeFlags;
-
-} UriInfo;
 
 typedef struct {
     uint8_t *data;
@@ -81,5 +69,14 @@ typedef struct {
     uint8_t data[DECODE_BLEN];
     uint16_t len;
 } SFDataBuffer;
+
+typedef void (*LogMsgFunc)(const char *, ...);
+typedef void (*DebugMsgFunc)(uint64_t, char *, ...);
+typedef int (*GetAltDetectFunc)(uint8_t **, uint16_t *);
+typedef void (*SetAltDetectFunc)(uint8_t *,uint16_t );
+typedef int (*IsDetectFlagFunc)(SFDetectFlagType);
+typedef void (*DetectFlagDisableFunc)(SFDetectFlagType);
+typedef void (*SetHttpBufferFunc)(HTTP_BUFFER, const uint8_t*, unsigned);
+typedef const uint8_t* (*GetHttpBufferFunc)(HTTP_BUFFER, unsigned*);
 
 #endif /* _SF_DYNAMIC_COMMON_H_ */

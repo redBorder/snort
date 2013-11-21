@@ -47,6 +47,7 @@
 #include "config.h"
 #endif
 
+#include <assert.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -451,8 +452,8 @@ static void PreprocRpcDecode(Packet *p, void *context)
     if (rconfig == NULL)
         return;
 
-    if (!IsTCP(p) || (p->dsize == 0))
-        return;
+    // preconditions - what we registered for
+    assert(IsTCP(p) && p->dsize);
 
     /* If we're stateful that means stream5 has been configured.
      * In this case we don't look at server packets.

@@ -88,7 +88,6 @@ extern PreprocStats ruleOTNEvalPerfStats;
 extern SFGHASH *flowbits_hash;
 extern SF_QUEUE *flowbits_bit_queue;
 extern uint32_t flowbits_count;
-extern volatile int snort_initializing;
 extern DynamicRuleNode *dynamic_rules;
 
 
@@ -334,7 +333,7 @@ int RegisterDynamicRule(
                    __FILE__, __LINE__);
     }
 
-    if (snort_initializing)
+    if ( SnortIsInitializing() )
     {
         node = (DynamicRuleNode *)SnortAlloc(sizeof(DynamicRuleNode));
 

@@ -306,6 +306,7 @@ int IsDataAt(void *option_data, Packet *p)
     int rval = DETECTION_OPTION_NO_MATCH;
     int dsize;
     const uint8_t *base_ptr, *end_ptr, *start_ptr;
+    int search_start = 0;
     PROFILE_VARS;
 
     PREPROC_PROFILE_START(isDataAtPerfStats);
@@ -375,14 +376,26 @@ int IsDataAt(void *option_data, Packet *p)
             return rval;
         }
 
-        base_ptr = doe_ptr + isdata->offset;
+        search_start = ( doe_ptr - start_ptr ) + isdata->offset;
+        base_ptr = doe_ptr;
     }
     else
     {
         DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
                                 "checking absolute offset %d\n", isdata->offset););
-        base_ptr = start_ptr + isdata->offset;
+        search_start = isdata->offset;
+        base_ptr = start_ptr;
     }
+
+    if ( search_start < 0 )
+    {
+        DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
+                                "[*] isdataat bounds check failed..\n"););
+        PREPROC_PROFILE_END(isDataAtPerfStats);
+        return rval;
+    }
+
+    base_ptr = base_ptr + isdata->offset;
 
     if(inBounds(start_ptr, end_ptr, base_ptr))
     {

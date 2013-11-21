@@ -479,10 +479,10 @@ void sfPerformanceStats(SFPERF *sfPerf, Packet *p)
 
         if (cnt >= sfPerf->pkt_cnt)
         {
-            cnt = 0;
-
             if (CheckSampleInterval(sfPerf, p))
             {
+                cnt = 0;
+
                 if (!(sfPerf->perf_flags & SFPERF_SUMMARY_BASE))
                 {
                     sfProcessBaseStats(sfPerf);

@@ -55,7 +55,7 @@ typedef DAQ_PktHdr_t SFDAQ_PktHdr_t;
 
 #define VTH_PRIORITY(vh)  ((ntohs((vh)->vth_pri_cfi_vlan) & 0xe000) >> 13)
 #define VTH_CFI(vh)       ((ntohs((vh)->vth_pri_cfi_vlan) & 0x1000) >> 12)
-#define VTH_VLAN(vh)      ((unsigned short)(ntohs((vh)->vth_pri_cfi_vlan) & 0x0FFF))
+#define VTH_VLAN(vh)      ((uint16_t)(ntohs((vh)->vth_pri_cfi_vlan) & 0x0FFF))
 
 typedef struct _VlanHeader
 {
@@ -391,52 +391,6 @@ typedef struct _ICMP6
 
 struct _SFSnortPacket;
 
-
-/* IPHeader access calls */
-sfip_t *    ip4_ret_src(const struct _SFSnortPacket *);
-sfip_t *    ip4_ret_dst(const struct _SFSnortPacket *);
-uint16_t   ip4_ret_tos(const struct _SFSnortPacket *);
-uint8_t    ip4_ret_ttl(const struct _SFSnortPacket *);
-uint16_t   ip4_ret_len(const struct _SFSnortPacket *);
-uint32_t   ip4_ret_id(const struct _SFSnortPacket *);
-uint8_t    ip4_ret_proto(const struct _SFSnortPacket *);
-uint16_t   ip4_ret_off(const struct _SFSnortPacket *);
-uint8_t    ip4_ret_ver(const struct _SFSnortPacket *);
-uint8_t    ip4_ret_hlen(const struct _SFSnortPacket *);
-
-sfip_t *    orig_ip4_ret_src(const struct _SFSnortPacket *);
-sfip_t *    orig_ip4_ret_dst(const struct _SFSnortPacket *);
-uint16_t   orig_ip4_ret_tos(const struct _SFSnortPacket *);
-uint8_t    orig_ip4_ret_ttl(const struct _SFSnortPacket *);
-uint16_t   orig_ip4_ret_len(const struct _SFSnortPacket *);
-uint32_t   orig_ip4_ret_id(const struct _SFSnortPacket *);
-uint8_t    orig_ip4_ret_proto(const struct _SFSnortPacket *);
-uint16_t   orig_ip4_ret_off(const struct _SFSnortPacket *);
-uint8_t    orig_ip4_ret_ver(const struct _SFSnortPacket *);
-uint8_t    orig_ip4_ret_hlen(const struct _SFSnortPacket *);
-
-sfip_t *    ip6_ret_src(const struct _SFSnortPacket *);
-sfip_t *    ip6_ret_dst(const struct _SFSnortPacket *);
-uint16_t   ip6_ret_toc(const struct _SFSnortPacket *);
-uint8_t    ip6_ret_hops(const struct _SFSnortPacket *);
-uint16_t   ip6_ret_len(const struct _SFSnortPacket *);
-uint32_t   ip6_ret_id(const struct _SFSnortPacket *);
-uint8_t    ip6_ret_next(const struct _SFSnortPacket *);
-uint16_t   ip6_ret_off(const struct _SFSnortPacket *);
-uint8_t    ip6_ret_ver(const struct _SFSnortPacket *);
-uint8_t    ip6_ret_hlen(const struct _SFSnortPacket *);
-
-sfip_t *    orig_ip6_ret_src(const struct _SFSnortPacket *);
-sfip_t *    orig_ip6_ret_dst(const struct _SFSnortPacket *);
-uint16_t   orig_ip6_ret_toc(const struct _SFSnortPacket *);
-uint8_t    orig_ip6_ret_hops(const struct _SFSnortPacket *);
-uint16_t   orig_ip6_ret_len(const struct _SFSnortPacket *);
-uint32_t   orig_ip6_ret_id(const struct _SFSnortPacket *);
-uint8_t    orig_ip6_ret_next(const struct _SFSnortPacket *);
-uint16_t   orig_ip6_ret_off(const struct _SFSnortPacket *);
-uint8_t    orig_ip6_ret_ver(const struct _SFSnortPacket *);
-uint8_t    orig_ip6_ret_hlen(const struct _SFSnortPacket *);
-
 typedef struct _IPH_API
 {
     sfip_t *    (*iph_ret_src)(const struct _SFSnortPacket *);
@@ -534,13 +488,9 @@ typedef struct _SFSnortPacket
     const uint8_t *payload;
     const uint8_t *ip_payload;
     const uint8_t *outer_ip_payload;
-    const uint8_t *ip_frag_start;
-    const uint8_t *ip4_options_data;
-    const uint8_t *tcp_options_data;
 
     void *stream_session_ptr;
     void *fragmentation_tracking_ptr;
-    void *flow_ptr;
 
     IP4Hdr *ip4h, *orig_ip4h;
     IP6Hdr *ip6h, *orig_ip6h;
@@ -551,20 +501,9 @@ typedef struct _SFSnortPacket
     IPH_API* outer_iph_api;
     IPH_API* outer_orig_iph_api;
 
-    IP4Hdr inner_ip4h, inner_orig_ip4h;
-    IP6Hdr inner_ip6h, inner_orig_ip6h;
-    IP4Hdr outer_ip4h, outer_orig_ip4h;
-    IP6Hdr outer_ip6h, outer_orig_ip6h;
-
-    MplsHdr   mplsHdr;
-
     int family;
     int orig_family;
     int outer_family;
-    int number_bytes_to_check;
-
-    //int ip_payload_length;
-    //int ip_payload_offset;
 
     uint32_t preprocessor_bit_mask;
     uint32_t preproc_reassembly_pkt_bit_mask;
@@ -598,19 +537,14 @@ typedef struct _SFSnortPacket
     uint8_t ip_dont_fragment;
     uint8_t ip_reserved;
 
-    uint8_t num_uris;
-    uint8_t invalid_flags;
-    uint8_t encapsulated;
-    uint8_t GTPencapsulated;
-
     uint8_t num_ip_options;
     uint8_t num_tcp_options;
     uint8_t num_ip6_extensions;
     uint8_t ip6_frag_extension;
 
-    u_char ip_last_option_invalid_flag;
-    u_char tcp_last_option_invalid_flag;
-
+    uint8_t invalid_flags;
+    uint8_t encapsulated;
+    uint8_t GTPencapsulated;
     uint8_t next_layer_index;
 
 #ifndef NO_NON_ETHER_DECODER
@@ -645,8 +579,19 @@ typedef struct _SFSnortPacket
     TCPOptions tcp_options[MAX_TCP_OPTIONS];
     IP6Extension ip6_extensions[MAX_IP6_EXTENSIONS];
 
+    const uint8_t *ip_frag_start;
+    const uint8_t *ip4_options_data;
+    const uint8_t *tcp_options_data;
+
     const IP6RawHdr* raw_ip6_header;
     ProtoLayer proto_layers[MAX_PROTO_LAYERS];
+
+    IP4Hdr inner_ip4h, inner_orig_ip4h;
+    IP6Hdr inner_ip6h, inner_orig_ip6h;
+    IP4Hdr outer_ip4h, outer_orig_ip4h;
+    IP6Hdr outer_ip6h, outer_orig_ip6h;
+
+    MplsHdr mplsHdr;
 
     PseudoPacketType pseudo_type;
     uint16_t max_payload;
@@ -677,9 +622,9 @@ typedef struct _SFSnortPacket
 #define PROTO_BIT__ALL      0xffff
 
 #define IsIP(p) (IPH_IS_VALID(p))
-#define IsTCP(p) (IsIP(p) && (GET_IPH_PROTO(p) == IPPROTO_TCP))
-#define IsUDP(p) (IsIP(p) && (GET_IPH_PROTO(p) == IPPROTO_UDP))
-#define IsICMP(p) (IsIP(p) && (GET_IPH_PROTO(p) == IPPROTO_ICMP))
+#define IsTCP(p) (IsIP(p) && p->tcp_header)
+#define IsUDP(p) (IsIP(p) && p->udp_header)
+#define IsICMP(p) (IsIP(p) && p->icmp_header)
 
 #define SET_IP4_VER(ip_header, value) \
     ((ip_header)->version_headerlength = \

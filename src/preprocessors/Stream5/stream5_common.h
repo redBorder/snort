@@ -177,7 +177,8 @@ typedef struct _Stream5LWSession
 
     Stream5HAState ha_state;
 
-    uint16_t   session_state;
+    uint16_t    session_state;
+    uint8_t     handler[SE_MAX];
 
     snort_ip    client_ip; // FIXTHIS family and bits should be changed to uint16_t
     snort_ip    server_ip; // or uint8_t to reduce sizeof from 24 to 20
@@ -475,6 +476,8 @@ void Stream5SetApplicationProtocolIdFromHostEntry(Stream5LWSession *lwssn,
 #endif
 void Stream5FreeConfig(Stream5Config *);
 void Stream5FreeConfigs(tSfPolicyUserContextId);
+
+void Stream5CallHandler(Packet*, unsigned id);
 
 int isPacketFilterDiscard(
         Packet *p,

@@ -98,7 +98,7 @@ void DCE2_HttpSsnFree(void *);
 static inline DCE2_TransType DCE2_HttpAutodetectProxy(const SFSnortPacket *p)
 {
     const char *buf = NULL;
-    int buf_len = 0;
+    unsigned buf_len = 0;
 
     if (DCE2_SsnFromServer(p))
         return DCE2_TRANS_TYPE__NONE;
@@ -106,17 +106,16 @@ static inline DCE2_TransType DCE2_HttpAutodetectProxy(const SFSnortPacket *p)
     /* Use the http decode buffer if possible */
     if (DCE2_HttpDecode(p))
     {
-        buf = (char *)_dpd.uriBuffers[HTTP_BUFFER_METHOD]->uriBuffer;
-        buf_len = _dpd.uriBuffers[HTTP_BUFFER_METHOD]->uriLength;
+        buf = (char*)_dpd.getHttpBuffer(HTTP_BUFFER_METHOD, &buf_len);
     }
 
     if (buf == NULL)
     {
         buf = (char *)p->payload;
-        buf_len = (int)p->payload_size;
+        buf_len = p->payload_size;
     }
 
-    if (buf_len >= (int)strlen(DCE2_HTTP_PROXY__RPC_CONNECT_STR))
+    if (buf_len >= strlen(DCE2_HTTP_PROXY__RPC_CONNECT_STR))
     {
         if (strncmp(buf, DCE2_HTTP_PROXY__RPC_CONNECT_STR, strlen(DCE2_HTTP_PROXY__RPC_CONNECT_STR)) == 0)
             return DCE2_TRANS_TYPE__HTTP_PROXY;

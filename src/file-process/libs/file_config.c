@@ -334,7 +334,6 @@ static void ParseFileContent(RuleInfo *rule, char *args)
     char *start_ptr;
     char *end_ptr;
     char *tmp;
-    int size;
 
     if (args == NULL)
         ParseError("Parse File Magic Got Null enclosed in vertical bar (|)!");
@@ -372,8 +371,6 @@ static void ParseFileContent(RuleInfo *rule, char *args)
         ParseError("Bad data (possibly due to missing semicolon) after "
                 "trailing double quote.");
     }
-
-    size = end_ptr - start_ptr;
 
     if (rule->magics)
     {

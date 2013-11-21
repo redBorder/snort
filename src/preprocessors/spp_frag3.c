@@ -79,6 +79,7 @@
 #include "config.h"
 #endif
 
+#include <assert.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -111,7 +112,6 @@
 #include "profiler.h"
 
 #include "active.h"
-#include "spp_normalize.h"
 
 #ifdef TARGET_BASED
 #include "sftarget_hostentry.h"
@@ -1731,13 +1731,12 @@ static void Frag3Defrag(Packet *p, void *context)
     tSfPolicyId policy_id = getRuntimePolicy();
     PROFILE_VARS;
 
+    // preconditions - what we registered for
+    assert(IPH_IS_VALID(p) && !(p->error_flags & PKT_ERR_CKSUM_IP));
+
     /* check to make sure this preprocessor should run */
-    if( (p == NULL) ||
-            !IPH_IS_VALID(p) || !p->frag_flag ||
-            (p->error_flags & PKT_ERR_CKSUM_IP) )
-    {
+    if ( !p->frag_flag )
         return;
-    }
 
     frag3_eval_config = (Frag3Config *)sfPolicyUserDataGet(frag3_config, policy_id);
 

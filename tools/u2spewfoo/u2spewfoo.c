@@ -143,6 +143,7 @@ u2iterator *new_iterator(char *filename) {
 
     if(!ret) {
         printf("new_iterator: Failed to malloc %lu bytes.\n", (unsigned long)sizeof(u2iterator));
+        fclose(f);
         return NULL;
     }
 
@@ -151,7 +152,7 @@ u2iterator *new_iterator(char *filename) {
     return ret;
 }
 
-void free_iterator(u2iterator *it) {
+inline void free_iterator(u2iterator *it) {
     if(it->file) fclose(it->file);
     if(it->filename) free(it->filename);
     if(it) free(it);

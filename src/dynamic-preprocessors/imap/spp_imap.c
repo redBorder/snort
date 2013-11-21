@@ -38,6 +38,7 @@
  *
  **************************************************************************/
 
+#include <assert.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -268,8 +269,8 @@ static void IMAPDetect(void *pkt, void *context)
     tSfPolicyId policy_id = _dpd.getRuntimePolicy();
     PROFILE_VARS;
 
-    if ((p->payload_size == 0) || !IsTCP(p) || (p->payload == NULL))
-        return;
+    // preconditions - what we registered for
+    assert(IsTCP(p) && p->payload && p->payload_size);
 
     PREPROC_PROFILE_START(imapPerfStats);
 

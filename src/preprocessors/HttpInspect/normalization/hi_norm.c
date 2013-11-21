@@ -747,9 +747,7 @@ static int DoubleDecode(HI_SESSION *Session, const u_char *start,
     HTTPINSPECT_CONF *ServerConf = Session->server_conf;
     int iByte;
     int iNorm;
-    const u_char *orig_ptr;
 
-    orig_ptr = *ptr;
     *encodeType |= HTTP_ENCODE_TYPE__DOUBLE_ENCODE;
 
     /*

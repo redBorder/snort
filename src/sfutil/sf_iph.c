@@ -27,7 +27,6 @@
 
 #include "decode.h"
 
-
 #define FAILURE -1
 #define SUCCESS 0
 #define IP6_HEADER_LEN 40
@@ -104,6 +103,7 @@ uint8_t ip6_ret_hops(const Packet *p)
 
     return p->ip6h->hop_lmt;
 }
+
 uint8_t orig_ip6_ret_hops(const Packet *p)
 {
 //    VALIDATE(p,1);
@@ -319,6 +319,87 @@ uint8_t orig_ip6_ret_hlen(const Packet *p)
     return IP6_HDR_LEN / 4;
 }
 
+IPH_API ip4 =
+{
+   ip4_ret_src,
+   ip4_ret_dst,
+   ip4_ret_tos,
+   ip4_ret_ttl,
+   ip4_ret_len,
+   ip4_ret_id,
+   ip4_ret_proto,
+   ip4_ret_off,
+   ip4_ret_ver,
+   ip4_ret_hlen,
+
+   orig_ip4_ret_src,
+   orig_ip4_ret_dst,
+   orig_ip4_ret_tos,
+   orig_ip4_ret_ttl,
+   orig_ip4_ret_len,
+   orig_ip4_ret_id,
+   orig_ip4_ret_proto,
+   orig_ip4_ret_off,
+   orig_ip4_ret_ver,
+   orig_ip4_ret_hlen,
+
+   IPH_API_V4
+};
+
+IPH_API ip6 =
+{
+   ip6_ret_src,
+   ip6_ret_dst,
+   ip6_ret_toc,
+   ip6_ret_hops,
+   ip6_ret_len,
+   ip6_ret_id,
+   ip6_ret_next,
+   ip6_ret_off,
+   ip6_ret_ver,
+   ip6_ret_hlen,
+
+   orig_ip6_ret_src,
+   orig_ip6_ret_dst,
+   orig_ip6_ret_toc,
+   orig_ip6_ret_hops,
+   orig_ip6_ret_len,
+   orig_ip6_ret_id,
+   orig_ip6_ret_next,
+   orig_ip6_ret_off,
+   orig_ip6_ret_ver,
+   orig_ip6_ret_hlen,
+
+   IPH_API_V6
+};
+
+static inline void _set_callbacks(struct _Packet *p, int family, char orig)
+{
+    if ( !orig )
+    {
+        if(family == AF_INET)
+            p->iph_api = &ip4;
+        else
+            p->iph_api = &ip6;
+
+        p->family = family;
+    }
+    else
+    {
+        if(family == AF_INET)
+            p->orig_iph_api = &ip4;
+        else
+            p->orig_iph_api = &ip6;
+
+        p->orig_family = family;
+    }
+}
+
+void set_callbacks(struct _Packet *p, int family, char orig)
+{
+    _set_callbacks(p, family, orig);
+}
+
 void sfiph_build(Packet *p, const void *hdr, int family)
 {
     IP6RawHdr *hdr6;
@@ -340,7 +421,7 @@ void sfiph_build(Packet *p, const void *hdr, int family)
         p->outer_family = p->family;
     }
 
-    set_callbacks(p, family, CALLBACK_IP);
+    _set_callbacks(p, family, CALLBACK_IP);
 
     if(family == AF_INET)
     {
@@ -391,7 +472,7 @@ void sfiph_orig_build(Packet *p, const void *hdr, int family)
         p->outer_orig_iph_api = p->orig_iph_api;
     }
 
-    set_callbacks(p, family, CALLBACK_ICMP_ORIG);
+    _set_callbacks(p, family, CALLBACK_ICMP_ORIG);
 
     if(family == AF_INET)
     {
@@ -432,10 +513,10 @@ int main()
      * that the correct callbacks are setup, and they return
      * the correct values. */
 
-    set_callbacks(&p, AF_INET, CALLBACK_IP);
+    _set_callbacks(&p, AF_INET, CALLBACK_IP);
 
     /* Same test as above, but with IPv6 */
-    set_callbacks(&p, AF_INET6, CALLBACK_IP);
+    _set_callbacks(&p, AF_INET6, CALLBACK_IP);
 
     return 0;
 }

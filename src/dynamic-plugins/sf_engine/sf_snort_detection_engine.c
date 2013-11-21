@@ -83,56 +83,12 @@ NORETURN void DynamicEngineFatalMessage(const char *format, ...)
 
 ENGINE_LINKAGE int InitializeEngine(DynamicEngineData *ded)
 {
-    int i;
     if (ded->version < ENGINE_DATA_VERSION)
     {
         return -1;
     }
 
-    _ded.version = ded->version;
-    _ded.altBuffer = ded->altBuffer;
-    _ded.altDetect = ded->altDetect;
-    _ded.fileDataBuf = ded->fileDataBuf;
-
-    for (i=0;i<HTTP_BUFFER_MAX;i++)
-    {
-        _ded.uriBuffers[i] = ded->uriBuffers[i];
-    }
-    _ded.ruleRegister = ded->ruleRegister;
-    _ded.flowbitRegister = ded->flowbitRegister;
-    _ded.flowbitCheck = ded->flowbitCheck;
-    _ded.asn1Detect = ded->asn1Detect;
-    _ded.dataDumpDirectory = ded->dataDumpDirectory;
-    _ded.logMsg = ded->logMsg;
-    _ded.errMsg = ded->errMsg;
-    _ded.fatalMsg = ded->fatalMsg;
-    _ded.preprocRuleOptInit = ded->preprocRuleOptInit;
-    _ded.setRuleData = ded->setRuleData;
-    _ded.getRuleData = ded->getRuleData;
-
-    _ded.debugMsg = ded->debugMsg;
-#ifdef SF_WCHAR
-    _ded.debugWideMsg = ded->debugWideMsg;
-#endif
-    _ded.debugMsgFile = ded->debugMsgFile;
-    _ded.debugMsgLine = ded->debugMsgLine;
-
-    _ded.pcreStudy = ded->pcreStudy;
-    _ded.pcreCompile = ded->pcreCompile;
-    _ded.pcreExec = ded->pcreExec;
-    _ded.pcreCapture = ded->pcreCapture;
-    _ded.pcreOvectorInfo = ded->pcreOvectorInfo;
-    _ded.sfUnfold = ded->sfUnfold;
-    _ded.sfbase64decode = ded->sfbase64decode;
-    _ded.GetAltDetect = ded->GetAltDetect;
-    _ded.SetAltDetect = ded->SetAltDetect;
-    _ded.Is_DetectFlag = ded->Is_DetectFlag;
-    _ded.DetectFlag_Disable = ded->DetectFlag_Disable;
-
-    _ded.allocRuleData = ded->allocRuleData;
-    _ded.freeRuleData = ded->freeRuleData;
-
-    _ded.flowbitUnregister = ded->flowbitUnregister;
+    _ded = *ded;
 
     return 0;
 }
@@ -258,8 +214,7 @@ static int GetDynamicContents(void *r, int type, FPContentInfo **contents)
                         case CONTENT_HTTP:
                             base64_buf_flag = 0;
                             mime_buf_flag = 0;
-                            if (!(flags & URI_CONTENT_BUFS)
-                                    || (!(flags & URI_FAST_PATTERN_BUFS)))
+                            if ( !IsHttpFastPattern(flags) )
                                 continue;
                             break;
                         default:
@@ -277,6 +232,7 @@ static int GetDynamicContents(void *r, int type, FPContentInfo **contents)
                     memcpy(fp_content->content, content->patternByteForm, fp_content->length);
                     fp_content->offset = content->offset;
                     fp_content->depth = content->depth;
+
                     if (content->flags & CONTENT_RELATIVE)
                         fp_content->is_relative = 1;
                     if (content->flags & CONTENT_NOCASE)
@@ -285,11 +241,12 @@ static int GetDynamicContents(void *r, int type, FPContentInfo **contents)
                         fp_content->fp = 1;
                     if (content->flags & NOT_FLAG)
                         fp_content->exception_flag = 1;
-                    if (content->flags & CONTENT_BUF_URI)
+
+                    if ( HTTP_CONTENT(content->flags) == CONTENT_BUF_URI )
                         fp_content->uri_buffer |= CONTENT_HTTP_URI;
-                    if (content->flags & CONTENT_BUF_HEADER)
+                    else if ( HTTP_CONTENT(content->flags) == CONTENT_BUF_HEADER )
                         fp_content->uri_buffer |= CONTENT_HTTP_HEADER;
-                    if (content->flags & CONTENT_BUF_POST)
+                    else if ( HTTP_CONTENT(content->flags) == CONTENT_BUF_POST )
                         fp_content->uri_buffer |= CONTENT_HTTP_CLIENT_BODY;
 
                     /* Fast pattern only and specifying an offset and length are
@@ -651,7 +608,7 @@ static unsigned int getNonRepeatingLength(char *data, int data_len)
 
 static int ValidateContentInfo(Rule *rule, ContentInfo *content, int fast_pattern)
 {
-    char *content_error = "WARNING: Invalid content option in shared "
+    const char *content_error = "WARNING: Invalid content option in shared "
         "object rule: gid:%u, sid:%u : %s.  Rule will not be registered.\n";
 
     if (content->flags & CONTENT_FAST_PATTERN)
@@ -679,7 +636,7 @@ static int ValidateContentInfo(Rule *rule, ContentInfo *content, int fast_patter
             return -1;
         }
 
-        if ((content->flags & URI_CONTENT_BUFS) && !(content->flags & URI_FAST_PATTERN_BUFS))
+        if ( HTTP_CONTENT(content->flags) && !IsHttpFastPattern(content->flags) )
         {
             _ded.errMsg(content_error,
                     rule->info.genID, rule->info.sigID,
@@ -772,7 +729,7 @@ static int ValidateContentInfo(Rule *rule, ContentInfo *content, int fast_patter
 
 static int Base64DecodeInitialize(Rule *rule, base64DecodeData *content)
 {
-    char *content_error = "WARNING: Invalid base64decode option in shared "
+    const char *content_error = "WARNING: Invalid base64decode option in shared "
         "object rule: gid:%u, sid:%u : %s.  Rule will not be registered.\n";
 
     if( content->relative !=0 && content->relative !=1)
@@ -822,7 +779,7 @@ int RegisterOneRule(struct _SnortConfig *sc, Rule *rule, int registerRule)
                         content->flags |= CONTENT_FAST_PATTERN_ONLY;
                     }
 
-                    if (content->flags & URI_CONTENT_BUFS)
+                    if ( HTTP_CONTENT(content->flags) )
                         contentFlags |= CONTENT_HTTP;
                     else
                         contentFlags |= CONTENT_NORMAL;

@@ -91,25 +91,25 @@ typedef struct _ListInfo{
  */
 typedef struct _reputationConfig
 {
-	uint32_t memcap;
-	int numEntries;
+    uint32_t memcap;
+    int numEntries;
     uint8_t  scanlocal;
-	IPdecision priority;
-	NestedIP nestedIP;
-	WhiteAction whiteAction;
-	MEM_OFFSET local_black_ptr;
-	MEM_OFFSET local_white_ptr;
-	void *emptySegment;
-	void *localSegment;
-	SharedMem sharedMem;
-	int segment_version;
-	uint32_t memsize;
-	bool memCapReached;
-	table_flat_t *iplist;
-	ListInfo *listInfo;
-	int ref_count;
-	char *statusBuf;
-	int  statusBuf_len;
+    IPdecision priority;
+    NestedIP nestedIP;
+    WhiteAction whiteAction;
+    MEM_OFFSET local_black_ptr;
+    MEM_OFFSET local_white_ptr;
+    void *emptySegment;
+    void *localSegment;
+    SharedMem sharedMem;
+    int segment_version;
+    uint32_t memsize;
+    bool memCapReached;
+    table_flat_t *iplist;
+    ListInfo *listInfo;
+    int ref_count;
+    char *statusBuf;
+    int  statusBuf_len;
 
 } ReputationConfig;
 

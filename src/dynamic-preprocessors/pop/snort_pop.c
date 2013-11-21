@@ -860,14 +860,10 @@ static const uint8_t * POP_HandleCommand(SFSnortPacket *p, const uint8_t *ptr, c
 {
     const uint8_t *eol;   /* end of line */
     const uint8_t *eolm;  /* end of line marker */
-    int cmd_line_len;
     int cmd_found;
 
     /* get end of line and end of line marker */
     POP_GetEOL(ptr, end, &eol, &eolm);
-
-    /* calculate length of command line */
-    cmd_line_len = eol - ptr;
 
 
     /* TODO If the end of line marker coincides with the end of payload we can't be

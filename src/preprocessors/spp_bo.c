@@ -112,6 +112,7 @@
  *   final PONG test.
  */
 
+#include <assert.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -560,14 +561,10 @@ static void BoFind(Packet *p, void *context)
     if (bo == NULL)
         return;
 
-    /* make sure it's UDP and that it's at least 19 bytes long */
-    if(!IsUDP(p))
-    {
-        DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN,
-                    "   -> spp_bo: Not UDP\n"););
-        return;
-    }
+    // preconditions - what we registered for
+    assert(IsUDP(p));
 
+    /* make sure it's at least 19 bytes long */
     if(p->dsize < BACKORIFICE_MIN_SIZE)
     {
         return;

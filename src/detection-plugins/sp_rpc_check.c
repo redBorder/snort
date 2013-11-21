@@ -271,7 +271,7 @@ int CheckRpc(void *option_data, Packet *p)
 {
     RpcCheckData *ds_ptr = (RpcCheckData *)option_data;
     unsigned char* c=(unsigned char*)p->data;
-    u_long xid, rpcvers, prog, vers, proc;
+    u_long rpcvers, prog, vers, proc;
     enum msg_type direction;
     int rval = DETECTION_OPTION_NO_MATCH;
 #ifdef DEBUG_MSGS
@@ -320,7 +320,7 @@ int CheckRpc(void *option_data, Packet *p)
 #endif
 
     /* Read xid */
-    xid = IXDR_GET_LONG (c);
+    (void)IXDR_GET_LONG (c);
 
     /* Read direction : CALL or REPLY */
     direction = IXDR_GET_ENUM (c, enum msg_type);

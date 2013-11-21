@@ -85,6 +85,7 @@ int CursorInfoInitialize(Rule *rule, CursorInfo *cursor)
 ENGINE_LINKAGE int getBuffer(void *packet, int flags, const uint8_t **start, const uint8_t **end)
 {
     SFSnortPacket *p = (SFSnortPacket *)packet;
+    unsigned hb_type;
 
     if ((flags & CONTENT_BUF_NORMALIZED) && (_ded.Is_DetectFlag(SF_FLAG_DETECT_ALL)))
     {
@@ -98,133 +99,27 @@ ENGINE_LINKAGE int getBuffer(void *packet, int flags, const uint8_t **start, con
             *start = _ded.altBuffer->data;
             *end = *start + _ded.altBuffer->len;
         }
-
     }
     else if ((flags & CONTENT_BUF_RAW) || (flags & CONTENT_BUF_NORMALIZED))
     {
         *start = p->payload;
+
         if(p->normalized_payload_size)
             *end = *start + p->normalized_payload_size;
         else
             *end = *start + p->payload_size;
     }
-    else if (flags & CONTENT_BUF_URI)
+    else if ( (hb_type = HTTP_CONTENT(flags)) )
     {
         if (p->flags & FLAG_HTTP_DECODE)
         {
-            *start = _ded.uriBuffers[HTTP_BUFFER_URI]->uriBuffer;
-            *end = *start + _ded.uriBuffers[HTTP_BUFFER_URI]->uriLength;
-        }
-        else
-        {
-            return CONTENT_TYPE_MISMATCH;
-        }
-    }
-    else if (flags & CONTENT_BUF_HEADER)
-    {
-        if (p->flags & FLAG_HTTP_DECODE)
-        {
-            *start = _ded.uriBuffers[HTTP_BUFFER_HEADER]->uriBuffer;
-            *end = *start + _ded.uriBuffers[HTTP_BUFFER_HEADER]->uriLength;
-        }
-        else
-        {
-            return CONTENT_TYPE_MISMATCH;
-        }
-    }
-    else if (flags & CONTENT_BUF_POST)
-    {
-        if (p->flags & FLAG_HTTP_DECODE)
-        {
-            *start = _ded.uriBuffers[HTTP_BUFFER_CLIENT_BODY]->uriBuffer;
-            *end = *start + _ded.uriBuffers[HTTP_BUFFER_CLIENT_BODY]->uriLength;
-        }
-        else
-        {
-            return CONTENT_TYPE_MISMATCH;
-        }
-    }
-    else if (flags & CONTENT_BUF_METHOD)
-    {
-        if (p->flags & FLAG_HTTP_DECODE)
-        {
-            *start = _ded.uriBuffers[HTTP_BUFFER_METHOD]->uriBuffer;
-            *end = *start + _ded.uriBuffers[HTTP_BUFFER_METHOD]->uriLength;
-        }
-        else
-        {
-            return CONTENT_TYPE_MISMATCH;
-        }
-    }
-    else if (flags & CONTENT_BUF_COOKIE)
-    {
-        if (p->flags & FLAG_HTTP_DECODE)
-        {
-            *start = _ded.uriBuffers[HTTP_BUFFER_COOKIE]->uriBuffer;
-            *end = *start + _ded.uriBuffers[HTTP_BUFFER_COOKIE]->uriLength;
-        }
-        else
-        {
-            return CONTENT_TYPE_MISMATCH;
-        }
-    }
-    else if (flags & CONTENT_BUF_RAW_URI)
-    {
-        if (p->flags & FLAG_HTTP_DECODE)
-        {
-            *start = _ded.uriBuffers[HTTP_BUFFER_RAW_URI]->uriBuffer;
-            *end = *start + _ded.uriBuffers[HTTP_BUFFER_RAW_URI]->uriLength;
-        }
-        else
-        {
-            return CONTENT_TYPE_MISMATCH;
-        }
-    }
-    else if (flags & CONTENT_BUF_RAW_HEADER)
-    {
-        if (p->flags & FLAG_HTTP_DECODE)
-        {
-            *start = _ded.uriBuffers[HTTP_BUFFER_RAW_HEADER]->uriBuffer;
-            *end = *start + _ded.uriBuffers[HTTP_BUFFER_RAW_HEADER]->uriLength;
-        }
-        else
-        {
-            return CONTENT_TYPE_MISMATCH;
-        }
-    }
+            unsigned len;
+            *start = _ded.getHttpBuffer(hb_type, &len);
 
-    else if (flags & CONTENT_BUF_RAW_COOKIE)
-    {
-        if (p->flags & FLAG_HTTP_DECODE)
-        {
-            *start = _ded.uriBuffers[HTTP_BUFFER_RAW_COOKIE]->uriBuffer;
-            *end = *start + _ded.uriBuffers[HTTP_BUFFER_RAW_COOKIE]->uriLength;
-        }
-        else
-        {
-            return CONTENT_TYPE_MISMATCH;
-        }
-    }
+            if ( !*start )
+                return CONTENT_TYPE_MISMATCH;
 
-    else if (flags & CONTENT_BUF_STAT_CODE)
-    {
-        if (p->flags & FLAG_HTTP_DECODE)
-        {
-            *start = _ded.uriBuffers[HTTP_BUFFER_STAT_CODE]->uriBuffer;
-            *end = *start + _ded.uriBuffers[HTTP_BUFFER_STAT_CODE]->uriLength;
-        }
-        else
-        {
-            return CONTENT_TYPE_MISMATCH;
-        }
-    }
-
-    else if (flags & CONTENT_BUF_STAT_MSG)
-    {
-        if (p->flags & FLAG_HTTP_DECODE)
-        {
-            *start = _ded.uriBuffers[HTTP_BUFFER_STAT_MSG]->uriBuffer;
-            *end = *start + _ded.uriBuffers[HTTP_BUFFER_STAT_MSG]->uriLength;
+            *end = *start + len;
         }
         else
         {
@@ -235,10 +130,8 @@ ENGINE_LINKAGE int getBuffer(void *packet, int flags, const uint8_t **start, con
     {
         return CONTENT_TYPE_MISSING;
     }
-
     return CURSOR_IN_BOUNDS;
 }
-
 
 int checkCursorSimple(const uint8_t *cursor, int flags, const uint8_t *start, const uint8_t *end, int offset)
 {

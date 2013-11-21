@@ -48,6 +48,7 @@
 #include "spp_ssh.h"
 #include "sf_preproc_info.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <syslog.h>
 #include <string.h>
@@ -523,20 +524,17 @@ ProcessSSH( void* ipacketp, void* contextp )
     tSfPolicyId policy_id = _dpd.getRuntimePolicy();
     PROFILE_VARS;
 
-	packetp = (SFSnortPacket*) ipacketp;
+    packetp = (SFSnortPacket*) ipacketp;
     sfPolicyUserPolicySet (ssh_config, policy_id);
 
-	/* Make sure this preprocessor should run. */
-	if (( !packetp ) ||
-	    ( !packetp->payload ) ||
-	    ( !packetp->payload_size ) ||
-        ( !IPH_IS_VALID(packetp) ) ||
-	    ( !packetp->tcp_header ) ||
-        /* check if we're waiting on stream reassembly */
-        ( packetp->flags & FLAG_STREAM_INSERT))
-	{
- 		return;
-	}
+    // preconditions - what we registered for
+    assert(packetp->payload && packetp->payload_size &&
+        IPH_IS_VALID(packetp) && packetp->tcp_header);
+
+    /* Make sure this preprocessor should run. */
+    /* check if we're waiting on stream reassembly */
+    if ( packetp->flags & FLAG_STREAM_INSERT )
+        return;
 
     PREPROC_PROFILE_START(sshPerfStats);
 

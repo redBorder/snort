@@ -77,50 +77,58 @@
 #define CURSOR_IN_BOUNDS       1
 #define CURSOR_OUT_OF_BOUNDS   0
 
-/* Defined in sf_dynamic_define.h */
-//#define SNORT_PCRE_OVERRIDE_MATCH_LIMIT 0x80000000
+//==========================================
+// these are all part of the same mask:
+//------------------------------------------
+// low nibble must be same as HTTP_BUFFER_*
+// see detection_util.h for enum
+// TBD include BUF_* as well in a single enum?
+#define CONTENT_BUF_NONE          0x00000000
+#define CONTENT_BUF_URI           0x00000001
+#define CONTENT_BUF_HEADER        0x00000002
+#define CONTENT_BUF_POST          0x00000003
 
-#define CONTENT_NOCASE          0x01
-#define CONTENT_RELATIVE        0x02
-#define CONTENT_UNICODE2BYTE    0x04
-#define CONTENT_UNICODE4BYTE    0x08
-#define CONTENT_FAST_PATTERN    0x10
-#define CONTENT_END_BUFFER      0x20
+#define CONTENT_BUF_METHOD        0x00000004
+#define CONTENT_BUF_COOKIE        0x00000005
+#define CONTENT_BUF_STAT_CODE     0x00000006
+#define CONTENT_BUF_STAT_MSG      0x00000007
 
-#define CONTENT_BUF_NORMALIZED  0x100
-#define CONTENT_BUF_RAW         0x200
-#define CONTENT_BUF_URI         0x400
-#define CONTENT_BUF_POST        0x800
-#define CONTENT_BUF_HEADER      0x2000
-#define CONTENT_BUF_METHOD      0x4000
-#define CONTENT_BUF_COOKIE      0x8000
-#define CONTENT_BUF_RAW_URI     0x10000
-#define CONTENT_BUF_RAW_HEADER  0x20000
-#define CONTENT_BUF_RAW_COOKIE  0x40000
-#define CONTENT_BUF_STAT_CODE   0x80000
-#define CONTENT_BUF_STAT_MSG    0x40
+#define CONTENT_BUF_RAW_URI       0x00000008
+#define CONTENT_BUF_RAW_HEADER    0x00000009
+#define CONTENT_BUF_RAW_COOKIE    0x0000000A
+#define CONTENT_BUF_HTTP          0x0000000F
+//------------------------------------------
 
-/* This option implies the fast pattern flag */
-#define CONTENT_FAST_PATTERN_ONLY  0x80
+#define BUF_FILE_DATA             0x00000010
+#define BUF_FILE_DATA_MIME        0x00000020
+#define BUF_BASE64_DECODE         0x00000040
 
-#define BYTE_LITTLE_ENDIAN      0x0000
-#define BYTE_BIG_ENDIAN         0x1000
+#define CONTENT_BUF_NORMALIZED    0x00000100
+#define CONTENT_BUF_RAW           0x00000200
+#define CONTENT_END_BUFFER        0x00000400
 
-#define EXTRACT_AS_DEC          0x100000
-#define EXTRACT_AS_OCT          0x200000
-#define EXTRACT_AS_HEX          0x400000
-#define EXTRACT_AS_BIN          0x800000
-#define EXTRACT_AS_BYTE         0x20000000
-#define EXTRACT_AS_STRING       0x40000000
+#define CONTENT_NOCASE            0x00001000
+#define CONTENT_RELATIVE          0x00002000
+#define NOT_FLAG                  0x00004000
 
-#define JUMP_FROM_BEGINNING     0x01000000
-#define JUMP_ALIGN              0x02000000
+#define CONTENT_FAST_PATTERN      0x00010000
+#define CONTENT_FAST_PATTERN_ONLY 0x00020000  // implies fast pattern
+#define JUMP_FROM_BEGINNING       0x00040000
+#define JUMP_ALIGN                0x00080000
 
-#define BUF_FILE_DATA           0x04000000
-#define BUF_FILE_DATA_MIME      0x08000000
-#define BUF_BASE64_DECODE       0x10000000
+#define CONTENT_UNICODE2BYTE      0x00100000
+#define CONTENT_UNICODE4BYTE      0x00200000
+#define BYTE_LITTLE_ENDIAN        0x00400000
+#define BYTE_BIG_ENDIAN           0x00800000
 
-#define NOT_FLAG                0x80000000
+#define EXTRACT_AS_DEC            0x01000000
+#define EXTRACT_AS_OCT            0x02000000
+#define EXTRACT_AS_HEX            0x04000000
+#define EXTRACT_AS_BIN            0x08000000
+
+#define EXTRACT_AS_BYTE           0x10000000
+#define EXTRACT_AS_STRING         0x20000000
+//==========================================
 
 #define CHECK_EQ            0
 #define CHECK_NEQ           1
@@ -134,13 +142,17 @@
 #define CHECK_ATLEASTONE    9
 #define CHECK_NONE          10
 
+#define HTTP_CONTENT(cf) (cf & CONTENT_BUF_HTTP)
+
 #define NORMAL_CONTENT_BUFS ( CONTENT_BUF_NORMALIZED | CONTENT_BUF_RAW )
-#define URI_CONTENT_BUFS  ( CONTENT_BUF_URI | CONTENT_BUF_POST \
-        | CONTENT_BUF_COOKIE | CONTENT_BUF_HEADER | CONTENT_BUF_METHOD \
-        | CONTENT_BUF_RAW_URI | CONTENT_BUF_RAW_HEADER | CONTENT_BUF_RAW_COOKIE \
-        | CONTENT_BUF_STAT_CODE | CONTENT_BUF_STAT_MSG )
-#define URI_FAST_PATTERN_BUFS ( CONTENT_BUF_URI | CONTENT_BUF_HEADER \
-        | CONTENT_BUF_POST )
+
+static inline int IsHttpFastPattern (uint32_t cf)
+{
+    cf = HTTP_CONTENT(cf);
+
+    return ( cf == CONTENT_BUF_URI || cf == CONTENT_BUF_HEADER ||
+             cf == CONTENT_BUF_POST );
+}
 
 typedef struct _ContentInfo
 {

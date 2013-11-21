@@ -52,14 +52,17 @@ typedef struct
     PPM_TICKS max_pkt_ticks;  
     int pkt_log;     /* alert,console,syslog */
     int pkt_action;  /* suspend */
-    int debug_pkts;
 
     PPM_TICKS max_rule_ticks;
     uint64_t rule_threshold; /* rules must fail this many times in a row to suspend */
 
     int rule_log;    /* alert,console,syslog */
     int rule_action; /* suspend */
+
+#ifdef DEBUG
+    int debug_pkts;
     int debug_rules;
+#endif
 
     /* stats section */
     unsigned int rule_event_cnt;
@@ -147,7 +150,9 @@ extern int ppm_suspend_this_rule;
 #define PPM_INC_PKT_RULE_TESTS()      if(ppm_pt)ppm_pt->rule_tests++
 #define PPM_INC_PKT_PCRE_RULE_TESTS() if(ppm_pt)ppm_pt->pcre_rule_tests++
 #define PPM_INC_PKT_NC_RULE_TESTS()   if(ppm_pt)ppm_pt->nc_rule_tests++
+#ifdef DEBUG
 #define PPM_DEBUG_PKTS()           snort_conf->ppm_cfg.debug_pkts
+#endif
 
 #define PPM_PRINT_PKT_TIME(a)    LogMessage(a, ppm_ticks_to_usecs((PPM_TICKS)ppm_pt->tot) );
 
@@ -293,8 +298,10 @@ extern int ppm_suspend_this_rule;
 }
 
 void ppm_init(ppm_cfg_t *);
+#ifdef DEBUG
 void ppm_set_debug_rules(ppm_cfg_t *, int);
 void ppm_set_debug_pkts(ppm_cfg_t *, int);
+#endif
 
 void ppm_set_pkt_action(ppm_cfg_t *, int);
 void ppm_set_pkt_log(ppm_cfg_t *, int);

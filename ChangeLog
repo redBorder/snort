@@ -1,3 +1,147 @@
+2013-10-18 Steven Sturges <ssturges@sourcefire.com>
+Snort 2.9.5.6
+	* src/build.h:
+	  updating build number to 208
+
+	* src/preprocessors/Stream5/snort_stream5_tcp.c:
+	  add NULL check for preprocessors that check for PAF before
+	  they check for any actual tcp session
+
+	* src/detection-plugins/: sp_byte_check.c, sp_byte_jump.c,
+	  sp_isdataat.c, sp_pattern_match.c:
+	  Test if the byte extracted distance and/or offset is within
+	  bounds of the search buffer.  Thanks to Nathan Fowler for
+	  noting the issue.
+
+	* src/preprocessors/HttpInspect/client/hi_client.c:
+	  clear cookie normalization buffer to avoid accidental null
+	  dereference in pipelined request.  Thanks to Michael Galapchuk
+	  for reporting the problem.
+
+2013-09-02 Steven Sturges <ssturges@sourcefire.com>
+Snort 2.9.5.5
+	* src/preprocessors/Stream5/snort_stream5_tcp.c:
+	  disable all detection (not just content-base) for packets on previously
+	  blocked sessions
+
+	* src/preprocessors/perf.c:
+	  Write perfmon entry when both packet count and time conditions are met,
+	  rather than waiting for a multiple of the packet count after the time is
+	  reached.
+
+	* src/dynamic-preprocessors/smtp/snort_smtp.c:
+	  Stop inspection of the entire session when TLS data is present with
+	  ignore_tls_data enabled in SMTP - Check for midstream pickups and
+	  gaps when we miss server hello, and stop inspection as soon as we get
+	  client hello when ignore_tls_data is turned on
+
+	* src/dynamic-plugins/sf_engine/sf_snort_plugin_pcre.c:
+	  changed pcre relative match with HTTP buffers to be not allowed in .so
+	  rules (same as in text rules)
+
+2013-07-03 Steven Sturges <ssturges@sourcefire.com>
+Snort 2.9.5.3
+    * src/preprocessors/Stream5/snort_stream5_tcp.c:
+      Fixed handling of partial segment purging.  Thanks to Lode Mertens
+      for reporting the issue.
+
+    * configure.in, src/active.c, src/decode.c, src/decode.h,
+      src/detect.c, src/detection_util.c, src/detection_util.h,
+      src/encode.c, src/encode.h, src/fpcreate.c, src/fpdetect.c,
+      src/log_text.c, src/parser.c, src/plugbase.c, src/ppm.c,
+      src/ppm.h, src/profiler.c, src/snort.c, src/util.c, src/util.h,
+      src/detection-plugins/detection_options.c,
+      src/detection-plugins/sp_byte_check.c,
+      src/detection-plugins/sp_ftpbounce.c,
+      src/detection-plugins/sp_pattern_match.c,
+      src/detection-plugins/sp_pattern_match.h,
+      src/detection-plugins/sp_pcre.c, src/detection-plugins/sp_pcre.h,
+      src/detection-plugins/sp_replace.c,
+      src/detection-plugins/sp_rpc_check.c,
+      src/detection-plugins/sp_urilen_check.c,
+      src/dynamic-examples/dynamic-preprocessor/spp_example.c,
+      src/dynamic-plugins/sf_convert_dynamic.c,
+      src/dynamic-plugins/sf_dynamic_common.h,
+      src/dynamic-plugins/sf_dynamic_define.h,
+      src/dynamic-plugins/sf_dynamic_engine.h,
+      src/dynamic-plugins/sf_dynamic_meta.h,
+      src/dynamic-plugins/sf_dynamic_plugins.c,
+      src/dynamic-plugins/sf_dynamic_preprocessor.h,
+      src/dynamic-plugins/sp_dynamic.c,
+      src/dynamic-plugins/sf_engine/Makefile.am,
+      src/dynamic-plugins/sf_engine/sf_snort_detection_engine.c,
+      src/dynamic-plugins/sf_engine/sf_snort_packet.h,
+      src/dynamic-plugins/sf_engine/sf_snort_plugin_api.c,
+      src/dynamic-plugins/sf_engine/sf_snort_plugin_api.h,
+      src/dynamic-plugins/sf_engine/sf_snort_plugin_content.c,
+      src/dynamic-plugins/sf_engine/sf_snort_plugin_pcre.c,
+      src/dynamic-plugins/sf_engine/examples/bug26266.c,
+      src/dynamic-plugins/sf_engine/examples/detection_lib_meta.h,
+      src/dynamic-plugins/sf_engine/examples/fake_snort.c,
+      src/dynamic-plugins/sf_preproc_example/spp_nfs_setup.c,
+      src/dynamic-preprocessors/dcerpc2/dce2_http.h,
+      src/dynamic-preprocessors/dcerpc2/spp_dce2.c,
+      src/dynamic-preprocessors/dnp3/spp_dnp3.c,
+      src/dynamic-preprocessors/dns/spp_dns.c,
+      src/dynamic-preprocessors/ftptelnet/snort_ftptelnet.c,
+      src/dynamic-preprocessors/ftptelnet/snort_ftptelnet.h,
+      src/dynamic-preprocessors/ftptelnet/spp_ftptelnet.c,
+      src/dynamic-preprocessors/gtp/spp_gtp.c,
+      src/dynamic-preprocessors/imap/snort_imap.c,
+      src/dynamic-preprocessors/imap/spp_imap.c,
+      src/dynamic-preprocessors/isakmp/spp_isakmp.c,
+      src/dynamic-preprocessors/modbus/spp_modbus.c,
+      src/dynamic-preprocessors/pop/snort_pop.c,
+      src/dynamic-preprocessors/pop/spp_pop.c,
+      src/dynamic-preprocessors/reputation/reputation_config.h,
+      src/dynamic-preprocessors/reputation/spp_reputation.c,
+      src/dynamic-preprocessors/rzb_saac/spp_rzb-saac.c,
+      src/dynamic-preprocessors/sdf/spp_sdf.c,
+      src/dynamic-preprocessors/sip/sip_dialog.c,
+      src/dynamic-preprocessors/sip/sip_parser.c,
+      src/dynamic-preprocessors/sip/spp_sip.c,
+      src/dynamic-preprocessors/smtp/spp_smtp.c,
+      src/dynamic-preprocessors/ssh/spp_ssh.c,
+      src/dynamic-preprocessors/ssl/spp_ssl.c,
+      src/file-process/file_service.c,
+      src/file-process/libs/file_config.c,
+      src/output-plugins/spo_unified2.c, src/preprocessors/portscan.c,
+      src/preprocessors/snort_httpinspect.c,
+      src/preprocessors/spp_arpspoof.c, src/preprocessors/spp_bo.c,
+      src/preprocessors/spp_frag3.c,
+      src/preprocessors/spp_httpinspect.c,
+      src/preprocessors/spp_perfmonitor.c,
+      src/preprocessors/spp_rpc_decode.c,
+      src/preprocessors/spp_sfportscan.c,
+      src/preprocessors/spp_stream5.c, src/preprocessors/stream_api.h,
+      src/preprocessors/HttpInspect/client/hi_client.c,
+      src/preprocessors/HttpInspect/normalization/hi_norm.c,
+      src/preprocessors/Stream5/snort_stream5_tcp.c,
+      src/preprocessors/Stream5/snort_stream5_udp.c,
+      src/preprocessors/Stream5/stream5_common.h, src/sfutil/sf_iph.c,
+      src/sfutil/sf_iph.h, src/sfutil/test/unit_hacks.c:
+      Performance improvements and other refactorings. Notable changes
+      include: improved HTTP buffer implementation and replaced run-time
+      packet checks with assertions.
+
+    * src/preprocessors/Stream5/snort_stream5_tcp.c:
+      Ensure proper counting of sessions initializing.
+
+    * doc/Makefile.am, doc/faq.pdf, doc/faq.tex:
+      Remove Snort FAQ from source package since its now live on the web.
+
+    * src/preprocessors/: spp_stream5.c, stream_expect.c,
+      stream_expect.h:
+      Add a memcap to expected session tracking.
+
+    * src/sfutil/sfrt_flat.c:
+      Check for memory allocation failure in both IPV4 and IPV6 tables.
+
+    * src/control/sfcontrol.c:
+      Do not timeout during shutdown and fix stop processing code in the
+      control socket thread.  Add the thread to the list before creation
+      of the thread to prevent a race condition.
+
 2013-06-04 Steven Sturges <ssturges@sourcefire.com>
 Snort 2.9.5
     * src/: snort.c, preprocessors/spp_stream5.c: 

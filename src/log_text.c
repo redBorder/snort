@@ -701,10 +701,12 @@ static void LogTcpOptions(TextLog*  log, Packet * p)
     int i;
     int j;
     u_char tmp[5];
+#if 0
     u_long init_offset;
     u_long print_offset;
 
     init_offset = TextLog_Tell(log);
+#endif
 
     TextLog_Print(log, "TCP Options (%d) => ", p->tcp_option_count);
 
@@ -713,14 +715,15 @@ static void LogTcpOptions(TextLog*  log, Packet * p)
 
     for(i = 0; i < (int) p->tcp_option_count; i++)
     {
+#if 0
         print_offset = TextLog_Tell(log);
-        /**
+
         if((print_offset - init_offset) > 60)
         {
             TextLog_Puts(log, "\nTCP Options => ");
             init_offset = TextLog_Tell(log);
         }
-        **/
+#endif
         switch(p->tcp_options[i].code)
         {
             case TCPOPT_MAXSEG:

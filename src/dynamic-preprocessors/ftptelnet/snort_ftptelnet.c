@@ -316,7 +316,7 @@ static char* DefaultConf (size_t* pn) {
     for ( i = 0; i < CONF_CHUNKS; i++ )
         sz += strlen(DEFAULT_FTP_CONF[i]);
 
-    str = (char*)calloc(sz, sizeof(char));
+    str = malloc(sz);
 
     if ( !str )
         DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -3194,7 +3194,6 @@ int ProcessFTPServerConf(FTPTELNET_GLOBAL_CONF *GlobalConf,
     char firstIpAddress = 1;
     FTP_SERVER_PROTO_CONF *new_server_conf = NULL;
     char *ConfigParseResumePtr = NULL;
-    char *unused;  /* For unused token gotten from mystrtok */
     char ip_list = 0;
     FTP_SERVER_PROTO_CONF *ftp_conf = NULL;
 
@@ -3337,13 +3336,12 @@ int ProcessFTPServerConf(FTPTELNET_GLOBAL_CONF *GlobalConf,
     /* First, process the default configuration -- namely, the
      * list of FTP commands, and the parameter validation checks  */
     {
-        char *default_client;
         char *saveMaxToken = maxToken;
         size_t default_conf_len;
         char *default_conf_str = DefaultConf(&default_conf_len);
 
         maxToken = default_conf_str + default_conf_len;
-        default_client = mystrtok(default_conf_str, CONF_SEPARATORS);
+        (void)mystrtok(default_conf_str, CONF_SEPARATORS);
 
         iRet = ProcessFTPServerOptions(ftp_conf, ErrorString, ErrStrLen);
 
@@ -3370,7 +3368,7 @@ int ProcessFTPServerConf(FTPTELNET_GLOBAL_CONF *GlobalConf,
         else
             *ConfigParseResumePtr-- = CONF_SEPARATORS[0];
 
-        unused = mystrtok(ConfigParseResumePtr, CONF_SEPARATORS);
+        (void)mystrtok(ConfigParseResumePtr, CONF_SEPARATORS);
         iRet = ProcessFTPServerOptions(ftp_conf, ErrorString, ErrStrLen);
         if (iRet < 0)
         {
@@ -3651,9 +3649,11 @@ int FTPTelnetCheckConfigs(struct _SnortConfig *sc, void* pData, tSfPolicyId poli
     _dpd.setParserPolicy(sc, policyId);
 
     /* Add FTPTelnet into the preprocessor list */
+#ifdef TARGET_BASED
     if ( _dpd.fileAPI->get_max_file_depth() >= 0 )
-        _dpd.addPreproc(sc, FTPTelnetChecks, PRIORITY_SESSION, PP_FTPTELNET, PROTO_BIT__TCP);
+        _dpd.addPreproc(sc, FTPDataTelnetChecks, PRIORITY_SESSION, PP_FTPTELNET, PROTO_BIT__TCP);
     else
+#endif
         _dpd.addPreproc(sc, FTPTelnetChecks, PRIORITY_APPLICATION, PP_FTPTELNET, PROTO_BIT__TCP);
 
     if ((rval = FTPTelnetCheckFTPServerConfigs(sc, pPolicyConfig)))
@@ -3733,7 +3733,6 @@ static inline int LogFTPPEvents(FTPP_GEN_EVENTS *GenEvents,
 {
     FTPP_EVENT      *OrigEvent;
     FTPP_EVENT      *HiEvent = NULL;
-    uint32_t     uiMask = 0;
     int           iStackCnt;
     int           iEvent;
     int           iCtr;
@@ -3799,8 +3798,6 @@ static inline int LogFTPPEvents(FTPP_GEN_EVENTS *GenEvents,
      * one for snort.
      */
     iEvent = HiEvent->event_info->alert_id + 1;
-
-    uiMask = (uint32_t)(1 << (iEvent & 31));
 
     /* GenID, SID, Rev, Classification, Pri, Msg, RuleInfo  */
     _dpd.alertAdd(iGenerator,
@@ -4481,7 +4478,7 @@ int FTPPBounceEval(void *pkt, const uint8_t **cursor, void *dataPtr)
     uint32_t ip = 0;
     SFSnortPacket *p = (SFSnortPacket *)pkt;
     int octet=0;
-    const char *start_ptr, *end_ptr, *base_ptr;
+    const char *start_ptr, *end_ptr;
     const char *this_param = *(const char **)cursor;
 
     int dsize;
@@ -4517,7 +4514,6 @@ int FTPPBounceEval(void *pkt, const uint8_t **cursor, void *dataPtr)
 
     /* save off whatever our ending pointer is */
     end_ptr = start_ptr + dsize;
-    base_ptr = start_ptr;
 
     while (isspace((int)*this_param) && (this_param < end_ptr)) this_param++;
 

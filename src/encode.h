@@ -73,12 +73,14 @@ void Encode_Delete(Packet*);
 int Encode_Format(EncodeFlags, const Packet* orig, Packet* clone, PseudoPacketType);
 
 #ifdef HAVE_DAQ_ADDRESS_SPACE_ID
-int Encode_Format_With_DAQ_Info (EncodeFlags f, const Packet* p, Packet* c, PseudoPacketType type,
-        int32_t ingress_index, int32_t ingress_group, int32_t egress_index, int32_t egress_group,
-        uint32_t daq_flags, uint16_t address_space_id, uint32_t opaque);
+int Encode_Format_With_DAQ_Info (
+    EncodeFlags f, const Packet* p, Packet* c, PseudoPacketType type,
+    const DAQ_PktHdr_t*, uint32_t opaque);
+
 #elif defined(HAVE_DAQ_ACQUIRE_WITH_META)
-int Encode_Format_With_DAQ_Info (EncodeFlags f, const Packet* p, Packet* c, PseudoPacketType type,
-        uint32_t opaque);
+int Encode_Format_With_DAQ_Info (
+    EncodeFlags f, const Packet* p, Packet* c, PseudoPacketType type,
+    uint32_t opaque);
 #endif
 
 // update length and checksum fields in layers and caplen, etc.

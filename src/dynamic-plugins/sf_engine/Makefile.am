@@ -19,6 +19,7 @@ sfprimetable.h \
 ipv6_port.h \
 sf_ip.c \
 sf_ip.h \
+sf_iph.h \
 snort_debug.h \
 sf_types.h \
 sf_protocols.h 
@@ -33,6 +34,7 @@ sfprimetable.h \
 ipv6_port.h \
 sf_ip.c \
 sf_ip.h \
+sf_iph.h \
 snort_debug.h \
 sf_types.h \
 sf_protocols.h 
@@ -134,6 +136,9 @@ massage_ipv6_headers = \
 ipv6_port.h: ../../ipv6_port.h
 	@src_header=$?; dst_header=$@; $(massage_ipv6_headers)
 
+sf_iph.h: ../../sfutil/sf_iph.h
+	@src_file=$?; dst_file=$@; $(copy_files)
+
 sf_ip.h: ../../sfutil/sf_ip.h
 	@src_file=$?; dst_file=$@; $(copy_files)
 
@@ -170,4 +175,4 @@ sf_protocols.h: ../../sf_protocols.h
 SUBDIRS = examples
 
 clean-local:
-	rm -rf sfhashfcn.c sfhashfcn.c.new sfghash.c sfprimetable.c sf_ip.c sf_ip.h ipv6_port.h snort_debug.h snort_debug.h.new sfprimetable.h sfghash.h ipv6_port.h.new sfhashfcn.h sf_types.h sf_protocols.h
+	rm -rf sfhashfcn.c sfhashfcn.c.new sfghash.c sfprimetable.c sf_ip.c sf_ip.h sf_iph.h ipv6_port.h snort_debug.h snort_debug.h.new sfprimetable.h sfghash.h ipv6_port.h.new sfhashfcn.h sf_types.h sf_protocols.h

@@ -24,6 +24,8 @@
 #include "config.h"
 #endif
 
+#include <assert.h>
+
 #include "sf_types.h"
 #include "spp_dce2.h"
 #include "sf_preproc_info.h"
@@ -415,22 +417,13 @@ static void DCE2_Main(void *pkt, void *context)
     }
 #endif
 
+    // preconditions - what we registered for
+    assert((IsUDP(p) || IsTCP(p)) && p->payload && p->payload_size);
+
     /* No inspection to do */
-    if ((p->payload_size == 0) || (p->payload == NULL))
-    {
-        DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__MAIN, "No payload - not inspecting.\n"));
-        DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__ALL, "%s\n", DCE2_DEBUG__END_MSG));
-        return;
-    }
-    else if (p->stream_session_ptr == NULL)
+    if (p->stream_session_ptr == NULL)
     {
         DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__MAIN, "No session pointer - not inspecting.\n"));
-        DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__ALL, "%s\n", DCE2_DEBUG__END_MSG));
-        return;
-    }
-    else if (!IsTCP(p) && !IsUDP(p))
-    {
-        DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__MAIN, "Not UDP or TCP - not inspecting.\n"));
         DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__ALL, "%s\n", DCE2_DEBUG__END_MSG));
         return;
     }

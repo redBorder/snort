@@ -183,6 +183,14 @@ typedef struct _StreamSessionLimits
     uint32_t ip_session_limit;
 } StreamSessionLimits;
 
+typedef enum {
+    SE_REXMIT,
+    SE_EOF,
+    SE_MAX
+} Stream_Event;
+
+typedef void (*Stream_Callback)(Packet *);
+
 #ifdef ENABLE_HA
 typedef uint32_t (*StreamHAProducerFunc)(void *ssnptr, uint8_t *buf);
 typedef int (*StreamHAConsumerFunc)(void *ssnptr, const uint8_t *data, uint8_t length);
@@ -804,6 +812,11 @@ typedef struct _stream_api
      *     Session Ptr
      */
     void (*expire_session)(void *);
+
+    // register returns a non-zero id for use with set; zero is error
+    unsigned (*register_event_handler)(Stream_Callback);
+    bool (*set_event_handler)(void* ssnptr, unsigned id, Stream_Event);
+
 } StreamAPI;
 
 /* To be set by Stream5 */

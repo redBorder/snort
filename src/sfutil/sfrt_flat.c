@@ -142,7 +142,7 @@ table_flat_t *sfrt_flat_new(char table_flat_type, char ip_type,  long data_size,
         break;
     };
 
-    if((!table->rt) && (!table->rt6))
+    if((!table->rt) || (!table->rt6))
     {
         if (table->rt)
             sfrt_dir_flat_free( table->rt );

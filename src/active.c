@@ -159,7 +159,7 @@ void Active_KillSession (Packet* p, EncodeFlags* pf)
     EncodeFlags flags = pf ? *pf : ENC_FLAG_FWD;
 
     if ( !IsIP(p) )
-        return 0;
+        return;
 
     switch ( GET_IPH_PROTO(p) )
     {

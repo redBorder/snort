@@ -626,9 +626,10 @@ int ByteTest(void *option_data, Packet *p)
     int success = 0;
     int dsize;
     const char *base_ptr, *end_ptr, *start_ptr;
-    uint32_t payload_bytes_grabbed = 0;
-    int32_t offset, tmp = 0;
+    int payload_bytes_grabbed;
+    int32_t offset;
     uint32_t extract_offset, extract_cmp_value;
+    int search_start = 0;
     PROFILE_VARS;
 
     PREPROC_PROFILE_START(byteTestPerfStats);
@@ -695,14 +696,26 @@ int ByteTest(void *option_data, Packet *p)
             return rval;
         }
 
-        base_ptr = (const char *)doe_ptr + btd->offset;
+        search_start = (doe_ptr - (const uint8_t *)start_ptr) + btd->offset;
+        base_ptr = (const char *)doe_ptr;
     }
     else
     {
         DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
                                 "checking absolute offset %d\n", btd->offset););
-        base_ptr = start_ptr + btd->offset;
+        search_start = btd->offset;
+        base_ptr = start_ptr;
     }
+
+    if( search_start < 0 )
+    {
+        DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
+                                "[*] byte test bounds check failed..\n"););
+        PREPROC_PROFILE_END(byteTestPerfStats);
+        return rval;
+    }
+
+    base_ptr = base_ptr + btd->offset;
 
     /* Use byte_order_func to determine endianess, if present */
     if (btd->byte_order_func)
@@ -731,15 +744,16 @@ int ByteTest(void *option_data, Packet *p)
             PREPROC_PROFILE_END(byteTestPerfStats);
             return rval;
         }
-
-        payload_bytes_grabbed = btd->bytes_to_compare;
+        payload_bytes_grabbed = (int)btd->bytes_to_compare;
     }
     else
     {
-        payload_bytes_grabbed = tmp = string_extract(btd->bytes_to_compare, btd->base,
-                                               (const uint8_t *)base_ptr, (const uint8_t *)start_ptr,
-                                               (const uint8_t *)end_ptr, &value);
-        if (tmp < 0)
+        payload_bytes_grabbed = string_extract(
+                btd->bytes_to_compare, btd->base,
+                (const uint8_t *)base_ptr, (const uint8_t *)start_ptr,
+                (const uint8_t *)end_ptr, &value);
+
+        if ( payload_bytes_grabbed < 0 )
         {
             DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
                                     "String Extraction Failed\n"););
@@ -751,8 +765,8 @@ int ByteTest(void *option_data, Packet *p)
     }
 
     DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
-                            "Grabbed %d bytes at offset %d, value = 0x%08X(%u)\n",
-                            payload_bytes_grabbed, btd->offset, value, value); );
+        "Grabbed %d bytes at offset %d, value = 0x%08X(%u)\n",
+        payload_bytes_grabbed, btd->offset, value, value); );
 
     switch(btd->operator)
     {

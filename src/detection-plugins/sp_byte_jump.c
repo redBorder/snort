@@ -564,6 +564,7 @@ int ByteJump(void *option_data, Packet *p)
     int dsize;
     const uint8_t *base_ptr, *end_ptr, *start_ptr;
     uint8_t rst_doe_flags = 1;
+    int search_start = 0;
     PROFILE_VARS;
 
     PREPROC_PROFILE_START(byteJumpPerfStats);
@@ -627,16 +628,28 @@ int ByteJump(void *option_data, Packet *p)
             return rval;
         }
 
-        base_ptr = doe_ptr + bjd->offset;
+        search_start = (doe_ptr - start_ptr) + bjd->offset;
+        base_ptr = doe_ptr;
         rst_doe_flags = 0;
     }
     else
     {
         DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
                                 "checking absolute offset %d\n", bjd->offset););
-        base_ptr = start_ptr + bjd->offset;
+        search_start = bjd->offset;
+        base_ptr = start_ptr;
     }
 
+    if ( search_start < 0 )
+    {
+        DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
+                                "[*] byte jump bounds check failed..\n"););
+
+        PREPROC_PROFILE_END(byteJumpPerfStats);
+        return rval;
+    }
+
+    base_ptr = base_ptr + bjd->offset;
     /* Use byte_order_func to determine endianess, if present */
     if (bjd->byte_order_func)
     {

@@ -2,8 +2,6 @@
 AUTOMAKE_OPTIONS=foreign no-dependencies
 
 EXTRA_DIST = \
-faq.pdf \
-faq.tex \
 snort_manual.pdf \
 snort_manual.tex
 
@@ -66,7 +64,7 @@ TODO \
 USAGE \
 WISHLIST
 
-DISTCLEANFILES= snort_manual.log snort_manual.toc snort_manual.aux faq.log faq.toc faq.aux snort_manual.pdf faq.pdf snort_manual.out faq.out snort_manual.idx faq.idx
+DISTCLEANFILES= snort_manual.log snort_manual.toc snort_manual.aux snort_manual.pdf snort_manual.out snort_manual.idx 
 
 docdir = ${datadir}/doc/${PACKAGE}
 

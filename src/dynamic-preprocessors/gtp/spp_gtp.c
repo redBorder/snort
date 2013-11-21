@@ -46,7 +46,7 @@
 #include "gtp_roptions.h"
 #include "gtp_parser.h"
 
-#include  <assert.h>
+#include <assert.h>
 #include <stdio.h>
 #include <syslog.h>
 #include <string.h>
@@ -295,19 +295,8 @@ static void GTPmain( void* ipacketp, void* contextp )
     packetp = (SFSnortPacket*) ipacketp;
     sfPolicyUserPolicySet (gtp_config, policy_id);
 
-    /* Make sure this preprocessor should run. */
-    if (( !packetp ) ||	( !packetp->payload ) ||( !packetp->payload_size ))
-    {
-        DEBUG_WRAP(DebugMessage(DEBUG_GTP, "No payload - not inspecting.\n"));
-        DEBUG_WRAP(DebugMessage(DEBUG_GTP, "%s\n", GTP_DEBUG__END_MSG));
-        return;
-    }
-    else if (!IsUDP(packetp))
-    {
-        DEBUG_WRAP(DebugMessage(DEBUG_GTP, "Not UDP - not inspecting.\n"));
-        DEBUG_WRAP(DebugMessage(DEBUG_GTP, "%s\n", GTP_DEBUG__END_MSG));
-        return;
-    }
+    // precoditions - what we registered for
+    assert(IsUDP(packetp) && packetp->payload && packetp->payload_size);
 
     PREPROC_PROFILE_START(gtpPerfStats);
 

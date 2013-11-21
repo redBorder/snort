@@ -38,6 +38,7 @@
 #include "spp_ssl.h"
 #include "sf_preproc_info.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <syslog.h>
 #include <string.h>
@@ -298,20 +299,18 @@ static void SSLPP_process(void *raw_packet, void *context)
     if (config == NULL)
         return;
 
-
     DEBUG_WRAP(DebugMessage(DEBUG_SSL, "SSL Start ================================\n"););
 
     packet = (SFSnortPacket*)raw_packet;
 
-    if(!packet || !packet->payload || !packet->payload_size ||
-            !packet->tcp_header || !packet->stream_session_ptr)
+    // preconditions - what we registered for
+    assert(IsTCP(packet));
+
+    // FIXTHIS need a new class to only run when data ahead of applications?
+    if (!packet->payload || !packet->payload_size ||
+        !packet->stream_session_ptr)
     {
 #ifdef DEBUG_MSGS
-        if (packet == NULL)
-        {
-            DEBUG_WRAP(DebugMessage(DEBUG_SSL, "SSL - Packet is NULL\n"););
-        }
-
         if (packet->payload == NULL)
         {
             DEBUG_WRAP(DebugMessage(DEBUG_SSL, "SSL - Packet payload is NULL\n"););
@@ -320,11 +319,6 @@ static void SSLPP_process(void *raw_packet, void *context)
         if (packet->payload_size == 0)
         {
             DEBUG_WRAP(DebugMessage(DEBUG_SSL, "SSL - Packet payload size is 0\n"););
-        }
-
-        if (packet->tcp_header == NULL)
-        {
-            DEBUG_WRAP(DebugMessage(DEBUG_SSL, "SSL - Packet is not TCP\n"););
         }
 
         if (packet->stream_session_ptr == NULL)

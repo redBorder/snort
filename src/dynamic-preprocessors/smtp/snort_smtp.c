@@ -2081,7 +2081,8 @@ static int SMTP_ProcessServerPacket(SFSnortPacket *p, int *next_state)
         {
             smtp_ssn->state = STATE_TLS_DATA;
         }
-        else
+        else if (!(_dpd.streamAPI->get_session_flags(p->stream_session_ptr) & SSNFLAG_MIDSTREAM)
+                            && !_dpd.streamAPI->missed_packets(p->stream_session_ptr, SSN_DIR_BOTH))
         {
             /* revert back to command state - assume server didn't accept STARTTLS */
             smtp_ssn->state = STATE_COMMAND;
@@ -2089,16 +2090,7 @@ static int SMTP_ProcessServerPacket(SFSnortPacket *p, int *next_state)
     }
 
     if (smtp_ssn->state == STATE_TLS_DATA)
-    {
-        /* Ignore data */
-        if (smtp_eval_config->ignore_tls_data)
-        {
-            DEBUG_WRAP(DebugMessage(DEBUG_SMTP, "Ignoring Server TLS encrypted data\n"););
-            _dpd.SetAltDecode(0);
-        }
-
         return 0;
-    }
 
     while (ptr < end)
     {
@@ -2318,6 +2310,7 @@ void SnortSMTP(SFSnortPacket *p)
             return;
     }
 
+
     pkt_dir = SMTP_Setup(p, smtp_ssn);
 
     /* reset normalization stuff */
@@ -2374,7 +2367,6 @@ void SnortSMTP(SFSnortPacket *p)
                 smtp_ssn->state = STATE_COMMAND;
             }
         }
-
         if ((smtp_ssn->state == STATE_TLS_DATA)
                 || (smtp_ssn->state == STATE_TLS_SERVER_PEND))
         {
@@ -2382,6 +2374,8 @@ void SnortSMTP(SFSnortPacket *p)
             if (smtp_eval_config->ignore_tls_data)
             {
                 _dpd.SetAltDecode(0);
+                _dpd.streamAPI->stop_inspection( p->stream_session_ptr, p, SSN_DIR_BOTH, -1, 0 ); 
+                return;
             }
         }
         else

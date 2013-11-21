@@ -906,14 +906,10 @@ static const uint8_t * IMAP_HandleCommand(SFSnortPacket *p, const uint8_t *ptr, 
 {
     const uint8_t *eol;   /* end of line */
     const uint8_t *eolm;  /* end of line marker */
-    int cmd_line_len;
     int cmd_found;
 
     /* get end of line and end of line marker */
     IMAP_GetEOL(ptr, end, &eol, &eolm);
-
-    /* calculate length of command line */
-    cmd_line_len = eol - ptr;
 
     /* TODO If the end of line marker coincides with the end of payload we can't be
      * sure that we got a command and not a substring which we could tell through

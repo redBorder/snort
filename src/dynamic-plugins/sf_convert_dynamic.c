@@ -302,7 +302,7 @@ static int ConvertContentOption(SnortConfig *sc, Rule *rule, int index, OptTreeN
     }
 
     /* Allocate a new node, based on the type of content option. */
-    if ( content->flags & URI_CONTENT_BUFS )
+    if ( HTTP_CONTENT(content->flags) )
     {
         pmd = NewNode(otn, PLUGIN_PATTERN_MATCH_URI);
         ParsePattern(pattern, otn, PLUGIN_PATTERN_MATCH_URI);
@@ -336,27 +336,7 @@ static int ConvertContentOption(SnortConfig *sc, Rule *rule, int index, OptTreeN
     }
 
     /* Set URI buffer flags */
-    if (content->flags & CONTENT_BUF_URI)
-        pmd->uri_buffer |= HTTP_SEARCH_URI;
-    if (content->flags & CONTENT_BUF_HEADER)
-        pmd->uri_buffer |= HTTP_SEARCH_HEADER;
-    if (content->flags & CONTENT_BUF_POST)
-        pmd->uri_buffer |= HTTP_SEARCH_CLIENT_BODY;
-    if (content->flags & CONTENT_BUF_METHOD)
-        pmd->uri_buffer |= HTTP_SEARCH_METHOD;
-    if (content->flags & CONTENT_BUF_COOKIE)
-        pmd->uri_buffer |= HTTP_SEARCH_COOKIE;
-    if (content->flags & CONTENT_BUF_RAW_URI)
-        pmd->uri_buffer |= HTTP_SEARCH_RAW_URI;
-    if (content->flags & CONTENT_BUF_RAW_HEADER)
-        pmd->uri_buffer |= HTTP_SEARCH_RAW_HEADER;
-    if (content->flags & CONTENT_BUF_RAW_COOKIE)
-        pmd->uri_buffer |= HTTP_SEARCH_RAW_COOKIE;
-    if (content->flags & CONTENT_BUF_STAT_CODE)
-        pmd->uri_buffer |= HTTP_SEARCH_STAT_CODE;
-    if (content->flags & CONTENT_BUF_STAT_MSG)
-        pmd->uri_buffer |= HTTP_SEARCH_STAT_MSG;
-
+    pmd->http_buffer = HTTP_CONTENT(content->flags);
 
     if (content->flags & CONTENT_BUF_RAW)
     {
@@ -472,41 +452,7 @@ static int ConvertPcreOption(SnortConfig *sc, Rule *rule, int index, OptTreeNode
     if (pcre_info->flags & CONTENT_BUF_NORMALIZED)
         pcre_data->options &= ~SNORT_PCRE_RAWBYTES;
 
-    if (pcre_info->flags & CONTENT_BUF_POST)
-        pcre_data->options |= SNORT_PCRE_HTTP_BODY;
-
-    if (pcre_info->flags & CONTENT_BUF_HEADER)
-        pcre_data->options |= SNORT_PCRE_HTTP_HEADER;
-
-    if (pcre_info->flags & CONTENT_BUF_METHOD)
-        pcre_data->options |= SNORT_PCRE_HTTP_METHOD;
-
-    if (pcre_info->flags & CONTENT_BUF_COOKIE)
-        pcre_data->options |= SNORT_PCRE_HTTP_COOKIE;
-
-    if (pcre_info->flags & CONTENT_BUF_URI)
-        pcre_data->options |= SNORT_PCRE_HTTP_URI;
-
-    if (pcre_info->flags & CONTENT_BUF_STAT_CODE)
-        pcre_data->options |= SNORT_PCRE_HTTP_STAT_CODE;
-
-    if (pcre_info->flags & CONTENT_BUF_STAT_MSG)
-        pcre_data->options |= SNORT_PCRE_HTTP_STAT_MSG;
-
-    if (pcre_info->flags & CONTENT_BUF_RAW_URI)
-        pcre_data->options |= SNORT_PCRE_HTTP_RAW_URI;
-
-    if (pcre_info->flags & CONTENT_BUF_RAW_HEADER)
-        pcre_data->options |= SNORT_PCRE_HTTP_RAW_HEADER;
-
-    if (pcre_info->flags & CONTENT_BUF_RAW_COOKIE)
-        pcre_data->options |= SNORT_PCRE_HTTP_RAW_COOKIE;
-
-    if (pcre_info->flags & CONTENT_BUF_STAT_CODE)
-        pcre_data->options |= SNORT_PCRE_HTTP_STAT_CODE;
-
-    if (pcre_info->flags & CONTENT_BUF_STAT_MSG)
-        pcre_data->options |= SNORT_PCRE_HTTP_STAT_MSG;
+    pcre_data->options |= HTTP_CONTENT(pcre_info->flags);
 
     PcreCheckAnchored(pcre_data);
 

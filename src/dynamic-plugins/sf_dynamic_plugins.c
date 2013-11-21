@@ -1269,9 +1269,18 @@ static int setFlowId(const void* p, uint32_t id)
     return DAQ_ModifyFlow(p, id);
 }
 
+static const uint8_t* getHttpBuffer (HTTP_BUFFER hb_type, unsigned* len)
+{
+    const HttpBuffer* hb = GetHttpBuffer(hb_type);
+    if ( !hb )
+        return NULL;
+
+    *len = hb->length;
+    return hb->buf;
+}
+
 int InitDynamicEngines(char *dynamic_rules_path)
 {
-    int i;
     DynamicEngineData engineData;
 
     engineData.version = ENGINE_DATA_VERSION;
@@ -1279,8 +1288,6 @@ int InitDynamicEngines(char *dynamic_rules_path)
     engineData.altDetect = (SFDataPointer *)&DetectBuffer;
     engineData.fileDataBuf = (SFDataPointer *)&file_data_ptr;
 
-    for (i=0;i<HTTP_BUFFER_MAX;i++)
-        engineData.uriBuffers[i] = (UriInfo*)&UriBufs[i];
     /* This is defined in dynamic-plugins/sp_dynamic.h */
     engineData.ruleRegister = &RegisterDynamicRule;
     engineData.flowbitRegister = &DynamicFlowbitRegister;
@@ -1331,6 +1338,7 @@ int InitDynamicEngines(char *dynamic_rules_path)
 
     engineData.pcreCapture = &PcreCapture;
     engineData.pcreOvectorInfo = &pcreOvectorInfo;
+    engineData.getHttpBuffer = getHttpBuffer;
 
     return InitDynamicEnginePlugins(&engineData);
 }
@@ -1665,7 +1673,6 @@ static sigset_t DynamicSnortSignalMask(void)
 
 int InitDynamicPreprocessors(void)
 {
-    int i;
     DynamicPreprocessorData preprocData;
 
     preprocData.version = PREPROCESSOR_DATA_VERSION;
@@ -1674,9 +1681,6 @@ int InitDynamicPreprocessors(void)
     preprocData.altBuffer = (SFDataBuffer *)&DecodeBuffer;
     preprocData.altDetect = (SFDataPointer *)&DetectBuffer;
     preprocData.fileDataBuf = (SFDataPointer *)&file_data_ptr;
-
-    for (i=0;i<HTTP_BUFFER_MAX;i++)
-        preprocData.uriBuffers[i] = (UriInfo*)&UriBufs[i];
 
     preprocData.logMsg = &LogMessage;
     preprocData.errMsg = &ErrorMessage;
@@ -1822,6 +1826,10 @@ int InitDynamicPreprocessors(void)
     preprocData.disableAllPolicies = &DynamicDisableAllPolicies;
     preprocData.reenablePreprocBit = &DynamicReenablePreprocBitFunc;
     preprocData.checkValueInRange = &CheckValueInRange;
+
+    preprocData.setHttpBuffer = SetHttpBuffer;
+    preprocData.getHttpBuffer = getHttpBuffer;
+
     return InitDynamicPreprocessorPlugins(&preprocData);
 }
 

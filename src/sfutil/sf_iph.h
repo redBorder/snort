@@ -21,7 +21,52 @@
 #ifndef SFIPH_H
 #define SFIPH_H
 
-void sfiph_build(Packet *p, const void *hdr, int family);
-void sfiph_orig_build(Packet *p, const void *hdr, int family);
+struct _Packet;
+
+typedef struct _IPH_API
+{
+    sfip_t *   (*iph_ret_src)(const struct _Packet *);
+    sfip_t *   (*iph_ret_dst)(const struct _Packet *);
+    uint16_t   (*iph_ret_tos)(const struct _Packet *);
+    uint8_t    (*iph_ret_ttl)(const struct _Packet *);
+    uint16_t   (*iph_ret_len)(const struct _Packet *);
+    uint32_t   (*iph_ret_id)(const struct _Packet *);
+    uint8_t    (*iph_ret_proto)(const struct _Packet *);
+    uint16_t   (*iph_ret_off)(const struct _Packet *);
+    uint8_t    (*iph_ret_ver)(const struct _Packet *);
+    uint8_t    (*iph_ret_hlen)(const struct _Packet *);
+
+    sfip_t *   (*orig_iph_ret_src)(const struct _Packet *);
+    sfip_t *   (*orig_iph_ret_dst)(const struct _Packet *);
+    uint16_t   (*orig_iph_ret_tos)(const struct _Packet *);
+    uint8_t    (*orig_iph_ret_ttl)(const struct _Packet *);
+    uint16_t   (*orig_iph_ret_len)(const struct _Packet *);
+    uint32_t   (*orig_iph_ret_id)(const struct _Packet *);
+    uint8_t    (*orig_iph_ret_proto)(const struct _Packet *);
+    uint16_t   (*orig_iph_ret_off)(const struct _Packet *);
+    uint8_t    (*orig_iph_ret_ver)(const struct _Packet *);
+    uint8_t    (*orig_iph_ret_hlen)(const struct _Packet *);
+
+    char ver;
+} IPH_API;
+
+extern IPH_API ip4;
+extern IPH_API ip6;
+
+#define IPH_API_V4 4
+#define IPH_API_V6 6
+
+#define iph_is_valid(p) ((p)->family != NO_IP)
+#define NO_IP 0
+
+void sfiph_build(struct _Packet *p, const void *hdr, int family);
+void sfiph_orig_build(struct _Packet *p, const void *hdr, int family);
+
+/* Sets the callbacks to point at the family selected by
+ *  * "family".  "family" is either AF_INET or AF_INET6 */
+#define CALLBACK_IP 0
+#define CALLBACK_ICMP_ORIG 1
+
+void set_callbacks(struct _Packet *p, int family, char orig);
 
 #endif

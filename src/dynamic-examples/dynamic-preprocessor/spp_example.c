@@ -33,6 +33,7 @@
  *
  */
 
+#include <assert.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -171,11 +172,8 @@ void ExampleProcess(void *pkt, void *context)
     if (config == NULL)
         return;
 
-    if (!p->ip4_header || p->ip4_header->proto != IPPROTO_TCP || !p->tcp_header)
-    {
-        /* Not for me, return */
-        return;
-    }
+    // preconditions - what we registered for
+    assert(IsUDP(p) || IsTCP(p));
 
     PREPROC_PROFILE_START(examplePerfStats);
 

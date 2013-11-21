@@ -54,7 +54,7 @@
 #endif
 #endif
 
-#define PREPROCESSOR_DATA_VERSION 6
+#define PREPROCESSOR_DATA_VERSION 7
 
 #include "sf_dynamic_common.h"
 #include "sf_dynamic_engine.h"
@@ -202,7 +202,6 @@ typedef struct _DynamicPreprocessorData
     SFDataBuffer *altBuffer;
     SFDataPointer *altDetect;
     SFDataPointer *fileDataBuf;
-    UriInfo *uriBuffers[HTTP_BUFFER_MAX];
 
     LogMsgFunc logMsg;
     LogMsgFunc errMsg;
@@ -335,6 +334,9 @@ typedef struct _DynamicPreprocessorData
     DisableAllPoliciesFunc disableAllPolicies;
     ReenablePreprocBitFunc reenablePreprocBit;
     DynamicCheckValueInRangeFunc checkValueInRange;
+
+    SetHttpBufferFunc setHttpBuffer;
+    GetHttpBufferFunc getHttpBuffer;
 } DynamicPreprocessorData;
 
 /* Function prototypes for Dynamic Preprocessor Plugins */

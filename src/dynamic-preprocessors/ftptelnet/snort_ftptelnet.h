@@ -76,6 +76,9 @@ int FTPPBounceInit(struct _SnortConfig *sc, char *name, char *parameters, void *
 int FTPPBounceEval(void *p, const uint8_t **cursor, void *dataPtr);
 
 void FTPTelnetChecks(void *pkt, void *context);
+#ifdef TARGET_BASED
+void FTPDataTelnetChecks(void *pkt, void *context);
+#endif
 
 void FTPTelnetCleanupFTPServerConf(void *serverConf);
 void FTPTelnetCleanupFTPCMDConf(void *ftpCmd);

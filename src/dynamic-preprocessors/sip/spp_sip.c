@@ -47,7 +47,7 @@
 #include "sip_parser.h"
 #include "sip_dialog.h"
 
-#include  <assert.h>
+#include <assert.h>
 #include <stdio.h>
 #include <syslog.h>
 #include <string.h>
@@ -246,12 +246,11 @@ static void SIPInit(struct _SnortConfig *sc, char *argp)
  *********************************************************************/
 static inline void SIP_overloadURI(SFSnortPacket *p, SIPMsg *sipMsg)
 {
-    _dpd.uriBuffers[HTTP_BUFFER_HEADER]->uriBuffer = (uint8_t *) sipMsg->header;
-    _dpd.uriBuffers[HTTP_BUFFER_HEADER]->uriLength = sipMsg->headerLen;
-    _dpd.uriBuffers[HTTP_BUFFER_CLIENT_BODY]->uriBuffer = (uint8_t *) sipMsg->body_data;
-    _dpd.uriBuffers[HTTP_BUFFER_CLIENT_BODY]->uriLength = sipMsg->bodyLen;
-    p->num_uris = HTTP_BUFFER_CLIENT_BODY + 1;
+    if ( sipMsg->header )
+        _dpd.setHttpBuffer(HTTP_BUFFER_HEADER, sipMsg->header, sipMsg->headerLen);
 
+    if ( sipMsg->body_data )
+        _dpd.setHttpBuffer(HTTP_BUFFER_CLIENT_BODY, sipMsg->body_data, sipMsg->bodyLen);
 }
 /*********************************************************************
  * Main entry point for SIP processing.
@@ -339,26 +338,12 @@ static void SIPmain( void* ipacketp, void* contextp )
     packetp = (SFSnortPacket*) ipacketp;
     sfPolicyUserPolicySet (sip_config, policy_id);
 
-    /* Make sure this preprocessor should run. */
-    if (( !packetp ) ||	( !packetp->payload ) ||( !packetp->payload_size ))
-    {
-        DEBUG_WRAP(DebugMessage(DEBUG_SIP, "No payload - not inspecting.\n"));
-        DEBUG_WRAP(DebugMessage(DEBUG_SIP, "%s\n", SIP_DEBUG__END_MSG));
+    // preconditions - what we registered for
+    assert((IsUDP(packetp) || IsTCP(packetp)) &&
+        packetp->payload && packetp->payload_size);
+
+    if ( packetp->flags & FLAG_STREAM_INSERT )
         return;
-    }
-    /* check if we're waiting on stream reassembly */
-    else if 	( packetp->flags & FLAG_STREAM_INSERT)
-    {
-        DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Stream inserted - not inspecting.\n"));
-        DEBUG_WRAP(DebugMessage(DEBUG_SIP, "%s\n", SIP_DEBUG__END_MSG));
-        return;
-    }
-    else if (!IsTCP(packetp) && !IsUDP(packetp))
-    {
-        DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Not UDP or TCP - not inspecting.\n"));
-        DEBUG_WRAP(DebugMessage(DEBUG_SIP, "%s\n", SIP_DEBUG__END_MSG));
-        return;
-    }
 
     PREPROC_PROFILE_START(sipPerfStats);
 

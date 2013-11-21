@@ -50,6 +50,7 @@
 #include "bitop.h"
 #include "ipv6_port.h"
 #include "sf_ip.h"
+#include "sf_iph.h"
 #include "sf_protocols.h"
 #include "sfdaq.h"
 #include "util.h"
@@ -935,7 +936,7 @@ typedef struct _Pflog4_hdr
 
 #define VTH_PRIORITY(vh)  ((ntohs((vh)->vth_pri_cfi_vlan) & 0xe000) >> 13)
 #define VTH_CFI(vh)       ((ntohs((vh)->vth_pri_cfi_vlan) & 0x1000) >> 12)
-#define VTH_VLAN(vh)      ((unsigned short)(ntohs((vh)->vth_pri_cfi_vlan) & 0x0FFF))
+#define VTH_VLAN(vh)      ((uint16_t)(ntohs((vh)->vth_pri_cfi_vlan) & 0x0FFF))
 
 typedef struct _VlanTagHdr
 {
@@ -1258,88 +1259,6 @@ typedef struct _ICMP6NodeInfo
 
 /* Minus 1 due to the 'body' field  */
 #define ICMP6_MIN_HEADER_LEN (sizeof(ICMP6Hdr) )
-
-struct _Packet;
-
-/* IPHeader access calls */
-sfip_t *    ip4_ret_src(const struct _Packet *);
-sfip_t *    ip4_ret_dst(const struct _Packet *);
-uint16_t   ip4_ret_tos(const struct _Packet *);
-uint8_t    ip4_ret_ttl(const struct _Packet *);
-uint16_t   ip4_ret_len(const struct _Packet *);
-uint32_t   ip4_ret_id(const struct _Packet *);
-uint8_t    ip4_ret_proto(const struct _Packet *);
-uint16_t   ip4_ret_off(const struct _Packet *);
-uint8_t    ip4_ret_ver(const struct _Packet *);
-uint8_t    ip4_ret_hlen(const struct _Packet *);
-
-sfip_t *    orig_ip4_ret_src(const struct _Packet *);
-sfip_t *    orig_ip4_ret_dst(const struct _Packet *);
-uint16_t   orig_ip4_ret_tos(const struct _Packet *);
-uint8_t    orig_ip4_ret_ttl(const struct _Packet *);
-uint16_t   orig_ip4_ret_len(const struct _Packet *);
-uint32_t   orig_ip4_ret_id(const struct _Packet *);
-uint8_t    orig_ip4_ret_proto(const struct _Packet *);
-uint16_t   orig_ip4_ret_off(const struct _Packet *);
-uint8_t    orig_ip4_ret_ver(const struct _Packet *);
-uint8_t    orig_ip4_ret_hlen(const struct _Packet *);
-
-sfip_t *    ip6_ret_src(const struct _Packet *);
-sfip_t *    ip6_ret_dst(const struct _Packet *);
-uint16_t   ip6_ret_toc(const struct _Packet *);
-uint8_t    ip6_ret_hops(const struct _Packet *);
-uint16_t   ip6_ret_len(const struct _Packet *);
-uint32_t   ip6_ret_id(const struct _Packet *);
-uint8_t    ip6_ret_next(const struct _Packet *);
-uint16_t   ip6_ret_off(const struct _Packet *);
-uint8_t    ip6_ret_ver(const struct _Packet *);
-uint8_t    ip6_ret_hlen(const struct _Packet *);
-
-sfip_t *    orig_ip6_ret_src(const struct _Packet *);
-sfip_t *    orig_ip6_ret_dst(const struct _Packet *);
-uint16_t   orig_ip6_ret_toc(const struct _Packet *);
-uint8_t    orig_ip6_ret_hops(const struct _Packet *);
-uint16_t   orig_ip6_ret_len(const struct _Packet *);
-uint32_t   orig_ip6_ret_id(const struct _Packet *);
-uint8_t    orig_ip6_ret_next(const struct _Packet *);
-uint16_t   orig_ip6_ret_off(const struct _Packet *);
-uint8_t    orig_ip6_ret_ver(const struct _Packet *);
-uint8_t    orig_ip6_ret_hlen(const struct _Packet *);
-
-typedef struct _IPH_API
-{
-    sfip_t *    (*iph_ret_src)(const struct _Packet *);
-    sfip_t *    (*iph_ret_dst)(const struct _Packet *);
-    uint16_t   (*iph_ret_tos)(const struct _Packet *);
-    uint8_t    (*iph_ret_ttl)(const struct _Packet *);
-    uint16_t   (*iph_ret_len)(const struct _Packet *);
-    uint32_t   (*iph_ret_id)(const struct _Packet *);
-    uint8_t    (*iph_ret_proto)(const struct _Packet *);
-    uint16_t   (*iph_ret_off)(const struct _Packet *);
-    uint8_t    (*iph_ret_ver)(const struct _Packet *);
-    uint8_t    (*iph_ret_hlen)(const struct _Packet *);
-
-    sfip_t *    (*orig_iph_ret_src)(const struct _Packet *);
-    sfip_t *    (*orig_iph_ret_dst)(const struct _Packet *);
-    uint16_t   (*orig_iph_ret_tos)(const struct _Packet *);
-    uint8_t    (*orig_iph_ret_ttl)(const struct _Packet *);
-    uint16_t   (*orig_iph_ret_len)(const struct _Packet *);
-    uint32_t   (*orig_iph_ret_id)(const struct _Packet *);
-    uint8_t    (*orig_iph_ret_proto)(const struct _Packet *);
-    uint16_t   (*orig_iph_ret_off)(const struct _Packet *);
-    uint8_t    (*orig_iph_ret_ver)(const struct _Packet *);
-    uint8_t    (*orig_iph_ret_hlen)(const struct _Packet *);
-    char ver;
-} IPH_API;
-
-extern IPH_API ip4;
-extern IPH_API ip6;
-
-#define IPH_API_V4 4
-#define IPH_API_V6 6
-
-#define iph_is_valid(p) ((p)->family != NO_IP)
-#define NO_IP 0
 
 #ifdef _MSC_VER
   /* Visual C++ pragma to enable warning messages about nonstandard bit field type */
@@ -1719,14 +1638,10 @@ typedef struct _Packet
     const uint8_t *data;        /* packet payload pointer */
     const uint8_t *ip_data;     /* IP payload pointer */
     const uint8_t *outer_ip_data;  /* Outer IP payload pointer */
-    const uint8_t *ip_frag_start;
-    const uint8_t *ip_options_data;
-    const uint8_t *tcp_options_data;
     //^^^-----------------------------
 
     void *ssnptr;               /* for tcp session tracking info... */
     void *fragtracker;          /* for ip fragmentation tracking info... */
-    void *flow;                 /* for flow info */
 
     //vvv-----------------------------
     IP4Hdr *ip4h, *orig_ip4h;
@@ -1738,21 +1653,9 @@ typedef struct _Packet
     IPH_API* outer_iph_api;
     IPH_API* outer_orig_iph_api;
 
-    IP4Hdr inner_ip4h, inner_orig_ip4h;
-    IP6Hdr inner_ip6h, inner_orig_ip6h;
-    IP4Hdr outer_ip4h, outer_orig_ip4h;
-    IP6Hdr outer_ip6h, outer_orig_ip6h;
-
-    MplsHdr   mplsHdr;
-
     int family;
     int orig_family;
     int outer_family;
-    int bytes_to_inspect;       /* Number of bytes to check against rules */
-                                /* this is not set - always 0 (inspect all) */
-
-    /* int ip_payload_len; */   /* Replacement for IP_LEN(p->iph->ip_len) << 2 */
-    /* int ip_payload_off; */   /* IP_LEN(p->iph->ip_len) << 2 + p->data */
     //^^^-----------------------------
 
     uint32_t preprocessor_bits; /* flags for preprocessors to check */
@@ -1792,21 +1695,14 @@ typedef struct _Packet
     uint8_t df;                 /* don't fragment flag */
     uint8_t rf;                 /* IP reserved bit */
 
-    uint8_t uri_count;          /* number of URIs in this packet */
-    uint8_t error_flags;        /* flags indicate checksum errors, bad TTLs, etc. */
-    uint8_t encapsulated;
-    uint8_t GTPencapsulated;
-
     uint8_t ip_option_count;    /* number of options in this packet */
     uint8_t tcp_option_count;
     uint8_t ip6_extension_count;
     uint8_t ip6_frag_index;
 
-    uint8_t ip_lastopt_bad;     /* flag to indicate that option decoding was
-                                   halted due to a bad option */
-    uint8_t tcp_lastopt_bad;    /* flag to indicate that option decoding was
-                                   halted due to a bad option */
-
+    uint8_t error_flags;        /* flags indicate checksum errors, bad TTLs, etc. */
+    uint8_t encapsulated;
+    uint8_t GTPencapsulated;
     uint8_t next_layer;         /* index into layers for next encap */
 
 #ifndef NO_NON_ETHER_DECODER
@@ -1842,8 +1738,19 @@ typedef struct _Packet
     Options tcp_options[TCP_OPTLENMAX];    /* tcp options decode struct */
     IP6Option ip6_extensions[IP6_EXTMAX];  /* IPv6 Extension References */
 
+    const uint8_t *ip_frag_start;
+    const uint8_t *ip_options_data;
+    const uint8_t *tcp_options_data;
+
     const IP6RawHdr* raw_ip6h;  // innermost raw ip6 header
     Layer layers[LAYER_MAX];    /* decoded encapsulations */
+
+    IP4Hdr inner_ip4h, inner_orig_ip4h;
+    IP6Hdr inner_ip6h, inner_orig_ip6h;
+    IP4Hdr outer_ip4h, outer_orig_ip4h;
+    IP6Hdr outer_ip6h, outer_orig_ip6h;
+
+    MplsHdr mplsHdr;
 
     PseudoPacketType pseudo_type;    // valid only when PKT_PSEUDO is set
     uint16_t max_dsize;
@@ -1870,12 +1777,13 @@ typedef struct _Packet
 #define PROTO_BIT__ICMP     0x0010
 #define PROTO_BIT__TEREDO   0x0020
 #define PROTO_BIT__GTP      0x0040
+#define PROTO_BIT__OTHER    0x8000
 #define PROTO_BIT__ALL      0xffff
 
 #define IsIP(p) (IPH_IS_VALID(p))
-#define IsTCP(p) (IsIP(p) && (GET_IPH_PROTO(p) == IPPROTO_TCP))
-#define IsUDP(p) (IsIP(p) && (GET_IPH_PROTO(p) == IPPROTO_UDP))
-#define IsICMP(p) (IsIP(p) && (GET_IPH_PROTO(p) == IPPROTO_ICMP))
+#define IsTCP(p) (IsIP(p) && p->tcph)
+#define IsUDP(p) (IsIP(p) && p->udph)
+#define IsICMP(p) (IsIP(p) && p->icmph)
 #define GET_PKT_SEQ(p) (ntohl(p->tcph->th_seq))
 
 /* Macros to deal with sequence numbers - p810 TCP Illustrated vol 2 */
@@ -1886,46 +1794,6 @@ typedef struct _Packet
 #define SEQ_EQ(a,b)  ((int)((a) - (b)) == 0)
 
 #define BIT(i) (0x1 << (i-1))
-
-/* Sets the callbacks to point at the family selected by
- *  * "family".  "family" is either AF_INET or AF_INET6 */
-#define CALLBACK_IP 0
-#define CALLBACK_ICMP_ORIG 1
-
-static inline void set_callbacks(struct _Packet *p, int family, char orig)
-{
-    if (p == NULL)
-    {
-        ErrorMessage("%s(%d) Can't set iph api callback: Packet is NULL.\n",
-                     __FILE__, __LINE__);
-        return;
-    }
-
-    if (orig == CALLBACK_IP)
-    {
-        if(family == AF_INET)
-            p->iph_api = &ip4;
-        else
-            p->iph_api = &ip6;
-
-        p->family = family;
-    }
-    else if (orig == CALLBACK_ICMP_ORIG)
-    {
-        if(family == AF_INET)
-            p->orig_iph_api = &ip4;
-        else
-            p->orig_iph_api = &ip6;
-
-        p->orig_family = family;
-    }
-    else
-    {
-        ErrorMessage("%s(%d) Can't set iph api callback: Invalid callback "
-                     "type: %c.\n", __FILE__, __LINE__, orig);
-        return;
-    }
-}
 
 typedef struct s_pseudoheader
 {

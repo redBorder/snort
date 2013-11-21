@@ -33,7 +33,7 @@
 #include "sf_ip.h"
 #include "spp_sip.h"
 #include "stream_api.h"
-#include  <assert.h>
+#include <assert.h>
 
 
 static void SIP_updateMedias(SIP_MediaSession *, SIP_MediaList *);

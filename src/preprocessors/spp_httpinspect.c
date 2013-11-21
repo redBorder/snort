@@ -41,6 +41,7 @@
 **  - 2.10.03:  Initial Development.  DJR
 */
 
+#include <assert.h>
 #include <string.h>
 #include <sys/types.h>
 
@@ -197,30 +198,17 @@ static void HttpInspect(Packet *p, void *context)
     if ( pPolicyConfig == NULL)
         return;
 
-    /*
-    **  IMPORTANT:
-    **  This is where we initialize any variables that can impact other
-    **  aspects of detection/processing.
-    **
-    **  First thing that we do is reset the p->uri_count to zero, so there
-    **  is no way that we would inspect a buffer that was completely bogus.
-    */
-
-    /*
-    **  Check for valid packet
-    **  if neither header or data is good, then we just abort.
-    */
-    if (!p->dsize || !IsTCP(p) || !p->data)
-        return;
+    // preconditions - what we registered for
+    assert(IsTCP(p) && p->dsize && p->data);
 
     PREPROC_PROFILE_START(hiPerfStats);
+
     /*
     **  Pass in the configuration and the packet.
     */
     SnortHttpInspect(pPolicyConfig, p);
 
-    p->uri_count = 0;
-    /*UriBufs[0].decode_flags = 0;*/
+    ClearHttpBuffers();
 
     /* XXX:
      * NOTE: this includes the HTTPInspect directly
@@ -869,7 +857,7 @@ static void HttpInspectAddServicesOfInterest(struct _SnortConfig *sc, tSfPolicyI
 
 typedef struct _HttpEncodeData
 {
-    int uri_buffer;
+    int http_type;
     int encode_type;
 }HttpEncodeData;
 
@@ -905,20 +893,20 @@ static int HttpEncodeInit(struct _SnortConfig *sc, char *name, char *parameters,
     btype = toks[0];
     if(!strcasecmp(btype, "uri"))
     {
-        idx->uri_buffer = HTTP_BUFFER_URI;
+        idx->http_type = HTTP_BUFFER_URI;
     }
     else if(!strcasecmp(btype, "header"))
     {
-        idx->uri_buffer = HTTP_BUFFER_HEADER;
+        idx->http_type = HTTP_BUFFER_HEADER;
     }
     /* This keyword will not be used until post normalization is turned on */
     /*else if(!strcasecmp(btype, "post"))
     {
-        idx->uri_buffer = HTTP_BUFFER_CLIENT_BODY;
+        idx->http_type = HTTP_BUFFER_CLIENT_BODY;
     }*/
     else if(!strcasecmp(btype, "cookie"))
     {
-        idx->uri_buffer = HTTP_BUFFER_COOKIE;
+        idx->http_type = HTTP_BUFFER_COOKIE;
     }
     /*check for a negation when OR is present. OR and negation is not supported*/
     findStr1 = strchr(toks[1], '|');
@@ -1042,27 +1030,19 @@ static int HttpEncodeInit(struct _SnortConfig *sc, char *name, char *parameters,
 
 static int HttpEncodeEval(void *p, const uint8_t **cursor, void *dataPtr)
 {
-    Packet *pkt = p;
-    int i = 0;
-    HttpEncodeData *idx = (HttpEncodeData *)dataPtr;
+    Packet* pkt = p;
+    HttpEncodeData* idx = (HttpEncodeData *)dataPtr;
+    const HttpBuffer* hb;
 
-    if(!pkt || pkt->uri_count <= 0 || !idx)
+    if ( !pkt || !idx )
         return DETECTION_OPTION_NO_MATCH;
 
-    for (i = 0; i<pkt->uri_count && i <=HTTP_BUFFER_COOKIE; i++)
-    {
-        if (!UriBufs[i].uri || (UriBufs[i].length == 0))
-            continue;
+    hb = GetHttpBuffer(idx->http_type);
 
-        if (!(idx->uri_buffer ==  i) || i == HTTP_BUFFER_METHOD || i == HTTP_BUFFER_CLIENT_BODY || i == HTTP_BUFFER_RAW_URI || i == HTTP_BUFFER_RAW_HEADER)
-            continue;
-
-        if ( UriBufs[i].encode_type & idx->encode_type )
-            return DETECTION_OPTION_MATCH;
-    }
+    if ( hb && (hb->encode_type & idx->encode_type) )
+        return DETECTION_OPTION_MATCH;
 
     return DETECTION_OPTION_NO_MATCH;
-
 }
 
 static void HttpEncodeCleanup(void *dataPtr)
@@ -1215,9 +1195,6 @@ static int HttpInspectCheckConfig(struct _SnortConfig *sc)
     {
         if (sfPolicyUserDataIterate(sc, hi_config, HttpInspectExtractGzip) != 0)
         {
-            int compress_depth;
-            int decompress_depth;
-
             if (defaultConfig == NULL)
             {
                 WarningMessage("http_inspect:  Must configure a default global "
@@ -1225,9 +1202,6 @@ static int HttpInspectCheckConfig(struct _SnortConfig *sc)
                         "server configuration.\n");
                 return -1;
             }
-
-            compress_depth = defaultConfig->compr_depth;
-            decompress_depth = defaultConfig->decompr_depth;
 
             hi_gzip_mempool = (MemPool *)SnortAlloc(sizeof(MemPool));
 
@@ -1537,9 +1511,6 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
         {
             if (sfPolicyUserDataIterate(sc, hi_swap_config, HttpInspectExtractGzip) != 0)
             {
-                int compress_depth;
-                int decompress_depth;
-
                 if (defaultSwapConfig == NULL)
                 {
                     ErrorMessage("http_inspect:  Must configure a default global "
@@ -1547,9 +1518,6 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
                             "server configuration.\n");
                     return -1;
                 }
-
-                compress_depth = defaultSwapConfig->compr_depth;
-                decompress_depth = defaultSwapConfig->decompr_depth;
 
                 hi_gzip_mempool = (MemPool *)SnortAlloc(sizeof(MemPool));
 

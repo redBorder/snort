@@ -531,7 +531,8 @@ static inline int CheckFlushPolicyOnAck(
     TcpDataBlock *, Packet *);
 static void Stream5SeglistAddNode(StreamTracker *, StreamSegment *,
                 StreamSegment *);
-static int Stream5SeglistDeleteNode(StreamTracker *, StreamSegment *, uint32_t flush_seq);
+static int Stream5SeglistDeleteNode(StreamTracker*, StreamSegment*);
+static int Stream5SeglistDeleteNodeTrim(StreamTracker*, StreamSegment*, uint32_t flush_seq);
 static int AddStreamNode(StreamTracker *st, Packet *p,
                   TcpDataBlock*,
                   TcpSession *tcpssn,
@@ -904,8 +905,13 @@ void** Stream5GetPAFUserDataTcp (Stream5LWSession* lwssn, bool to_server)
 
 bool Stream5IsPafActiveTcp (Stream5LWSession* lwssn, bool to_server)
 {
-    TcpSession* tcpssn = (TcpSession *)lwssn->proto_specific_data->data;
+    TcpSession* tcpssn;
     FlushMgr* fm;
+
+    if ( !lwssn->proto_specific_data )
+        return false;
+
+    tcpssn = (TcpSession *)lwssn->proto_specific_data->data;
 
     if ( !tcpssn )
         return false;
@@ -921,9 +927,14 @@ bool Stream5IsPafActiveTcp (Stream5LWSession* lwssn, bool to_server)
 
 bool Stream5ActivatePafTcp (Stream5LWSession* lwssn, bool to_server)
 {
-    TcpSession* tcpssn = (TcpSession *)lwssn->proto_specific_data->data;
+    TcpSession* tcpssn;
     StreamTracker* trk;
     FlushMgr* fm;
+
+    if ( !lwssn->proto_specific_data )
+        return false;
+
+    tcpssn = (TcpSession *)lwssn->proto_specific_data->data;
 
     if ( !tcpssn )
         return false;
@@ -1034,11 +1045,16 @@ void Stream5UpdatePerfBaseState(SFBASE *sf_base,
         if (!(lwssn->ha_state.session_flags & SSNFLAG_COUNTED_ESTABLISH))
         {
             sf_base->iSessionsEstablished++;
+
             if (perfmon_config && (perfmon_config->perf_flags & SFPERF_FLOWIP))
                 UpdateFlowIPState(&sfFlow, IP_ARG(lwssn->client_ip), IP_ARG(lwssn->server_ip), SFS_STATE_TCP_ESTABLISHED);
+
             lwssn->ha_state.session_flags |= SSNFLAG_COUNTED_ESTABLISH;
-            if (lwssn->ha_state.session_flags & SSNFLAG_COUNTED_INITIALIZE)
+
+            if ((lwssn->ha_state.session_flags & SSNFLAG_COUNTED_INITIALIZE) && 
+                !(lwssn->ha_state.session_flags & SSNFLAG_COUNTED_CLOSING))
             {
+                assert(sf_base->iSessionsInitializing);
                 sf_base->iSessionsInitializing--;
             }
         }
@@ -1050,12 +1066,15 @@ void Stream5UpdatePerfBaseState(SFBASE *sf_base,
             lwssn->ha_state.session_flags |= SSNFLAG_COUNTED_CLOSING;
             if (lwssn->ha_state.session_flags & SSNFLAG_COUNTED_ESTABLISH)
             {
+                assert(sf_base->iSessionsEstablished);
                 sf_base->iSessionsEstablished--;
+
                 if (perfmon_config && (perfmon_config->perf_flags & SFPERF_FLOWIP))
                     UpdateFlowIPState(&sfFlow, IP_ARG(lwssn->client_ip), IP_ARG(lwssn->server_ip), SFS_STATE_TCP_CLOSED);
             }
             else if (lwssn->ha_state.session_flags & SSNFLAG_COUNTED_INITIALIZE)
             {
+                assert(sf_base->iSessionsInitializing);
                 sf_base->iSessionsInitializing--;
             }
         }
@@ -1063,16 +1082,20 @@ void Stream5UpdatePerfBaseState(SFBASE *sf_base,
     case TCP_STATE_CLOSED:
         if (lwssn->ha_state.session_flags & SSNFLAG_COUNTED_CLOSING)
         {
+            assert(sf_base->iSessionsClosing);
             sf_base->iSessionsClosing--;
         }
         else if (lwssn->ha_state.session_flags & SSNFLAG_COUNTED_ESTABLISH)
         {
+            assert(sf_base->iSessionsEstablished);
             sf_base->iSessionsEstablished--;
+
             if (perfmon_config && (perfmon_config->perf_flags & SFPERF_FLOWIP))
                 UpdateFlowIPState(&sfFlow, IP_ARG(lwssn->client_ip), IP_ARG(lwssn->server_ip), SFS_STATE_TCP_CLOSED);
         }
         else if (lwssn->ha_state.session_flags & SSNFLAG_COUNTED_INITIALIZE)
         {
+            assert(sf_base->iSessionsInitializing);
             sf_base->iSessionsInitializing--;
         }
         break;
@@ -1212,9 +1235,7 @@ void Stream5TcpPolicyInit(struct _SnortConfig *sc, Stream5TcpConfig *config, cha
     Stream5PrintTcpConfig(s5TcpPolicy);
 
 #ifdef REG_TEST
-    LogMessage("\n");
     LogMessage("    TCP Session Size: %lu\n",sizeof(TcpSession));
-    LogMessage("\n");
 #endif
 }
 
@@ -2917,6 +2938,74 @@ static inline void NormalCheckECN (TcpSession* s, Packet* p)
 #endif
 
 //-------------------------------------------------------------------------
+// ssn ingress is client; ssn egress is server
+
+#ifdef HAVE_DAQ_ADDRESS_SPACE_ID
+static inline void SetPacketHeaderFoo (TcpSession* tcpssn, const Packet* p)
+{
+    if ( tcpssn->daq_flags & DAQ_PKT_FLAG_NOT_FORWARDING )
+    {
+        tcpssn->ingress_index = p->pkth->ingress_index;
+        tcpssn->ingress_group = p->pkth->ingress_group;
+        // ssn egress may be unknown, but will be correct
+        tcpssn->egress_index = p->pkth->egress_index;
+        tcpssn->egress_group = p->pkth->egress_group;
+    }
+    else if ( p->packet_flags & PKT_FROM_CLIENT )
+    {
+        tcpssn->ingress_index = p->pkth->ingress_index;
+        tcpssn->ingress_group = p->pkth->ingress_group;
+        // ssn egress not always correct here
+    }
+    else
+    {
+        // ssn ingress not always correct here
+        tcpssn->egress_index = p->pkth->ingress_index;
+        tcpssn->egress_group = p->pkth->ingress_group;
+    }
+    tcpssn->daq_flags = p->pkth->flags;
+    tcpssn->address_space_id = p->pkth->address_space_id;
+}
+
+static inline void GetPacketHeaderFoo (
+    const TcpSession* tcpssn, DAQ_PktHdr_t* pkth, uint32_t dir)
+{
+    if ( (dir & PKT_FROM_CLIENT) || (tcpssn->daq_flags & DAQ_PKT_FLAG_NOT_FORWARDING) )
+    {
+        pkth->ingress_index = tcpssn->ingress_index;
+        pkth->ingress_group = tcpssn->ingress_group;
+        pkth->egress_index = tcpssn->egress_index;
+        pkth->egress_group = tcpssn->egress_group;
+    }
+    else
+    {
+        pkth->ingress_index = tcpssn->egress_index;
+        pkth->ingress_group = tcpssn->egress_group;
+        pkth->egress_index = tcpssn->ingress_index;
+        pkth->egress_group = tcpssn->ingress_group;
+    }
+    pkth->flags = tcpssn->daq_flags;
+    pkth->address_space_id = tcpssn->address_space_id;
+}
+
+static inline void SwapPacketHeaderFoo (TcpSession* tcpssn)
+{
+    if ( tcpssn->egress_index != DAQ_PKTHDR_UNKNOWN )
+    {
+        int32_t ingress_index;
+        int32_t ingress_group;
+
+        ingress_index = tcpssn->ingress_index;
+        ingress_group = tcpssn->ingress_group;
+        tcpssn->ingress_index = tcpssn->egress_index;
+        tcpssn->ingress_group = tcpssn->egress_group;
+        tcpssn->egress_index = ingress_index;
+        tcpssn->egress_group = ingress_group;
+    }
+}
+#endif
+
+//-------------------------------------------------------------------------
 
 static inline int IsBetween(uint32_t low, uint32_t high, uint32_t cur)
 {
@@ -3532,7 +3621,7 @@ static inline int purge_to_seq(TcpSession *tcpssn, StreamTracker *st, uint32_t f
             {
                 last_ts = dump_me->ts;
             }
-            purged_bytes += Stream5SeglistDeleteNode(st, dump_me, flush_seq);
+            purged_bytes += Stream5SeglistDeleteNodeTrim(st, dump_me, flush_seq);
         }
         else
             break;
@@ -3654,10 +3743,7 @@ static inline int _flush_to_seq (
     uint32_t bytes_processed = 0;
     int32_t flushed_bytes;
 #ifdef HAVE_DAQ_ADDRESS_SPACE_ID
-    int32_t ingress_index;
-    int32_t ingress_group;
-    int32_t egress_index;
-    int32_t egress_group;
+    DAQ_PktHdr_t pkth;
 #endif
     EncodeFlags enc_flags = 0;
     PROFILE_VARS;
@@ -3668,22 +3754,8 @@ static inline int _flush_to_seq (
         enc_flags = ENC_FLAG_FWD;
 
 #ifdef HAVE_DAQ_ADDRESS_SPACE_ID
-    if ((dir & PKT_FROM_CLIENT) || (tcpssn->daq_flags & DAQ_PKT_FLAG_NOT_FORWARDING))
-    {
-        ingress_index = tcpssn->ingress_index;
-        ingress_group = tcpssn->ingress_group;
-        egress_index = tcpssn->egress_index;
-        egress_group = tcpssn->egress_group;
-    }
-    else
-    {
-        ingress_index = tcpssn->egress_index;
-        ingress_group = tcpssn->egress_group;
-        egress_index = tcpssn->ingress_index;
-        egress_group = tcpssn->ingress_group;
-    }
-    Encode_Format_With_DAQ_Info(enc_flags, p, s5_pkt, PSEUDO_PKT_TCP, ingress_index, ingress_group,
-        egress_index, egress_group, tcpssn->daq_flags, tcpssn->address_space_id, 0);
+    GetPacketHeaderFoo(tcpssn, &pkth, dir);
+    Encode_Format_With_DAQ_Info(enc_flags, p, s5_pkt, PSEUDO_PKT_TCP, &pkth, 0);
 #elif defined(HAVE_DAQ_ACQUIRE_WITH_META)
     Encode_Format_With_DAQ_Info(enc_flags, p, s5_pkt, PSEUDO_PKT_TCP, 0);
 #else
@@ -4801,7 +4873,7 @@ int Stream5ProcessTcp(Packet *p, Stream5LWSession *lwssn,
                         "Blocking %s packet as session was blocked\n",
                         p->packet_flags & PKT_FROM_SERVER ?
                         "server" : "client"););
-            DisableDetect(p);
+            DisableAllDetect(p);
             /* Still want to add this number of bytes to totals */
             SetPreprocBit(p, PP_PERFMONITOR);
 
@@ -6061,7 +6133,6 @@ static int StreamQueue(StreamTracker *st, Packet *p, TcpDataBlock *tdb,
                     && (right->orig_dsize == p->dsize)
                     && (memcmp(right->data, p->data, p->dsize) == 0))
             {
-                file_api->file_signature_lookup(p, 1);
                 /* RETRANSMISSION */
                 /* Packet was analyzed the first time.
                  * Don't bother looking at it again. */
@@ -6077,6 +6148,10 @@ static int StreamQueue(StreamTracker *st, Packet *p, TcpDataBlock *tdb,
 
                 addthis = 0;
                 done = 1;
+
+                if ( tcpssn->lwssn->handler[SE_REXMIT] )
+                    Stream5CallHandler(p, tcpssn->lwssn->handler[SE_REXMIT]);
+
                 break;
             }
             else if (SEQ_EQ(right->seq, seq) &&
@@ -6111,7 +6186,7 @@ static int StreamQueue(StreamTracker *st, Packet *p, TcpDataBlock *tdb,
                                     "retrans, dropping old data at seq %d, size %d\n",
                                     right->seq, right->size););
                         right = right->next;
-                        Stream5SeglistDeleteNode(st, dump_me, 0);
+                        Stream5SeglistDeleteNode(st, dump_me);
                         break;
                     }
                     else
@@ -6244,7 +6319,7 @@ right_overlap_last:
                                 "Got full right overlap of old, dropping old\n"););
                     dump_me = right;
                     right = right->next;
-                    Stream5SeglistDeleteNode(st, dump_me, 0);
+                    Stream5SeglistDeleteNode(st, dump_me);
                     break;
             }
         }
@@ -6270,7 +6345,6 @@ right_overlap_last:
     return ret;
 }
 
-
 static void ProcessTcpStream(StreamTracker *rcv, TcpSession *tcpssn,
                              Packet *p, TcpDataBlock *tdb,
                              Stream5TcpPolicy *s5TcpPolicy)
@@ -6283,25 +6357,7 @@ static void ProcessTcpStream(StreamTracker *rcv, TcpSession *tcpssn,
         return;
 
 #ifdef HAVE_DAQ_ADDRESS_SPACE_ID
-    tcpssn->daq_flags = p->pkth->flags;
-    tcpssn->address_space_id = p->pkth->address_space_id;
-    if (tcpssn->daq_flags & DAQ_PKT_FLAG_NOT_FORWARDING)
-    {
-        tcpssn->ingress_index = p->pkth->ingress_index;
-        tcpssn->ingress_group = p->pkth->ingress_group;
-        tcpssn->egress_index = DAQ_PKTHDR_UNKNOWN;
-        tcpssn->egress_group = DAQ_PKTHDR_UNKNOWN;
-    }
-    else if (p->packet_flags & PKT_FROM_CLIENT)
-    {
-        tcpssn->ingress_index = p->pkth->ingress_index;
-        tcpssn->ingress_group = p->pkth->ingress_group;
-    }
-    else
-    {
-        tcpssn->egress_index = p->pkth->ingress_index;
-        tcpssn->egress_group = p->pkth->ingress_group;
-    }
+    SetPacketHeaderFoo(tcpssn, p);
 #endif
 
     if ((s5TcpPolicy->flags & STREAM5_CONFIG_NO_ASYNC_REASSEMBLY) &&
@@ -8911,7 +8967,7 @@ int CheckFlushPolicyOnAck(
                 /* Base sequence for next window'd flush is the end
                  * of the first packet. */
                 talker->seglist_base_seq = talker->seglist->seq + talker->seglist->size;
-                Stream5SeglistDeleteNode(talker, talker->seglist, 0);
+                Stream5SeglistDeleteNode(talker, talker->seglist);
 
                 STREAM5_DEBUG_WRAP(DebugMessage(DEBUG_STREAM_STATE,
                             "setting talker->seglist_base_seq to 0x%X\n",
@@ -8937,7 +8993,7 @@ int CheckFlushPolicyOnAck(
 
                 talker->seglist_base_seq = talker->seglist->seq + talker->seglist->size;
                 /* TODO: Delete up to the consumed bytes */
-                Stream5SeglistDeleteNode(talker, talker->seglist, 0);
+                Stream5SeglistDeleteNode(talker, talker->seglist);
 
                 STREAM5_DEBUG_WRAP(DebugMessage(DEBUG_STREAM_STATE,
                             "setting talker->seglist_base_seq to 0x%X\n",
@@ -9034,32 +9090,10 @@ static void Stream5SeglistAddNode(StreamTracker *st, StreamSegment *prev,
 #endif
 }
 
-static int Stream5SeglistDeleteNode(
-    StreamTracker *st, StreamSegment *seg, uint32_t flush_seq)
+static int Stream5SeglistDeleteNode (StreamTracker* st, StreamSegment* seg)
 {
     int ret;
-
-    if(st == NULL || seg == NULL)
-        return 0;
-
-    if ( s5_paf_active(&st->paf_state) &&
-         flush_seq && ((seg->seq + seg->size) > flush_seq) )
-    {
-        uint32_t delta = seg->seq + seg->size - flush_seq;
-
-        if ( delta < seg->size )
-        {
-            STREAM5_DEBUG_WRAP( DebugMessage(DEBUG_STREAM_STATE,
-                "Left-Trimming segment at seq %X, len %d, delta %u\n",
-                seg->seq, seg->size, delta););
-
-            seg->seq = flush_seq;
-            seg->size -= (uint16_t)delta;
-
-            st->seg_bytes_logical -= delta;
-            return 0;
-        }
-    }
+    assert(st && seg);
 
     STREAM5_DEBUG_WRAP( DebugMessage(DEBUG_STREAM_STATE,
                     "Dropping segment at seq %X, len %d\n",
@@ -9093,6 +9127,32 @@ static int Stream5SeglistDeleteNode(
     st->seg_count--;
 
     return ret;
+}
+
+static int Stream5SeglistDeleteNodeTrim (
+    StreamTracker* st, StreamSegment* seg, uint32_t flush_seq)
+{
+    assert(st && seg);
+
+    if ( s5_paf_active(&st->paf_state) &&
+        ((seg->seq + seg->size) > flush_seq) )
+    {
+        uint32_t delta = flush_seq - seg->seq;
+
+        if ( delta < seg->size )
+        {
+            STREAM5_DEBUG_WRAP( DebugMessage(DEBUG_STREAM_STATE,
+                "Left-Trimming segment at seq %X, len %d, delta %u\n",
+                seg->seq, seg->size, delta););
+
+            seg->seq = flush_seq;
+            seg->size -= (uint16_t)delta;
+
+            st->seg_bytes_logical -= delta;
+            return 0;
+        }
+    }
+    return Stream5SeglistDeleteNode(st, seg);
 }
 
 void TcpUpdateDirection(Stream5LWSession *ssn, char dir,
@@ -9129,19 +9189,9 @@ void TcpUpdateDirection(Stream5LWSession *ssn, char dir,
     tcpssn->tcp_client_port = tcpssn->tcp_server_port;
     tcpssn->tcp_server_ip = tmpIp;
     tcpssn->tcp_server_port = tmpPort;
-#ifdef HAVE_DAQ_ADDRESS_SPACE_ID
-    if (tcpssn->egress_index != DAQ_PKTHDR_UNKNOWN)
-    {
-        int32_t ingress_index;
-        int32_t ingress_group;
 
-        ingress_index = tcpssn->ingress_index;
-        ingress_group = tcpssn->ingress_group;
-        tcpssn->ingress_index = tcpssn->egress_index;
-        tcpssn->ingress_group = tcpssn->egress_group;
-        tcpssn->egress_index = ingress_index;
-        tcpssn->egress_group = ingress_group;
-    }
+#ifdef HAVE_DAQ_ADDRESS_SPACE_ID
+    SwapPacketHeaderFoo(tcpssn);
 #endif
     memcpy(&tmpTracker, &tcpssn->client, sizeof(StreamTracker));
     memcpy(&tcpssn->client, &tcpssn->server, sizeof(StreamTracker));

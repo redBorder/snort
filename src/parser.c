@@ -8059,8 +8059,8 @@ void ConfigPacketCount(SnortConfig *sc, char *args)
 
     if ( count > 0 )
     {
-        LogMessage("Exiting after " STDu64 " packets\n", sc->pkt_cnt);
         sc->pkt_cnt = count;
+        LogMessage("Exiting after " STDu64 " packets\n", sc->pkt_cnt);
         return;
     }
 #ifdef REG_TEST
@@ -8450,6 +8450,7 @@ void ConfigPPM(SnortConfig *sc, char *args)
 
             ruleOpts++;
         }
+#ifdef DEBUG
         else if (strcasecmp(opts[0], PPM_OPT__DEBUG_PKTS) == 0)
         {
             if (num_opts != 1)
@@ -8467,6 +8468,7 @@ void ConfigPPM(SnortConfig *sc, char *args)
                 ParseError("config ppm: too many arguments for '%s'.", opts[0]);
             ppm_set_debug_rules(1);
         }
+#endif
 #endif
         else
         {
@@ -9329,9 +9331,10 @@ static void ParseRule(SnortConfig *sc, SnortPolicy *p, char *args,
         if (otn->ds_list[PLUGIN_PATTERN_MATCH_URI] != NULL)
         {
             PatternMatchData *pmd = otn->ds_list[PLUGIN_PATTERN_MATCH_URI];
+
             for (; pmd != NULL; pmd = pmd->next)
             {
-                if((pmd->uri_buffer) && IsHttpBufFpEligible(pmd->uri_buffer))
+                if ( IsHttpBufFpEligible(pmd->http_buffer) )
                 {
                     pe.uricontent = 1;
                     break;

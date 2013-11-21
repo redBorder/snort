@@ -51,7 +51,7 @@ int StreamExpectAddChannel(snort_ip_p cliIP, uint16_t cliPort,
 int StreamExpectIsExpected(Packet *p, SFXHASH_NODE **expected_hash_node);
 char StreamExpectProcessNode(Packet *p, Stream5LWSession* lws, SFXHASH_NODE *expected_hash_node);
 char StreamExpectCheck(Packet *, Stream5LWSession *);
-void StreamExpectInit(void);
+void StreamExpectInit(uint32_t maxExpectations);
 void StreamExpectCleanup(void);
 
 #endif /* STREAM_EXPECT_H_ */

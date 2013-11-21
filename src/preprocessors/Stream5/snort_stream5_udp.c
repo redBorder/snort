@@ -190,9 +190,7 @@ void Stream5UdpPolicyInit(Stream5UdpConfig *config, char *args)
     Stream5PrintUdpConfig(s5UdpPolicy);
 
 #ifdef REG_TEST
-    LogMessage("\n");
     LogMessage("    UDP Session Size: %lu\n",sizeof(UdpSession));
-    LogMessage("\n");
 #endif
 }
 
@@ -604,11 +602,6 @@ static int ProcessUdp(Stream5LWSession *lwssn, Packet *p,
     char ignore;
     UdpSession *udpssn = NULL;
 
-    DEBUG_WRAP(
-            char *t = NULL;
-            char *l = NULL;
-            );
-
     if (lwssn->protocol != IPPROTO_UDP)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_STREAM_STATE,
@@ -698,10 +691,6 @@ static int ProcessUdp(Stream5LWSession *lwssn, Packet *p,
 #ifdef ACTIVE_RESPONSE
         SetTTL(lwssn, p, 0);
 #endif
-
-        DEBUG_WRAP(
-                t = "Responder";
-                l = "Sender");
     }
     else
     {
@@ -712,10 +701,6 @@ static int ProcessUdp(Stream5LWSession *lwssn, Packet *p,
 #ifdef ACTIVE_RESPONSE
         SetTTL(lwssn, p, 1);
 #endif
-
-        DEBUG_WRAP(
-                t = "Sender";
-                l = "Responder");
     }
 
     if (!(lwssn->ha_state.session_flags & SSNFLAG_ESTABLISHED))

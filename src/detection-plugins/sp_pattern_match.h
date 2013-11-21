@@ -22,30 +22,19 @@
 #ifndef __SP_PATTERN_MATCH_H__
 #define __SP_PATTERN_MATCH_H__
 
+#include <ctype.h>
+
 #include "snort.h"
 #include "snort_debug.h"
 #include "rules.h" /* needed for OptTreeNode defintion */
 #include "treenodes.h"
-#include <ctype.h>
+#include "detection_util.h"
 
 /********************************************************************
  * Macros
  ********************************************************************/
 #define CHECK_AND_PATTERN_MATCH 1
 #define CHECK_URI_PATTERN_MATCH 2
-
-#define HTTP_SEARCH_URI 0x01
-#define HTTP_SEARCH_RAW_URI 0x02
-#define HTTP_SEARCH_HEADER 0x04
-#define HTTP_SEARCH_RAW_HEADER 0x08
-#define HTTP_SEARCH_CLIENT_BODY 0x10
-#define HTTP_SEARCH_METHOD 0x20
-#define HTTP_SEARCH_COOKIE 0x40
-#define HTTP_SEARCH_RAW_COOKIE 0x80
-#define HTTP_SEARCH_STAT_CODE 0x100
-#define HTTP_SEARCH_STAT_MSG 0x200
-/*Only these Http buffers are eligible for fast pattern match */
-#define FAST_PATTERN_HTTP_BUFS ( HTTP_SEARCH_URI | HTTP_SEARCH_HEADER | HTTP_SEARCH_CLIENT_BODY )
 
 /********************************************************************
  * Data structures
@@ -70,7 +59,7 @@ typedef struct _PatternMatchData
 
     int nocase;             /* Toggle case insensitity */
     int use_doe;            /* Use the doe_ptr for relative pattern searching */
-    int uri_buffer;         /* Index of the URI buffer */
+    HTTP_BUFFER http_buffer;/* Index of the URI buffer */
     int buffer_func;        /* buffer function CheckAND or CheckUri */
     u_int pattern_size;     /* size of app layer pattern */
     u_int replace_size;     /* size of app layer replace pattern */
@@ -135,9 +124,18 @@ int PatternMatchAdjustRelativeOffsets(PatternMatchData *orig_pmd, PatternMatchDa
 int CheckORPatternMatch(Packet *, OptTreeNode *, OptFpList *);
 #endif
 
-static inline int IsHttpBufFpEligible(int uri_buffer)
+static inline bool IsHttpBufFpEligible (HTTP_BUFFER http_buffer)
 {
-    return uri_buffer & FAST_PATTERN_HTTP_BUFS;
+    switch ( http_buffer )
+    {
+    case HTTP_BUFFER_URI:
+    case HTTP_BUFFER_HEADER:
+    case HTTP_BUFFER_CLIENT_BODY:
+        return true;
+    default:
+        break;
+    }
+    return false;
 }
 
 static inline PatternMatchData * RemovePmdFromList(PatternMatchData *pmd)

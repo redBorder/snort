@@ -21,6 +21,7 @@
 #include "config.h"
 #endif
 
+#include <assert.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -411,15 +412,14 @@ static void ProcessSDF(void *p, void *context)
     PROFILE_VARS;
 
     /* Check if we should be working on this packet */
-    if (( !packet ) ||                                      // No packet
-        ( !packet->payload ) ||                             // No data
-        ( !packet->payload_size ) ||                        // No data size
-        ( !IPH_IS_VALID(packet) ) ||                        // Invalid IP Header
-        ( !packet->tcp_header && !packet->udp_header) ||    // No TCP/UDP Header
-        ( packet->flags & FLAG_STREAM_INSERT ))             // Waiting on stream reassembly
+    if ( packet->flags & FLAG_STREAM_INSERT )  // Waiting on stream reassembly
     {
         return;
     }
+
+    // preconditions - what we registered for
+    assert((IsUDP(packet) || IsTCP(packet)) &&
+        packet->payload && packet->payload_size);
 
     /* Retrieve the corresponding config for this packet */
     policy_id = _dpd.getRuntimePolicy();
@@ -477,20 +477,21 @@ static void ProcessSDF(void *p, void *context)
      * headers. */
     if (packet->flags & FLAG_HTTP_DECODE)
     {
-        if (_dpd.uriBuffers[HTTP_BUFFER_URI]->uriLength > 0)
-        {
-            begin = (char *) _dpd.uriBuffers[HTTP_BUFFER_URI]->uriBuffer;
-            buflen = _dpd.uriBuffers[HTTP_BUFFER_URI]->uriLength;
-            end = begin + buflen;
+        unsigned len;
+        begin = (char*)_dpd.getHttpBuffer(HTTP_BUFFER_URI, &len);
 
+        if ( begin )
+        {
+            buflen = (uint16_t)len;
+            end = begin + buflen;
             SDFSearch(config, packet, session, begin, end, buflen);
         }
-        if (_dpd.uriBuffers[HTTP_BUFFER_CLIENT_BODY]->uriLength > 0)
-        {
-            begin = (char *) _dpd.uriBuffers[HTTP_BUFFER_CLIENT_BODY]->uriBuffer;
-            buflen = _dpd.uriBuffers[HTTP_BUFFER_CLIENT_BODY]->uriLength;
-            end = begin + buflen;
+        begin = (char*)_dpd.getHttpBuffer(HTTP_BUFFER_CLIENT_BODY, &len);
 
+        if ( begin )
+        {
+            buflen = (uint16_t)len;
+            end = begin + buflen;
             SDFSearch(config, packet, session, begin, end, buflen);
         }
     }

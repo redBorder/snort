@@ -101,28 +101,6 @@ extern uint32_t *netmasks;
 
 /* Data types *****************************************************************/
 
-/* Self preservation memory control struct */
-typedef struct _SPMemControl
-{
-    unsigned long memcap;
-    unsigned long mem_usage;
-    void *control;
-    int (*sp_func)(struct _SPMemControl *);
-
-    unsigned long fault_count;
-
-} SPMemControl;
-
-typedef struct _PcapPktStats
-{
-    uint64_t recv;
-    uint64_t drop;
-    uint32_t wrap_recv;
-    uint32_t wrap_drop;
-
-} PcapPktStats;
-
-
 typedef struct _IntervalStats
 {
     uint64_t recv, recv_total;
@@ -181,14 +159,11 @@ typedef struct _IntervalStats
 /* Public function prototypes *************************************************/
 void StoreSnortInfoStrings(void);
 int DisplayBanner(void);
-void GetTime(char *);
 int gmt2local(time_t);
 void ts_print(register const struct timeval *, char *);
 char *copy_argv(char **);
 void strip(char *);
 double CalcPct(uint64_t, uint64_t);
-void ReadPacketsFromFile(void);
-void InitBinFrag(void);
 void GoDaemon(void);
 void SignalWaitingParent(void);
 void CheckLogDir(void);
@@ -200,7 +175,6 @@ void SetUidGid(int, int);
 void InitGroups(int, int);
 void SetChroot(char *, char **);
 void DropStats(int);
-void *SPAlloc(unsigned long, struct _SPMemControl *);
 void TimeStart(void);
 void TimeStop(void);
 
@@ -234,7 +208,6 @@ const char *SnortStrcasestr(const char *s, int slen, const char *substr);
 int CheckValueInRange(const char *value_str, char *option,
         unsigned long lo, unsigned long hi, unsigned long *value);
 
-void *SnortAlloc(unsigned long);
 void *SnortAlloc2(size_t, const char *, ...);
 char *CurrentWorkingDir(void);
 char *GetAbsolutePath(char *dir);
@@ -242,8 +215,6 @@ char *StripPrefixDir(char *prefix, char *dir);
 void PrintPacketData(const uint8_t *, const uint32_t);
 
 char * ObfuscateIpToText(sfip_t *);
-
-void TimeStats(void);
 
 #ifndef WIN32
 SF_LIST * SortDirectory(const char *);
@@ -261,6 +232,18 @@ char *fasthex(const u_char *, int);
 long int xatol(const char *, const char *);
 unsigned long int xatou(const char *, const char *);
 unsigned long int xatoup(const char *, const char *); // return > 0
+
+static inline void* SnortAlloc (unsigned long size)
+{
+    void* pv = calloc(size, sizeof(char));
+
+    if ( pv )
+        return pv;
+
+    FatalError("Unable to allocate memory!  (%lu requested)\n", size);
+
+    return NULL;
+}
 
 static inline long SnortStrtol(const char *nptr, char **endptr, int base)
 {

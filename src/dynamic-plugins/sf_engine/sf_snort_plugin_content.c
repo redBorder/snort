@@ -179,6 +179,7 @@ static int contentMatchInternal(void *p, ContentInfo* content, const uint8_t **c
     const uint8_t *start_ptr;
     const uint8_t *end_ptr;
     SFSnortPacket *sp = (SFSnortPacket *)p;
+    unsigned hb_type;
 
     /* This content is only used for fast pattern matching and
      * should not be evaluated */
@@ -191,67 +192,16 @@ static int contentMatchInternal(void *p, ContentInfo* content, const uint8_t **c
     if (content->depth_location)
         content->depth = *content->depth_location;
 
-    if (content->flags & URI_CONTENT_BUFS)
+    if ( (hb_type = HTTP_CONTENT(content->flags)) )
     {
-        int i;
+        unsigned len;
+        const uint8_t* buf = _ded.getHttpBuffer(hb_type, &len);
 
-        for (i=0; i<sp->num_uris; i++)
+        if ( buf )
         {
-            switch (i)
-            {
-                case HTTP_BUFFER_URI:
-                    if (!(content->flags & CONTENT_BUF_URI))
-                        continue; /* Go to next, not looking at URI buffer */
-                    break;
-                case HTTP_BUFFER_HEADER:
-                    if (!(content->flags & CONTENT_BUF_HEADER))
-                        continue; /* Go to next, not looking at HEADER buffer */
-                    break;
-                case HTTP_BUFFER_CLIENT_BODY:
-                    if (!(content->flags & CONTENT_BUF_POST))
-                        continue; /* Go to next, not looking at POST buffer */
-                    break;
-                case HTTP_BUFFER_METHOD:
-                    if (!(content->flags & CONTENT_BUF_METHOD))
-                        continue; /* Go to next, not looking at METHOD buffer */
-                    break;
-                case HTTP_BUFFER_COOKIE:
-                    if (!(content->flags & CONTENT_BUF_COOKIE))
-                        continue; /* Go to next, not looking at COOKIE buffer */
-                    break;
-                case HTTP_BUFFER_RAW_URI:
-                    if (!(content->flags & CONTENT_BUF_RAW_URI))
-                        continue; /* Go to next, not looking at RAW URI buffer */
-                    break;
-                case HTTP_BUFFER_RAW_HEADER:
-                    if (!(content->flags & CONTENT_BUF_RAW_HEADER))
-                        continue; /* Go to next, not looking at RAW HEADER buffer */
-                    break;
-                case HTTP_BUFFER_RAW_COOKIE:
-                    if (!(content->flags & CONTENT_BUF_RAW_COOKIE))
-                        continue; /* Go to next, not looking at RAW COOKIE buffer */
-                    break;
-                case HTTP_BUFFER_STAT_CODE:
-                    if (!(content->flags & CONTENT_BUF_STAT_CODE))
-                        continue; /* Go to next, not looking at STAT CODE buffer */
-                    break;
-                case HTTP_BUFFER_STAT_MSG:
-                    if (!(content->flags & CONTENT_BUF_STAT_MSG))
-                        continue; /* Go to next, not looking at STAT MSG buffer */
-                    break;
-                default:
-                    /* Uh, what buffer is this? */
-                    return CONTENT_TYPE_MISMATCH;
-            }
-
-            if (!_ded.uriBuffers[i]->uriBuffer || (_ded.uriBuffers[i]->uriLength == 0))
-                continue;
-
-            if (contentMatchCommon(content, _ded.uriBuffers[i]->uriBuffer,
-                        _ded.uriBuffers[i]->uriLength, cursor) == CONTENT_MATCH)
+            if (contentMatchCommon(content, buf, len, cursor) == CONTENT_MATCH)
                 return CONTENT_MATCH;
         }
-
         return CONTENT_NOMATCH;
     }
 
@@ -373,13 +323,13 @@ static int contentMatchCommon(ContentInfo* content,
     {
         if (content->flags & CONTENT_END_BUFFER)
         {
-            if (content->flags & URI_CONTENT_BUFS)
+            if ( HTTP_CONTENT(content->flags) )
                 _uri_buffer_end = q;
             else if ((content->flags & CONTENT_BUF_NORMALIZED)
-                    && _ded.Is_DetectFlag(SF_FLAG_ALT_DETECT))
+                    && _ded.Is_DetectFlag(SF_FLAG_ALT_DETECT) )
                 _alt_detect_end = q;
             else if ((content->flags & CONTENT_BUF_NORMALIZED)
-                    && _ded.Is_DetectFlag(SF_FLAG_ALT_DECODE))
+                    && _ded.Is_DetectFlag(SF_FLAG_ALT_DECODE) )
                 _alt_buffer_end = q;
             else
                 _buffer_end = q;

@@ -384,6 +384,14 @@ static void *ControlSocketProcessThread(void *arg)
                 DEBUG_WRAP( DebugMessage(DEBUG_CONTROL, "Control Socket %d: Processing message type - %u\n", t->socket_fd, hdr.type););
                 pthread_mutex_lock(&handler->mutex);
 
+                if (t->stop_processing)
+                {
+                    pthread_mutex_unlock(&handler->mutex);
+                    response.hdr.type = htons(CS_HEADER_SUCCESS);
+                    response.hdr.length = 0;
+                    SendResponse(t, &response, 0);
+                    goto next;
+                }
                 handler->handled = 0;
                 handler->new_context = NULL;
                 handler->old_context = NULL;
@@ -424,6 +432,16 @@ static void *ControlSocketProcessThread(void *arg)
 
                 if (handler->ibcontrol)
                 {
+                    if (t->stop_processing)
+                    {
+                        if (handler->oobpost)
+                            handler->oobpost(hdr.type, handler->new_context, t, ControlDataSend);
+                        pthread_mutex_unlock(&handler->mutex);
+                        response.hdr.type = htons(CS_HEADER_SUCCESS);
+                        response.hdr.length = 0;
+                        SendResponse(t, &response, 0);
+                        goto next;
+                    }
                     pthread_mutex_lock(&work_mutex);
                     if (work_queue_tail)
                         work_queue_tail->next = handler;
@@ -435,15 +453,48 @@ static void *ControlSocketProcessThread(void *arg)
                     DEBUG_WRAP( DebugMessage(DEBUG_CONTROL, "Control Socket %d: Waiting for ibcontrol\n", t->socket_fd););
                     while (!handler->handled && !t->stop_processing)
                         usleep(100000);
-                    if (handler->ib_rval || !handler->handled)
+                    if (handler->handled)
                     {
-                        if (handler->oobpost)
-                            handler->oobpost(hdr.type, handler->new_context, t, ControlDataSend);
-                        SendErrorResponse(t, failed);
+                        if (handler->ib_rval)
+                        {
+                            if (handler->oobpost)
+                                handler->oobpost(hdr.type, handler->new_context, t, ControlDataSend);
+                            pthread_mutex_unlock(&handler->mutex);
+                            SendErrorResponse(t, failed);
+                            DEBUG_WRAP( DebugMessage(DEBUG_CONTROL, "Control Socket %d: ibcontrol failed %d\n", t->socket_fd, handler->ib_rval););
+                            goto next;
+                        }
+                    }
+                    else
+                    {
+                        // The only way to get here is if stop_processing is set.
+                        // This happens during CleanExit which means that the swap will never happen.
+                        // If the entry is no longer on the work_queue, the swap already happened and we can continue normally.
+                        CSMessageHandler *iHandler;
+                        CSMessageHandler *prevHandler = NULL;
 
-                        pthread_mutex_unlock(&handler->mutex);
-                        DEBUG_WRAP( DebugMessage(DEBUG_CONTROL, "Control Socket %d: ibcontrol failed %d\n", t->socket_fd, handler->ib_rval););
-                        goto next;
+                        pthread_mutex_lock(&work_mutex);
+                        for (iHandler = work_queue; iHandler && iHandler != handler; iHandler = iHandler->next)
+                            prevHandler = iHandler;
+                        if (iHandler)
+                        {
+                            if (handler == work_queue_tail)
+                                work_queue_tail = prevHandler;
+                            if (prevHandler)
+                                prevHandler->next = handler->next;
+                            else
+                                work_queue = handler->next;
+                        }
+                        pthread_mutex_unlock(&work_mutex);
+                        if (iHandler)
+                        {
+                            if (handler->oobpost)
+                                handler->oobpost(hdr.type, handler->new_context, t, ControlDataSend);
+                            pthread_mutex_unlock(&handler->mutex);
+                            SendErrorResponse(t, failed);
+                            DEBUG_WRAP( DebugMessage(DEBUG_CONTROL, "Control Socket %d: ibcontrol failed %d\n", t->socket_fd, handler->ib_rval););
+                            goto next;
+                        }
                     }
                 }
                 if (handler->oobpost)
@@ -480,6 +531,7 @@ done:;
         free(data);
 
     close(fd);
+    DEBUG_WRAP( DebugMessage(DEBUG_CONTROL, "Control Socket %d: Closed socket\n", t->socket_fd););
     pthread_mutex_lock(&thread_mutex);
     for (it=&thread_list; *it; it=&(*it)->next)
     {
@@ -491,7 +543,6 @@ done:;
         }
     }
     pthread_mutex_unlock(&thread_mutex);
-    DEBUG_WRAP( DebugMessage(DEBUG_CONTROL, "Control Socket %d: Closed socket\n", t->socket_fd););
     pthread_detach(tid);
     return NULL;
 }
@@ -499,6 +550,7 @@ done:;
 static void *ControlSocketThread(void *arg)
 {
     ThreadElement *t;
+    ThreadElement **it;
     fd_set rfds;
     int rval;
     struct timeval to;
@@ -543,16 +595,27 @@ static void *ControlSocketThread(void *arg)
                     goto bail;
                 }
                 t->socket_fd = socket;
-                if ((rval = pthread_create(&tid, NULL, &ControlSocketProcessThread, (void *)t)) != 0)
-                {
-                    close(socket);
-                    ErrorMessage("Control Socket: Unable to create a processing thread: %s", strerror(rval));
-                    goto bail;
-                }
                 pthread_mutex_lock(&thread_mutex);
                 t->next = thread_list;
                 thread_list = t;
                 pthread_mutex_unlock(&thread_mutex);
+                if ((rval = pthread_create(&tid, NULL, &ControlSocketProcessThread, (void *)t)) != 0)
+                {
+                    pthread_mutex_lock(&thread_mutex);
+                    for (it=&thread_list; *it; it=&(*it)->next)
+                    {
+                        if (t == *it)
+                        {
+                            *it = t->next;
+                            close(t->socket_fd);
+                            free(t);
+                            break;
+                        }
+                    }
+                    pthread_mutex_unlock(&thread_mutex);
+                    ErrorMessage("Control Socket: Unable to create a processing thread: %s", strerror(rval));
+                    goto bail;
+                }
             }
         }
         else if (rval < 0)
@@ -673,33 +736,30 @@ void ControlSocketCleanUp(void)
     {
         stop_processing = 1;
 
-        if ((rval=pthread_join(*p_thread_id, NULL)) != 0)
+        if ((rval = pthread_join(*p_thread_id, NULL)) != 0)
             WarningMessage("Thread termination returned an error: %s\n", strerror(rval));
+        p_thread_id = NULL;
     }
 
     if (config_unix_socket_fn[0])
+    {
         unlink(config_unix_socket_fn);
+        config_unix_socket_fn[0] = 0;
+    }
 
+    pthread_mutex_lock(&thread_mutex);
     for (t = thread_list; t; t = t->next)
         t->stop_processing = 1;
+    pthread_mutex_unlock(&thread_mutex);
 
-    rval = 50;
     do
     {
         pthread_mutex_lock(&thread_mutex);
         done = thread_list ? 0:1;
         pthread_mutex_unlock(&thread_mutex);
         if (!done)
-        {
             usleep(100000);
-            rval--;
-        }
-    } while (!done && rval > 0);
-
-    pthread_mutex_lock(&thread_mutex);
-    if (thread_list)
-        WarningMessage("%s\n", "Not all control socket threads terminated");
-    pthread_mutex_unlock(&thread_mutex);
+    } while (!done);
 
     pthread_mutex_lock(&work_mutex);
     if (work_queue)

@@ -49,6 +49,7 @@
 **  - 2.11.03:  Initial Development.  DJR
 **  - 2.4.05:   Added tab_uri_delimiter config option.  AJM.
 */
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
@@ -3272,19 +3273,6 @@ static inline int SetSiInput(HI_SI_INPUT *SiInput, Packet *p)
 
 }
 
-static inline void InitUriBufs( void )
-{
-    int i;
-    /*UriBufs[HTTP_BUFFER_URI].decode_flags = 0;*/
-    for (i = HTTP_BUFFER_URI ; i <= HTTP_BUFFER_STAT_MSG ; i++)
-    {
-        UriBufs[i].uri = NULL;
-        UriBufs[i].length = 0;
-        UriBufs[i].encode_type = 0;
-    }
-
-}
-
 static inline void ApplyClientFlowDepth (Packet* p, int flow_depth)
 {
     switch (flow_depth)
@@ -3568,8 +3556,7 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
         **  URI, so we make sure here that this can't happen.
         */
         SetHttpDecode(0);
-        p->uri_count = 0;
-        InitUriBufs();
+        ClearHttpBuffers();
 
         iRet = hi_mi_mode_inspection(Session, iInspectMode, p, hsd);
         if (iRet)
@@ -3603,60 +3590,78 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
         **  Let's setup the pointers for the detection engine, and
         **  then go for it.
         */
-        if(iInspectMode == HI_SI_CLIENT_MODE)
+        if ( iInspectMode == HI_SI_CLIENT_MODE )
         {
-            p->uri_count = 0;
+            const HttpBuffer* hb;
+            ClearHttpBuffers();  // FIXTHIS needed here and right above??
 
-            if(Session->client.request.uri_norm)
+            if ( Session->client.request.uri_norm )
             {
-                UriBufs[HTTP_BUFFER_URI].uri    = Session->client.request.uri_norm;
-                UriBufs[HTTP_BUFFER_URI].length = Session->client.request.uri_norm_size;
-                UriBufs[HTTP_BUFFER_URI].encode_type = Session->client.request.uri_encode_type;
-                UriBufs[HTTP_BUFFER_RAW_URI].uri = Session->client.request.uri;
-                UriBufs[HTTP_BUFFER_RAW_URI].length = Session->client.request.uri_size;
+                SetHttpBufferEncoding(
+                    HTTP_BUFFER_URI, 
+                    Session->client.request.uri_norm,
+                    Session->client.request.uri_norm_size,
+                    Session->client.request.uri_encode_type);
+
+                SetHttpBuffer(
+                    HTTP_BUFFER_RAW_URI,
+                    Session->client.request.uri,
+                    Session->client.request.uri_size);
+
                 p->packet_flags |= PKT_HTTP_DECODE;
-                p->uri_count = HTTP_BUFFER_RAW_URI + 1;
-
             }
-            else if(Session->client.request.uri)
+            else if ( Session->client.request.uri )
             {
-                UriBufs[HTTP_BUFFER_URI].uri    = Session->client.request.uri;
-                UriBufs[HTTP_BUFFER_URI].length = Session->client.request.uri_size;
-                UriBufs[HTTP_BUFFER_URI].encode_type = Session->client.request.uri_encode_type;
-                UriBufs[HTTP_BUFFER_RAW_URI].uri = Session->client.request.uri;
-                UriBufs[HTTP_BUFFER_RAW_URI].length = Session->client.request.uri_size;
+                SetHttpBufferEncoding(
+                    HTTP_BUFFER_URI,
+                    Session->client.request.uri,
+                    Session->client.request.uri_size,
+                    Session->client.request.uri_encode_type);
+
+                SetHttpBuffer(
+                    HTTP_BUFFER_RAW_URI,
+                    Session->client.request.uri,
+                    Session->client.request.uri_size);
+
                 p->packet_flags |= PKT_HTTP_DECODE;
-                p->uri_count = HTTP_BUFFER_RAW_URI + 1;
             }
 
-            /* p->uri_count should be set by now, either by the client body post method,
-             * or its else case above. */
-
-            if (Session->client.request.header_norm || Session->client.request.header_raw)
+            if ( Session->client.request.header_norm || 
+                 Session->client.request.header_raw )
             {
-                /* If we get here, uri_count should be 1 */
-                if(Session->client.request.header_norm)
+                if ( Session->client.request.header_norm )
                 {
-                    UriBufs[HTTP_BUFFER_HEADER].uri    = Session->client.request.header_norm;
-                    UriBufs[HTTP_BUFFER_HEADER].length = Session->client.request.header_norm_size;
-                    UriBufs[HTTP_BUFFER_HEADER].encode_type = Session->client.request.header_encode_type;
-                    UriBufs[HTTP_BUFFER_RAW_HEADER].uri    = Session->client.request.header_raw;
-                    UriBufs[HTTP_BUFFER_RAW_HEADER].length = Session->client.request.header_raw_size;
+                    SetHttpBufferEncoding(
+                        HTTP_BUFFER_HEADER,
+                        Session->client.request.header_norm,
+                        Session->client.request.header_norm_size,
+                        Session->client.request.header_encode_type);
+
+                    SetHttpBuffer(
+                        HTTP_BUFFER_RAW_HEADER,
+                        Session->client.request.header_raw,
+                        Session->client.request.header_raw_size);
+
                     p->packet_flags |= PKT_HTTP_DECODE;
+#ifdef DEBUG
+                    hi_stats.req_header_len += Session->client.request.header_norm_size;
+#endif
                 }
                 else
                 {
-                    UriBufs[HTTP_BUFFER_HEADER].uri    = Session->client.request.header_raw;
-                    UriBufs[HTTP_BUFFER_HEADER].length = Session->client.request.header_raw_size;
-                    UriBufs[HTTP_BUFFER_HEADER].encode_type = Session->client.request.header_encode_type;
-                    UriBufs[HTTP_BUFFER_RAW_HEADER].uri    = Session->client.request.header_raw;
-                    UriBufs[HTTP_BUFFER_RAW_HEADER].length = Session->client.request.header_raw_size;
+                    SetHttpBufferEncoding(
+                        HTTP_BUFFER_HEADER,
+                        Session->client.request.header_raw,
+                        Session->client.request.header_raw_size,
+                        Session->client.request.header_encode_type);
+
+                    SetHttpBuffer(
+                        HTTP_BUFFER_RAW_HEADER,
+                        Session->client.request.header_raw,
+                        Session->client.request.header_raw_size);
+
                     p->packet_flags |= PKT_HTTP_DECODE;
                 }
-#ifdef DEBUG
-                hi_stats.req_header_len += UriBufs[HTTP_BUFFER_HEADER].length;
-#endif
-                p->uri_count = HTTP_BUFFER_RAW_HEADER + 1;
             }
 
             if(Session->client.request.method & (HI_POST_METHOD | HI_GET_METHOD))
@@ -3709,15 +3714,13 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                         {
                             Session->client.request.post_raw_size = Session->server_conf->post_depth;
                         }
-                        UriBufs[HTTP_BUFFER_CLIENT_BODY].uri =
-                                Session->client.request.post_raw;
-                        UriBufs[HTTP_BUFFER_CLIENT_BODY].length =
-                                Session->client.request.post_raw_size;
-                        UriBufs[HTTP_BUFFER_CLIENT_BODY].encode_type =
-                                Session->client.request.post_encode_type;
+                        SetHttpBufferEncoding(
+                            HTTP_BUFFER_CLIENT_BODY,
+                            Session->client.request.post_raw,
+                            Session->client.request.post_raw_size,
+                            Session->client.request.post_encode_type);
 
                         p->packet_flags |= PKT_HTTP_DECODE;
-                        p->uri_count = HTTP_BUFFER_CLIENT_BODY + 1;
                     }
 
                 }
@@ -3735,62 +3738,72 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                 }
             }
 
-            if (Session->client.request.method_raw)
+            if ( Session->client.request.method_raw )
             {
-                UriBufs[HTTP_BUFFER_METHOD].uri = Session->client.request.method_raw;
-                UriBufs[HTTP_BUFFER_METHOD].length = Session->client.request.method_size;
+                SetHttpBuffer(
+                    HTTP_BUFFER_METHOD,
+                    Session->client.request.method_raw,
+                    Session->client.request.method_size);
+
                 p->packet_flags |= PKT_HTTP_DECODE;
-                p->uri_count = HTTP_BUFFER_METHOD + 1;
             }
 
-
-            if (Session->client.request.cookie_norm || Session->client.request.cookie.cookie)
+            if ( Session->client.request.cookie_norm || 
+                 Session->client.request.cookie.cookie )
             {
-
-                /* If we get here, uri_count should be 4 */
-                if(Session->client.request.cookie_norm)
+                if ( Session->client.request.cookie_norm )
                 {
-                    UriBufs[HTTP_BUFFER_COOKIE].uri    = Session->client.request.cookie_norm;
-                    UriBufs[HTTP_BUFFER_COOKIE].length = Session->client.request.cookie_norm_size;
-                    UriBufs[HTTP_BUFFER_COOKIE].encode_type = Session->client.request.cookie_encode_type;
-                    UriBufs[HTTP_BUFFER_RAW_COOKIE].uri = Session->client.request.cookie.cookie;
-                    UriBufs[HTTP_BUFFER_RAW_COOKIE].length =
-                        Session->client.request.cookie.cookie_end - Session->client.request.cookie.cookie;
+                    SetHttpBufferEncoding(
+                        HTTP_BUFFER_COOKIE,
+                        Session->client.request.cookie_norm,
+                        Session->client.request.cookie_norm_size,
+                        Session->client.request.cookie_encode_type);
+
+                    SetHttpBuffer(
+                        HTTP_BUFFER_RAW_COOKIE,
+                        Session->client.request.cookie.cookie,
+                        Session->client.request.cookie.cookie_end - 
+                            Session->client.request.cookie.cookie);
+
                     p->packet_flags |= PKT_HTTP_DECODE;
                 }
                 else
                 {
-                    UriBufs[HTTP_BUFFER_COOKIE].uri    = Session->client.request.cookie.cookie;
-                    UriBufs[HTTP_BUFFER_COOKIE].length =
-                        Session->client.request.cookie.cookie_end - Session->client.request.cookie.cookie;
-                    UriBufs[HTTP_BUFFER_COOKIE].encode_type = Session->client.request.cookie_encode_type;
-                    UriBufs[HTTP_BUFFER_RAW_COOKIE].uri = Session->client.request.cookie.cookie;
-                    UriBufs[HTTP_BUFFER_RAW_COOKIE].length =
-                        Session->client.request.cookie.cookie_end - Session->client.request.cookie.cookie;
+                    SetHttpBufferEncoding(
+                        HTTP_BUFFER_COOKIE,
+                        Session->client.request.cookie.cookie,
+                        Session->client.request.cookie.cookie_end - 
+                            Session->client.request.cookie.cookie,
+                        Session->client.request.cookie_encode_type);
+
+                    SetHttpBuffer(
+                        HTTP_BUFFER_RAW_COOKIE,
+                        Session->client.request.cookie.cookie,
+                        Session->client.request.cookie.cookie_end - 
+                            Session->client.request.cookie.cookie);
+
                     p->packet_flags |= PKT_HTTP_DECODE;
                 }
-#ifdef DEBUG
-                hi_stats.req_cookie_len += UriBufs[HTTP_BUFFER_COOKIE].length;
-#endif
-                p->uri_count = HTTP_BUFFER_RAW_COOKIE + 1;
             }
-            else if(!Session->server_conf->enable_cookie && UriBufs[HTTP_BUFFER_HEADER].uri)
+            else if ( !Session->server_conf->enable_cookie && 
+                (hb = GetHttpBuffer(HTTP_BUFFER_HEADER)) )
             {
-                UriBufs[HTTP_BUFFER_COOKIE].uri  = UriBufs[HTTP_BUFFER_HEADER].uri;
-                UriBufs[HTTP_BUFFER_COOKIE].length = UriBufs[HTTP_BUFFER_HEADER].length;
-                UriBufs[HTTP_BUFFER_COOKIE].encode_type = UriBufs[HTTP_BUFFER_HEADER].encode_type;
-                UriBufs[HTTP_BUFFER_RAW_COOKIE].uri = UriBufs[HTTP_BUFFER_RAW_HEADER].uri;
-                UriBufs[HTTP_BUFFER_RAW_COOKIE].length = UriBufs[HTTP_BUFFER_RAW_HEADER].length;
-                p->packet_flags |= PKT_HTTP_DECODE;
+                SetHttpBufferEncoding(
+                    HTTP_BUFFER_COOKIE, hb->buf, hb->length, hb->encode_type);
 
-                p->uri_count = HTTP_BUFFER_RAW_COOKIE + 1;
+                hb = GetHttpBuffer(HTTP_BUFFER_RAW_HEADER);
+                assert(hb);
+
+                SetHttpBuffer(HTTP_BUFFER_RAW_COOKIE, hb->buf, hb->length);
+
+                p->packet_flags |= PKT_HTTP_DECODE;
             }
 
-            if(IsLimitedDetect(p))
+            if ( IsLimitedDetect(p) )
             {
                 ApplyClientFlowDepth(p, Session->server_conf->client_flow_depth);
 
-                if( (p->uri_count == 0) && (p->alt_dsize == 0)  )
+                if( !GetHttpBufferMask() && (p->alt_dsize == 0)  )
                 {
                     DisableDetect(p);
                     SetAllPreprocBits(p);
@@ -3801,15 +3814,16 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
         }
         else   /* Server mode */
         {
+            const HttpBuffer* hb;
+
             /*
             **  We check here to see whether this was a server response
             **  header or not.  If the header size is 0 then, we know that this
             **  is not the header and don't do any detection.
             */
-            if(!(Session->server_conf->inspect_response) &&
-                    IsLimitedDetect(p) && !p->alt_dsize)
+            if( !(Session->server_conf->inspect_response) &&
+                IsLimitedDetect(p) && !p->alt_dsize )
             {
-
                 DisableDetect(p);
 
                 SetAllPreprocBits(p);
@@ -3819,88 +3833,96 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                 }
                 return 0;
             }
-            p->uri_count =  0;
+            ClearHttpBuffers();
 
-             if (Session->server.response.header_norm || Session->server.response.header_raw)
+             if ( Session->server.response.header_norm || 
+                  Session->server.response.header_raw )
              {
-                 if(Session->server.response.header_norm)
+                 if ( Session->server.response.header_norm )
                  {
-                     UriBufs[HTTP_BUFFER_HEADER].uri    = Session->server.response.header_norm;
-                     UriBufs[HTTP_BUFFER_HEADER].length = Session->server.response.header_norm_size;
-                     UriBufs[HTTP_BUFFER_HEADER].encode_type = Session->server.response.header_encode_type;
-                     UriBufs[HTTP_BUFFER_RAW_HEADER].uri    = Session->server.response.header_raw;
-                     UriBufs[HTTP_BUFFER_RAW_HEADER].length = Session->server.response.header_raw_size;
-                     UriBufs[HTTP_BUFFER_RAW_HEADER].encode_type = 0;
+                     SetHttpBufferEncoding(
+                         HTTP_BUFFER_HEADER,
+                         Session->server.response.header_norm,
+                         Session->server.response.header_norm_size,
+                         Session->server.response.header_encode_type);
+
+                     SetHttpBuffer(
+                         HTTP_BUFFER_RAW_HEADER,
+                         Session->server.response.header_raw,
+                         Session->server.response.header_raw_size);
                  }
                  else
                  {
-                     UriBufs[HTTP_BUFFER_HEADER].uri    = Session->server.response.header_raw;
-                     UriBufs[HTTP_BUFFER_HEADER].length = Session->server.response.header_raw_size;
-                     UriBufs[HTTP_BUFFER_HEADER].encode_type = 0;
-                     UriBufs[HTTP_BUFFER_RAW_HEADER].uri    = Session->server.response.header_raw;
-                     UriBufs[HTTP_BUFFER_RAW_HEADER].length = Session->server.response.header_raw_size;
-                     UriBufs[HTTP_BUFFER_RAW_HEADER].encode_type = 0;
-                 }
-                 p->uri_count = HTTP_BUFFER_RAW_HEADER + 1 ;
-#ifdef DEBUG
-                 hi_stats.resp_header_len += UriBufs[HTTP_BUFFER_HEADER].length;
-#endif
+                     SetHttpBuffer(
+                         HTTP_BUFFER_HEADER,
+                         Session->server.response.header_raw,
+                         Session->server.response.header_raw_size);
 
+                     SetHttpBuffer(
+                         HTTP_BUFFER_RAW_HEADER,
+                         Session->server.response.header_raw,
+                         Session->server.response.header_raw_size);
+                 }
              }
 
-             if (Session->server.response.cookie_norm || Session->server.response.cookie.cookie )
+             if ( Session->server.response.cookie_norm || 
+                  Session->server.response.cookie.cookie )
              {
                  if(Session->server.response.cookie_norm )
                  {
-                     UriBufs[HTTP_BUFFER_COOKIE].uri    = Session->server.response.cookie_norm;
-                     UriBufs[HTTP_BUFFER_COOKIE].length = Session->server.response.cookie_norm_size;
-                     UriBufs[HTTP_BUFFER_COOKIE].encode_type = Session->server.response.cookie_encode_type;
-                     UriBufs[HTTP_BUFFER_RAW_COOKIE].uri    = Session->server.response.cookie.cookie;
-                     UriBufs[HTTP_BUFFER_RAW_COOKIE].length =
-                         Session->server.response.cookie.cookie_end-Session->server.response.cookie.cookie;
-                     UriBufs[HTTP_BUFFER_RAW_COOKIE].encode_type = 0;
+                     SetHttpBufferEncoding(
+                         HTTP_BUFFER_COOKIE,
+                         Session->server.response.cookie_norm,
+                         Session->server.response.cookie_norm_size,
+                         Session->server.response.cookie_encode_type);
+
+                     SetHttpBuffer(
+                         HTTP_BUFFER_RAW_COOKIE,
+                         Session->server.response.cookie.cookie,
+                         Session->server.response.cookie.cookie_end -
+                             Session->server.response.cookie.cookie);
                  }
                  else
                  {
-                     UriBufs[HTTP_BUFFER_COOKIE].uri    = Session->server.response.cookie.cookie;
-                     UriBufs[HTTP_BUFFER_COOKIE].length    =
-                         Session->server.response.cookie.cookie_end - Session->server.response.cookie.cookie;
-                     UriBufs[HTTP_BUFFER_COOKIE].encode_type = 0;
-                     UriBufs[HTTP_BUFFER_RAW_COOKIE].uri    = Session->server.response.cookie.cookie;
-                     UriBufs[HTTP_BUFFER_RAW_COOKIE].length =
-                         Session->server.response.cookie.cookie_end-Session->server.response.cookie.cookie;
-                     UriBufs[HTTP_BUFFER_RAW_COOKIE].encode_type = 0;
+                     SetHttpBuffer(
+                         HTTP_BUFFER_COOKIE,
+                         Session->server.response.cookie.cookie,
+                         Session->server.response.cookie.cookie_end - 
+                             Session->server.response.cookie.cookie);
 
+                     SetHttpBuffer(
+                         HTTP_BUFFER_RAW_COOKIE,
+                         Session->server.response.cookie.cookie,
+                         Session->server.response.cookie.cookie_end -
+                             Session->server.response.cookie.cookie);
                  }
-                 p->uri_count = HTTP_BUFFER_RAW_COOKIE + 1 ;
-#ifdef DEBUG
-                 hi_stats.resp_cookie_len += UriBufs[HTTP_BUFFER_COOKIE].length;
-#endif
              }
-             else if(!Session->server_conf->enable_cookie && UriBufs[HTTP_BUFFER_HEADER].uri)
+             else if ( !Session->server_conf->enable_cookie && 
+                 (hb = GetHttpBuffer(HTTP_BUFFER_HEADER)) )
              {
-                 UriBufs[HTTP_BUFFER_COOKIE].uri  = UriBufs[HTTP_BUFFER_HEADER].uri;
-                 UriBufs[HTTP_BUFFER_COOKIE].length = UriBufs[HTTP_BUFFER_HEADER].length;
-                 UriBufs[HTTP_BUFFER_COOKIE].encode_type = UriBufs[HTTP_BUFFER_HEADER].encode_type;
-                 UriBufs[HTTP_BUFFER_RAW_COOKIE].uri = UriBufs[HTTP_BUFFER_RAW_HEADER].uri;
-                 UriBufs[HTTP_BUFFER_RAW_COOKIE].length = UriBufs[HTTP_BUFFER_RAW_HEADER].length;
-                 p->uri_count = HTTP_BUFFER_RAW_COOKIE + 1;
+                 SetHttpBufferEncoding(
+                     HTTP_BUFFER_COOKIE, hb->buf, hb->length, hb->encode_type);
+
+                 hb = GetHttpBuffer(HTTP_BUFFER_RAW_HEADER);
+                 assert(hb);
+
+                 SetHttpBuffer(HTTP_BUFFER_RAW_COOKIE, hb->buf, hb->length);
              }
 
              if(Session->server.response.status_code)
              {
-                 UriBufs[HTTP_BUFFER_STAT_CODE].uri    = Session->server.response.status_code;
-                 UriBufs[HTTP_BUFFER_STAT_CODE].length = Session->server.response.status_code_size;
-                 UriBufs[HTTP_BUFFER_STAT_CODE].encode_type = 0;
-                 p->uri_count = HTTP_BUFFER_STAT_CODE + 1;
+                 SetHttpBuffer(
+                     HTTP_BUFFER_STAT_CODE,
+                     Session->server.response.status_code,
+                     Session->server.response.status_code_size);
              }
 
              if(Session->server.response.status_msg)
              {
-                 UriBufs[HTTP_BUFFER_STAT_MSG].uri    = Session->server.response.status_msg;
-                 UriBufs[HTTP_BUFFER_STAT_MSG].length = Session->server.response.status_msg_size;
-                 UriBufs[HTTP_BUFFER_STAT_MSG].encode_type = 0;
-                 p->uri_count = HTTP_BUFFER_STAT_MSG + 1;
+                 SetHttpBuffer(
+                     HTTP_BUFFER_STAT_MSG,
+                     Session->server.response.status_msg,
+                     Session->server.response.status_msg_size);
              }
 
              if(Session->server.response.body_size > 0)
@@ -3931,7 +3953,7 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
              }
 
              if( IsLimitedDetect(p) &&
-                 (p->uri_count == 0) && (p->alt_dsize == 0)  )
+                 !GetHttpBufferMask() && (p->alt_dsize == 0)  )
              {
                  DisableDetect(p);
 

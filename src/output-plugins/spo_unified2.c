@@ -37,9 +37,6 @@
 #endif
 #include <errno.h>
 #include <time.h>
-#ifdef HAVE_UUID_UUID_H
-#include <uuid/uuid.h>
-#endif
 
 #include "sfutil/Unified2_common.h"
 #include "spo_unified2.h"
@@ -723,15 +720,6 @@ static void _AlertIP6_v2(Packet *p, char *msg, Unified2Config *config, Event *ev
     }
 
     Unified2Write(write_pkt_buffer_v2, write_len, config);
-}
-
-static inline void UUIDPack(uint8_t *policy_uuid, char *str, int size)
-{
-#ifdef HAVE_LIBUUID
-        uuid_parse(str, policy_uuid);
-#else
-        strncpy((char *)policy_uuid, str, size);
-#endif
 }
 
 void _WriteExtraData(Unified2Config *config, uint32_t event_id, uint32_t event_second, uint8_t *buffer, uint32_t len, uint32_t type )

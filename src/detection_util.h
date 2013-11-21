@@ -25,6 +25,8 @@
 #ifndef __DETECTION_UTIL_H__
 #define __DETECTION_UTIL_H__
 
+#include <assert.h>
+
 #include "sf_types.h"
 #include "decode.h"
 #include "detect.h"
@@ -37,18 +39,24 @@
 
 #define MAX_URI 8192
 
+// NOTE - if you change these, you must also change:
+// dynamic-plugins/sf_dynamic_common.h
+// dynamic-plugins/sf_dynamic_define.h
+// dynamic-plugins/sf_engine/sf_snort_plugin_api.h
+// detection-plugins/sp_pcre.h
 typedef enum
 {
+    HTTP_BUFFER_NONE,
     HTTP_BUFFER_URI,
-    HTTP_BUFFER_RAW_URI,
     HTTP_BUFFER_HEADER,
-    HTTP_BUFFER_RAW_HEADER,
     HTTP_BUFFER_CLIENT_BODY,
     HTTP_BUFFER_METHOD,
     HTTP_BUFFER_COOKIE,
-    HTTP_BUFFER_RAW_COOKIE,
     HTTP_BUFFER_STAT_CODE,
     HTTP_BUFFER_STAT_MSG,
+    HTTP_BUFFER_RAW_URI,
+    HTTP_BUFFER_RAW_HEADER,
+    HTTP_BUFFER_RAW_COOKIE,
     HTTP_BUFFER_MAX
 } HTTP_BUFFER;
 #endif
@@ -73,12 +81,12 @@ typedef enum {
 #define HTTP_ENCODE_TYPE__IIS_UNICODE    0x00000040
 #define HTTP_ENCODE_TYPE__ASCII          0x00000080
 
-typedef struct _HttpUri
+typedef struct
 {
-    const uint8_t *uri;
+    const uint8_t* buf;
     uint16_t length;
     uint32_t encode_type;
-} HttpUri;
+} HttpBuffer;
 
 typedef struct {
     uint8_t *data;
@@ -101,12 +109,48 @@ extern const uint8_t *doe_ptr;
 
 extern uint16_t detect_flags;
 
-extern HttpUri UriBufs[HTTP_BUFFER_MAX];
+extern uint32_t http_mask;
+extern HttpBuffer http_buffer[HTTP_BUFFER_MAX];
+const char* http_buffer_name[HTTP_BUFFER_MAX];
+
 extern DataPointer DetectBuffer;
 extern DataPointer file_data_ptr;
 extern DataBuffer DecodeBuffer;
 
-const char* uri_buffer_name[HTTP_BUFFER_MAX];
+static inline void ClearHttpBuffers (void)
+{
+    http_mask = 0;
+}
+
+static inline uint32_t GetHttpBufferMask (void)
+{
+    return http_mask;
+}
+
+static inline const HttpBuffer* GetHttpBuffer (HTTP_BUFFER b)
+{
+    if ( !((1 << b) & http_mask) )
+        return NULL;
+
+    return http_buffer + b;
+}
+
+static inline void SetHttpBufferEncoding (
+    HTTP_BUFFER b, const uint8_t* buf, unsigned len, uint32_t enc)
+{
+    HttpBuffer* hb = http_buffer + b;
+    assert(b < HTTP_BUFFER_MAX && buf);
+
+    hb->buf = buf;
+    hb->length = len;
+    hb->encode_type = enc;
+    http_mask |= (1 << b);
+}
+
+static inline void SetHttpBuffer (HTTP_BUFFER b, const uint8_t* buf, unsigned len)
+{
+    SetHttpBufferEncoding(b, buf, len, 0);
+}
 
 #define SetDetectLimit(pktPtr, altLen) \
 { \

@@ -217,7 +217,7 @@ int FTPBounce(void *option_data, Packet *p)
     const uint8_t *this_param = doe_ptr;
 
     int dsize;
-    const uint8_t *base_ptr, *end_ptr, *start_ptr;
+    const uint8_t *end_ptr, *start_ptr;
     PROFILE_VARS;
 
     if (!doe_ptr)
@@ -259,7 +259,6 @@ int FTPBounce(void *option_data, Packet *p)
 
     /* save off whatever our ending pointer is */
     end_ptr = start_ptr + dsize;
-    base_ptr = start_ptr;
 
     if(doe_ptr)
     {

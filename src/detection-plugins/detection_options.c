@@ -886,26 +886,8 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
 
         if (dup_content_option_data.buffer_func == CHECK_URI_PATTERN_MATCH)
         {
-            if (dup_content_option_data.uri_buffer & (1 << HTTP_BUFFER_STAT_MSG))
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_STAT_MSG].uri;
-            else if (dup_content_option_data.uri_buffer & (1 << HTTP_BUFFER_STAT_CODE))
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_STAT_CODE].uri;
-            else if (dup_content_option_data.uri_buffer & (1 << HTTP_BUFFER_RAW_COOKIE))
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_RAW_COOKIE].uri;
-            else if (dup_content_option_data.uri_buffer & (1 << HTTP_BUFFER_RAW_HEADER))
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_RAW_HEADER].uri;
-            else if (dup_content_option_data.uri_buffer & (1 << HTTP_BUFFER_RAW_URI))
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_RAW_URI].uri;
-            else if (dup_content_option_data.uri_buffer & (1 << HTTP_BUFFER_COOKIE))
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_COOKIE].uri;
-            else if (dup_content_option_data.uri_buffer & (1 << HTTP_BUFFER_METHOD))
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_METHOD].uri;
-            else if (dup_content_option_data.uri_buffer & (1 << HTTP_BUFFER_CLIENT_BODY))
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_CLIENT_BODY].uri;
-            else if (dup_content_option_data.uri_buffer & (1 << HTTP_BUFFER_HEADER))
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_HEADER].uri;
-            else /* if (dup_content_option_data.uri_buffer & (1 << HTTP_BUFFER_URI)) */
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_URI].uri;
+            const HttpBuffer* hb = GetHttpBuffer(dup_content_option_data.http_buffer);
+            dp = hb ? hb->buf : NULL;  // FIXTHIS set length too
         }
         else if (dup_content_option_data.rawbytes == 0)
         {
@@ -927,30 +909,14 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
     }
     else if (node->option_type == RULE_OPTION_TYPE_PCRE)
     {
+        unsigned hb_type;
         PcreDuplicatePcreData(node->option_data, &dup_pcre_option_data);
+        hb_type = dup_pcre_option_data.options & SNORT_PCRE_HTTP_BUFS;
 
-        if (dup_pcre_option_data.options & SNORT_PCRE_URI_BUFS)
+        if ( hb_type )
         {
-            if (dup_pcre_option_data.options & SNORT_PCRE_HTTP_STAT_MSG)
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_STAT_MSG].uri;
-            else if (dup_pcre_option_data.options & SNORT_PCRE_HTTP_STAT_CODE)
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_STAT_CODE].uri;
-            else if (dup_pcre_option_data.options & SNORT_PCRE_HTTP_RAW_COOKIE)
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_RAW_COOKIE].uri;
-            else if(dup_pcre_option_data.options & SNORT_PCRE_HTTP_RAW_HEADER)
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_RAW_HEADER].uri;
-            else if (dup_pcre_option_data.options & SNORT_PCRE_HTTP_RAW_URI)
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_RAW_URI].uri;
-            else if (dup_pcre_option_data.options & SNORT_PCRE_HTTP_COOKIE)
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_COOKIE].uri;
-            else if (dup_pcre_option_data.options & SNORT_PCRE_HTTP_METHOD)
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_METHOD].uri;
-            else if (dup_pcre_option_data.options & SNORT_PCRE_HTTP_BODY)
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_CLIENT_BODY].uri;
-            else if (dup_pcre_option_data.options & SNORT_PCRE_HTTP_HEADER)
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_HEADER].uri;
-            else /* if (dup_pcre_option_data.options & SNORT_PCRE_HTTP_URI) */
-                dp = (uint8_t *)UriBufs[HTTP_BUFFER_URI].uri;
+            const HttpBuffer* hb = GetHttpBuffer(hb_type);
+            dp = hb ? hb->buf : NULL;  // FIXTHIS set length too
         }
         else if (!(dup_pcre_option_data.options & SNORT_PCRE_RAWBYTES))
         {

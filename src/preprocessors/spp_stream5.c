@@ -34,6 +34,7 @@
 #include "config.h"
 #endif
 
+#include <assert.h>
 #include <stdio.h>
 
 #ifndef WIN32
@@ -395,6 +396,8 @@ static void Stream5SetExtraData(void* ssn, Packet*, uint32_t);
 static void Stream5ClearExtraData(void* ssn, Packet*, uint32_t);
 
 static void Stream5ForceSessionExpiration(void *ssnptr);
+static unsigned Stream5RegisterHandler(Stream_Callback);
+static bool Stream5SetHandler(void* ssnptr, unsigned id, Stream_Event);
 
 StreamAPI s5api = {
     /* .version = */ STREAM_API_VERSION5,
@@ -470,6 +473,8 @@ StreamAPI s5api = {
     /* .set_extra_data = */ Stream5SetExtraData,
     /* .clear_extra_data = */ Stream5ClearExtraData,
     /* .expire_session = */ Stream5ForceSessionExpiration,
+    /* .register_event_handler = */ Stream5RegisterHandler,
+    /* .set_event_handler = */ Stream5SetHandler
 };
 
 void SetupStream5(void)
@@ -509,6 +514,7 @@ static void Stream5GlobalInit(struct _SnortConfig *sc, char *args)
     tSfPolicyId policy_id = getParserPolicy(sc);
     Stream5Config *pDefaultPolicyConfig = NULL;
     Stream5Config *pCurrentPolicyConfig = NULL;
+    bool new_config = false;
 
 
     if (s5_config == NULL)
@@ -533,9 +539,8 @@ static void Stream5GlobalInit(struct _SnortConfig *sc, char *args)
         AddFuncToConfigCheckList(sc, Stream5VerifyConfig);
         RegisterPreprocStats("stream5", Stream5PrintStats);
 
+        new_config = true;
         stream_api = &s5api;
-
-        StreamExpectInit();
 
 #ifdef ENABLE_HA
         AddFuncToPostConfigList(sc, Stream5HAPostConfigInit, NULL);
@@ -630,10 +635,22 @@ static void Stream5GlobalInit(struct _SnortConfig *sc, char *args)
     Stream5PrintGlobalConfig(pCurrentPolicyConfig->global_config);
 
 #ifdef REG_TEST
-    LogMessage("\n");
     LogMessage("    Stream5LW Session Size: %lu\n",sizeof(Stream5LWSession));
-    LogMessage("\n");
 #endif
+
+    if ( new_config )
+    {
+        uint32_t max =
+            pCurrentPolicyConfig->global_config->max_tcp_sessions +
+            pCurrentPolicyConfig->global_config->max_udp_sessions;
+
+        max >>= 9;
+        if ( !max )
+            max = 2;
+
+        StreamExpectInit(max);
+        LogMessage("      Max Expected Streams: %u\n", max);
+    }
 
     sc->run_flags |= RUN_FLAG__STATEFUL;
 }
@@ -725,16 +742,18 @@ static void Stream5ParseGlobalArgs(Stream5GlobalConfig *config, char *args)
         {
             if (stoks[1])
             {
-                config->tcp_cache_pruning_timeout = strtoul(stoks[1], &endPtr, 10);
+                unsigned long timeout = strtoul(stoks[1], &endPtr, 10);
+
                 if (config->track_tcp_sessions == S5_TRACK_YES)
                 {
-                    if ((config->tcp_cache_pruning_timeout > S5_MAX_CACHE_TIMEOUT) ||
-                        (config->tcp_cache_pruning_timeout == 0))
+                    if ( !timeout || (timeout > S5_MAX_CACHE_TIMEOUT) )
                     {
-                        FatalError("%s(%d) => '%s %d' invalid: value must be between 1 and %d seconds\n",
-                                   file_name, file_line, stoks[0], config->tcp_cache_pruning_timeout, S5_MAX_CACHE_TIMEOUT);
+                        FatalError(
+                            "%s(%d) => '%s %lu' invalid: value must be between 1 and %d seconds\n",
+                            file_name, file_line, stoks[0], timeout, S5_MAX_CACHE_TIMEOUT);
                     }
                 }
+                config->tcp_cache_pruning_timeout = (uint16_t)timeout;
             }
 
             if (!stoks[1] || (endPtr == &stoks[1][0]))
@@ -747,16 +766,18 @@ static void Stream5ParseGlobalArgs(Stream5GlobalConfig *config, char *args)
         {
             if (stoks[1])
             {
-                config->tcp_cache_nominal_timeout = strtoul(stoks[1], &endPtr, 10);
+                unsigned long timeout = strtoul(stoks[1], &endPtr, 10);
+
                 if (config->track_tcp_sessions == S5_TRACK_YES)
                 {
-                    if ((config->tcp_cache_nominal_timeout > S5_MAX_CACHE_TIMEOUT) ||
-                        (config->tcp_cache_nominal_timeout == 0))
+                    if ( !timeout || (timeout > S5_MAX_CACHE_TIMEOUT) )
                     {
-                        FatalError("%s(%d) => '%s %d' invalid: value must be between 1 and %d seconds\n",
-                                   file_name, file_line, stoks[0], config->tcp_cache_nominal_timeout, S5_MAX_CACHE_TIMEOUT);
+                        FatalError(
+                            "%s(%d) => '%s %lu' invalid: value must be between 1 and %d seconds\n",
+                            file_name, file_line, stoks[0], timeout, S5_MAX_CACHE_TIMEOUT);
                     }
                 }
+                config->tcp_cache_nominal_timeout = (uint16_t)timeout;
             }
 
             if (!stoks[1] || (endPtr == &stoks[1][0]))
@@ -810,16 +831,18 @@ static void Stream5ParseGlobalArgs(Stream5GlobalConfig *config, char *args)
         {
             if (stoks[1])
             {
-                config->udp_cache_pruning_timeout = strtoul(stoks[1], &endPtr, 10);
+                unsigned long timeout = strtoul(stoks[1], &endPtr, 10);
+
                 if (config->track_udp_sessions == S5_TRACK_YES)
                 {
-                    if ((config->udp_cache_pruning_timeout > S5_MAX_CACHE_TIMEOUT) ||
-                        (config->udp_cache_pruning_timeout == 0))
+                    if ( !timeout || (timeout > S5_MAX_CACHE_TIMEOUT) )
                     {
-                        FatalError("%s(%d) => '%s %d' invalid: value must be between 1 and %d seconds\n",
-                                   file_name, file_line, stoks[0], config->udp_cache_pruning_timeout, S5_MAX_CACHE_TIMEOUT);
+                        FatalError(
+                            "%s(%d) => '%s %lu' invalid: value must be between 1 and %d seconds\n",
+                            file_name, file_line, stoks[0], timeout, S5_MAX_CACHE_TIMEOUT);
                     }
                 }
+                config->udp_cache_pruning_timeout = (uint16_t)timeout;
             }
 
             if (!stoks[1] || (endPtr == &stoks[1][0]))
@@ -832,16 +855,18 @@ static void Stream5ParseGlobalArgs(Stream5GlobalConfig *config, char *args)
         {
             if (stoks[1])
             {
-                config->udp_cache_nominal_timeout = strtoul(stoks[1], &endPtr, 10);
+                unsigned long timeout = strtoul(stoks[1], &endPtr, 10);
+
                 if (config->track_udp_sessions == S5_TRACK_YES)
                 {
-                    if ((config->udp_cache_nominal_timeout > S5_MAX_CACHE_TIMEOUT) ||
-                        (config->udp_cache_nominal_timeout == 0))
+                    if ( !timeout || (timeout > S5_MAX_CACHE_TIMEOUT) )
                     {
-                        FatalError("%s(%d) => '%s %d' invalid: value must be between 1 and %d seconds\n",
-                                   file_name, file_line, stoks[0], config->udp_cache_nominal_timeout, S5_MAX_CACHE_TIMEOUT);
+                        FatalError(
+                            "%s(%d) => '%s %lu' invalid: value must be between 1 and %d seconds\n",
+                            file_name, file_line, stoks[0], timeout, S5_MAX_CACHE_TIMEOUT);
                     }
                 }
+                config->udp_cache_nominal_timeout = (uint16_t)timeout;
             }
 
             if (!stoks[1] || (endPtr == &stoks[1][0]))
@@ -1944,14 +1969,13 @@ static void Stream5PopulateSessionKey(Packet *p, StreamSessionKey *key)
         GET_DST_IP(p), p->dp,
         GET_IPH_PROTO(p),
         p->vh ? VTH_VLAN(p->vh) : 0,
-        p->mplsHdr.label,
+        p->mpls ? p->mplsHdr.label : 0,
         addressSpaceId, key);
 }
 
 static StreamSessionKey * Stream5GetSessionKey(Packet *p)
 {
     SessionKey *key = calloc(1, sizeof(*key));
-    uint16_t addressSpaceId = 0;
 
     if (!key)
         return NULL;
@@ -2504,17 +2528,6 @@ static int Stream5GetStreamSegments(
 
 static StreamFlowData *Stream5GetFlowData(Packet *p)
 {
-#if 0
-    FLOW *fp;
-    FLOWDATA *flowdata;
-    if (!p->flow)
-        return NULL;
-
-    fp = (FLOW *)p->flow;
-    flowdata = &fp->data;
-
-    return (StreamFlowData *)flowdata;
-#endif
     Stream5LWSession *ssn = (Stream5LWSession*)p->ssnptr;
 
     if (!ssn)
@@ -2920,6 +2933,9 @@ static int16_t Stream5GetApplicationProtocolId(void *ssnptr)
     if (!lwssn)
         return protocol;
 
+    if ( lwssn->ha_state.application_protocol == -1 )
+        return 0;
+
     if (lwssn->ha_state.application_protocol != 0)
         return lwssn->ha_state.application_protocol;
 
@@ -2952,13 +2968,16 @@ static int16_t Stream5GetApplicationProtocolId(void *ssnptr)
     {
         Stream5SetApplicationProtocolIdFromHostEntry(lwssn,
                                            host_entry, SSN_DIR_CLIENT);
+
         if (lwssn->ha_state.application_protocol != 0)
         {
             return lwssn->ha_state.application_protocol;
         }
     }
 
-    return lwssn->ha_state.application_protocol;
+    lwssn->ha_state.application_protocol = -1;
+
+    return 0;
 }
 
 static int16_t Stream5SetApplicationProtocolId(void *ssnptr, int16_t id)
@@ -3173,6 +3192,45 @@ static void Stream5ForceSessionExpiration(void *ssnptr)
         Stream5HANotifyDeletion(lwssn);
 #endif
     }
+}
+
+#define CB_MAX 32
+static Stream_Callback stream_cb[CB_MAX];
+static unsigned stream_cb_idx = 1;
+
+static unsigned Stream5RegisterHandler (Stream_Callback cb)
+{
+    unsigned id;
+
+    for ( id = 1; id < stream_cb_idx; id++ )
+    {
+        if ( stream_cb[id] == cb )
+            break;
+    }
+    if ( id == CB_MAX )
+        return 0;
+
+    if ( id == stream_cb_idx )
+        stream_cb[stream_cb_idx++] = cb;
+
+    return id;
+}
+
+static bool Stream5SetHandler (void* ssnptr, unsigned id, Stream_Event se)
+{
+    Stream5LWSession* lwssn = (Stream5LWSession*)ssnptr;
+
+    if ( se >= SE_MAX || lwssn->handler[se] )
+        return false;
+
+    lwssn->handler[se] = id;
+    return true;
+}
+
+void Stream5CallHandler (Packet* p, unsigned id)
+{
+    assert(id && id < stream_cb_idx && stream_cb[id]);
+    stream_cb[id](p);
 }
 
 #ifdef SNORT_RELOAD

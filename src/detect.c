@@ -34,7 +34,6 @@
 
 #include <string.h>
 #include <stdlib.h>
-#include <assert.h>
 
 #include "snort.h"
 #include "detect.h"
@@ -111,6 +110,7 @@ int Preprocess(Packet * p)
         pktcnt = PPM_INC_PKT_CNT();
         PPM_GET_TIME();
         PPM_INIT_PKT_TIMER();
+#ifdef DEBUG
         if( PPM_DEBUG_PKTS() )
         {
            /* for debugging, info gathering, so don't worry about
@@ -120,6 +120,7 @@ int Preprocess(Packet * p)
            LogMessage("PPM: Process-BeginPkt[%u] caplen=%u\n",
              (unsigned)pktcnt,p->pkth->caplen);
         }
+#endif
     }
 #endif
 
@@ -155,7 +156,7 @@ int Preprocess(Packet * p)
         /*
         **  Reset the appropriate application-layer protocol fields
         */
-        p->uri_count = 0;
+        ClearHttpBuffers();
         p->alt_dsize = 0;
         DetectReset((uint8_t *)p->data, p->dsize);
 
@@ -166,7 +167,7 @@ int Preprocess(Packet * p)
         {
             while ((idx != NULL) && !(p->packet_flags & PKT_PASS_RULE))
             {
-                if ( ((p->proto_bits & idx->proto_mask) || (idx->proto_mask == PROTO_BIT__ALL) ) &&
+                if ( (p->proto_bits & idx->proto_mask) &&
                     IsPreprocBitSet(p, idx->preproc_bit))
                 {
                     idx->func(p, idx->context);
@@ -194,6 +195,9 @@ int Preprocess(Packet * p)
                 }
                 else
                     idx = idx->next;
+
+                if ( !p->dsize )  // required with normalization
+                    break;
             }
         }
         else
@@ -205,7 +209,7 @@ int Preprocess(Packet * p)
                 {
                     break;
                 }
-                if ( ((p->proto_bits & idx->proto_mask) || (idx->proto_mask == PROTO_BIT__ALL) ) &&
+                if ( (p->proto_bits & idx->proto_mask) &&
                     IsPreprocBitSet(p, idx->preproc_bit))
                 {
                     idx->func(p, idx->context);
@@ -237,22 +241,9 @@ int Preprocess(Packet * p)
             DisableDetect(p);
         }
 
-        if ((do_detect) && (p->bytes_to_inspect != -1))
+        if ( do_detect )
         {
-            /* Check if we are only inspecting a portion of this packet... */
-            if (p->bytes_to_inspect > 0)
-            {
-                DEBUG_WRAP(DebugMessage(DEBUG_DETECT, "Ignoring part of server "
-                    "traffic -- only looking at %d of %d bytes!!!\n",
-                    p->bytes_to_inspect, p->dsize););
-                p->dsize = (uint16_t)p->bytes_to_inspect;
-            }
-
             Detect(p);
-        }
-        else if (p->bytes_to_inspect == -1)
-        {
-            DEBUG_WRAP(DebugMessage(DEBUG_DETECT, "Ignoring server traffic!!!\n"););
         }
     }
 
@@ -290,12 +281,14 @@ int Preprocess(Packet * p)
         PPM_GET_TIME();
         PPM_TOTAL_PKT_TIME();
         PPM_ACCUM_PKT_TIME();
+#ifdef DEBUG
         if( PPM_DEBUG_PKTS() )
         {
             LogMessage("PPM: Pkt[%u] Used= ",(unsigned)pktcnt);
             PPM_PRINT_PKT_TIME("%g usecs\n");
             LogMessage("PPM: Process-EndPkt[%u]\n\n",(unsigned)pktcnt);
         }
+#endif
 
         PPM_PKT_LOG(p);
     }

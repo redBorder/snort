@@ -370,7 +370,6 @@ void PrintWorstRules(int numToPrint)
 
 void CollectRTNProfile(void)
 {
-    RuleTreeNode *rtn;
     OptTreeNode *otn;
     OTN_WorstPerformer *new, *node, *last = NULL;
     char got_position;
@@ -390,8 +389,6 @@ void CollectRTNProfile(void)
               policyId < otn->proto_node_num;
               policyId++ )
         {
-            rtn = getRtnFromOtn(otn, policyId);
-
             /* Only log info if OTN has actually been eval'd */
             if (otn->checks > 0 && otn->ticks > 0)
             {

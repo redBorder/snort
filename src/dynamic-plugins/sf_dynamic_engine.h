@@ -131,7 +131,7 @@ typedef void (*FreeRuleData)(void *);
  */
 #include "sf_dynamic_common.h"
 
-#define ENGINE_DATA_VERSION 8
+#define ENGINE_DATA_VERSION 9
 
 typedef void *(*PCRECompileFunc)(const char *, int, const char **, int *, const unsigned char *);
 typedef void *(*PCREStudyFunc)(const void *, int, const char **);
@@ -146,7 +146,6 @@ typedef struct _DynamicEngineData
     SFDataBuffer *altBuffer;
     SFDataPointer *altDetect;
     SFDataPointer *fileDataBuf;
-    UriInfo *uriBuffers[HTTP_BUFFER_MAX];
 
     RegisterRule ruleRegister;
     RegisterBit flowbitRegister;
@@ -187,6 +186,8 @@ typedef struct _DynamicEngineData
 
     PCRECapture pcreCapture;
     PCREOvectorInfo pcreOvectorInfo;
+
+    GetHttpBufferFunc getHttpBuffer;
 } DynamicEngineData;
 
 extern DynamicEngineData _ded;

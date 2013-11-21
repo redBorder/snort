@@ -1093,7 +1093,7 @@ static inline PatternMatchData * DynamicContentToPmd(FPContentInfo *content_info
     pmd->fp_offset = content_info->fp_offset;
     pmd->fp_length = content_info->fp_length;
     pmd->fp_only = content_info->fp_only;
-    pmd->uri_buffer = content_info->uri_buffer;
+    pmd->http_buffer = content_info->uri_buffer & 0xF;  // FIXTHIS make include
 
     return pmd;
 }
@@ -1228,7 +1228,7 @@ static inline int IsPmdFpEligible(PatternMatchData *content)
     if ((content->pattern_buf != NULL) && (content->pattern_size != 0))
     {
         /* We don't add cookie and some other contents to fast pattern matcher */
-        if(content->uri_buffer && !IsHttpBufFpEligible(content->uri_buffer))
+        if(content->http_buffer && !IsHttpBufFpEligible(content->http_buffer))
             return 0;
 
         if (content->exception_flag)
@@ -1612,6 +1612,25 @@ static int fpAllocPms(SnortConfig *sc, PORT_GROUP *pg, FastPatternConfig *fp)
     return 0;
 }
 
+static PmType GetPmType (HTTP_BUFFER hb_type)
+{
+    switch ( hb_type )
+    {
+    case HTTP_BUFFER_URI:
+        return PM_TYPE__HTTP_URI_CONTENT;
+
+    case HTTP_BUFFER_HEADER:
+        return PM_TYPE__HTTP_HEADER_CONTENT;
+
+    case HTTP_BUFFER_CLIENT_BODY:
+        return PM_TYPE__HTTP_CLIENT_BODY_CONTENT;
+
+    default:
+        break;
+    }
+    return PM_TYPE__CONTENT;
+}
+
 static int fpAddPortGroupRule(SnortConfig *sc, PORT_GROUP *pg, OptTreeNode *otn, FastPatternConfig *fp)
 {
     PatternMatchData *pmd = NULL;
@@ -1654,16 +1673,7 @@ static int fpAddPortGroupRule(SnortConfig *sc, PORT_GROUP *pg, OptTreeNode *otn,
         pmd_uri = GetDynamicFastPatternPmd(dd, CONTENT_HTTP);
         if (pmd_uri != NULL)
         {
-            PmType pm_type;
-
-            if (pmd_uri->uri_buffer & HTTP_SEARCH_URI)
-                pm_type = PM_TYPE__HTTP_URI_CONTENT;
-            else if (pmd_uri->uri_buffer & HTTP_SEARCH_HEADER)
-                pm_type = PM_TYPE__HTTP_HEADER_CONTENT;
-            else if (pmd_uri->uri_buffer & HTTP_SEARCH_CLIENT_BODY)
-                pm_type = PM_TYPE__HTTP_CLIENT_BODY_CONTENT;
-            else
-                pm_type = PM_TYPE__CONTENT;
+            PmType pm_type = GetPmType(pmd_uri->http_buffer);
 
             if (fpFinishPortGroupRule(sc, pg, pm_type, otn, pmd_uri, fp) == 0)
             {
@@ -1748,16 +1758,7 @@ static int fpAddPortGroupRule(SnortConfig *sc, PORT_GROUP *pg, OptTreeNode *otn,
     (void)RemovePmdFromList(pmd_uri);
     if (pmd_uri != NULL)
     {
-        PmType pm_type;
-
-        if (pmd_uri->uri_buffer & HTTP_SEARCH_URI)
-            pm_type = PM_TYPE__HTTP_URI_CONTENT;
-        else if (pmd_uri->uri_buffer & HTTP_SEARCH_HEADER)
-            pm_type = PM_TYPE__HTTP_HEADER_CONTENT;
-        else if (pmd_uri->uri_buffer & HTTP_SEARCH_CLIENT_BODY)
-            pm_type = PM_TYPE__HTTP_CLIENT_BODY_CONTENT;
-        else
-            pm_type = PM_TYPE__CONTENT;
+        PmType pm_type = GetPmType(pmd_uri->http_buffer);
 
         if (fpFinishPortGroupRule(sc, pg, pm_type, otn, pmd_uri, fp) == 0)
         {

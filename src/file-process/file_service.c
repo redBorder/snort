@@ -86,12 +86,14 @@ static void set_file_name_from_log(FILE_LogState *log_state, void *ssn);
 static uint32_t str_to_hash(uint8_t *str, int length );
 
 static void file_signature_lookup(void* p, bool is_retransmit);
+static void file_signature_callback(Packet* p);
 
 static void print_file_stats(int exiting);
 
 FileAPI fileAPI;
 FileAPI* file_api = NULL;
 
+static unsigned s_cb_id = 0;
 
 typedef struct _File_Stats {
 
@@ -145,6 +147,12 @@ void FileAPIInit(void)
     fileAPI.finalize_mime_position = &finalize_mime_position;
     file_api = &fileAPI;
     init_mime();
+}
+
+void FileAPIPostInit (void)
+{
+    if ( stream_api && file_signature_enabled )
+        s_cb_id = stream_api->register_event_handler(file_signature_callback);
 }
 
 static void start_file_processing(void)
@@ -394,16 +402,14 @@ static inline int check_http_partial_content(Packet *p)
     uint32_t len = 0;
     uint32_t type = 0;
     uint32_t file_sig;
+    const HttpBuffer* hb = GetHttpBuffer(HTTP_BUFFER_STAT_CODE);
 
     /*Not HTTP response, return*/
-    if ((p->uri_count < HTTP_BUFFER_STAT_CODE + 1) ||
-            ((!UriBufs[HTTP_BUFFER_STAT_CODE].uri) || (!UriBufs[HTTP_BUFFER_STAT_CODE].length)))
+    if ( !hb )
         return 0;
 
     /*Not partial content, return*/
-    if ((UriBufs[HTTP_BUFFER_STAT_CODE].length != 3) ||
-            strncmp((const char *)UriBufs[HTTP_BUFFER_STAT_CODE].uri, "206",
-            UriBufs[HTTP_BUFFER_STAT_CODE].length))
+    if ( (hb->length != 3) || strncmp((const char*)hb->buf, "206", 3) )
         return 0;
 
     /*Use URI as the identifier for file*/
@@ -486,6 +492,7 @@ static inline void _file_signature_lookup(FileContext* context, void* p, bool is
             if (file_config)
                 context->expires = (time_t)(file_config->file_lookup_timeout + pkt->pkth->ts.tv_sec);
             Active_DropPacket();
+            stream_api->set_event_handler(ssnptr, s_cb_id, SE_REXMIT);
             return;
         }
     }
@@ -508,6 +515,17 @@ static void file_signature_lookup(void* p, bool is_retransmit)
         return;
     _file_signature_lookup(context, p, is_retransmit);
 }
+
+static void file_signature_callback(Packet* p)
+{
+    FileContext* context  = stream_api->get_application_data(p->ssnptr, PP_FILE);
+
+    if (!context)
+        return;
+
+    _file_signature_lookup(context, p, 1);
+}
+
 /*
  * Return:
  *    1: continue processing/log/block this file
@@ -713,15 +731,19 @@ static void set_file_policy_callback(Get_file_policy_func policy_func)
 static void enable_file_type(File_type_done_func callback)
 {
     file_type_done = callback;
-    start_file_processing();
     file_type_id_enabled = true;
+    start_file_processing();
 }
 
 static void enable_file_signature(File_signature_done_func callback)
 {
     file_signature_done = callback;
-    start_file_processing();
-    file_signature_enabled = true;
+
+    if ( !file_signature_enabled )
+    {
+        file_signature_enabled = true;
+        start_file_processing();
+    }
 }
 
 static void set_file_action_log_callback(Log_file_action_func log_func)

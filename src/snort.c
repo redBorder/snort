@@ -39,6 +39,7 @@
 # include "config.h"
 #endif
 
+#include <assert.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -1604,10 +1605,12 @@ void SetupMetadataCallback(void)
 #endif
 }
 
+// non-local for easy access from core
+static Packet s_packet;
+
 static DAQ_Verdict PacketCallback(
     void* user, const DAQ_PktHdr_t* pkthdr, const uint8_t* pkt)
 {
-    Packet p;
     int inject = 0;
     DAQ_Verdict verdict = DAQ_VERDICT_PASS;
     PROFILE_VARS;
@@ -1679,12 +1682,12 @@ static DAQ_Verdict PacketCallback(
 #endif
     PREPROC_PROFILE_END(eventqPerfStats);
 
-    verdict = ProcessPacket(&p, pkthdr, pkt, NULL);
+    verdict = ProcessPacket(&s_packet, pkthdr, pkt, NULL);
 
 #ifdef ACTIVE_RESPONSE
     if ( Active_ResponseQueued() )
     {
-        Active_SendResponses(&p);
+        Active_SendResponses(&s_packet);
     }
 #endif
     if ( Active_PacketWasDropped() )
@@ -1694,20 +1697,20 @@ static DAQ_Verdict PacketCallback(
     }
     else
     {
-        Replace_ModifyPacket(&p);
+        Replace_ModifyPacket(&s_packet);
 
-        if ( p.packet_flags & PKT_MODIFIED )
+        if ( s_packet.packet_flags & PKT_MODIFIED )
         {
             // this packet was normalized and/or has replacements
-            Encode_Update(&p);
+            Encode_Update(&s_packet);
             verdict = DAQ_VERDICT_REPLACE;
         }
 #ifdef NORMALIZER
-        else if ( p.packet_flags & PKT_RESIZED )
+        else if ( s_packet.packet_flags & PKT_RESIZED )
         {
             // we never increase, only trim, but
             // daq doesn't support resizing wire packet
-            if ( !DAQ_Inject(p.pkth, 0, p.pkt, p.pkth->pktlen) )
+            if ( !DAQ_Inject(s_packet.pkth, 0, s_packet.pkt, s_packet.pkth->pktlen) )
             {
                 verdict = DAQ_VERDICT_BLOCK;
                 inject = 1;
@@ -1716,8 +1719,8 @@ static DAQ_Verdict PacketCallback(
 #endif
         else
         {
-            if ((p.packet_flags & PKT_IGNORE) ||
-                (stream_api && (stream_api->get_ignore_direction(p.ssnptr) == SSN_DIR_BOTH)))
+            if ((s_packet.packet_flags & PKT_IGNORE) ||
+                (stream_api && (stream_api->get_ignore_direction(s_packet.ssnptr) == SSN_DIR_BOTH)))
             {
                 if ( !Active_GetTunnelBypass() )
                 {
@@ -1729,10 +1732,10 @@ static DAQ_Verdict PacketCallback(
                     pc.internal_whitelist++;
                 }
             }
-            else if ( p.packet_flags & PKT_TRUST )
+            else if ( s_packet.packet_flags & PKT_TRUST )
             {
                 if (stream_api)
-                    stream_api->set_ignore_direction(p.ssnptr, SSN_DIR_BOTH);
+                    stream_api->set_ignore_direction(s_packet.ssnptr, SSN_DIR_BOTH);
 
                 verdict = DAQ_VERDICT_WHITELIST;
             }
@@ -1743,9 +1746,10 @@ static DAQ_Verdict PacketCallback(
         }
     }
 #ifdef ENABLE_HA
-    /* This needs to be called here since the session could have been updated anywhere up to this point. :( */
+    // This needs to be called here since the session could
+    // have been updated anywhere up to this point. :( 
     if (stream_api)
-        stream_api->process_ha(p.ssnptr);
+        stream_api->process_ha(s_packet.ssnptr);
 #endif
 
     /* Collect some "on the wire" stats about packet size, etc */
@@ -1794,11 +1798,7 @@ DAQ_Verdict ProcessPacket(
 
     /* call the packet decoder */
     (*grinder) (p, pkthdr, pkt);
-
-    if(!p->pkth || !p->pkt)
-    {
-        return verdict;
-    }
+    assert(p->pkth && p->pkt);
 
     if (ft)
     {
@@ -1807,6 +1807,12 @@ DAQ_Verdict ProcessPacket(
         p->fragtracker = ft;
         Encode_SetPkt(p);
     }
+    if ( !p->proto_bits )
+        p->proto_bits = PROTO_BIT__OTHER;
+
+    // required until decoders are fixed
+    else if ( !p->family && (p->proto_bits & PROTO_BIT__IP) )
+        p->proto_bits &= ~PROTO_BIT__IP;
 
 #ifndef POLICY_BY_ID_ONLY
     {
@@ -5143,6 +5149,8 @@ static void SnortUnprivilegedInit(void)
     // user specified -u (we dropped privileges) and the log defaults
     // to /var/log/snort.  in this case they must override log path.
     PostConfigInitPlugins(snort_conf, snort_conf->plugin_post_config_funcs);
+
+    FileAPIPostInit();
 
 #ifdef SIDE_CHANNEL
     SideChannelPostInit();

@@ -26,6 +26,7 @@
 #include "config.h"
 #endif /* HAVE_CONFIG_H */
 
+#include <assert.h>
 #include <string.h>
 
 #include "sf_types.h"
@@ -327,15 +328,8 @@ static void ProcessModbus(void *ipacketp, void *contextp)
     modbus_session_data_t *sessp;
     PROFILE_VARS;
 
-    /* Sanity checks. Should this preprocessor run? */
-    if (( !packetp ) ||
-        ( !packetp->payload ) ||
-        ( !packetp->payload_size ) ||
-        ( !IPH_IS_VALID(packetp) ) ||
-        ( !packetp->tcp_header ))
-    {
-        return;
-    }
+    // preconditions - what we registered for
+    assert(IsTCP(packetp) && packetp->payload && packetp->payload_size);
 
     PREPROC_PROFILE_START(modbusPerfStats);
 

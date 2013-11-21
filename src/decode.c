@@ -69,58 +69,6 @@ PreprocStats decodePerfStats;
 // Array to check if the decoder rules are enabled in at least one policy
 static uint8_t decodeRulesArray[DECODE_INDEX_MAX];
 
-IPH_API ip4 =
-    {
-       ip4_ret_src,
-       ip4_ret_dst,
-       ip4_ret_tos,
-       ip4_ret_ttl,
-       ip4_ret_len,
-       ip4_ret_id,
-       ip4_ret_proto,
-       ip4_ret_off,
-       ip4_ret_ver,
-       ip4_ret_hlen,
-
-       orig_ip4_ret_src,
-       orig_ip4_ret_dst,
-       orig_ip4_ret_tos,
-       orig_ip4_ret_ttl,
-       orig_ip4_ret_len,
-       orig_ip4_ret_id,
-       orig_ip4_ret_proto,
-       orig_ip4_ret_off,
-       orig_ip4_ret_ver,
-       orig_ip4_ret_hlen,
-       IPH_API_V4
-    };
-
-IPH_API ip6 =
-    {
-       ip6_ret_src,
-       ip6_ret_dst,
-       ip6_ret_toc,
-       ip6_ret_hops,
-       ip6_ret_len,
-       ip6_ret_id,
-       ip6_ret_next,
-       ip6_ret_off,
-       ip6_ret_ver,
-       ip6_ret_hlen,
-
-       orig_ip6_ret_src,
-       orig_ip6_ret_dst,
-       orig_ip6_ret_toc,
-       orig_ip6_ret_hops,
-       orig_ip6_ret_len,
-       orig_ip6_ret_id,
-       orig_ip6_ret_next,
-       orig_ip6_ret_off,
-       orig_ip6_ret_ver,
-       orig_ip6_ret_hlen,
-       IPH_API_V6
-    };
-
 //--------------------------------------------------------------------
 // decode.c::event support
 //--------------------------------------------------------------------
@@ -1111,6 +1059,7 @@ void DecodeEthOverMPLS(const uint8_t* pkt, const uint32_t len, Packet* p)
         }
 
         p->iph = NULL;
+        p->family = NO_IP;
         // TBD add decoder drop event for eth over MPLS cap len issue
         pc.discards++;
         pc.ethdisc++;
@@ -1447,7 +1396,6 @@ void DecodeVlan(const uint8_t * pkt, const uint32_t len, Packet * p)
  */
 void DecodePPPoEPkt(const uint8_t* pkt, const uint32_t len, Packet* p)
 {
-    const PPPoEHdr* pppoep = NULL;
     //PPPoE_Tag *ppppoe_tag=0;
     //PPPoE_Tag tag;  /* needed to avoid alignment problems */
 
@@ -1470,7 +1418,7 @@ void DecodePPPoEPkt(const uint8_t* pkt, const uint32_t len, Packet* p)
                 *p->eh->ether_src, *p->eh->ether_dst););
 
     /* lay the PPP over ethernet structure over the packet data */
-    pppoep = p->pppoeh = (PPPoEHdr *)pkt;
+    p->pppoeh = (PPPoEHdr *)pkt;
 
     /* grab out the network type */
     switch(ntohs(p->eh->ether_type))
@@ -1488,7 +1436,7 @@ void DecodePPPoEPkt(const uint8_t* pkt, const uint32_t len, Packet* p)
     }
 
 #ifdef DEBUG_MSGS
-    switch(pppoep->code)
+    switch(p->pppoeh->code)
     {
         case PPPoE_CODE_PADI:
             /* The Host sends the PADI packet with the DESTINATION_ADDR set
@@ -2369,10 +2317,10 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
             DecoderEvent(p, EVARGS(IP4_HDR_TRUNC), 1, 1);
 
         p->iph = NULL;
+        p->family = NO_IP;
+
         pc.discards++;
         pc.ipdisc++;
-
-        p->family = NO_IP;
         return;
     }
 
@@ -2381,8 +2329,8 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
         if (p->encapsulated)
         {
             DecoderAlertEncapsulated(p, DECODE_IP_MULTIPLE_ENCAPSULATION,
-                            DECODE_IP_MULTIPLE_ENCAPSULATION_STR,
-                            pkt, len);
+                DECODE_IP_MULTIPLE_ENCAPSULATION_STR, pkt, len);
+
             return;
         }
         else
@@ -2401,28 +2349,21 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
      * with datalink DLT_RAW it's impossible to differ ARP datagrams from IP.
      * So we are just ignoring non IP datagrams
      */
-    if(IP_VER(p->iph) != 4)
+    if(IP_VER((IPHdr*)pkt) != 4)
     {
-        DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
-            "Not IPv4 datagram! ([ver: 0x%x][len: 0x%x])\n",
-            IP_VER(p->iph), p->iph->ip_len););
-
         if ((p->packet_flags & PKT_UNSURE_ENCAP) == 0)
             DecoderEvent(p, DECODE_NOT_IPV4_DGRAM,
                             DECODE_NOT_IPV4_DGRAM_STR, 1, 1);
 
         p->iph = NULL;
+        p->family = NO_IP;
+
         pc.discards++;
         pc.ipdisc++;
-
-        p->family = NO_IP;
         return;
     }
 
     sfiph_build(p, p->iph, AF_INET);
-
-//    p->ip_payload_len = p->iph->ip_len;
-//    p->ip_payload_off = p->ip_payload_len + (int)pkt;
 
     /* get the IP datagram length */
     ip_len = ntohs(p->iph->ip_len);
@@ -2440,9 +2381,10 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
                         DECODE_IPV4_INVALID_HEADER_LEN_STR, 1, 1);
 
         p->iph = NULL;
+        p->family = NO_IP;
+
         pc.discards++;
         pc.ipdisc++;
-        p->family = NO_IP;
         return;
     }
 
@@ -2459,9 +2401,10 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
                             ScDecoderOversizedDrops());
 
         p->iph = NULL;
+        p->family = NO_IP;
+
         pc.discards++;
         pc.ipdisc++;
-        p->family = NO_IP;
         return;
     }
 #if 0
@@ -2489,9 +2432,10 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
                         DECODE_IPV4_DGRAM_LT_IPHDR_STR, 1, 1);
 
         p->iph = NULL;
+        p->family = NO_IP;
+
         pc.discards++;
         pc.ipdisc++;
-        p->family = NO_IP;
         return;
     }
 
@@ -2551,7 +2495,6 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
         {
             p->ip_options_data = NULL;
             p->ip_options_len = 0;
-            p->ip_lastopt_bad = 0;
         }
 #endif
         p->ip_option_count = 0;
@@ -2829,6 +2772,7 @@ void DecodeICMP(const uint8_t * pkt, const uint32_t len, Packet * p)
     ICMP4MiscTests(p);
 
     p->proto_bits |= PROTO_BIT__ICMP;
+    p->proto_bits &= ~(PROTO_BIT__UDP | PROTO_BIT__TCP);
 }
 
 /*
@@ -3816,7 +3760,6 @@ void DecodeIPV6(const uint8_t *pkt, uint32_t len, Packet *p)
     {
         p->ip_options_data = NULL;
         p->ip_options_len = 0;
-        p->ip_lastopt_bad = 0;
     }
 #endif
     p->ip_option_count = 0;
@@ -4127,6 +4070,7 @@ void DecodeICMP6(const uint8_t *pkt, const uint32_t len, Packet *p)
     }
 
     p->proto_bits |= PROTO_BIT__ICMP;
+    p->proto_bits &= ~(PROTO_BIT__UDP | PROTO_BIT__TCP);
 }
 
 /*

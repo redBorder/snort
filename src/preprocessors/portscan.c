@@ -874,13 +874,11 @@ static int ps_tracker_update_tcp(PS_PKT *ps_pkt, PS_TRACKER *scanner,
                                  PS_TRACKER *scanned)
 {
     Packet  *p;
-    time_t  pkt_time;
     uint32_t session_flags;
     snort_ip cleared;
     IP_CLEAR(cleared);
 
     p = (Packet *)ps_pkt->pkt;
-    pkt_time = packet_time();
 
     /*
     **  Handle the initiating packet.
@@ -910,13 +908,13 @@ static int ps_tracker_update_tcp(PS_PKT *ps_pkt, PS_TRACKER *scanner,
             if(scanned)
             {
                 ps_proto_update(&scanned->proto,1,0,
-                                 GET_SRC_IP(p),p->dp, pkt_time);
+                                 GET_SRC_IP(p),p->dp, packet_time());
             }
 
             if(scanner)
             {
                 ps_proto_update(&scanner->proto,1,0,
-                                 GET_DST_IP(p),p->dp, pkt_time);
+                                 GET_DST_IP(p),p->dp, packet_time());
             }
         }
         /*
@@ -988,13 +986,13 @@ static int ps_tracker_update_tcp(PS_PKT *ps_pkt, PS_TRACKER *scanner,
         if(scanned)
         {
             ps_proto_update(&scanned->proto,1,0,
-                             GET_SRC_IP(p),p->dp, pkt_time);
+                             GET_SRC_IP(p),p->dp, packet_time());
         }
 
         if(scanner)
         {
             ps_proto_update(&scanner->proto,1,0,
-                             GET_DST_IP(p),p->dp, pkt_time);
+                             GET_DST_IP(p),p->dp, packet_time());
         }
     }
     /*
@@ -1056,12 +1054,10 @@ static int ps_tracker_update_ip(PS_PKT *ps_pkt, PS_TRACKER *scanner,
                                 PS_TRACKER *scanned)
 {
     Packet *p;
-    time_t  pkt_time;
     snort_ip cleared;
     IP_CLEAR(cleared);
 
     p = (Packet *)ps_pkt->pkt;
-    pkt_time = packet_time();
 
     if(p->iph)
     {
@@ -1090,12 +1086,10 @@ static int ps_tracker_update_udp(PS_PKT *ps_pkt, PS_TRACKER *scanner,
                                  PS_TRACKER *scanned)
 {
     Packet  *p;
-    time_t  pkt_time;
     snort_ip    cleared;
     IP_CLEAR(cleared);
 
     p = (Packet *)ps_pkt->pkt;
-    pkt_time = packet_time();
 
     if(p->icmph)
     {
@@ -1123,13 +1117,13 @@ static int ps_tracker_update_udp(PS_PKT *ps_pkt, PS_TRACKER *scanner,
                 if(scanned)
                 {
                     ps_proto_update(&scanned->proto,1,0,
-                                     GET_SRC_IP(p),p->dp, pkt_time);
+                                     GET_SRC_IP(p),p->dp, packet_time());
                 }
 
                 if(scanner)
                 {
                     ps_proto_update(&scanner->proto,1,0,
-                                     GET_DST_IP(p),p->dp, pkt_time);
+                                     GET_DST_IP(p),p->dp, packet_time());
                 }
             }
             else if (direction == PKT_FROM_SERVER)
@@ -1150,12 +1144,10 @@ static int ps_tracker_update_icmp(PS_PKT *ps_pkt, PS_TRACKER *scanner,
                                   PS_TRACKER *scanned)
 {
     Packet  *p;
-    time_t  pkt_time;
     snort_ip cleared;
     IP_CLEAR(cleared);
 
     p = (Packet *)ps_pkt->pkt;
-    pkt_time = packet_time();
 
     if(p->icmph)
     {
@@ -1169,7 +1161,7 @@ static int ps_tracker_update_icmp(PS_PKT *ps_pkt, PS_TRACKER *scanner,
                 if(scanner)
                 {
                     ps_proto_update(&scanner->proto,1,0,
-                                     GET_DST_IP(p), 0, pkt_time);
+                                     GET_DST_IP(p), 0, packet_time());
                 }
 
                 break;
@@ -1208,10 +1200,6 @@ static int ps_tracker_update_icmp(PS_PKT *ps_pkt, PS_TRACKER *scanner,
 static int ps_tracker_update(PS_PKT *ps_pkt, PS_TRACKER *scanner,
                              PS_TRACKER *scanned)
 {
-    Packet *p;
-
-    p = (Packet *)ps_pkt->pkt;
-
     if(scanner && scanner->proto.alerts)
         scanner->proto.alerts = PS_ALERT_GENERATED;
 
@@ -1740,7 +1728,7 @@ int ps_detect(PS_PKT *ps_pkt)
     PS_TRACKER *scanner = NULL;
     PS_TRACKER *scanned = NULL;
     int check_tcp_rst_other_dir = 1;
-    Packet     *p;
+    Packet *p;
 
     if(!ps_pkt || !ps_pkt->pkt)
         return -1;

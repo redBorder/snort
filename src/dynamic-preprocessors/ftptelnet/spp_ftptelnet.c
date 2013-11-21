@@ -40,6 +40,7 @@
  *
  */
 
+#include <assert.h>
 #include <string.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -148,12 +149,19 @@ void FTPTelnetChecks(void *pkt, void *context)
 {
     SFSnortPacket *p = (SFSnortPacket*)pkt;
 
+    // precondition - what we registered for
+    assert(IsTCP(p) && p->payload && p->payload_size);
+
+    SnortFTPTelnet(p);
+}
+
 #ifdef TARGET_BASED
-    /*
-     *  Must be a TCP Packet.
-     */
-    if ( !IsTCP(p) )
-        return;
+void FTPDataTelnetChecks(void *pkt, void *context)
+{
+    SFSnortPacket *p = (SFSnortPacket*)pkt;
+
+    // precondition - what we registered for
+    assert(IsTCP(p));
 
     if ( _dpd.fileAPI->get_max_file_depth() >= 0 )
     {
@@ -167,21 +175,12 @@ void FTPTelnetChecks(void *pkt, void *context)
             return;
         }
     }
-    /*
-     * These checks only apply to FTP and Telnet
-     */
     if ( !p->payload_size || (p->payload == NULL) )
         return;
-#else
-    /*
-     * Must be non-empty TCP packet.
-     */
-    if ( !IsTCP(p) || !p->payload_size || (p->payload == NULL) )
-        return;
-#endif
 
     SnortFTPTelnet(p);
 }
+#endif
 
 /*
  * Function: FTPTelnetInit(char *args)

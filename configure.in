@@ -6,7 +6,7 @@ AC_PREREQ(2.50)
 AM_CONFIG_HEADER(config.h)
 # When changing the snort version, please also update the VERSION
 # definition in "src/win32/WIN32-Includes/config.h"
-AM_INIT_AUTOMAKE(snort,2.9.5)
+AM_INIT_AUTOMAKE(snort,2.9.5.6)
 
 NO_OPTIMIZE="no"
 ADD_WERROR="no"
@@ -917,6 +917,9 @@ if test "x$enable_debug" = "xyes"; then
     fi
 
     CPPFLAGS="$CPPFLAGS -DDEBUG"
+else
+    # disable assert()ions
+    CPPFLAGS="$CPPFLAGS -DNDEBUG"
 fi
 
 AC_ARG_ENABLE(gdb,

@@ -1072,7 +1072,6 @@ void printRuleFmt1( SnortConfig *sc, OptTreeNode * otn )
 static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
         int check_ports, char ip_rule, OTNX_MATCH_DATA *omd)
 {
-    RULE_NODE *rnWalk;
     void * so;
     int start_state;
     const uint8_t *tmp_payload;
@@ -1153,7 +1152,7 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
 
             for (; (idx != NULL) && !(p->packet_flags & PKT_PASS_RULE); idx = idx->next)
             {
-                if ((p->proto_bits & idx->proto_mask) || (idx->proto_mask == PROTO_BIT__ALL))
+                if ( p->proto_bits & idx->proto_mask )
                     //IsDetectBitSet(p, idx->preproc_bit))
                 {
                     idx->func(p, idx->context);
@@ -1161,47 +1160,60 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
             }
         }
 
-        if (fp->inspect_stream_insert || !(p->packet_flags & PKT_STREAM_INSERT))
+        if ( fp->inspect_stream_insert || !(p->packet_flags & PKT_STREAM_INSERT) )
         {
+            const HttpBuffer* hb;
+
             omd->pg = port_group;
             omd->p = p;
             omd->check_ports = check_ports;
 
-            /*
-             **   Uri-Content Match
-             **   This check indicates that http_decode found
-             **   at least one uri
-             */
-            if (p->uri_count > 0)
+            if ( GetHttpBufferMask() )
             {
-                int i;
-
-                for (i = HTTP_BUFFER_URI; (i < p->uri_count) && (i <= HTTP_BUFFER_CLIENT_BODY); i++)
+                if ( (hb = GetHttpBuffer(HTTP_BUFFER_URI)) )
                 {
-                    if ((UriBufs[i].uri == NULL) || (UriBufs[i].length == 0))
-                        continue;
+                    so = (void *)port_group->pgPms[PM_TYPE__HTTP_URI_CONTENT];
 
-                    switch (i)
-                    {
-                        case HTTP_BUFFER_URI:
-                            so = (void *)port_group->pgPms[PM_TYPE__HTTP_URI_CONTENT];
-                            break;
-                        case HTTP_BUFFER_HEADER:
-                            so = (void *)port_group->pgPms[PM_TYPE__HTTP_HEADER_CONTENT];
-                            break;
-                        case HTTP_BUFFER_CLIENT_BODY:
-                            so = (void *)port_group->pgPms[PM_TYPE__HTTP_CLIENT_BODY_CONTENT];
-                            break;
-                        default:
-                            so = NULL;
-                            break;
-                    }
-
-                    if ((so != NULL) && (mpseGetPatternCount(so) > 0))
+                    if ( so && mpseGetPatternCount(so) > 0 )
                     {
                         start_state = 0;
-                        mpseSearch(so, UriBufs[i].uri, UriBufs[i].length,
-                                rule_tree_match, omd, &start_state);
+
+                        mpseSearch(so, hb->buf, hb->length,
+                            rule_tree_match, omd, &start_state);
+#ifdef PPM_MGR
+                        /* Bail if we spent too much time already */
+                        if (PPM_PACKET_ABORT_FLAG())
+                            goto fp_eval_header_sw_reset_ip;
+#endif
+                    }
+                }
+                if ( (hb = GetHttpBuffer(HTTP_BUFFER_HEADER)) )
+                {
+                    so = (void *)port_group->pgPms[PM_TYPE__HTTP_HEADER_CONTENT];
+
+                    if ( so && mpseGetPatternCount(so) > 0 )
+                    {
+                        start_state = 0;
+
+                        mpseSearch(so, hb->buf, hb->length,
+                            rule_tree_match, omd, &start_state);
+#ifdef PPM_MGR
+                        /* Bail if we spent too much time already */
+                        if (PPM_PACKET_ABORT_FLAG())
+                            goto fp_eval_header_sw_reset_ip;
+#endif
+                    }
+                }
+                if ( (hb = GetHttpBuffer(HTTP_BUFFER_CLIENT_BODY)) )
+                {
+                    so = (void *)port_group->pgPms[PM_TYPE__HTTP_CLIENT_BODY_CONTENT];
+
+                    if ( so && mpseGetPatternCount(so) > 0 )
+                    {
+                        start_state = 0;
+
+                        mpseSearch(so, hb->buf, hb->length,
+                            rule_tree_match, omd, &start_state);
 #ifdef PPM_MGR
                         /* Bail if we spent too much time already */
                         if (PPM_PACKET_ABORT_FLAG())
@@ -1210,7 +1222,6 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
                     }
                 }
             }
-
             /*
              **  Decode Content Match
              **  We check to see if the packet has been normalized into
@@ -1290,6 +1301,14 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
      **  this problem.  Immediate solution is to have the detection plugins
      **  bail if the rule should only be inspected against packets, a.k.a
      **  dsize checks.
+     **
+     **  NOTE 2:
+     **  PKT_REBUILT_STREAM packets are now cooked (encoded by Snort)
+     **  and have the same encapsulations as the raw packets.  The
+     **  headers are "good enough" for detection (valid TCP sequence
+     **  numbers, but zero checksums) but packet sizes are different.
+     **  Given that TCP segmentation is arbitrary to start with, the
+     **  use of dsize in a rule is questionable for raw or rebuilt.
      */
 
     /*
@@ -1310,7 +1329,6 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
             detection_option_eval_data_t eval_data;
             int rval;
 
-            rnWalk = port_group->pgHeadNC;
             eval_data.pomd = omd;
             eval_data.p = p;
             eval_data.pmd = NULL;

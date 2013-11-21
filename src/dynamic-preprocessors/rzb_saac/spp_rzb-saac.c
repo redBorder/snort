@@ -30,6 +30,7 @@
 #include <strings.h>
 #endif
 
+#include <assert.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -117,11 +118,8 @@ void RZBProcess(void *p, void *context)
 {
    SFSnortPacket *sp = (SFSnortPacket *)p;
 
-   if(!sp->ip4_header || sp->ip4_header->proto != IPPROTO_TCP || !sp->tcp_header)
-   {
-      /* Not for me, return */
-      return;
-   }
+   // preconditions - what we registered for
+   assert(IsTCP(sp));
 
    // Only rebuilt packets from server
    if (sp->src_port == 80 && !(sp->flags & FLAG_REBUILT_STREAM) && sp->payload_size != 0)

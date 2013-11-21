@@ -40,6 +40,7 @@
 **      logfile { /tmp/ps.log } # file to log detailed portscan info
 */
 
+#include <assert.h>
 #include <sys/types.h>
 #include <errno.h>
 
@@ -788,6 +789,11 @@ static void PortscanDetect(Packet *p, void *context)
     PortscanConfig *pPolicyConfig = NULL;
     PROFILE_VARS;
 
+    assert(IPH_IS_VALID(p));
+
+    if ( p->packet_flags & PKT_REBUILT_STREAM )
+        return;
+
     sfPolicyUserPolicySet (portscan_config, policy_id);
     pPolicyConfig = (PortscanConfig *)sfPolicyUserDataGetCurrent(portscan_config);
 
@@ -795,9 +801,6 @@ static void PortscanDetect(Packet *p, void *context)
         return;
 
     portscan_eval_config = pPolicyConfig;
-
-    if(!p || !IPH_IS_VALID(p) || (p->packet_flags & PKT_REBUILT_STREAM))
-        return;
 
     PREPROC_PROFILE_START(sfpsPerfStats);
 
@@ -1426,12 +1429,11 @@ static void PortscanFreeConfig(PortscanConfig *config)
 
 static int PortscanGetProtoBits(int detect_scans)
 {
-    int proto_bits = 0;
+    int proto_bits = PROTO_BIT__IP;
 
     if (detect_scans & PS_PROTO_IP)
     {
         proto_bits |= PROTO_BIT__ICMP;
-        proto_bits |= PROTO_BIT__IP;
     }
 
     if (detect_scans & PS_PROTO_UDP)

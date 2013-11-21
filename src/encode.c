@@ -227,12 +227,14 @@ const uint8_t* Encode_Response(
 // - original ttl is always used
 //-------------------------------------------------------------------------
 #ifdef HAVE_DAQ_ADDRESS_SPACE_ID
-int Encode_Format_With_DAQ_Info (EncodeFlags f, const Packet* p, Packet* c, PseudoPacketType type,
-        int32_t ingress_index, int32_t ingress_group, int32_t egress_index, int32_t egress_group,
-        uint32_t daq_flags, uint16_t address_space_id, uint32_t opaque)
+int Encode_Format_With_DAQ_Info (
+    EncodeFlags f, const Packet* p, Packet* c, PseudoPacketType type,
+    const DAQ_PktHdr_t* phdr, uint32_t opaque)
+
 #elif defined(HAVE_DAQ_ACQUIRE_WITH_META)
-int Encode_Format_With_DAQ_Info (EncodeFlags f, const Packet* p, Packet* c, PseudoPacketType type,
-        uint32_t opaque)
+int Encode_Format_With_DAQ_Info (
+    EncodeFlags f, const Packet* p, Packet* c, PseudoPacketType type,
+    uint32_t opaque)
 #else
 int Encode_Format (EncodeFlags f, const Packet* p, Packet* c, PseudoPacketType type)
 #endif
@@ -253,12 +255,12 @@ int Encode_Format (EncodeFlags f, const Packet* p, Packet* c, PseudoPacketType t
     c->pkt = pkt;
 
 #ifdef HAVE_DAQ_ADDRESS_SPACE_ID
-    pkth->ingress_index = ingress_index;
-    pkth->ingress_group = ingress_group;
-    pkth->egress_index = egress_index;
-    pkth->egress_group = egress_group;
-    pkth->flags = daq_flags & (~DAQ_PKT_FLAG_HW_TCP_CS_GOOD);
-    pkth->address_space_id = address_space_id;
+    pkth->ingress_index = phdr->ingress_index;
+    pkth->ingress_group = phdr->ingress_group;
+    pkth->egress_index = phdr->egress_index;
+    pkth->egress_group = phdr->egress_group;
+    pkth->flags = phdr->flags & (~DAQ_PKT_FLAG_HW_TCP_CS_GOOD);
+    pkth->address_space_id = phdr->address_space_id;
     pkth->opaque = opaque;
 #elif defined(HAVE_DAQ_ACQUIRE_WITH_META)
     pkth->opaque = opaque;
@@ -348,9 +350,7 @@ int Encode_Format (EncodeFlags f, const Packet* p, Packet* c, PseudoPacketType t
 #ifdef HAVE_DAQ_ADDRESS_SPACE_ID
 int Encode_Format (EncodeFlags f, const Packet* p, Packet* c, PseudoPacketType type)
 {
-    return Encode_Format_With_DAQ_Info(f, p, c, type, p->pkth->ingress_index, p->pkth->ingress_group,
-            p->pkth->egress_index, p->pkth->egress_group, p->pkth->flags, p->pkth->address_space_id,
-            p->pkth->opaque);
+    return Encode_Format_With_DAQ_Info(f, p, c, type, p->pkth, p->pkth->opaque);
 }
 #elif defined(HAVE_DAQ_ACQUIRE_WITH_META)
 int Encode_Format (EncodeFlags f, const Packet* p, Packet* c, PseudoPacketType type)

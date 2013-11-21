@@ -66,6 +66,7 @@
  */
 
 /*  I N C L U D E S  ************************************************/
+#include <assert.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <string.h>
@@ -378,12 +379,11 @@ static void DetectARPattacks(Packet *p, void *context)
     aconfig = (ArpSpoofConfig *)sfPolicyUserDataGetCurrent(arp_spoof_config);
 
     /* is the packet valid? */
-    if ((p == NULL) || (aconfig == NULL))
+    if ( aconfig == NULL )
         return;
 
-    /* are the Ethernet and ARP headers present? */
-    if (p->eh == NULL || p->ah == NULL)
-        return;
+    // preconditions - what we registered for
+    assert(p->eh && p->ah);
 
     /* is the ARP protocol type IP and the ARP hardware type Ethernet? */
     if ((ntohs(p->ah->ea_hdr.ar_hrd) != 0x0001) ||

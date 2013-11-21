@@ -2558,9 +2558,12 @@ static inline const u_char *hi_client_extract_header(
                 Client->request.header_raw = NULL;\
                 Client->request.header_raw_size = 0;\
                 Client->request.header_norm = NULL; \
+                Client->request.header_norm_size = 0 ;\
                 Client->request.cookie.cookie = NULL;\
                 Client->request.cookie.cookie_end = NULL;\
                 Client->request.cookie.next = NULL;\
+                Client->request.cookie_norm = NULL;\
+                Client->request.cookie_norm_size = 0;\
     } while(0);
 
 #define CLR_METHOD(Client) \
@@ -2635,8 +2638,6 @@ int StatelessInspection(Packet *p, HI_SESSION *Session, HttpSessionData *hsd, in
     const u_char *method_end = NULL;
     int method_len;
     int iRet=0;
-    int len;
-    char non_ascii_mthd = 0;
     char sans_uri = 0;
     const unsigned char *data = p->data;
     int dsize = p->dsize;
@@ -2712,8 +2713,6 @@ int StatelessInspection(Packet *p, HI_SESSION *Session, HttpSessionData *hsd, in
         break;
     }
 
-    len = end - ptr;
-
     mthd = method_ptr.uri = ptr;
 
     while(hi_util_in_bounds(start, end, mthd))
@@ -2730,7 +2729,6 @@ int StatelessInspection(Packet *p, HI_SESSION *Session, HttpSessionData *hsd, in
             {
                 /* Possible post data or something else strange... */
                 method_end = mthd++;
-                non_ascii_mthd = 1;
                 break;
             }
         }

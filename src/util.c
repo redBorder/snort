@@ -1529,51 +1529,6 @@ void SignalWaitingParent(void)
 #endif
 }
 
-/* This function has been moved into mstring.c, since that
-*  is where the allocation actually occurs.  It has been
-*  renamed to mSplitFree().
-*
-void FreeToks(char **toks, int num_toks)
-{
-    if (toks)
-    {
-        if (num_toks > 0)
-        {
-            do
-            {
-                num_toks--;
-                free(toks[num_toks]);
-            } while(num_toks);
-        }
-        free(toks);
-    }
-}
-*/
-
-
-/* Self preserving memory allocator */
-void *SPAlloc(unsigned long size, struct _SPMemControl *spmc)
-{
-    void *tmp;
-
-    spmc->mem_usage += size;
-
-    if(spmc->mem_usage > spmc->memcap)
-    {
-        spmc->sp_func(spmc);
-    }
-
-    tmp = (void *) calloc(size, sizeof(char));
-
-    if(tmp == NULL)
-    {
-        FatalError("Unable to allocate memory!  (%lu requested, %lu in use)\n",
-                size, spmc->mem_usage);
-    }
-
-    return tmp;
-}
-
 /* Guaranteed to be '\0' terminated even if truncation occurs.
  *
  * returns  SNORT_SNPRINTF_SUCCESS if successful
@@ -1855,20 +1810,6 @@ const char *SnortStrcasestr(const char *s, int slen, const char *substr)
         s--;
     }
     return s;
-}
-
-void *SnortAlloc(unsigned long size)
-{
-    void *tmp;
-
-    tmp = (void *) calloc(size, sizeof(char));
-
-    if(tmp == NULL)
-    {
-        FatalError("Unable to allocate memory!  (%lu requested)\n", size);
-    }
-
-    return tmp;
 }
 
 void * SnortAlloc2(size_t size, const char *format, ...)

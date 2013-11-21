@@ -826,7 +826,7 @@ bool FTPDataEOFDirection(SFSnortPacket *p, FTP_DATA_SESSION *ftpdata)
             eof |= FLAG_FROM_SERVER;
     }
 
-    return (direction & eof);
+    return ( (direction & eof) != 0 );
 }
 
 /* Function: FTPDataEOF

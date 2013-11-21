@@ -937,10 +937,12 @@ static int sip_parse_content_type(SIPMsg *msg, const char *start, const char *en
 
 static int sip_parse_content_len(SIPMsg *msg, const char *start, const char *end)
 {
-	int length;
 	char *next = NULL;
+#ifdef DEBUG
+	int length;
 	length = end - start;
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Content length value: %.*s\n", length, start););
+#endif
 
 	msg->content_len = _dpd.SnortStrtoul(start, &next, 10);
 	if ( sip_eval_config->maxContentLen && (msg->content_len > sip_eval_config->maxContentLen))
