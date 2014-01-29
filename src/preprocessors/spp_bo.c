@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2005 Martin Roesch <roesch@sourcefire.com>
 **
@@ -638,7 +639,7 @@ static void BoFind(Packet *p, void *context)
                 }
                 if ( (bo->drop_flags & BO_ALERT_CLIENT) )
                 {
-                    Active_DropSession();
+                    Active_DropSession(p);
                 }
                 DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN, "Client packet\n"););
             }
@@ -651,7 +652,7 @@ static void BoFind(Packet *p, void *context)
                 }
                 if ( (bo->drop_flags & BO_ALERT_SERVER) )
                 {
-                    Active_DropSession();
+                    Active_DropSession(p);
                 }
                 DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN, "Server packet\n"););
             }
@@ -664,7 +665,7 @@ static void BoFind(Packet *p, void *context)
                 }
                 if ( (bo->drop_flags & BO_ALERT_GENERAL) )
                 {
-                    Active_DropSession();
+                    Active_DropSession(p);
                 }
             }
         }
@@ -753,7 +754,7 @@ static int BoGetDirection(BoConfig *bo, Packet *p, char *pkt_data)
         }
         if ( (bo->drop_flags & BO_ALERT_SNORT_ATTACK) )
         {
-            Active_DropSession();
+            Active_DropSession(p);
         }
 
         return BO_FROM_UNKNOWN;

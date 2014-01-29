@@ -1,6 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2012-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -985,10 +986,16 @@ static int ConsumeHAMessage(const uint8_t *msg, uint32_t msglen)
                 offset += rec_hdr->length;
                 if (debug_flag)
                 {
+#ifdef TARGET_BASED
                     LogMessage("S5HADbg %s LWSession for %s - SF=0x%x IPP=0x%hx AP=0x%hx DIR=%hhu IDIR=%hhu\n",
                                 (lwssn) ? "Updating" : "Creating", s5_ha_debug_session, has->ha_state.session_flags,
                                 has->ha_state.ipprotocol, has->ha_state.application_protocol,
                                 has->ha_state.direction, has->ha_state.ignore_direction);
+#else
+                    LogMessage("S5HADbg %s LWSession for %s - SF=0x%x DIR=%hhu IDIR=%hhu\n",
+                                (lwssn) ? "Updating" : "Creating", s5_ha_debug_session, has->ha_state.session_flags,
+                                has->ha_state.direction, has->ha_state.ignore_direction);
+#endif
                 }
                 lwssn = DeserializeHASession(&key, has, lwssn);
                 break;
@@ -1483,10 +1490,17 @@ void Stream5ProcessHA(void *ssnptr)
 
     debug_flag = Stream5HADebugCheck(lwssn->key, s5_ha_debug_flag, &s5_ha_debug_info, s5_ha_debug_session, sizeof(s5_ha_debug_session));
     if (debug_flag)
+#ifdef TARGET_BASED
         LogMessage("S5HADbg Producing update message for %s - SF=0x%x IPP=0x%hx AP=0x%hx DIR=%hhu IDIR=%hhu HPM=0x%hhx HF=0x%hhx\n",
                     s5_ha_debug_session, lwssn->ha_state.session_flags, lwssn->ha_state.ipprotocol,
                     lwssn->ha_state.application_protocol, lwssn->ha_state.direction, lwssn->ha_state.ignore_direction,
                     lwssn->ha_pending_mask, lwssn->ha_flags);
+#else
+        LogMessage("S5HADbg Producing update message for %s - SF=0x%x DIR=%hhu IDIR=%hhu HPM=0x%hhx HF=0x%hhx\n",
+                    s5_ha_debug_session, lwssn->ha_state.session_flags,
+                    lwssn->ha_state.direction, lwssn->ha_state.ignore_direction,
+                    lwssn->ha_pending_mask, lwssn->ha_flags);
+#endif
 
     /* Calculate the size of the update message. */
     msg_size = CalculateHAMessageSize(HA_EVENT_UPDATE, lwssn);

@@ -3,6 +3,7 @@
 **
 ** perf-base.c
 **
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Dan Roelker <droelker@sourcefire.com>
 ** Marc Norton <mnorton@sourcefire.com>
@@ -1554,7 +1555,7 @@ void LogBasePerfHeader (FILE* fh)
         ",%s,%s,%s",
         "pkt_stats.pkts_recv",
         "pkt_stats.pkts_drop",
-        "total_blocked_packets");
+        "total_blocked_verdicts");
 
     fprintf(fh,
         ",%s,%s,%s,%s",
@@ -1640,7 +1641,7 @@ static void DisplayBasePerfStatsConsole(SFBASE_STATS *sfBaseStats, int max_stats
 
     LogMessage("%% Dropped:   %.3f%%\n", sfBaseStats->pkt_drop_percent);
 
-    LogMessage("Blocked:     " STDu64 "\n", sfBaseStats->total_blocked_packets);
+    LogMessage("Block Verdict:     " STDu64 "\n", sfBaseStats->total_blocked_packets);
     LogMessage("Injected:    " STDu64 "\n", sfBaseStats->total_injected_packets);
     LogMessage("Pkts Filtered TCP:     " STDu64 "\n", sfBaseStats->total_tcp_filtered_packets);
     LogMessage("Pkts Filtered UDP:     " STDu64 "\n\n", sfBaseStats->total_udp_filtered_packets);

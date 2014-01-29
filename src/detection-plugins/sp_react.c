@@ -1,6 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -445,7 +446,7 @@ static int React_Queue (Packet* p, void* pv)
     if ( Active_IsRSTCandidate(p) )
         Active_QueueResponse(React_Send, rd);
 
-    Active_DropSession();
+    Active_DropSession(p);
 
     PREPROC_PROFILE_END(reactPerfStats);
     return 0;
@@ -463,7 +464,8 @@ static void React_Send (Packet* p,  void* pv)
     PREPROC_PROFILE_START(reactPerfStats);
     Active_IgnoreSession(p);
 
-    Active_SendData(p, df, (uint8_t*)rd->resp_buf, rd->buf_len);
+    if (p->packet_flags & PKT_STREAM_EST)
+        Active_SendData(p, df, (uint8_t*)rd->resp_buf, rd->buf_len);
     Active_SendReset(p, rf);
     Active_SendReset(p, ENC_FLAG_FWD);
 

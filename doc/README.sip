@@ -286,7 +286,7 @@ P: Match SIP request or SIP response body, Similar to sip_body.
     code_list = state_code|state_code, code_list
     code      = "100-999"|"1-9"   
     Note: 1,2,3,4,5,6... mean to check for "1xx", "2xx", "3xx", "4xx", "5xx", 
-          ,"6xx"... reponses.  
+          ,"6xx"... responses.  
   Example:
     This rule searches for the response with state code "200".
     sip_stat_code:200

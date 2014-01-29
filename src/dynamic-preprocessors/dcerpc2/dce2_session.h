@@ -1,4 +1,5 @@
 /****************************************************************************
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -198,7 +199,7 @@ static inline void * DCE2_SsnGetAppData(const SFSnortPacket *p)
  *
  * Returns:
  *  int - the reassembly direction
- *        SSN_DIR_NONE, SSN_DIR_CLIENT, SSN_DIR_SERVER or SSN_DIR_BOTH
+ *        SSN_DIR_NONE, SSN_DIR_FROM_CLIENT, SSN_DIR_FROM_SERVER or SSN_DIR_BOTH
  *
  ********************************************************************/
 static inline int DCE2_SsnGetReassembly(const SFSnortPacket *p)

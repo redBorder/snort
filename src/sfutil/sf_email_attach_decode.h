@@ -1,4 +1,5 @@
 /*
+ ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 1998-2013 Sourcefire, Inc.
  **
  ** Writen by Bhagyashree Bantwal <bbantwal@sourcefire.com>
@@ -197,16 +198,16 @@ static inline void ClearEmailDecodeState(Email_DecodeState *ds)
     ResetEmailDecodeState(ds);
 }
 
-static inline int limitDetection(int depth, int decoded_bytes)
+static inline int limitDetection(int depth, int decoded_bytes, int decode_bytes_total)
 {
     if (!depth)
         return decoded_bytes;
-    else if (depth < 0)
+    else if (depth < decode_bytes_total - decoded_bytes)
         return 0;
-    else if (depth < decoded_bytes)
-        return depth;
-    else
+    else if (depth > decode_bytes_total)
         return decoded_bytes;
+    else
+        return (depth + decoded_bytes - decode_bytes_total);
 }
 
 static inline int getDetectionSize(int b64_depth, int qp_depth, int uu_depth, int bitenc_depth, Email_DecodeState *ds)
@@ -216,16 +217,16 @@ static inline int getDetectionSize(int b64_depth, int qp_depth, int uu_depth, in
     switch(ds->decode_type)
     {
         case DECODE_B64:
-            iRet = limitDetection(b64_depth, ds->decoded_bytes);
+            iRet = limitDetection(b64_depth, ds->decoded_bytes, ds->b64_state.decode_bytes_read);
             break;
         case DECODE_QP:
-            iRet = limitDetection(qp_depth, ds->decoded_bytes);
+            iRet = limitDetection(qp_depth, ds->decoded_bytes, ds->qp_state.decode_bytes_read);
             break;
         case DECODE_UU:
-            iRet = limitDetection(uu_depth, ds->decoded_bytes);
+            iRet = limitDetection(uu_depth, ds->decoded_bytes, ds->uu_state.decode_bytes_read);
             break;
         case DECODE_BITENC:
-            iRet = limitDetection(bitenc_depth, ds->decoded_bytes);
+            iRet = limitDetection(bitenc_depth, ds->decoded_bytes, ds->bitenc_state.bytes_read);
             break;
         default:
             break;

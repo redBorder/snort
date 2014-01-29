@@ -1,6 +1,7 @@
 /*
 **
 **
+**  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 **  Copyright (C) 2012-2013 Sourcefire, Inc.
 **
 **  This program is free software; you can redistribute it and/or modify
@@ -28,7 +29,7 @@
 #define __FILE_IDENTIFIER_H__
 #include "file_lib.h"
 
-#define MAX_BRANCH (UINT8_MAX + 1)
+#define MAX_BRANCH (UINT8_MAX + 1)   /* 256 identifiers pointers*/
 
 typedef enum _IdNodeState
 {
@@ -39,10 +40,10 @@ typedef enum _IdNodeState
 
 typedef struct _IdentifierNode
 {
-    uint32_t type_id;       /* magic content to match*/
+    uint32_t type_id;           /* magic content to match*/
     IdNodeState state;
     uint32_t offset;            /* offset from file start */
-    struct _IdentifierNode *next[MAX_BRANCH]; /* pointer to an array of 256 identifiers pointers*/
+    struct _IdentifierNode *next[MAX_BRANCH]; /* next levels*/
 
 } IdentifierNode;
 
@@ -54,15 +55,56 @@ typedef struct _IdentifierNodeHead
 
 } IdentifierNodeHead;
 
-void init_file_identifers(void);
-void insert_file_rule(RuleInfo *rule, void *conf);
-uint32_t memory_usage_identifiers(void);
+/* Initialize file type id states
+ *
+ * Args: None
+ * Return: None
+ */
+void file_identifers_init(void);
 
-uint32_t find_file_type_id(uint8_t *buf, uint16_t len, FileContext *context);
+/* Insert one file rule to file identifiers trie, update file identifiers
+ *
+ * Args:
+ *   RuleInfo *rule: file magic rule information
+ *   void *conf: file configuration
+ *
+ * Return:
+ *   None
+ */
+void file_identifers_update(RuleInfo *rule, void *conf);
+
+/* Memory usage for all file magics
+ *
+ * Args: None
+ * Return:
+ *   uint32_t: memory usage in bytes
+ */
+uint32_t file_identifiers_usage(void);
+
+/* Main process for file type identification.
+ * This identification is stateful
+ *
+ * Args:
+ *   uint8_t *buf: data buffer pointer
+ *   int len: length of data buffer
+ *   FileContext *context: context for saving state
+ * Return:
+ *   uint32_t: file type ID
+ */
+uint32_t file_identifiers_match(uint8_t *buf, int len, FileContext *cxt);
+
+/* Free file identifiers stored in conf
+ *
+ * Args:
+ *   void *conf: file configuration
+ *
+ * Return:
+ *   None
+ */
+void file_identifiers_free(void* conf);
 
 #ifdef DEBUG_MSGS
-void print_identifiers(IdentifierNode*);
-char *test_find_file_type(void *conf);
+void file_identifiers_print(IdentifierNode*);
 #endif
 
 #endif

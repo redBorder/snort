@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -1085,7 +1086,7 @@ static inline void RpcSsnSetInactive(RpcSsnData *rsdata, Packet *p)
     DEBUG_WRAP(DebugMessage(DEBUG_RPC, "STATEFUL: Deactivating session: %p\n",
                 rsdata););
 
-    stream_api->set_flush_point(p->ssnptr, SSN_DIR_SERVER, rsdata->ofp);
+    stream_api->set_flush_point(p->ssnptr, SSN_DIR_FROM_SERVER, rsdata->ofp);
     RpcSsnClean(rsdata);
 }
 
@@ -1115,17 +1116,17 @@ static RpcSsnData * RpcSsnDataNew(Packet *p)
     {
         char rdir = stream_api->get_reassembly_direction(p->ssnptr);
 
-        if (!(rdir & SSN_DIR_SERVER))
+        if (!(rdir & SSN_DIR_FROM_SERVER))
         {
-            rdir |= SSN_DIR_SERVER;
+            rdir |= SSN_DIR_FROM_SERVER;
             stream_api->set_reassembly(p->ssnptr, STREAM_FLPOLICY_FOOTPRINT,
                     rdir, STREAM_FLPOLICY_SET_ABSOLUTE);
         }
 
         rsdata->active = 1;
-        rsdata->ofp = stream_api->get_flush_point(p->ssnptr, SSN_DIR_SERVER);
+        rsdata->ofp = stream_api->get_flush_point(p->ssnptr, SSN_DIR_FROM_SERVER);
 
-        stream_api->set_flush_point(p->ssnptr, SSN_DIR_SERVER, flush_size);
+        stream_api->set_flush_point(p->ssnptr, SSN_DIR_FROM_SERVER, flush_size);
         stream_api->set_application_data(p->ssnptr,
                 PP_RPCDECODE, (void *)rsdata, RpcSsnDataFree);
 

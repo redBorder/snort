@@ -1,6 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -554,6 +555,11 @@ static bool hi_fsm_compile (void)
     assert(hi_fsm_size < TBD);  // using uint8_t for Cell.next and Hi5State.fsm
 
     hi_fsm = malloc(hi_fsm_size*sizeof(*hi_fsm));
+    if ( hi_fsm == NULL )
+    {
+        DEBUG_WRAP(DebugMessage(DEBUG_STREAM_PAF, "Unable to allocate memory for hi_fsm."););
+        return false;
+    }
     next = max;
 
     for ( i = 0; i < hi_fsm_size; i++ )

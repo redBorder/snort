@@ -1,6 +1,7 @@
 #ifndef _BOUNDS_H
 #define _BOUNDS_H
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2003-2013 Sourcefire, Inc.
 **               Chris Green <cmg@sourcefire.com>
 **
@@ -95,6 +96,8 @@ static inline int SafeMemCheck(void *dst, size_t n,
  */
 static inline int SafeMemcpy(void *dst, const void *src, size_t n, const void *start, const void *end)
 {
+    if (!n)
+        return SAFEMEM_SUCCESS;
     if (SafeMemCheck(dst, n, start, end) != SAFEMEM_SUCCESS)
         ERRORRET;
     if (src == NULL)

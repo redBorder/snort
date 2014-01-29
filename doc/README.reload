@@ -40,7 +40,7 @@ $ kill -SIGHUP <snort pid>
 NOTE: If reload support is not enabled, Snort will restart (as it always has)
 upon receipt of a SIGHUP.
 
-NOTE: An invalid configuration will still result in Snort fatal erroring, so
+NOTE: An invalid configuration will still result in a fatal error, so
 you should test your new configuration before issuing a reload, e.g.
 
 $ snort -c snort.conf -T

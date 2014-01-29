@@ -1,6 +1,7 @@
 /*
  **
  **
+ **  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  **  Copyright (C) 2012-2013 Sourcefire, Inc.
  **
  **  This program is free software; you can redistribute it and/or modify
@@ -27,7 +28,14 @@
 #ifndef __FILE_LIB_H__
 #define __FILE_LIB_H__
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <stdint.h>
+#include "sf_types.h" /* for bool */
+
+#include "file_api.h"
 
 #define SNORT_FILE_TYPE_UNKNOWN          UINT16_MAX  /**/
 #define SNORT_FILE_TYPE_CONTINUE         0 /**/
@@ -47,15 +55,15 @@ typedef struct _MagicData
 
 typedef struct _RuleInfo
 {
-    uint32_t   rev;
     char       *message;
     char       *type;
-    uint32_t   id;
     char       *category;
     char       *version;
     MagicData  *magics;
+    void       *groups;
+    uint32_t   id;
+    uint32_t   rev;
 } RuleInfo;
-
 
 typedef struct _FileContext
 {
@@ -71,24 +79,17 @@ typedef struct _FileContext
     void *     file_type_context;
     void *     file_signature_context;
     void *     file_config;
-    time_t expires;
+    time_t     expires;
+    uint16_t   app_id;
+    bool file_capture_enabled;
+    FileCaptureInfo *file_capture;
+    uint8_t *current_data;  /*current file data*/
+    uint32_t current_data_len;
+    File_Verdict verdict;
+    bool suspend_block_verdict;
+    FileState file_state;
+    uint32_t file_id;
 } FileContext;
-
-typedef enum _FilePosition
-{
-    SNORT_FILE_POSITION_UNKNOWN,
-    SNORT_FILE_START,
-    SNORT_FILE_MIDDLE,
-    SNORT_FILE_END,
-    SNORT_FILE_FULL
-} FilePosition;
-
-typedef enum _FileProcessType
-{
-    SNORT_FILE_TYPE_ID,
-    SNORT_FILE_SHA256
-} FileProcessType;
-
 
 /*Main File Processing functions */
 void file_type_id( FileContext* context, uint8_t* file_data, int data_size, FilePosition position);
@@ -108,11 +109,22 @@ bool file_direction_get (FileContext *context);
 void file_sig_sha256_set (FileContext *context, uint8_t *signature);
 uint8_t* file_sig_sha256_get (FileContext *context);
 
-char* file_info_from_ID(void *conf, uint32_t);
+char* file_type_name(void *conf, uint32_t);
+
+#if defined(FEAT_FILE_INSPECT)
+bool file_IDs_from_type(const void *conf, const char *type,
+     uint32_t **ids, uint32_t *count);
+
+bool file_IDs_from_type_version(const void *conf, const char *type,
+    const char *version, uint32_t **ids, uint32_t *count);
+
+bool file_IDs_from_group(const void *conf, const char *group,
+     uint32_t **ids, uint32_t *count);
+#endif
+
 extern int64_t file_type_depth;
 extern int64_t file_signature_depth;
 
-void free_file_identifiers(void*);
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
 void file_sha256_print(unsigned char *hash);
 #endif

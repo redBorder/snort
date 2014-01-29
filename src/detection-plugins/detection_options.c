@@ -1,5 +1,6 @@
 /* $Id$ */
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2007-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -85,6 +86,9 @@
 #include "sp_ttl_check.h"
 #include "sp_urilen_check.h"
 #include "sp_hdr_opt_wrap.h"
+#if defined(FEAT_FILE_INSPECT)
+# include "sp_file_type.h"
+#endif
 
 #include "sp_preprocopt.h"
 #include "sp_dynamic.h"
@@ -229,6 +233,11 @@ uint32_t detection_option_hash_func(SFHASHFCN *p, unsigned char *k, int n)
         case RULE_OPTION_TYPE_HDR_OPT_CHECK:
             hash = HdrOptCheckHash(key->option_data);
             break;
+#if defined(FEAT_FILE_INSPECT)
+        case RULE_OPTION_TYPE_FILE_TYPE:
+            hash = FileTypeHash(key->option_data);
+            break;
+#endif
         case RULE_OPTION_TYPE_PREPROCESSOR:
             hash = PreprocessorRuleOptionHash(key->option_data);
             break;
@@ -381,6 +390,11 @@ int detection_option_key_compare_func(const void *k1, const void *k2, size_t n)
         case RULE_OPTION_TYPE_HDR_OPT_CHECK:
             ret = HdrOptCheckCompare(key1->option_data, key2->option_data);
             break;
+#if defined(FEAT_FILE_INSPECT)
+        case RULE_OPTION_TYPE_FILE_TYPE:
+            ret = FileTypeCompare(key1->option_data, key2->option_data);
+            break; 
+#endif
         case RULE_OPTION_TYPE_PREPROCESSOR:
             ret = PreprocessorRuleOptionCompare(key1->option_data, key2->option_data);
             break;
@@ -515,6 +529,11 @@ int detection_hash_free_func(void *option_key, void *data)
             break;
         case RULE_OPTION_TYPE_HDR_OPT_CHECK:
             break;
+#if defined(FEAT_FILE_INSPECT)
+        case RULE_OPTION_TYPE_FILE_TYPE:
+            FileTypeFree(key->option_data);
+            break;
+#endif
         case RULE_OPTION_TYPE_PREPROCESSOR:
             PreprocessorRuleOptionsFreeFunc(key->option_data);
             break;
@@ -746,6 +765,9 @@ char *option_type_str[] =
     "RULE_OPTION_TYPE_IP_TOS",
     "RULE_OPTION_TYPE_IS_DATA_AT",
     "RULE_OPTION_TYPE_FILE_DATA",
+#if defined(FEAT_FILE_INSPECT)
+    "RULE_OPTION_TYPE_FILE_TYPE",
+#endif
     "RULE_OPTION_TYPE_BASE64_DECODE",
     "RULE_OPTION_TYPE_BASE64_DATA",
     "RULE_OPTION_TYPE_PKT_DATA",
@@ -949,6 +971,7 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
                     PatternMatchData *pmd = (PatternMatchData *)eval_data->pmd;
                     int pattern_size = 0;
                     int check_ports = 1;
+                    int eval_rtn_result;
 #ifdef TARGET_BASED
                     unsigned int svc_idx;
 #endif
@@ -983,7 +1006,12 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
                         }
                     }
 #endif
-                    if (fpEvalRTN(getRuntimeRtnFromOtn(otn), eval_data->p, check_ports))
+                    // Don't include RTN time
+                    NODE_PROFILE_TMPEND(node);
+                    eval_rtn_result = fpEvalRTN(getRuntimeRtnFromOtn(otn), eval_data->p, check_ports);
+                    NODE_PROFILE_TMPSTART(node);
+
+                    if (eval_rtn_result)
                     {
                         if ( !otn->detection_filter ||
                              !detection_filter_test(
@@ -1100,6 +1128,9 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
             case RULE_OPTION_TYPE_TTL:
             case RULE_OPTION_TYPE_URILEN:
             case RULE_OPTION_TYPE_HDR_OPT_CHECK:
+#if defined(FEAT_FILE_INSPECT)
+            case RULE_OPTION_TYPE_FILE_TYPE:
+#endif
             case RULE_OPTION_TYPE_PREPROCESSOR:
                 if (node->evaluate)
                     rval = node->evaluate(node->option_data, eval_data->p);

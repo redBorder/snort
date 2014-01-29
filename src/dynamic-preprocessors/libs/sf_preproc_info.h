@@ -1,8 +1,8 @@
 /*
  * sf_preproc_info.h
  *
- * Copyright (C) 2006-2013 Sourcefire,Inc
- * Steven A. Sturges <ssturges@sourcefire.com>
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2006-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License Version 2 as
@@ -24,6 +24,8 @@
  * This file is part of the dynamically loadable preprocessor library.  The
  * items must be globally defined within the source file of a given
  * preprocessor.
+ *
+ * Author: Steven A. Sturges <ssturges@sourcefire.com>
  *
  * NOTES:
  *

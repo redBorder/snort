@@ -1,4 +1,5 @@
 /****************************************************************************
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -39,6 +40,9 @@ extern PreprocStats dce2_pstat_smb_req;
 extern PreprocStats dce2_pstat_smb_uid;
 extern PreprocStats dce2_pstat_smb_tid;
 extern PreprocStats dce2_pstat_smb_fid;
+extern PreprocStats dce2_pstat_smb_file;
+extern PreprocStats dce2_pstat_smb_file_detect;
+extern PreprocStats dce2_pstat_smb_file_api;
 extern PreprocStats dce2_pstat_smb_fingerprint;
 extern PreprocStats dce2_pstat_smb_negotiate;
 extern PreprocStats dce2_pstat_co_seg;

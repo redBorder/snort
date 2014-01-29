@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2009-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -31,6 +32,8 @@ int SplitNode(sdf_tree_node *node, uint16_t split_index);
 sdf_tree_node * AddChild(sdf_tree_node *node, SDFOptionData *data, char *pattern);
 int FreePiiTree(sdf_tree_node *head);
 
-sdf_tree_node * FindPii(sdf_tree_node *head, char *buf, uint16_t *buf_index, uint16_t buflen, SDFConfig *config);
+sdf_tree_node * FindPii(const sdf_tree_node *head, char *buf, uint16_t *buf_index, uint16_t buflen, SDFConfig *config, SDFSessionData *session);
+sdf_tree_node * FindPiiRecursively(sdf_tree_node *node, char *buf, uint16_t *buf_index, uint16_t buflen,
+                SDFConfig *config, uint16_t *partial_index, sdf_tree_node **partial_node);
 
 #endif /* SDF_PATTERN_MATCH__H */

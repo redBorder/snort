@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2006-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -33,12 +34,8 @@
 #ifdef TARGET_BASED
 #include <stdlib.h>
 #include <string.h>
-#include "snort.h"
-#include "util.h"
 #include "sftarget_reader.h"
-#include "log.h"
 #include "snort_debug.h"
-#include "sf_types.h"
 
 #define YYSTACK_USE_ALLOCA 0
 

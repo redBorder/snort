@@ -65,12 +65,12 @@ FLEXRESP CHANGES
 
 Flexresp and flexresp2 are replaced with flexresp3.
 
-* Flexresp is deleted; these features are no longer avaliable:
+* Flexresp is deleted; these features are no longer available:
 
     ./configure --enable-flexresp
     config flexresp: attempts 1
 
-* Flexresp2 is deleted; these features are no longer avaliable:
+* Flexresp2 is deleted; these features are no longer available:
 
     ./configure --enable-flexresp2
 
@@ -128,7 +128,7 @@ or else the default is used:
         "</body>\r\n" \
         "</html>\r\n";
 
-Note that the file must contain the entire response, includeing any HTTP headers.
+Note that the file must contain the entire response, including any HTTP headers.
 In fact, the response isn't strictly limited to HTTP.  You could craft a binary
 payload of arbitrary content. 
 
@@ -165,7 +165,7 @@ RULE ACTION CHANGES
 ===================
 
 The block and sblock actions have been introduced as synonyms for drop and
-sdrop to help avoid confusion between packets dropped due to load (eg lack of
+sdrop to help avoid confusion between packets dropped due to load (e.g. lack of
 available buffers for incoming packets) and packets dropped due to Snort's
 analysis.
 

@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -109,6 +110,14 @@ extern const u_char *extract_http_content_length(HI_SESSION *, HTTPINSPECT_CONF 
             Server->response.header_norm_size = 0 ;\
             Server->response.cookie.cookie = NULL;\
             Server->response.cookie.cookie_end = NULL;\
+            if(Server->response.cookie.next) {\
+                COOKIE_PTR *cookie = Server->response.cookie.next; \
+                do { \
+                    Server->response.cookie.next = Server->response.cookie.next->next; \
+                    free(cookie); \
+                    cookie = Server->response.cookie.next; \
+                }while(cookie);\
+            }\
             Server->response.cookie.next = NULL;\
             Server->response.cookie_norm = NULL;\
             Server->response.cookie_norm_size = 0;\
@@ -370,13 +379,13 @@ static inline const u_char *extract_http_content_type_charset(HI_SESSION *Sessio
     if (hsd == NULL)
         return p;
 
-    set_decode_utf_state_charset(&(hsd->utf_state), CHARSET_DEFAULT);
-
     /* Don't trim spaces so p is set to end of header */
     sf_unfold_header(p, end-p, unfold_buf, sizeof(unfold_buf), &unfold_size, 0, 0);
     if (!unfold_size)
+    {
+        set_decode_utf_state_charset(&(hsd->utf_state), CHARSET_DEFAULT);
         return p;
-
+    }
     p += unfold_size;
 
     ptr = (const char *)unfold_buf;
@@ -384,14 +393,17 @@ static inline const u_char *extract_http_content_type_charset(HI_SESSION *Sessio
 
     ptr = SnortStrcasestr(ptr, (int)(ptr_end - ptr), "text");
     if (!ptr)
+    {
+        set_decode_utf_state_charset(&(hsd->utf_state), CHARSET_DEFAULT);
         return p;
-
-    set_decode_utf_state_charset(&(hsd->utf_state), CHARSET_UNKNOWN);
+    }
 
     ptr = SnortStrcasestr(ptr, (int)(ptr_end - ptr), "utf-");
     if (!ptr)
+    {
+        set_decode_utf_state_charset(&(hsd->utf_state), CHARSET_UNKNOWN);
         return p;
-
+    }
     ptr += 4; /* length of "utf-" */
     cmplen = ptr_end - ptr;
 
@@ -415,7 +427,11 @@ static inline const u_char *extract_http_content_type_charset(HI_SESSION *Sessio
             set_decode_utf_state_charset(&(hsd->utf_state), CHARSET_UTF32LE);
         else if ( !strncasecmp(ptr, "32be", 4) )
             set_decode_utf_state_charset(&(hsd->utf_state), CHARSET_UTF32BE);
+        else
+            set_decode_utf_state_charset(&(hsd->utf_state), CHARSET_UNKNOWN);
     }
+    else
+        set_decode_utf_state_charset(&(hsd->utf_state), CHARSET_UNKNOWN);
 
     return p;
 }
@@ -1665,7 +1681,12 @@ int HttpResponseInspection(HI_SESSION *Session, Packet *p, const unsigned char *
                 status = SafeMemcpy(HttpDecodeBuf.data, Server->response.body,
                                             alt_dsize, HttpDecodeBuf.data, HttpDecodeBuf.data + sizeof(HttpDecodeBuf.data));
                 if( status != SAFEMEM_SUCCESS  )
+                {
+                    CLR_SERVER_HEADER(Server);
+                    CLR_SERVER_STAT_MSG(Server);
+                    CLR_SERVER_STAT(Server);
                     return HI_MEM_ALLOC_FAIL;
+                }
 
                 SetHttpDecode((uint16_t)alt_dsize);
                 Server->response.body = HttpDecodeBuf.data;

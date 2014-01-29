@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 ** Copyright (C) 2000,2001 Andrew R. Baker <andrewb@uab.edu>
@@ -146,21 +147,22 @@ static void AlertFastInit(struct _SnortConfig *sc, char *args)
     AddFuncToCleanExitList(AlertFastCleanExitFunc, data);
 }
 
+static const char* s_dispos[] = { " [Allow]", " [CDrop]", " [WDrop]", " [Drop]", " [FDrop]" };
+
 static void AlertFast(Packet *p, char *msg, void *arg, Event *event)
 {
     SpoAlertFastData *data = (SpoAlertFastData *)arg;
+    tActiveDrop dispos = Active_GetDisposition();
 
     LogTimeStamp(data->log, p);
 
-    if( p != NULL && Active_PacketWasDropped() )
+    if( p != NULL && dispos > ACTIVE_ALLOW )
     {
-        TextLog_Puts(data->log, " [Drop]");
-    }
-    else if( p != NULL && Active_PacketWouldBeDropped() )
-    {
-        TextLog_Puts(data->log, " [WDrop]");
-    }
+        if ( dispos > ACTIVE_DROP )
+            dispos = ACTIVE_DROP;
 
+        TextLog_Puts(data->log, s_dispos[dispos]);
+    }
 
     {
 #ifdef MARK_TAGGED

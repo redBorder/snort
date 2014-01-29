@@ -8,6 +8,7 @@
 ** author: marc norton
 ** date:   started 12/21/05
 **
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** General Design
@@ -1739,7 +1740,10 @@ _bnfa_search_full_nfa(    bnfa_struct_t * bnfa, unsigned char *Tx, int n,
                 continue;
             }
             patrn = (bnfa_pattern_t*)mlist->data;
-            index = T - Tx - patrn->n + 1;
+            if( ( T - Tx) < patrn->n )
+                index = 0;
+            else
+                index = T - Tx - patrn->n + 1;
             nfound++;
             /* Don't do anything specific for case sensitive patterns and not,
              * since that will be covered by the rule tree itself.  Each tree
@@ -1758,6 +1762,7 @@ _bnfa_search_full_nfa(    bnfa_struct_t * bnfa, unsigned char *Tx, int n,
         }
     }
   }
+  *current_state = state;
   return nfound;
 }
 /*
@@ -1821,7 +1826,10 @@ _bnfa_search_full_nfa_case(    bnfa_struct_t * bnfa, unsigned char *Tx, int n,
                 continue;
             }
             patrn = (bnfa_pattern_t*)mlist->data;
-            index = T - Tx - patrn->n + 1;
+            if( ( T - Tx) < patrn->n )
+                index = 0;
+            else
+                index = T - Tx - patrn->n + 1;
             nfound++;
             /* Don't do anything specific for case (in)sensitive patterns
              * since that will be covered by the rule tree itself.  Each
@@ -1840,6 +1848,7 @@ _bnfa_search_full_nfa_case(    bnfa_struct_t * bnfa, unsigned char *Tx, int n,
         }
     }
   }
+  *current_state = state;
   return nfound;
 }
 /*
@@ -1903,7 +1912,10 @@ _bnfa_search_full_nfa_nocase(    bnfa_struct_t * bnfa, unsigned char *Tx, int n,
                 continue;
             }
             patrn = (bnfa_pattern_t*)mlist->data;
-            index = T - Tx - patrn->n + 1;
+            if( ( T - Tx) < patrn->n )
+                index = 0;
+            else
+                index = T - Tx - patrn->n + 1;
             /* Don't do anything specific for case sensitive patterns and not,
              * since that will be covered by the rule tree itself.  Each tree
              * might have both case sensitive & case insensitive patterns.
@@ -1921,6 +1933,7 @@ _bnfa_search_full_nfa_nocase(    bnfa_struct_t * bnfa, unsigned char *Tx, int n,
         }
     }
   }
+  *current_state = state;
   return nfound;
 }
 #endif
@@ -2362,7 +2375,10 @@ _bnfa_search_csparse_nfa( bnfa_struct_t * bnfa, unsigned char *Tx, int n,
             {
                 mlist = MatchList[ transList[sindex] ];
                 patrn = (bnfa_pattern_t*)mlist->data;
-                index = T - Tx - patrn->n + 1;
+                if( ( T - Tx) < patrn->n )
+                    index = 0;
+                else
+                    index = T - Tx - patrn->n + 1;
                 nfound++;
                 /* Don't do anything specific for case sensitive patterns and not,
                  * since that will be covered by the rule tree itself.  Each tree
@@ -2381,6 +2397,7 @@ _bnfa_search_csparse_nfa( bnfa_struct_t * bnfa, unsigned char *Tx, int n,
             }
         }
     }
+    *current_state = sindex;
     return nfound;
 }
 /*
@@ -2426,8 +2443,11 @@ _bnfa_search_csparse_nfa_case(   bnfa_struct_t * bnfa, unsigned char *Tx, int n,
 
         {
             mlist = MatchList[ transList[sindex] ];
-               patrn = (bnfa_pattern_t*)mlist->data;
-               index = T - Tx - patrn->n + 1;
+            patrn = (bnfa_pattern_t*)mlist->data;
+            if( ( T - Tx) < patrn->n )
+                index = 0;
+            else
+                index = T - Tx - patrn->n + 1;
             nfound++;
             /* Don't do anything specific for case sensitive patterns and not,
              * since that will be covered by the rule tree itself.  Each tree
@@ -2446,6 +2466,7 @@ _bnfa_search_csparse_nfa_case(   bnfa_struct_t * bnfa, unsigned char *Tx, int n,
         }
     }
   }
+  *current_state = sindex;
   return nfound;
 }
 /*
@@ -2494,8 +2515,11 @@ _bnfa_search_csparse_nfa_nocase(   bnfa_struct_t * bnfa, unsigned char *Tx, int 
 
         {
             mlist = MatchList[ transList[sindex] ];
-               patrn = (bnfa_pattern_t*)mlist->data;
-               index = T - Tx - patrn->n + 1;
+            patrn = (bnfa_pattern_t*)mlist->data;
+            if( ( T - Tx) < patrn->n )
+                index = 0;
+            else
+                index = T - Tx - patrn->n + 1;
             nfound++;
             /* Don't do anything specific for case sensitive patterns and not,
              * since that will be covered by the rule tree itself.  Each tree
@@ -2514,6 +2538,7 @@ _bnfa_search_csparse_nfa_nocase(   bnfa_struct_t * bnfa, unsigned char *Tx, int 
         }
       }
   }
+  *current_state = sindex;
   return nfound;
 }
 
@@ -2561,13 +2586,10 @@ bnfaSearch( bnfa_struct_t * bnfa, unsigned char *Tx, int n,
 {
     int ret = 0;
 
-    /***** This should be tested before we use it *******/
-    /*
     if (current_state)
     {
         sindex = (unsigned)*current_state;
     }
-    */
 
 #ifdef ALLOW_NFA_FULL
     if( bnfa->bnfaFormat == BNFA_SPARSE )
@@ -2768,3 +2790,151 @@ void bnfaPrintMatchListCnt( bnfa_struct_t * p )
     }
 }
 #endif
+
+#ifdef BNFA_MAIN
+#include <stdarg.h>
+/*
+*  Text Data Buffer
+*/
+unsigned char text[512];
+unsigned char text2[512];
+static int s_verbose=0;
+
+/*
+*    A Match is found
+*/
+ int
+MatchFound (void* id, void *tree, int index, void *data, void *neglist)
+{
+  fprintf (stdout, "%s\n", (char *) data);
+  return 0;
+}
+
+void objfree(void **obj)
+{
+    return;
+}
+
+int buildtree(void *id, void **existing)
+{
+    return 1;
+}
+
+int neglist(void *id, void **list)
+{
+    return 1;
+}
+
+void LogMessage(const char *format,...)
+{
+    va_list ap;
+    va_start(ap, format);
+    vfprintf(stderr, format, ap);
+    va_end(ap);
+}
+
+SnortConfig sc;
+SnortConfig *snort_conf;
+
+/*
+*
+*/
+int
+main (int argc, char **argv)
+{
+  int i, nc, nocase = 0;
+  bnfa_struct_t * bnfa;
+  int current_state = 0;
+  bool split_search = false;
+  char * p;
+
+  if (argc < 3)
+
+    {
+      fprintf (stderr,"Usage: %s search-text pattern +pattern... [flags]\n",argv[0]);
+      fprintf (stderr,"  flags: -q -nocase -splitsearch -v\n");
+      exit (0);
+    }
+
+  memset(&sc, 0, sizeof(SnortConfig));
+  snort_conf = &sc;
+
+  bnfa = bnfaNew(free, objfree, objfree);
+  if( !bnfa )
+  {
+     printf("bnfa-no memory\n");
+     exit(0);
+  }
+
+  strncpy (text, argv[1], sizeof(text) - 1);
+  text[sizeof(text) - 1] = '\0';
+
+  bnfa->bnfaMethod = 1;
+
+  for (i = 1; i < argc; i++)
+  {
+    if (strcmp (argv[i], "-nocase") == 0){
+      nocase = 1;
+    }
+    if (strcmp (argv[i], "-v") == 0){
+      s_verbose=1;
+    }
+    if (strcmp (argv[i], "-splitsearch") == 0){
+      int len2 = strlen(text)/2;
+      split_search =true;
+      strncpy(text2, &text[len2], sizeof(text2) -1 );
+      text[len2] = '\0';
+      text2[len2] = '\0';
+    }
+
+    if (strcmp (argv[i], "-q") == 0){
+        bnfa->bnfaMethod = 0;
+    }
+  }
+
+  for (i = 2; i < argc; i++)
+  {
+      if (argv[i][0] == '-')
+          continue;
+
+      p = argv[i];
+
+      if ( *p == '+')
+      {
+          nc=1;
+          p++;
+      }
+      else
+      {
+          nc = nocase;
+      }
+
+      bnfaAddPattern (bnfa, p, strlen(p), nc, 0, (void*)NULL);
+  }
+
+  if(s_verbose)printf("Patterns added\n");
+
+  //Print_DFA (acsm);
+
+  bnfaCompile (bnfa, buildtree, neglist);
+
+  //Write_DFA(acsm, "bnfa-snort.dfa") ;
+
+  if(s_verbose) printf("Patterns compiled--written to file.\n");
+
+  bnfaPrintInfo ( bnfa );
+  bnfaPrintSummary ( );
+
+  bnfaSearch (bnfa, text, strlen (text), MatchFound, NULL, current_state, &current_state);
+
+  if (split_search)
+      bnfaSearch (bnfa, text2, strlen (text2), MatchFound, NULL, current_state, &current_state);
+
+  bnfaFree (bnfa);
+
+  printf ("normal pgm end\n");
+
+  return (0);
+}
+#endif /*  */
+

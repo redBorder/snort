@@ -1,6 +1,7 @@
 /* $Id */
 
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2006-2013 Sourcefire, Inc.
 **
 **
@@ -756,7 +757,7 @@ static uint16_t ParseDNSQuestion(const unsigned char *data,
         if (dnsSessionData->curr_txt.name_state == DNS_RESP_STATE_NAME_COMPLETE)
         {
             dnsSessionData->curr_rec_state = DNS_RESP_STATE_Q_TYPE;
-            bzero(&dnsSessionData->curr_txt, sizeof(DNSNameState));
+            memset(&dnsSessionData->curr_txt, 0, sizeof(DNSNameState));
             data = data + bytes_used;
             bytes_unused = new_bytes_unused;
 
@@ -844,7 +845,7 @@ uint16_t ParseDNSAnswer(const unsigned char *data,
         if (dnsSessionData->curr_txt.name_state == DNS_RESP_STATE_NAME_COMPLETE)
         {
             dnsSessionData->curr_rec_state = DNS_RESP_STATE_RR_TYPE;
-            bzero(&dnsSessionData->curr_txt, sizeof(DNSNameState));
+            memset(&dnsSessionData->curr_txt, 0, sizeof(DNSNameState));
             data = data + bytes_used;
         }
         bytes_unused = new_bytes_unused;
@@ -1276,7 +1277,7 @@ void ParseDNSResponseMessage(SFSnortPacket *p, DNSSessionData *dnsSessionData)
                         if (dnsSessionData->curr_rr.type == DNS_RR_TYPE_TXT)
                         {
                             /* Reset the state tracking for this record */
-                            bzero(&dnsSessionData->curr_txt, sizeof(DNSNameState));
+                            memset(&dnsSessionData->curr_txt, 0, sizeof(DNSNameState));
                         }
                         data = p->payload + (p->payload_size - bytes_unused);
                     }
@@ -1332,7 +1333,7 @@ void ParseDNSResponseMessage(SFSnortPacket *p, DNSSessionData *dnsSessionData)
                         if (dnsSessionData->curr_rr.type == DNS_RR_TYPE_TXT)
                         {
                             /* Reset the state tracking for this record */
-                            bzero(&dnsSessionData->curr_txt, sizeof(DNSNameState));
+                            memset(&dnsSessionData->curr_txt, 0, sizeof(DNSNameState));
                         }
                         data = p->payload + (p->payload_size - bytes_unused);
                     }
@@ -1388,7 +1389,7 @@ void ParseDNSResponseMessage(SFSnortPacket *p, DNSSessionData *dnsSessionData)
                         if (dnsSessionData->curr_rr.type == DNS_RR_TYPE_TXT)
                         {
                             /* Reset the state tracking for this record */
-                            bzero(&dnsSessionData->curr_txt, sizeof(DNSNameState));
+                            memset(&dnsSessionData->curr_txt, 0, sizeof(DNSNameState));
                         }
                         data = p->payload + (p->payload_size - bytes_unused);
                     }
@@ -1503,18 +1504,18 @@ static void ProcessDNS( void* packetPtr, void* context )
         }
 
         if ( !_dpd.streamAPI->is_stream_sequenced(p->stream_session_ptr,
-                    SSN_DIR_SERVER))
+                    SSN_DIR_FROM_SERVER))
         {
             return;
         }
 
-        if (!(_dpd.streamAPI->get_reassembly_direction(p->stream_session_ptr) & SSN_DIR_SERVER))
+        if (!(_dpd.streamAPI->get_reassembly_direction(p->stream_session_ptr) & SSN_DIR_FROM_SERVER))
         {
             /* This should only happen for the first packet (SYN or SYN-ACK)
              * in the TCP session */
             _dpd.streamAPI->set_reassembly(p->stream_session_ptr,
-                STREAM_FLPOLICY_FOOTPRINT, SSN_DIR_SERVER,
-                STREAM_FLPOLICY_SET_APPEND);
+                STREAM_FLPOLICY_FOOTPRINT, SSN_DIR_FROM_SERVER,
+                STREAM_FLPOLICY_SET_ABSOLUTE);
 
             return;
         }

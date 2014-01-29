@@ -1,5 +1,6 @@
 /* $Id$ */
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -223,6 +224,8 @@ enum {
     DECODE_ERSPAN_HDR_VERSION_MISMATCH,
     DECODE_ERSPAN2_DGRAM_LT_HDR,
     DECODE_ERSPAN3_DGRAM_LT_HDR,
+    DECODE_AUTH_HDR_TRUNC,
+    DECODE_AUTH_HDR_BAD_LEN,
     DECODE_INDEX_MAX
 };
 
@@ -484,6 +487,7 @@ enum {
 #define     DCE2_EVENT__SMB_UNUSUAL_COMMAND_USED     54
 #define     DCE2_EVENT__SMB_INVALID_SETUP_COUNT      55
 #define     DCE2_EVENT__SMB_MULTIPLE_NEGOTIATIONS    56
+#define     DCE2_EVENT__SMB_EVASIVE_FILE_ATTRS       57
 
 #define GENERATOR_PPM                               134
 #define     PPM_EVENT_RULE_TREE_DISABLED              1
@@ -746,6 +750,8 @@ enum {
 #define DECODE_ERSPAN_HDR_VERSION_MISMATCH_STR "(snort_decoder) WARNING: ERSpan Header version mismatch"
 #define DECODE_ERSPAN2_DGRAM_LT_HDR_STR "(snort_decoder) WARNING: captured < ERSpan Type2 Header Length"
 #define DECODE_ERSPAN3_DGRAM_LT_HDR_STR "(snort_decoder) WARNING: captured < ERSpan Type3 Header Length"
+#define DECODE_AUTH_HDR_TRUNC_STR "(snort_decoder) WARNING: truncated authentication header"
+#define DECODE_AUTH_HDR_BAD_LEN_STR "(snort_decoder) WARNING: authentication header bad length"
 
 /*  RPC decode preprocessor strings */
 #define RPC_FRAG_TRAFFIC_STR "(spp_rpc_decode) Fragmented RPC Records"

@@ -215,7 +215,7 @@ Option explanations
         to do defragmentation.
     max_frag_len
         Specifies the maximum fragment size that will be added to the
-        defragmention module. If a fragment is greater than this size, it is
+        defragmentation module. If a fragment is greater than this size, it is
         truncated before being added to the defragmentation module. The allowed
         ranges for this option are 1514 - 65535.
     events
@@ -314,6 +314,7 @@ Option syntax
                                                  by default)
     smb_invalid_shares     <shares>        NO  NONE
     smb_max_chain       <max-chain>        NO  smb_max_chain 3
+    smb_file_inspection <file-inspect>     NO  smb_file_inspection off
 
     net          = ip | '[' ip-list ']'
     ip-list      = ip | ip ',' ip-list
@@ -345,6 +346,9 @@ Option syntax
     tries to expand it, shares with '$' must be enclosed quotes.
 
     max-chain    = 0-255
+    file-inspect = file-arg | '[' file-list ']'
+    file-arg     = "off" | "on" | "only" 
+    file-list    = file-arg [ ',' "file-depth" <int64_t> ]
 
 Option explanations
    default
@@ -388,6 +392,21 @@ Option explanations
         Specifies the maximum amount of AndX command chaining that is allowed
         before an alert is generated.  Default maximum is 3 chained commands.
         A value of 0 disables this option.
+   smb_file_inspection
+        Instructs the preprocessor to do inspection of normal SMB file
+        transfers.  This includes doing file type and signature through
+        the file API as well as setting a pointer for the "file_data"
+        rule option.  Note that the "file-depth" option only applies to the
+        maximum amount of file data for which it will set the pointer for the
+        "file_data" rule option.  For file type and signature it will use the
+        value configured for the file API.  If "only" is specified, the
+        preprocessor will only do SMB file inspection, i.e. it will not do any
+        DCE/RPC tracking or inspection.  If "on" is specified with no
+        arguments, the default file depth is 16384 bytes.  An argument of -1 to
+        "file-depth" disables setting the pointer for "file_data", effectively
+        disabling SMB file inspection in rules.  An argument of 0 to
+        "file-depth" means unlimited.  Default is "off", i.e. no SMB file
+        inspection is done in the preprocessor.
 
 Option examples
    net 192.168.0.10
@@ -428,6 +447,12 @@ Option examples
    smb_invalid_shares [private, "C$"]
    smb_invalid_shares ["private", "C$"]
    smb_max_chain 1
+   smb_file_inspection on
+   smb_file_inspection off
+   smb_file_inspection [ on, file-depth -1 ]
+   smb_file_inspection [ on, file-depth 0 ]
+   smb_file_inspection [ on, file-depth 4294967296 ]
+   smb_file_inspection [ only, file-depth -1 ]
 
 Configuration examples
    preprocessor dcerpc2_server: default
@@ -443,12 +468,14 @@ Configuration examples
      smb_invalid_shares ["C$", "ADMIN$"], no_autodetect_http_proxy_ports
    preprocessor dcerpc2_server: net [10.4.11.56,10.4.11.57], policy Samba, \
      detect smb, autodetect none
+   preprocessor dcerpc2_server: default, policy WinXP, \
+     smb_file_inspection [ on, file-depth 0 ]
 
 Default configuration
    preprocessor dcerpc2_server: default, policy WinXP, \
      detect [smb [139,445], tcp 135, udp 135, rpc-over-http-server 593], \
      autodetect [tcp 1025:, udp 1025:, rpc-over-http-server 1025:], \
-     smb_max_chain 3
+     smb_max_chain 3, smb_file_inspection off
 
 Complete dcerpc2 default configuration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -456,7 +483,7 @@ Complete dcerpc2 default configuration
    preprocessor dcerpc2_server: default, policy WinXP, \
      detect [smb [139,445], tcp 135, udp 135, rpc-over-http-server 593], \
      autodetect [tcp 1025:, udp 1025:, rpc-over-http-server 1025:], \
-     smb_max_chain 3
+     smb_max_chain 3, smb_file_inspection off
 
 
 Events
@@ -626,6 +653,12 @@ SMB events
        first thing a client and server do to determine the SMB dialect each
        supports.  The preprocessor will alert if the client attempts multiple
        dialect negotiations.
+  57   Malware will often set a file's attributes to ReadOnly/Hidden/System if
+       it is successful in installing itself as a Windows service or is able to
+       write an autorun.inf file since it doesn't want the user to see the file
+       and the default folder options in Windows is not to display Hidden files.
+       The preprocessor will alert if it detects a client attempt to set a
+       file's attributes to ReadOnly/Hidden/System.
 
 Connection-oriented DCE/RPC events
  SID   Description 

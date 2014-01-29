@@ -83,6 +83,7 @@ Snort \- open source network intrusion detection system
 .B ] [--enable-inline-test
 .B ] [--create-pidfile
 .B ] [--nolock-pidfile
+.B ] [--no-interface-pidfile
 .B ] [--disable-attribute-reload-thread
 .B ] [--pcap-single=
 .I tcpdump-file
@@ -418,6 +419,8 @@ Specify the path for Snort's PID file.
 Create PID file, even when not in Daemon mode.
 .IP "--nolock-pidfile"
 Do not try to lock Snort PID file.
+.IP "--no-interface-pidfile"
+Do not include the interface name in Snort PID file
 .IP "--pcap-single=\fItcpdump-file\fP"
 Same as -r.  Added for completeness.
 .IP "--pcap-filter=\fIfilter\fP"

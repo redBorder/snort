@@ -17,6 +17,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * Author: Steven Sturges
@@ -1417,7 +1418,7 @@ int DynamicSetPreprocessorBit(void *p, uint32_t preprocId)
 
 void DynamicDropReset(void *p)
 {
-    Active_DropSession();
+    Active_DropSession((Packet*)p);
 }
 
 void DynamicForceDropPacket(void *p)
@@ -1544,9 +1545,20 @@ void DynamicSendBlockResponseMsg(void *p, const uint8_t* buffer, uint32_t buffer
     if ( !packet->data || packet->dsize == 0 )
         return;
 
-    Active_SendData(packet, df, buffer, buffer_len);
+    if (packet->packet_flags & PKT_STREAM_EST)
+        Active_SendData(packet, df, buffer, buffer_len);
+}
+
+void DynamicActiveInjectData(void *p, uint32_t flags, const uint8_t *buf, uint32_t blen)
+{
+    Active_InjectData((Packet *)p, (EncodeFlags)flags, buf, blen);
 }
 #endif
+
+void DynamicDropPacket(void *p)
+{
+    Active_DropPacket((Packet*)p);
+}
 
 void DynamicSetParserPolicy(SnortConfig *sc, tSfPolicyId id)
 {
@@ -1670,6 +1682,16 @@ static sigset_t DynamicSnortSignalMask(void)
     return mask;
 }
 #endif
+
+static inline bool DynamicReadyForProcess (void* pkt)
+{
+    Packet *p = (Packet *)pkt;
+
+    if ( ScPafEnabled() )
+        return PacketHasPAFPayload(p);
+
+    return !(p->packet_flags & PKT_STREAM_INSERT);
+}
 
 int InitDynamicPreprocessors(void)
 {
@@ -1829,6 +1851,12 @@ int InitDynamicPreprocessors(void)
 
     preprocData.setHttpBuffer = SetHttpBuffer;
     preprocData.getHttpBuffer = getHttpBuffer;
+
+#ifdef ACTIVE_RESPONSE
+    preprocData.activeInjectData = &DynamicActiveInjectData;
+#endif
+    preprocData.inlineDropPacket = &DynamicDropPacket;
+    preprocData.readyForProcess = &DynamicReadyForProcess;
 
     return InitDynamicPreprocessorPlugins(&preprocData);
 }

@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -396,10 +397,10 @@ typedef struct _Stream5Config
 /**Common statistics for tcp and udp packets, maintained by port filtering.
  */
 typedef struct {
-    /**packets dropped without further processing by any preprocessor or
+    /**packets filtered without further processing by any preprocessor or
      * detection engine.
      */
-    uint32_t  dropped;
+    uint32_t  filtered;
 
     /**packets inspected and but processed futher by stream5 preprocessor.
      */

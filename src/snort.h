@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2005 Martin Roesch <roesch@sourcefire.com>
 **
@@ -236,6 +237,7 @@ typedef enum _GetOptLongIds
     PROCESS_ALL_EVENTS,
     ALERT_BEFORE_PASS,
     NOLOCK_PID_FILE,
+    NO_IFACE_PID_FILE,
 
 #ifdef INLINE_FAILOPEN
     DISABLE_INLINE_FAILOPEN,
@@ -467,10 +469,11 @@ typedef enum _RunFlag
     RUN_FLAG__PAUSE_SERVICE       = 0x08000000
 #endif
 
-   ,RUN_FLAG__TREAT_DROP_AS_IGNORE= 0x10000000      /* --treat-drop-as-ignore */
+   ,RUN_FLAG__TREAT_DROP_AS_IGNORE= 0x10000000,     /* --treat-drop-as-ignore */
 #if defined(SNORT_RELOAD) && !defined(WIN32)
-   ,RUN_FLAG__PCAP_RELOAD         = 0x20000000      /* --pcap-reload */
+    RUN_FLAG__PCAP_RELOAD         = 0x20000000,     /* --pcap-reload */
 #endif
+    RUN_FLAG__NO_IFACE_PID_FILE   = 0x40000000      /* --no-interface-pidfile */
 
 } RunFlag;
 
@@ -1529,6 +1532,11 @@ static inline long int ScTaggedPacketLimit(void)
 static inline int ScCreatePidFile(void)
 {
     return snort_conf->run_flags & RUN_FLAG__CREATE_PID_FILE;
+}
+
+static inline int ScNoInterfacePidFile(void)
+{
+    return snort_conf->run_flags & RUN_FLAG__NO_IFACE_PID_FILE;
 }
 
 static inline int ScPcapShow(void)

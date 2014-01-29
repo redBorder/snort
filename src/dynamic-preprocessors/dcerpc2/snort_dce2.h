@@ -1,4 +1,5 @@
 /****************************************************************************
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -78,6 +79,7 @@ DCE2_Ret DCE2_AddDataToRpkt(SFSnortPacket *, DCE2_RpktType, const uint8_t *, uin
 DCE2_Ret DCE2_PushPkt(SFSnortPacket *);
 void DCE2_PopPkt(void);
 void DCE2_Detect(DCE2_SsnData *);
+void DCE2_FileDetect(DCE2_SsnData *);
 uint16_t DCE2_GetRpktMaxData(DCE2_SsnData *, DCE2_RpktType);
 void DCE2_FreeGlobals(void);
 void DCE2_SetNoInspect(DCE2_SsnData *);

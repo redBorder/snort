@@ -3,6 +3,7 @@
 **
 **  fpdetect.c
 **
+**  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 **  Copyright (C) 2002-2013 Sourcefire, Inc.
 **  Author(s):  Dan Roelker <droelker@sourcefire.com>
 **              Marc Norton <mnorton@sourcefire.com>
@@ -240,7 +241,7 @@ int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
              (rtn->type == RULE_TYPE__SDROP) ||
              (rtn->type == RULE_TYPE__REJECT) )
         {
-            Active_DropSession();
+            Active_DropSession(p);
         }
         fpLogOther(p, otn, rtn->type);
         return 1;
@@ -290,7 +291,7 @@ int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
              (action == RULE_TYPE__SDROP) ||
              (action == RULE_TYPE__REJECT) )
         {
-            Active_DropSession();
+            Active_DropSession(p);
         }
         pc.event_limit++;
         fpLogOther(p, otn, action);
@@ -324,6 +325,7 @@ int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
     {
         case RULE_TYPE__PASS:
             PassAction();
+            SetTags(p, otn, event_id);
             break;
 
         case RULE_TYPE__ACTIVATE:

@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -3377,6 +3378,25 @@ static inline void setFileName(Packet *p)
     GetHttpUriData(p->ssnptr, &buf, &len, &type);
     file_api->set_file_name (p->ssnptr, buf, len);
 }
+
+static inline void processFileData(Packet *p, HttpSessionData *hsd, bool *fileProcessed)
+{
+    if (*fileProcessed)
+        return;
+
+    if (hsd->mime_ssn)
+    {
+        uint8_t *end = ( uint8_t *)(p->data) + p->dsize;
+        file_api->process_mime_data(p, p->data, end, end, end, hsd->mime_ssn, 1);
+        *fileProcessed = true;
+    }
+    else if (file_api->get_file_processed_size(p->ssnptr) >0)
+    {
+        file_api->file_process(p, (uint8_t *)p->data, p->dsize, getFilePoistion(p), true, false);
+        *fileProcessed = true;
+    }
+}
+
 /*
 **  NAME
 **    SnortHttpInspect::
@@ -3417,6 +3437,7 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
     int iRet;
     int iCallDetect = 1;
     HttpSessionData *hsd = NULL;
+    bool fileProcessed = false;
 
     PROFILE_VARS;
 
@@ -3563,15 +3584,7 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
         {
             if (hsd)
             {
-                if (hsd->mime_ssn)
-                {
-                    uint8_t *end = ( uint8_t *)(p->data) + p->dsize;
-                    file_api->process_mime_data(p, p->data, end, end, end, hsd->mime_ssn, 1);
-                }
-                else if (file_api->get_file_processed_size(p->ssnptr) >0)
-                {
-                    file_api->file_process(p, (uint8_t *)p->data, p->dsize, getFilePoistion(p), 1);
-                }
+                processFileData(p, hsd, &fileProcessed);
             }
             LogEvents(Session, p, iInspectMode, hsd);
             return iRet;
@@ -3701,7 +3714,7 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                     {
                         if (file_api->file_process(p,(uint8_t *)Session->client.request.post_raw,
                                 (uint16_t)Session->client.request.post_raw_size,
-                                getFilePoistion(p), 1))
+                                getFilePoistion(p), true, false))
                         {
                             setFileName(p);
                         }
@@ -3727,15 +3740,7 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
             }
             else if (hsd)
             {
-                if(hsd->mime_ssn)
-                {
-                    uint8_t *end = ( uint8_t *)(p->data) + p->dsize;
-                    file_api->process_mime_data(p, p->data, end, end, end, hsd->mime_ssn, 1);
-                }
-                else if (file_api->get_file_processed_size(p->ssnptr) >0)
-                {
-                    file_api->file_process(p, (uint8_t *)p->data, p->dsize, getFilePoistion(p), 1);
-                }
+                processFileData(p, hsd, &fileProcessed);
             }
 
             if ( Session->client.request.method_raw )
@@ -3946,7 +3951,7 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
 
                  if (ScPafEnabled() && PacketHasPAFPayload(p)
                          && file_api->file_process(p,(uint8_t *)Session->server.response.body, (uint16_t)Session->server.response.body_size,
-                         getFilePoistion(p), 0))
+                         getFilePoistion(p), false, false))
                  {
                      setFileName(p);
                  }

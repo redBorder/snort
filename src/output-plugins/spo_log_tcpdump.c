@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -481,7 +482,7 @@ static void SpoLogTcpdumpCleanup(int signal, void *arg, const char* msg)
         free (data->filename);
     }
 
-    bzero(data, sizeof(LogTcpdumpData));
+    memset(data, 0, sizeof(LogTcpdumpData));
     free(data);
 }
 

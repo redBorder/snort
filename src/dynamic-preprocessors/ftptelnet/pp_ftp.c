@@ -1,5 +1,6 @@
 /* $Id$ */
 /*
+ ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2004-2013 Sourcefire, Inc.
  **
  ** This program is free software; you can redistribute it and/or modify
@@ -358,7 +359,7 @@ void CopyField (
         strncpy(buf, tok, len);
         buf[len] = '\0';
     }
-    s = index(buf, delim);
+    s = strchr(buf, delim);
 
     if ( s ) *s = '\0';
     else *buf = '\0';
@@ -414,7 +415,7 @@ static int getIP2428 (
                 break;
         }
         /* advance to next field */
-        tok = index(tok, delim);
+        tok = strchr(tok, delim);
         field++;
     }
 
@@ -1885,7 +1886,7 @@ int check_ftp(FTP_SESSION  *ftpssn, SFSnortPacket *p, int iMode)
                             }
 
                             // 0 for Download, 1 for Upload
-                            ftpssn->data_xfer_dir = CmdConf->file_get_cmd ? 0 : 1;
+                            ftpssn->data_xfer_dir = CmdConf->file_get_cmd ? false : true;
                         }
                         else
                         {

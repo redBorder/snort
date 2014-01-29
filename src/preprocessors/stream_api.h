@@ -1,6 +1,7 @@
 /* $Id$ */
 
 /*
+ ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * ** Copyright (C) 2005-2013 Sourcefire, Inc.
  * ** AUTHOR: Steven Sturges
  * **
@@ -51,14 +52,12 @@
 
 #define SSN_MISSING_NONE   0x00
 #define SSN_MISSING_BEFORE 0x01
-#define SSN_MISSING_AFTER  0x02
-#define SSN_MISSING_BOTH   (SSN_MISSING_BEFORE | SSN_MISSING_AFTER)
 
 #define SSN_DIR_NONE 0x0
-#define SSN_DIR_CLIENT 0x1
-#define SSN_DIR_SENDER 0x1
-#define SSN_DIR_SERVER 0x2
-#define SSN_DIR_RESPONDER 0x2
+#define SSN_DIR_FROM_CLIENT 0x1
+#define SSN_DIR_FROM_SENDER 0x1
+#define SSN_DIR_FROM_SERVER 0x2
+#define SSN_DIR_FROM_RESPONDER 0x2
 #define SSN_DIR_BOTH 0x03
 
 #define SSNFLAG_SEEN_CLIENT         0x00000001
@@ -493,9 +492,7 @@ typedef struct _stream_api
      *      Direction
      *
      * Returns
-     *      SSN_MISSING_BOTH if missing before and after
      *      SSN_MISSING_BEFORE if missing before
-     *      SSN_MISSING_AFTER if missing after
      *      SSN_MISSING_NONE if none missing
      */
     int (*missing_in_reassembled)(void *, char);
@@ -625,7 +622,7 @@ typedef struct _stream_api
      *
      * Arguments
      *  void * - session pointer
-     *  uint32_t - direction. Valid values are SSN_DIR_SERVER or SSN_DIR_CLIENT
+     *  uint32_t - direction. Valid values are SSN_DIR_FROM_SERVER or SSN_DIR_FROM_CLIENT
      *
      * Returns
      *  IP address. Contents at the buffer should not be changed. The

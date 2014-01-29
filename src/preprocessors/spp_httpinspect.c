@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1579,7 +1580,7 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
                 return -1;
             }
 
-            max_sessions_logged = defaultConfig->memcap / (MAX_URI_EXTRACTED + MAX_HOSTNAME);
+            max_sessions_logged = defaultSwapConfig->memcap / (MAX_URI_EXTRACTED + MAX_HOSTNAME);
 
             http_mempool = (MemPool *)SnortAlloc(sizeof(MemPool));
 
@@ -1597,11 +1598,11 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
                         "server configuration.\n");
                 return -1;
             }
-            updateMaxDepth(defaultConfig->decode_conf.file_depth, &defaultConfig->decode_conf.max_depth);
-            mime_decode_mempool = (MemPool *)file_api->init_mime_mempool(defaultConfig->decode_conf.max_mime_mem,
-                    defaultConfig->decode_conf.max_depth, mime_decode_mempool, PROTOCOL_NAME);
+            updateMaxDepth(defaultSwapConfig->decode_conf.file_depth, &defaultSwapConfig->decode_conf.max_depth);
+            mime_decode_mempool = (MemPool *)file_api->init_mime_mempool(defaultSwapConfig->decode_conf.max_mime_mem,
+                    defaultSwapConfig->decode_conf.max_depth, mime_decode_mempool, PROTOCOL_NAME);
         }
-        if (sfPolicyUserDataIterate(sc, hi_config, HttpEnableMimeLog) != 0)
+        if (sfPolicyUserDataIterate(sc, hi_swap_config, HttpEnableMimeLog) != 0)
         {
             if (defaultSwapConfig == NULL)
             {
@@ -1611,7 +1612,7 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
                 return -1;
             }
             mime_log_mempool = (MemPool *)file_api->init_log_mempool(0,
-                    defaultConfig->mime_conf.memcap, mime_log_mempool, PROTOCOL_NAME);
+                    defaultSwapConfig->mime_conf.memcap, mime_log_mempool, PROTOCOL_NAME);
         }
     }
 

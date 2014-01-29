@@ -13,7 +13,7 @@ as TLS data.
 
 SMTP handles stateless and stateful processing.  It saves state
 between individual packets.  However maintaining correct state is
-dependent on the reassembly of the client side of the stream (ie, a
+dependent on the reassembly of the client side of the stream (i.e., a
 loss of coherent stream data results in a loss of state).
 
 -- Configuration --
@@ -235,7 +235,7 @@ sessions that will be decoded at any given instant. The default value for this o
 is 838860.
 
 Note: It is suggested to set this value such that the max smtp session calculated as
-follows is atleast 1.
+follows is at least 1.
 
 max smtp session = max_mime_mem /(2 * max of (b64_decode_depth, uu_decode_depth, qp_decode_depth 
 					or bitenc_decode_depth))

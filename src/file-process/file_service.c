@@ -1,6 +1,7 @@
 /*
  **
  **
+ **  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  **  Copyright (C) 2012-2013 Sourcefire, Inc.
  **
  **  This program is free software; you can redistribute it and/or modify
@@ -28,13 +29,12 @@
 #include <config.h>
 #endif
 #include "sf_types.h"
-#include "file_service.h"
 #include <sys/types.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include "file_api.h"
 #include "file_config.h"
 #include "file_mime_config.h"
+#include "file_capture.h"
+#include "file_stats.h"
 
 #include "stream_api.h"
 #include "mstring.h"
@@ -46,37 +46,45 @@
 #include "file_mime_process.h"
 #include "file_resume_block.h"
 #include "snort_httpinspect.h"
+#include "file_service.h"
 
-#ifdef TARGET_BASED
-#include "sftarget_protocol_reference.h"
-#include "sftarget_reader.h"
-#endif
+typedef struct _FileSession
+{
+    FileContext *current_context;
+    FileContext *main_context;
+    FileContext *pending_context;
+    uint32_t  max_file_id;
+
+} FileSession;
 
 static bool file_type_id_enabled = false;
 static bool file_signature_enabled = false;
+static bool file_capture_enabled = false;
 static bool file_processing_initiated = false;
 
-static Get_file_policy_func get_file_policy = NULL;
-File_type_done_func  file_type_done = NULL;
-File_signature_done_func file_signature_done = NULL;
+static File_policy_callback_func file_policy_cb = NULL;
+File_type_callback_func  file_type_cb = NULL;
+File_signature_callback_func file_signature_cb = NULL;
 Log_file_action_func log_file_action = NULL;
 
 /*Main File Processing functions */
-static int file_process(void* ssnptr, uint8_t* file_data, int data_size, FilePosition position, bool upload);
+static int file_process(void* ssnptr, uint8_t* file_data, int data_size,
+        FilePosition position, bool upload, bool suspend_block_verdict);
 
 /*File properties*/
-static int get_file_name (void* ssnptr, uint8_t **file_name, uint32_t *name_size);
+static int get_file_name(void* ssnptr, uint8_t **fname, uint32_t *name_size);
 static uint64_t get_file_size(void* ssnptr);
 static uint64_t get_file_processed_size(void* ssnptr);
 static bool get_file_direction(void* ssnptr);
 static uint8_t *get_file_sig_sha256(void* ssnptr);
 
-static void set_file_name(void* ssnptr, uint8_t * file_name, uint32_t name_size);
+static void set_file_name(void* ssnptr, uint8_t * fname, uint32_t name_size);
 static void set_file_direction(void* ssnptr, bool upload);
 
-static void set_file_policy_callback(Get_file_policy_func);
-static void enable_file_type(File_type_done_func );
-static void enable_file_signature (File_signature_done_func);
+static void set_file_policy_callback(File_policy_callback_func);
+static void enable_file_type(File_type_callback_func );
+static void enable_file_signature (File_signature_callback_func);
+static void enable_file_capture(File_signature_callback_func );
 static void set_file_action_log_callback(Log_file_action_func);
 
 static int64_t get_max_file_depth(void);
@@ -88,32 +96,33 @@ static uint32_t str_to_hash(uint8_t *str, int length );
 static void file_signature_lookup(void* p, bool is_retransmit);
 static void file_signature_callback(Packet* p);
 
-static void print_file_stats(int exiting);
+static inline void finish_signature_lookup(FileContext *context);
+static File_Verdict get_file_verdict(void *ssnptr);
+static void render_block_verdict(void *ctx, void *p);
+
+static bool is_file_service_enabled(void);
+#if defined(FEAT_FILE_INSPECT)
+static uint32_t get_file_type_id(void *ssnptr);
+#endif /* FEAT_FILE_INSPECT */
+static void update_file_name(MAIL_LogState *log_state);
+
+/* File context based file processing*/
+FileContext* create_file_context(void *ssnptr);
+bool set_current_file_context(void *ssnptr, FileContext *ctx);
+FileContext* get_current_file_context(void *ssnptr);
+FileContext* get_main_file_context(void *ssnptr);
+static int process_file_context(FileContext *ctx, void *p, uint8_t *file_data,
+        int data_size, FilePosition position, bool suspend_block_verdict);
 
 FileAPI fileAPI;
 FileAPI* file_api = NULL;
 
 static unsigned s_cb_id = 0;
 
-typedef struct _File_Stats {
-
-    uint64_t files_total;
-    uint64_t files_processed[FILE_ID_MAX + 1][2];
-    uint64_t signatures_processed[FILE_ID_MAX + 1][2];
-    uint64_t verdicts_type[FILE_VERDICT_MAX];
-    uint64_t verdicts_signature[FILE_VERDICT_MAX];
-#ifdef TARGET_BASED
-    uint64_t files_processed_by_proto[MAX_PROTOCOL_ORDINAL + 1];
-    uint64_t signatures_processed_by_proto[MAX_PROTOCOL_ORDINAL + 1];
-#endif
-
-} FileStats;
-
-static FileStats file_stats;
-
-void FileAPIInit(void)
+void init_fileAPI(void)
 {
-    fileAPI.version = FILE_API_VERSION5;
+    fileAPI.version = FILE_API_VERSION;
+    fileAPI.is_file_service_enabled = &is_file_service_enabled;
     fileAPI.file_process = &file_process;
     fileAPI.get_file_name = &get_file_name;
     fileAPI.get_file_size = &get_file_size;
@@ -125,9 +134,11 @@ void FileAPIInit(void)
     fileAPI.set_file_policy_callback = &set_file_policy_callback;
     fileAPI.enable_file_type = &enable_file_type;
     fileAPI.enable_file_signature = &enable_file_signature;
+    fileAPI.enable_file_capture = &enable_file_capture;
     fileAPI.set_file_action_log_callback = &set_file_action_log_callback;
     fileAPI.get_max_file_depth = &get_max_file_depth;
     fileAPI.log_file_name = &log_file_name;
+    fileAPI.update_file_name = &update_file_name;
     fileAPI.set_file_name_from_log = &set_file_name_from_log;
     fileAPI.set_log_buffers = &set_log_buffers;
     fileAPI.init_mime_mempool = &init_mime_mempool;
@@ -145,14 +156,53 @@ void FileAPIInit(void)
     fileAPI.is_decoding_conf_changed = &is_decoding_conf_changed;
     fileAPI.is_mime_log_enabled = &is_mime_log_enabled;
     fileAPI.finalize_mime_position = &finalize_mime_position;
+    fileAPI.get_file_verdict = &get_file_verdict;
+    fileAPI.render_block_verdict = &render_block_verdict;
+    fileAPI.reserve_file = &file_capture_reserve;
+    fileAPI.read_file = &file_capture_read;
+    fileAPI.release_file = &file_capture_release;
+    fileAPI.get_file_capture_size = &file_capture_size;
+#if defined(FEAT_FILE_INSPECT)
+    fileAPI.get_file_type_id = &get_file_type_id;
+#endif /* FEAT_FILE_INSPECT */
+
+#ifdef TARGET_BASED
+    fileAPI.register_mime_paf_service = &register_mime_paf_service;
+#endif
+    fileAPI.register_mime_paf_port = &register_mime_paf_port;
+    fileAPI.create_file_context = &create_file_context;
+    fileAPI.set_current_file_context = &set_current_file_context;
+    fileAPI.get_current_file_context = &get_current_file_context;
+    fileAPI.get_main_file_context = &get_main_file_context;
+    fileAPI.process_file = &process_file_context;
     file_api = &fileAPI;
     init_mime();
 }
 
 void FileAPIPostInit (void)
 {
+    FileConfig *file_config = (FileConfig *)(snort_conf->file_config);
+
+    if (file_type_id_enabled || file_signature_enabled || file_capture_enabled)
+    {
+        if (!file_config)
+        {
+            file_config =  file_service_config_create();
+            snort_conf->file_config = file_config;
+        }
+    }
+
+    if ( file_capture_enabled)
+        file_capture_init_mempool(file_config->file_capture_memcap,
+                file_config->file_capture_block_size);
+
     if ( stream_api && file_signature_enabled )
         s_cb_id = stream_api->register_event_handler(file_signature_callback);
+
+#ifdef SNORT_RELOAD
+    file_sevice_reconfig_set(false);
+#endif
+
 }
 
 static void start_file_processing(void)
@@ -164,11 +214,12 @@ static void start_file_processing(void)
         file_processing_initiated = true;
     }
 }
+
 void free_file_config(void *conf)
 {
 
-    free_file_rules(conf);
-    free_file_identifiers(conf);
+    file_rule_free(conf);
+    file_identifiers_free(conf);
     free(conf);
 }
 
@@ -176,26 +227,139 @@ void close_fileAPI(void)
 {
     file_resume_block_cleanup();
     free_mime();
+    file_caputure_close();
 }
 
-static FileContext*  get_file_context(void* p, FilePosition position, bool upload)
+static inline FileSession* get_file_session(void *ssnptr)
 {
-    FileContext* context;
+    return((FileSession*) stream_api->get_application_data(ssnptr, PP_FILE));
+}
+
+/*Get the current working file context*/
+FileContext* get_current_file_context(void *ssnptr)
+{
+    FileSession *file_session = get_file_session (ssnptr);
+    if (file_session)
+        return file_session->current_context;
+    else
+        return NULL;
+}
+
+/*Get the current main file context*/
+FileContext* get_main_file_context(void *ssnptr)
+{
+    FileSession *file_session = get_file_session (ssnptr);
+    if (file_session)
+        return file_session->main_context;
+    else
+        return NULL;
+}
+
+/*Get the current working file context*/
+static inline void save_to_pending_context(void *ssnptr)
+{
+    FileSession *file_session = get_file_session (ssnptr);
+    /* Save to pending_context */
+    if (!file_session)
+        return;
+
+    if (file_session->pending_context != file_session->main_context)
+        file_context_free(file_session->pending_context);
+    file_session->pending_context = file_session->main_context;
+
+}
+
+/*Set the current working file context*/
+bool set_current_file_context(void *ssnptr, FileContext *ctx)
+{
+    FileSession *file_session = get_file_session (ssnptr);
+
+    if (!file_session)
+    {
+        return false;
+    }
+
+    file_session->current_context = ctx;
+    return true;
+}
+
+static void file_session_free(void *session_data)
+{
+    FileSession *file_session = (FileSession *)session_data;
+    if (!file_session)
+        return;
+
+    /*Clean up all the file contexts*/
+    if ( file_session->pending_context &&
+            (file_session->main_context != file_session->pending_context))
+    {
+        file_context_free(file_session->pending_context);
+    }
+
+    file_context_free(file_session->main_context);
+
+    free(file_session);
+}
+
+static inline void init_file_context(void *ssnptr, bool upload, FileContext *context)
+{
+    context->file_type_enabled = file_type_id_enabled;
+    context->file_signature_enabled = file_signature_enabled;
+    context->file_capture_enabled = file_capture_enabled;
+    file_direction_set(context,upload);
+
+#ifdef TARGET_BASED
+    /* Check file policy to see whether we want to do either file type, file
+     * signature,  or file capture
+     * Note: this happen only on the start of session*/
+    if (file_policy_cb)
+    {
+        uint32_t policy_flags = 0;
+        context->app_id = stream_api->get_application_protocol_id(ssnptr);
+        policy_flags = file_policy_cb(ssnptr, context->app_id, upload);
+        if (!(policy_flags & ENABLE_FILE_TYPE_IDENTIFICATION))
+            context->file_type_enabled = false;
+        if (!(policy_flags & ENABLE_FILE_SIGNATURE_SHA256))
+            context->file_signature_enabled = false;
+        if (!(policy_flags & ENABLE_FILE_CAPTURE))
+            context->file_capture_enabled = false;
+    }
+#endif
+}
+
+FileContext* create_file_context(void *ssnptr)
+{
+    FileSession *file_session;
+    FileContext *context = file_context_create();
+
+    /* Create file session if not yet*/
+    file_session = get_file_session (ssnptr);
+    if(!file_session)
+    {
+        file_session = (FileSession *)SnortAlloc(sizeof(*file_session));
+        stream_api->set_application_data(ssnptr, PP_FILE, file_session,
+                file_session_free);
+    }
+    file_stats.files_total++;
+    return context;
+}
+
+static inline FileContext* find_main_file_context(void* p, FilePosition position,
+        bool upload)
+{
+    FileContext* context = NULL;
     Packet *pkt = (Packet *)p;
     void *ssnptr = pkt->ssnptr;
+    FileSession *file_session = get_file_session (ssnptr);
 
     /* Attempt to get a previously allocated context. */
-    context  = stream_api->get_application_data(ssnptr, PP_FILE);
+    if (file_session)
+        context  = file_session->main_context;
 
-    if (context && ((position == SNORT_FILE_MIDDLE) || (position == SNORT_FILE_END)))
+    if (context && ((position == SNORT_FILE_MIDDLE) ||
+            (position == SNORT_FILE_END)))
         return context;
-    else if (!context)
-    {
-        context = file_context_create();
-        stream_api->set_application_data(ssnptr, PP_FILE, context, file_context_free);
-        file_stats.files_total++;
-    }
-    else
+    else if (context)
     {
         /*Push file event when there is another file in the same packet*/
         if (pkt->packet_flags & PKT_FILE_EVENT_SET)
@@ -204,150 +368,36 @@ static FileContext*  get_file_context(void* p, FilePosition position, bool uploa
             SnortEventqReset();
             pkt->packet_flags &= ~PKT_FILE_EVENT_SET;
         }
-        file_context_reset(context);
-        file_stats.files_total++;
+
+        if (context->verdict != FILE_VERDICT_PENDING)
+        {
+            /*Reuse the same context*/
+            file_context_reset(context);
+            file_stats.files_total++;
+            init_file_context(ssnptr, upload, context);
+            context->file_id = file_session->max_file_id++;
+            return context;
+        }
     }
-    context->file_type_enabled = file_type_id_enabled;
-    context->file_signature_enabled = file_signature_enabled;
-#ifdef TARGET_BASED
-    /*Check file policy to see whether we want to do either file type or file signature
-     * Note: this happen only on the start of session*/
-    if (get_file_policy)
-    {
-        int app_id;
-        uint32_t policy_flags = 0;
-        app_id = stream_api->get_application_protocol_id(ssnptr);
-        policy_flags = get_file_policy(ssnptr, (int16_t)app_id, upload);
-        if (!(policy_flags & ENABLE_FILE_TYPE_IDENTIFICATION))
-            context->file_type_enabled = false;
-        if (!(policy_flags & ENABLE_FILE_SIGNATURE_SHA256))
-            context->file_signature_enabled = false;
-    }
-#endif
+
+    context = create_file_context(ssnptr);
+    file_session = get_file_session (ssnptr);
+    file_session->main_context = context;
+    init_file_context(ssnptr, upload, context);
+    context->file_id = file_session->max_file_id++;
     return context;
 }
 
-#if defined(DEBUG_MSGS) || defined (REG_TEST)
-#define MAX_CONTEXT_INFO_LEN 1024
-static void printFileContext (FileContext* context)
-{
-    char buf[MAX_CONTEXT_INFO_LEN + 1];
-    int unused;
-    char *cur = buf;
-    int used = 0;
-
-    if (!context)
-    {
-        printf("File context is NULL.\n");
-        return;
-    }
-    unused = sizeof(buf) - 1;
-    used = snprintf(cur, unused, "File name: ");
-
-    if (used < 0)
-    {
-        printf("Fail to output file context\n");
-        return;
-    }
-    unused -= used;
-    cur += used;
-
-    if ((context->file_name_size > 0) && (unused > (int) context->file_name_size))
-    {
-        strncpy(cur, (char *)context->file_name, context->file_name_size );
-        unused -= context->file_name_size;
-        cur += context->file_name_size;
-    }
-
-    if (unused > 0)
-    {
-        used = snprintf(cur, unused, "\nFile type: %s(%d)",
-                file_info_from_ID(context->file_config, context->file_type_id), context->file_type_id);
-        unused -= used;
-        cur += used;
-    }
-
-    if (unused > 0)
-    {
-        used = snprintf(cur, unused, "\nFile size: %u",
-                (unsigned int)context->file_size);
-        unused -= used;
-        cur += used;
-    }
-
-    if (unused > 0)
-    {
-        used = snprintf(cur, unused, "\nProcessed size: %u\n",
-                (unsigned int)context->processed_bytes);
-        unused -= used;
-        cur += used;
-    }
-
-    buf[sizeof(buf) - 1] = '\0';
-    printf("%s", buf);
-}
-
-static void DumpHex(FILE *fp, const uint8_t *data, unsigned len)
-{
-    char str[18];
-    unsigned i;
-    unsigned pos;
-    char c;
-
-    FileConfig *file_config =  (FileConfig *)(snort_conf->file_config);
-
-    if (file_config->show_data_depth < (int64_t)len)
-        len = file_config->show_data_depth;
-
-    fprintf(fp,"Show length: %d \n", len);
-    for (i=0, pos=0; i<len; i++, pos++)
-    {
-        if (pos == 17)
-        {
-            str[pos] = 0;
-            fprintf(fp, "  %s\n", str);
-            pos = 0;
-        }
-        else if (pos == 8)
-        {
-            str[pos] = ' ';
-            pos++;
-            fprintf(fp, "%s", " ");
-        }
-        c = (char)data[i];
-        if (isprint(c) && (c == ' ' || !isspace(c)))
-            str[pos] = c;
-        else
-            str[pos] = '.';
-        fprintf(fp, "%02X ", data[i]);
-    }
-    if (pos)
-    {
-        str[pos] = 0;
-        for (; pos < 17; pos++)
-        {
-            if (pos == 8)
-            {
-                str[pos] = ' ';
-                pos++;
-                fprintf(fp, "%s", "    ");
-            }
-            else
-            {
-                fprintf(fp, "%s", "   ");
-            }
-        }
-        fprintf(fp, "  %s\n", str);
-    }
-}
-#endif
-
-static inline void updateFileSize(FileContext* context, int data_size, FilePosition position)
+static inline void updateFileSize(FileContext* context, int data_size,
+        FilePosition position)
 {
     context->processed_bytes += data_size;
     if ((position == SNORT_FILE_END) || (position == SNORT_FILE_FULL))
     {
-        context->file_size = context->processed_bytes;
+        if (get_max_file_depth() == (int64_t)context->processed_bytes)
+            context->file_size = 0;
+        else
+            context->file_size = context->processed_bytes;
         context->processed_bytes = 0;
     }
 }
@@ -381,13 +431,20 @@ static inline void add_file_to_block(Packet *p, File_Verdict verdict,
     uint32_t len = 0;
     uint32_t type = 0;
     uint32_t file_sig;
+    Packet *pkt = (Packet *)p;
     FileConfig *file_config =  (FileConfig *)(snort_conf->file_config);
+
+    Active_ForceDropPacket();
+    DisableAllDetect(p);
+    SetPreprocBit(p, PP_PERFMONITOR);
+    pkt->packet_flags |= PKT_FILE_EVENT_SET;
 
     /*Use URI as the identifier for file*/
     if (GetHttpUriData(p->ssnptr, &buf, &len, &type))
     {
         file_sig = str_to_hash(buf, len);
-        file_resume_block_add_file(p, file_sig, (uint32_t)file_config->file_block_timeout,
+        file_resume_block_add_file(p, file_sig,
+                (uint32_t)file_config->file_block_timeout,
                 verdict, file_type_id, signature);
     }
 }
@@ -422,47 +479,35 @@ static inline int check_http_partial_content(Packet *p)
     return 1;
 }
 
-static inline void _file_signature_lookup(FileContext* context, void* p, bool is_retransmit)
+/* File signature lookup at the end of file
+ * File signature callback can be used for malware lookup, file capture etc
+ */
+static inline void _file_signature_lookup(FileContext* context,
+        void* p, bool is_retransmit, bool suspend_block_verdict)
 {
     File_Verdict verdict = FILE_VERDICT_UNKNOWN;
-
     Packet *pkt = (Packet *)p;
     void *ssnptr = pkt->ssnptr;
 
-    if (!context->file_signature_enabled)
-        return;
-
-    if ((file_signature_done) && context->sha256 )
+    if (file_signature_cb)
     {
-        verdict = file_signature_done(p, ssnptr, context->sha256, context->upload);
+        verdict = file_signature_cb(p, ssnptr, context->sha256,
+                context->file_size, &(context->file_state), context->upload,
+                context->file_id);
         file_stats.verdicts_signature[verdict]++;
     }
+
+    if (suspend_block_verdict)
+        context->suspend_block_verdict = true;
+
+    context->verdict = verdict;
 
     if (verdict == FILE_VERDICT_LOG )
     {
         file_eventq_add(GENERATOR_FILE_SIGNATURE, FILE_SIGNATURE_SHA256,
                 FILE_SIGNATURE_SHA256_STR, RULE_TYPE__ALERT);
         pkt->packet_flags |= PKT_FILE_EVENT_SET;
-    }
-    else if (verdict == FILE_VERDICT_BLOCK)
-    {
-        file_eventq_add(GENERATOR_FILE_SIGNATURE, FILE_SIGNATURE_SHA256,
-                FILE_SIGNATURE_SHA256_STR, RULE_TYPE__DROP);
-        Active_ForceDropPacket();
-        DisableAllDetect(p);
-        SetPreprocBit(p, PP_PERFMONITOR);
-        pkt->packet_flags |= PKT_FILE_EVENT_SET;
-        add_file_to_block(p, verdict, 0, context->sha256);
-    }
-    else if (verdict == FILE_VERDICT_REJECT)
-    {
-        file_eventq_add(GENERATOR_FILE_SIGNATURE, FILE_SIGNATURE_SHA256,
-                FILE_SIGNATURE_SHA256_STR, RULE_TYPE__REJECT);
-        Active_ForceDropPacket();
-        DisableAllDetect(p);
-        SetPreprocBit(p, PP_PERFMONITOR);
-        pkt->packet_flags |= PKT_FILE_EVENT_SET;
-        add_file_to_block(p, verdict, 0, context->sha256);
+        context->file_signature_enabled = false;
     }
     else if (verdict == FILE_VERDICT_PENDING)
     {
@@ -473,11 +518,11 @@ static inline void _file_signature_lookup(FileContext* context, void* p, bool is
             /*Drop packets if not timeout*/
             if (pkt->pkth->ts.tv_sec <= context->expires)
             {
-                Active_DropPacket();
+                Active_DropPacket(pkt);
                 return;
             }
             /*Timeout, let packet go through OR block based on config*/
-            context->file_signature_enabled = 0;
+            context->file_signature_enabled = false;
             if (file_config && file_config->block_timeout_lookup)
                 file_eventq_add(GENERATOR_FILE_SIGNATURE, FILE_SIGNATURE_SHA256,
                         FILE_SIGNATURE_SHA256_STR, RULE_TYPE__REJECT);
@@ -490,40 +535,124 @@ static inline void _file_signature_lookup(FileContext* context, void* p, bool is
         {
             FileConfig *file_config =  (FileConfig *)context->file_config;
             if (file_config)
-                context->expires = (time_t)(file_config->file_lookup_timeout + pkt->pkth->ts.tv_sec);
-            Active_DropPacket();
+                context->expires = (time_t)(file_config->file_lookup_timeout
+                        + pkt->pkth->ts.tv_sec);
+            Active_DropPacket(pkt);
             stream_api->set_event_handler(ssnptr, s_cb_id, SE_REXMIT);
+            save_to_pending_context(ssnptr);
             return;
         }
     }
+    else if ((verdict == FILE_VERDICT_BLOCK) || (verdict == FILE_VERDICT_REJECT))
+    {
+        if (!context->suspend_block_verdict)
+            render_block_verdict(context, p);
+        context->file_signature_enabled = false;
+        return;
+    }
+
+    finish_signature_lookup(context);
+}
+
+static inline void finish_signature_lookup(FileContext *context)
+{
     if (context->sha256)
     {
-        context->file_signature_enabled = 0;
+        context->file_signature_enabled = false;
         file_stats.signatures_processed[context->file_type_id][context->upload]++;
 #ifdef TARGET_BASED
-        file_stats.signatures_processed_by_proto[stream_api->get_application_protocol_id(ssnptr)]++;
+        file_stats.signatures_by_proto[context->app_id]++;
 #endif
     }
 }
 
+static File_Verdict get_file_verdict(void *ssnptr)
+{
+    FileContext *context = get_current_file_context(ssnptr);
+
+    if (context == NULL)
+        return FILE_VERDICT_UNKNOWN;
+
+    return context->verdict;
+}
+
+static void render_block_verdict(void *ctx, void *p)
+{
+    FileContext *context = (FileContext *)ctx;
+    Packet *pkt = (Packet *)p;
+
+    if (p == NULL)
+        return;
+
+    if (context == NULL)
+    {
+        context = get_current_file_context(pkt->ssnptr);
+        if (context == NULL)
+            return;
+    }
+
+    if (context->verdict == FILE_VERDICT_BLOCK)
+    {
+        file_eventq_add(GENERATOR_FILE_SIGNATURE, FILE_SIGNATURE_SHA256,
+                FILE_SIGNATURE_SHA256_STR, RULE_TYPE__DROP);
+        add_file_to_block(p, context->verdict, context->file_type_id,
+                context->sha256);
+    }
+    else if (context->verdict == FILE_VERDICT_REJECT)
+    {
+        file_eventq_add(GENERATOR_FILE_SIGNATURE, FILE_SIGNATURE_SHA256,
+                FILE_SIGNATURE_SHA256_STR, RULE_TYPE__REJECT);
+        add_file_to_block(p, context->verdict, context->file_type_id,
+                context->sha256);
+    }
+
+    finish_signature_lookup(context);
+}
+
+#if defined(FEAT_FILE_INSPECT)
+static uint32_t get_file_type_id(void *ssnptr)
+{
+    // NOTE: 'ssnptr' NULL checked in get_application_data
+    FileContext *context = get_current_file_context(ssnptr);
+
+    if ( !context )
+        return FILE_VERDICT_UNKNOWN;
+
+    return context->file_type_id;
+}
+#endif /* FEAT_FILE_INSPECT */
+
 static void file_signature_lookup(void* p, bool is_retransmit)
 {
     Packet *pkt = (Packet *)p;
-    void *ssnptr = pkt->ssnptr;
-    FileContext* context  = stream_api->get_application_data(ssnptr, PP_FILE);
-    if (!context)
-        return;
-    _file_signature_lookup(context, p, is_retransmit);
+
+    FileContext* context  = get_current_file_context(pkt->ssnptr);
+
+    if (context && context->file_signature_enabled && context->sha256)
+    {
+        _file_signature_lookup(context, p, is_retransmit, false);
+    }
 }
 
 static void file_signature_callback(Packet* p)
 {
-    FileContext* context  = stream_api->get_application_data(p->ssnptr, PP_FILE);
+    /* During retransmission */
+    Packet *pkt = (Packet *)p;
+    void *ssnptr = pkt->ssnptr;
+    FileSession *file_session;
 
-    if (!context)
+    if (!ssnptr)
         return;
+    file_session = get_file_session (ssnptr);
+    if (!file_session)
+        return;
+    file_session->current_context = file_session->pending_context;
+    file_signature_lookup(p, 1);
+}
 
-    _file_signature_lookup(context, p, 1);
+static bool is_file_service_enabled()
+{
+    return (file_type_id_enabled || file_signature_enabled);
 }
 
 /*
@@ -531,25 +660,24 @@ static void file_signature_callback(Packet* p)
  *    1: continue processing/log/block this file
  *    0: ignore this file
  */
-static int file_process( void* p, uint8_t* file_data, int data_size, FilePosition position, bool upload)
+static int process_file_context(FileContext *context, void *p, uint8_t *file_data,
+        int data_size, FilePosition position, bool suspend_block_verdict)
 {
-    FileContext* context;
     Packet *pkt = (Packet *)p;
     void *ssnptr = pkt->ssnptr;
-    /* if both disabled, return immediately*/
-    if ((!file_type_id_enabled) && (!file_signature_enabled))
-        return 0;
-    if (position == SNORT_FILE_POSITION_UNKNOWN)
-        return 0;
-#if defined(DEBUG_MSGS) && !defined (REG_TEST)
-    if (DEBUG_FILE & GetDebugLevel())
-#endif
-#if defined(DEBUG_MSGS) || defined (REG_TEST)
-        DumpHex(stdout, file_data, data_size);
-    DEBUG_WRAP(DebugMessage(DEBUG_FILE, "stream pointer %p\n", ssnptr ););
-#endif
 
-    context = get_file_context(p, position, upload);
+    if (!context)
+        return 0;
+
+    set_current_file_context(ssnptr, context);
+    file_stats.file_data_total += data_size;
+
+    if ((!context->file_type_enabled) && (!context->file_signature_enabled))
+    {
+        updateFileSize(context, data_size, position);
+        return 0;
+    }
+
     if(check_http_partial_content(p))
     {
         context->file_type_enabled = false;
@@ -557,11 +685,8 @@ static int file_process( void* p, uint8_t* file_data, int data_size, FilePositio
         return 0;
     }
 
-    if ((!context->file_type_enabled) && (!context->file_signature_enabled))
-        return 0;
-
     context->file_config = snort_conf->file_config;
-    file_direction_set(context,upload);
+
     /*file type id*/
     if (context->file_type_enabled)
     {
@@ -575,122 +700,144 @@ static int file_process( void* p, uint8_t* file_data, int data_size, FilePositio
             context->file_type_enabled = false;
             context->file_signature_enabled = false;
             updateFileSize(context, data_size, position);
+            file_capture_stop(context);
             return 0;
         }
 
         if (context->file_type_id != SNORT_FILE_TYPE_CONTINUE)
         {
-            if (file_type_done)
+            if (file_type_cb)
             {
-                verdict = file_type_done(p, ssnptr, context->file_type_id, upload);
+                verdict = file_type_cb(p, ssnptr, context->file_type_id,
+                        context->upload, context->file_id);
                 file_stats.verdicts_type[verdict]++;
             }
             context->file_type_enabled = false;
-            file_stats.files_processed[context->file_type_id][upload]++;
+            file_stats.files_processed[context->file_type_id][context->upload]++;
 #ifdef TARGET_BASED
-            file_stats.files_processed_by_proto[stream_api->get_application_protocol_id(ssnptr)]++;
+            file_stats.files_by_proto[context->app_id]++;
 #endif
         }
 
         if (verdict == FILE_VERDICT_LOG )
         {
             file_eventq_add(GENERATOR_FILE_TYPE, context->file_type_id,
-                    file_info_from_ID(context->file_config,context->file_type_id), RULE_TYPE__ALERT);
+                    file_type_name(context->file_config, context->file_type_id),
+                    RULE_TYPE__ALERT);
             context->file_signature_enabled = false;
             pkt->packet_flags |= PKT_FILE_EVENT_SET;
         }
         else if (verdict == FILE_VERDICT_BLOCK)
         {
             file_eventq_add(GENERATOR_FILE_TYPE, context->file_type_id,
-                    file_info_from_ID(context->file_config,context->file_type_id), RULE_TYPE__DROP);
-            Active_ForceDropPacket();
-            DisableAllDetect(p);
-            SetPreprocBit(p, PP_PERFMONITOR);
+                    file_type_name(context->file_config, context->file_type_id),
+                    RULE_TYPE__DROP);
             updateFileSize(context, data_size, position);
             context->file_signature_enabled = false;
-            pkt->packet_flags |= PKT_FILE_EVENT_SET;
             add_file_to_block(p, verdict, context->file_type_id, NULL);
             return 1;
         }
         else if (verdict == FILE_VERDICT_REJECT)
         {
             file_eventq_add(GENERATOR_FILE_TYPE, context->file_type_id,
-                    file_info_from_ID(context->file_config,context->file_type_id), RULE_TYPE__REJECT);
-            Active_ForceDropPacket();
-            DisableAllDetect(p);
-            SetPreprocBit(p, PP_PERFMONITOR);
+                    file_type_name(context->file_config, context->file_type_id),
+                    RULE_TYPE__REJECT);
             updateFileSize(context, data_size, position);
             context->file_signature_enabled = false;
-            pkt->packet_flags |= PKT_FILE_EVENT_SET;
             add_file_to_block(p, verdict, context->file_type_id, NULL);
             return 1;
         }
         else if (verdict == FILE_VERDICT_STOP)
         {
             context->file_signature_enabled = false;
-
+        }
+        else if (verdict == FILE_VERDICT_STOP_CAPTURE)
+        {
+            file_capture_stop(context);
         }
     }
     /*file signature calculation*/
     if (context->file_signature_enabled)
     {
         file_signature_sha256(context, file_data, data_size, position);
+        file_stats.data_processed[context->file_type_id][context->upload]
+                                                         += data_size;
+        updateFileSize(context, data_size, position);
 
-#if defined(DEBUG_MSGS) || defined (REG_TEST)
-        if (
-#if defined(DEBUG_MSGS) && !defined (REG_TEST)
-                (DEBUG_FILE & GetDebugLevel()) &&
-#endif
-                (context->sha256) )
+        /*Fails to capture, when out of memory or size limit, need lookup*/
+        if (context->file_capture_enabled &&
+                file_capture_process(context, file_data, data_size, position))
         {
-            file_sha256_print(context->sha256);
+            file_capture_stop(context);
+            _file_signature_lookup(context, p, false, suspend_block_verdict);
+            if (context->verdict != FILE_VERDICT_UNKNOWN)
+                return 1;
         }
-#endif
-        _file_signature_lookup(context, p, false);
 
+        FILE_REG_DEBUG_WRAP(if (context->sha256) file_sha256_print(context->sha256);)
+
+        /*Either get SHA or exceeding the SHA limit, need lookup*/
+        if (context->file_state.sig_state != FILE_SIG_PROCESSING)
+        {
+            if (context->file_state.sig_state == FILE_SIG_DEPTH_FAIL)
+                file_stats.files_sig_depth++;
+            _file_signature_lookup(context, p, false, suspend_block_verdict);
+        }
     }
-    updateFileSize(context, data_size, position);
+    else
+    {
+        updateFileSize(context, data_size, position);
+    }
     return 1;
 }
 
-static void set_file_name (void* ssnptr, uint8_t* file_name, uint32_t name_size)
+/*
+ * Return:
+ *    1: continue processing/log/block this file
+ *    0: ignore this file
+ */
+static int file_process( void* p, uint8_t* file_data, int data_size,
+        FilePosition position, bool upload, bool suspend_block_verdict)
 {
-    /* Attempt to get a previously allocated context. */
-    FileContext* context  = stream_api->get_application_data(ssnptr, PP_FILE);
+    FileContext* context;
 
-    file_name_set(context, file_name, name_size);
-#if defined(DEBUG_MSGS) || defined (REG_TEST)
-#if defined(DEBUG_MSGS) && !defined (REG_TEST)
-    if (DEBUG_FILE & GetDebugLevel())
-#endif
-        printFileContext(context);
-#endif
+    /* if both disabled, return immediately*/
+    if (!is_file_service_enabled())
+        return 0;
+
+    if (position == SNORT_FILE_POSITION_UNKNOWN)
+        return 0;
+
+    FILE_REG_DEBUG_WRAP(DumpHex(stdout, file_data, data_size);)
+
+    context = find_main_file_context(p, position, upload);
+    return process_file_context(context, p, file_data, data_size, position,
+            suspend_block_verdict);
+}
+
+static void set_file_name (void* ssnptr, uint8_t* fname, uint32_t name_size)
+{
+    FileContext* context = get_current_file_context(ssnptr);
+    file_name_set(context, fname, name_size);
+    FILE_REG_DEBUG_WRAP(printFileContext(context);)
 }
 
 /* Return 1: file name available,
  *        0: file name is unavailable
  */
-static int get_file_name (void* ssnptr, uint8_t **file_name, uint32_t *name_size)
+static int get_file_name (void* ssnptr, uint8_t **fname, uint32_t *name_size)
 {
-    /* Attempt to get a previously allocated context. */
-    FileContext* context  = stream_api->get_application_data(ssnptr, PP_FILE);
-    return file_name_get(context, file_name, name_size);
-
+    return file_name_get(get_current_file_context(ssnptr), fname, name_size);
 }
+
 static uint64_t  get_file_size(void* ssnptr)
 {
-    /* Attempt to get a previously allocated context. */
-    FileContext* context  = stream_api->get_application_data(ssnptr, PP_FILE);
-
-    return file_size_get(context);
-
+    return file_size_get(get_current_file_context(ssnptr));
 }
 
 static uint64_t  get_file_processed_size(void* ssnptr)
 {
-    /* Attempt to get a previously allocated context. */
-    FileContext* context  = stream_api->get_application_data(ssnptr, PP_FILE);
-
+    FileContext *context = get_main_file_context(ssnptr);
     if (context)
         return (context->processed_bytes);
     else
@@ -699,50 +846,78 @@ static uint64_t  get_file_processed_size(void* ssnptr)
 
 static void set_file_direction(void* ssnptr, bool upload)
 {
-    /* Attempt to get a previously allocated context. */
-    FileContext* context  = stream_api->get_application_data(ssnptr, PP_FILE);
-
-    file_direction_set(context,upload);
-
+    file_direction_set(get_current_file_context(ssnptr),upload);
 }
 
 static bool get_file_direction(void* ssnptr)
 {
-    /* Attempt to get a previously allocated context. */
-    FileContext* context  = stream_api->get_application_data(ssnptr, PP_FILE);
-
-    return file_direction_get(context);
-
+    return file_direction_get(get_current_file_context(ssnptr));
 }
 
 static uint8_t *get_file_sig_sha256(void* ssnptr)
 {
-    /* Attempt to get a previously allocated context. */
-    FileContext* context  = stream_api->get_application_data(ssnptr, PP_FILE);
-
-    return file_sig_sha256_get(context);
+    return file_sig_sha256_get(get_current_file_context(ssnptr));
 }
 
-static void set_file_policy_callback(Get_file_policy_func policy_func)
+static void set_file_policy_callback(File_policy_callback_func policy_func_cb)
 {
-    get_file_policy = policy_func;
+    file_policy_cb = policy_func_cb;
 }
 
-static void enable_file_type(File_type_done_func callback)
+static void enable_file_type(File_type_callback_func callback)
 {
-    file_type_done = callback;
-    file_type_id_enabled = true;
-    start_file_processing();
+    if (!file_type_id_enabled)
+    {
+        file_type_cb = callback;
+        file_type_id_enabled = true;
+#ifdef SNORT_RELOAD
+        file_sevice_reconfig_set(true);
+#endif
+        start_file_processing();
+        LogMessage("File service: file type enabled.\n");
+    }
 }
 
-static void enable_file_signature(File_signature_done_func callback)
+/* set file signature callback function*/
+static inline void _update_file_sig_callback(File_signature_callback_func cb)
 {
-    file_signature_done = callback;
+    if(!file_signature_cb)
+    {
+        file_signature_cb = cb;
+    }
+    else if (file_signature_cb != cb)
+    {
+        WarningMessage("File service: signature callback redefined.\n");
+    }
+}
 
-    if ( !file_signature_enabled )
+static void enable_file_signature(File_signature_callback_func callback)
+{
+    _update_file_sig_callback(callback);
+
+    if (!file_signature_enabled)
     {
         file_signature_enabled = true;
+#ifdef SNORT_RELOAD
+        file_sevice_reconfig_set(true);
+#endif
         start_file_processing();
+        LogMessage("File service: file signature enabled.\n");
+    }
+}
+
+/* Enable file capture, also enable file signature */
+static void enable_file_capture(File_signature_callback_func callback)
+{
+    if (!file_capture_enabled)
+    {
+        file_capture_enabled = true;
+#ifdef SNORT_RELOAD
+        file_sevice_reconfig_set(true);
+#endif
+        LogMessage("File service: file capture enabled.\n");
+        /* Enable file signature*/
+        enable_file_signature(callback);
     }
 }
 
@@ -756,41 +931,55 @@ static void set_file_action_log_callback(Log_file_action_func log_func)
  */
 static int64_t get_max_file_depth(void)
 {
-    int64_t file_depth = -1;
-
     FileConfig *file_config =  (FileConfig *)(snort_conf->file_config);
 
     if (!file_config)
         return -1;
 
+    if (file_config->file_depth)
+        return file_config->file_depth;
+
+    file_config->file_depth = -1;
+
     if (file_type_id_enabled)
     {
-        /*Unlimited file depth*/
-        if (!file_config->file_type_depth)
-            return 0;
-        file_depth = file_config->file_type_depth;
+        file_config->file_depth = file_config->file_type_depth;
     }
 
-    if (file_signature_enabled )
+    if (file_signature_enabled)
     {
-        /*Unlimited file depth*/
-        if (!file_config->file_signature_depth)
-            return 0;
-
-        if (file_config->file_signature_depth > file_depth)
-            file_depth = file_config->file_signature_depth;
-
+        if (file_config->file_signature_depth > file_config->file_depth)
+            file_config->file_depth = file_config->file_signature_depth;
     }
 
-    return file_depth;
+    if (file_config->file_depth > 0)
+    {
+        /*Extra byte for deciding whether file data will be over limit*/
+        file_config->file_depth++;
+        return (file_config->file_depth);
+    }
+    else
+    {
+        return -1;
+    }
+}
+
+static void update_file_name(MAIL_LogState *log_state)
+{
+    if (log_state)
+        log_state->file_log.file_name = log_state->file_log.file_current;
 }
 
 static void set_file_name_from_log(FILE_LogState *log_state, void *ssn)
 {
     if ((log_state) && (log_state->file_logged > log_state->file_current))
     {
-        set_file_name(ssn, log_state->filenames + log_state->file_current,
-                log_state->file_logged -log_state->file_current);
+        if (log_state->file_current > log_state->file_name)
+            set_file_name(ssn, log_state->filenames + log_state->file_name,
+                    log_state->file_current -log_state->file_name - 1);
+        else
+            set_file_name(ssn, log_state->filenames + log_state->file_current,
+                    log_state->file_logged -log_state->file_current);
     }
     else
     {
@@ -838,158 +1027,3 @@ static uint32_t str_to_hash(uint8_t *str, int length )
     final(a,b,c);
     return c;
 }
-
-static void print_file_stats(int exiting)
-{
-    int i;
-    uint64_t processed_total[2];
-    uint64_t verdicts_total;
-
-    if(!file_stats.files_total)
-        return;
-
-    LogMessage("File type stats:\n");
-
-    LogMessage("         Type              Download   Upload \n");
-
-    processed_total[0] = 0;
-    processed_total[1] = 0;
-    for (i = 0; i < FILE_ID_MAX; i++)
-    {
-        char* type_name =  file_info_from_ID(snort_conf->file_config, i);
-        if (type_name &&
-                (file_stats.files_processed[i][0] || file_stats.files_processed[i][1] ))
-        {
-            LogMessage("%12s(%3d)          "FMTu64("-10")" "FMTu64("-10")" \n",
-                    type_name, i,
-                    file_stats.files_processed[i][0], file_stats.files_processed[i][1]);
-            processed_total[0]+= file_stats.files_processed[i][0];
-            processed_total[1]+= file_stats.files_processed[i][1];
-        }
-    }
-    LogMessage("            Total          "FMTu64("-10")" "FMTu64("-10")" \n",
-            processed_total[0], processed_total[1]);
-
-    LogMessage("\nFile signature stats:\n");
-
-    LogMessage("         Type              Download   Upload \n");
-
-    processed_total[0] = 0;
-    processed_total[1] = 0;
-    for (i = 0; i < FILE_ID_MAX; i++)
-    {
-        char* type_name =  file_info_from_ID(snort_conf->file_config, i);
-        if (type_name &&
-                (file_stats.signatures_processed[i][0] || file_stats.signatures_processed[i][1] ))
-        {
-            LogMessage("%12s(%3d)          "FMTu64("-10")" "FMTu64("-10")" \n",
-                    type_name, i,
-                    file_stats.signatures_processed[i][0], file_stats.signatures_processed[i][1]);
-            processed_total[0]+= file_stats.signatures_processed[i][0];
-            processed_total[1]+= file_stats.signatures_processed[i][1];
-        }
-    }
-    LogMessage("            Total          "FMTu64("-10")" "FMTu64("-10")" \n",
-            processed_total[0], processed_total[1]);
-
-    LogMessage("\nFile type verdicts:\n");
-
-    verdicts_total = 0;
-    for (i = 0; i < FILE_VERDICT_MAX; i++)
-    {
-        verdicts_total+=file_stats.verdicts_type[i];
-        switch (i)
-        {
-        case FILE_VERDICT_UNKNOWN:
-            LogMessage("   %12s:           "FMTu64("-10")" \n", "UNKNOWN",
-                    file_stats.verdicts_type[i]);
-            break;
-        case FILE_VERDICT_LOG:
-            LogMessage("   %12s:           "FMTu64("-10")" \n", "LOG",
-                    file_stats.verdicts_type[i]);
-            break;
-        case FILE_VERDICT_STOP:
-            LogMessage("   %12s:           "FMTu64("-10")" \n", "STOP",
-                    file_stats.verdicts_type[i]);
-            break;
-        case FILE_VERDICT_BLOCK:
-            LogMessage("   %12s:           "FMTu64("-10")" \n", "BLOCK",
-                    file_stats.verdicts_type[i]);
-            break;
-        case FILE_VERDICT_REJECT:
-            LogMessage("   %12s:           "FMTu64("-10")" \n", "REJECT",
-                    file_stats.verdicts_type[i]);
-            break;
-        case FILE_VERDICT_PENDING:
-            LogMessage("   %12s:           "FMTu64("-10")" \n", "PENDING",
-                    file_stats.verdicts_type[i]);
-            break;
-        default:
-            break;
-        }
-    }
-    LogMessage("   %12s:           "FMTu64("-10")" \n", "Total",verdicts_total);
-
-    LogMessage("\nFile signature verdicts:\n");
-
-    verdicts_total = 0;
-    for (i = 0; i < FILE_VERDICT_MAX; i++)
-    {
-        verdicts_total+=file_stats.verdicts_signature[i];
-        switch (i)
-        {
-        case FILE_VERDICT_UNKNOWN:
-            LogMessage("   %12s:           "FMTu64("-10")" \n", "UNKNOWN",
-                    file_stats.verdicts_signature[i]);
-            break;
-        case FILE_VERDICT_LOG:
-            LogMessage("   %12s:           "FMTu64("-10")" \n", "LOG",
-                    file_stats.verdicts_signature[i]);
-            break;
-        case FILE_VERDICT_STOP:
-            LogMessage("   %12s:           "FMTu64("-10")" \n", "STOP",
-                    file_stats.verdicts_signature[i]);
-            break;
-        case FILE_VERDICT_BLOCK:
-            LogMessage("   %12s:           "FMTu64("-10")" \n", "BLOCK",
-                    file_stats.verdicts_signature[i]);
-            break;
-        case FILE_VERDICT_REJECT:
-            LogMessage("   %12s:           "FMTu64("-10")" \n", "REJECT",
-                    file_stats.verdicts_signature[i]);
-            break;
-        case FILE_VERDICT_PENDING:
-            LogMessage("   %12s:           "FMTu64("-10")" \n", "PENDING",
-                    file_stats.verdicts_signature[i]);
-            break;
-        default:
-            break;
-        }
-    }
-    LogMessage("   %12s:           "FMTu64("-10")" \n", "Total",verdicts_total);
-
-#ifdef TARGET_BASED
-    if (IsAdaptiveConfigured(getRuntimePolicy()))
-    {
-        LogMessage("\nFiles processed by protocol IDs:\n");
-        for (i = 0; i < MAX_PROTOCOL_ORDINAL; i++)
-        {
-            if (file_stats.files_processed_by_proto[i])
-            {
-                LogMessage("   %12d:           "FMTu64("-10")" \n", i ,file_stats.files_processed_by_proto[i]);
-            }
-        }
-        LogMessage("\nFile signatures processed by protocol IDs:\n");
-        for (i = 0; i < MAX_PROTOCOL_ORDINAL; i++)
-        {
-            if (file_stats.signatures_processed_by_proto[i])
-            {
-                LogMessage("   %12d:           "FMTu64("-10")" \n", i ,file_stats.signatures_processed_by_proto[i]);
-            }
-        }
-    }
-#endif
-
-    LogMessage("\nTotal files processed:     "FMTu64("-10")" \n", file_stats.files_total);
-}
-

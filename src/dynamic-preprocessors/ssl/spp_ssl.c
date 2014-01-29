@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2007-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -266,9 +267,9 @@ static inline void SSLPP_process_other(
         {
             if(packet->stream_session_ptr &&
                 _dpd.streamAPI->missed_packets(
-                    packet->stream_session_ptr, SSN_DIR_SERVER) &&
+                    packet->stream_session_ptr, SSN_DIR_FROM_SERVER) &&
                 _dpd.streamAPI->missed_packets(
-                    packet->stream_session_ptr, SSN_DIR_CLIENT) )
+                    packet->stream_session_ptr, SSN_DIR_FROM_CLIENT) )
 
                 ssn_flags |= SSL_VER_SSLV2_FLAG;
         }
@@ -384,7 +385,7 @@ static void SSLPP_process(void *raw_packet, void *context)
     {
         switch (_dpd.streamAPI->get_reassembly_direction(packet->stream_session_ptr))
         {
-            case SSN_DIR_SERVER:
+            case SSN_DIR_FROM_SERVER:
                 if (packet->flags & FLAG_FROM_SERVER)
                 {
                     DEBUG_WRAP(DebugMessage(DEBUG_SSL, "Flushing server side\n"););
@@ -393,7 +394,7 @@ static void SSLPP_process(void *raw_packet, void *context)
 
                 break;
 
-            case SSN_DIR_CLIENT:
+            case SSN_DIR_FROM_CLIENT:
                 if (packet->flags & FLAG_FROM_CLIENT)
                 {
                     DEBUG_WRAP(DebugMessage(DEBUG_SSL, "Flushing client side\n"););
@@ -446,7 +447,7 @@ static void SSLPP_process(void *raw_packet, void *context)
     }
 #endif
 
-    new_flags = SSL_decode(packet->payload, (int)packet->payload_size, packet->flags);
+    new_flags = SSL_decode(packet->payload, (int)packet->payload_size, packet->flags, ssn_flags);
 
     // If the client used an SSLv2 ClientHello with an SSLv3/TLS version and
     // the server replied with an SSLv3/TLS ServerHello, remove the backward
@@ -463,7 +464,7 @@ static void SSLPP_process(void *raw_packet, void *context)
     {
         if( (SSL_IS_SHELLO(new_flags) && !SSL_IS_CHELLO(ssn_flags) ))
         {
-            if(!(_dpd.streamAPI->missed_packets( packet->stream_session_ptr, SSN_DIR_CLIENT)))
+            if(!(_dpd.streamAPI->missed_packets( packet->stream_session_ptr, SSN_DIR_FROM_CLIENT)))
                 ALERT(SSL_INVALID_SERVER_HELLO, SSL_INVALID_SERVER_HELLO_STR);
         }
     }

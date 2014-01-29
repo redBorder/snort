@@ -9,6 +9,7 @@
  */
 
 /*
+ ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2004-2013 Sourcefire, Inc.
  **
  ** This program is free software; you can redistribute it and/or modify
@@ -1912,7 +1913,7 @@ static void Frag3Defrag(Packet *p, void *context)
                     "Blocking fragments due to earlier fragment drop\n"););
         DisableDetect(p);
         SetPreprocBit(p, PP_PERFMONITOR);
-        Active_DropPacket();
+        Active_DropPacket(p);
         f3stats.drops++;
     }
 
@@ -2121,7 +2122,7 @@ static inline void FragEvent(Packet *p, int gid, char *str,
         if ( drop_flag )
         {
             DEBUG_WRAP(DebugMessage(DEBUG_DECODE, "Dropping bad packet\n"););
-            Active_DropSession();
+            Active_DropSession(p);
         }
     }
 

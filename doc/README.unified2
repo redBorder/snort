@@ -94,7 +94,7 @@ I. Configuring Unified2 Output
     log_rcptto
 
     This option enables SMTP preprocessor to parse and log the MIME
-    attachment filenames extracted from the Content-Dispostion header
+    attachment filenames extracted from the Content-Disposition header
     within the MIME body along with all the generated events for that
     session.
     * see README.SMTP for more information
@@ -186,7 +186,7 @@ III. Unified2 File Format
     record length           4 bytes
 
   All unified2 records are preceded by a Serial Unified2 header.  This
-  unified2 record allows an interpretting application to skip past and
+  unified2 record allows an interpreting application to skip past and
   apply simple heuristics against records.
   
   The Record Type indicates one of the following unified2 records
@@ -202,7 +202,7 @@ III. Unified2 File Format
     110             Unified2 Extra Data
 
   The record length field specifies the entire length of the record 
-  (not including the Serial Unified2 Header itself) upto the next 
+  (not including the Serial Unified2 Header itself) up to the next 
   Serial Unified2 Header or EOF.
 
   B. Unified2 Packet
@@ -221,7 +221,7 @@ III. Unified2 File Format
   Unified2 Packet records contain contain a copy of the packet that
   caused an alert (Packet Data) and is packet length octets long.
 
-  C. Unfied2 IDS Event
+  C. Unified2 IDS Event
 
     sensor id               4 bytes
     event id                4 bytes
@@ -244,7 +244,7 @@ III. Unified2 File Format
   Unified2 IDS Event is logged for IPv4 Events without VLAN or MPLS
   tagging. 
 
-  D. Unfied2 IDS Event IP6
+  D. Unified2 IDS Event IP6
 
     sensor id               4 bytes
     event id                4 bytes
@@ -267,7 +267,7 @@ III. Unified2 File Format
   Unified2 IDS Event IP6 is logged for IPv6 Events without VLAN or 
   MPLS tagging. 
 
-  E. Unfied2 IDS Event (Version 2)
+  E. Unified2 IDS Event (Version 2)
 
     sensor id               4 bytes
     event id                4 bytes
@@ -406,11 +406,11 @@ III. Unified2 File Format
     Length of the data stored in the extra data record
 
   Data (Unified2 Extra Data)
-    Raw extra event data upto Data Length bytes in size.
+    Raw extra event data up to Data Length bytes in size.
 
     All of these Extra data types, with the exception of 1, 2, 11, and
     12 (IP Addresses) are stored in plain-text. The IP Address types
-    need to be interpreted as if they were comming off the wire.
+    need to be interpreted as if they were coming off the wire.
 
   Signature ID
     The Signature ID of the alerting rule, as specified by the sid
@@ -424,7 +424,7 @@ III. Unified2 File Format
     Revision of the rule as specified by the rev keyword.
 
   Classification ID
-    Classification ID as mapped in the file classifcations.conf 
+    Classification ID as mapped in the file classifications.conf 
 
   Priority ID
     Priority of the rule as mapped in the file classifications.conf or
@@ -451,7 +451,7 @@ III. Unified2 File Format
     alerting packet.
   
   Protocol
-    Transport protcol of the alerting packet. One of: ip, tcp, udp, or
+    Transport protocol of the alerting packet. One of: ip, tcp, udp, or
     icmp.
 
   Impact flag

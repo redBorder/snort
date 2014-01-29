@@ -1,6 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1580,11 +1581,11 @@ static void Stream5PrintStats(int exiting)
     LogMessage("                    Events: %u\n", s5stats.events);
     LogMessage("           Internal Events: %u\n", s5stats.internalEvents);
     LogMessage("           TCP Port Filter\n");
-    LogMessage("                   Dropped: %u\n", s5stats.tcp_port_filter.dropped);
+    LogMessage("                  Filtered: %u\n", s5stats.tcp_port_filter.filtered);
     LogMessage("                 Inspected: %u\n", s5stats.tcp_port_filter.inspected);
     LogMessage("                   Tracked: %u\n", s5stats.tcp_port_filter.session_tracked);
     LogMessage("           UDP Port Filter\n");
-    LogMessage("                   Dropped: %u\n", s5stats.udp_port_filter.dropped);
+    LogMessage("                  Filtered: %u\n", s5stats.udp_port_filter.filtered);
     LogMessage("                 Inspected: %u\n", s5stats.udp_port_filter.inspected);
     LogMessage("                   Tracked: %u\n", s5stats.udp_port_filter.session_tracked);
 #ifdef ENABLE_HA
@@ -1634,8 +1635,11 @@ static inline uint8_t HAStateDiff(SessionKey *key, const Stream5HAState *old_sta
             ha_flags |= HA_FLAG_CRITICAL_CHANGE;
     }
 
-    if (old_state->ipprotocol != new_state->ipprotocol ||
+    if (
+#ifdef TARGET_BASED
+        old_state->ipprotocol != new_state->ipprotocol ||
         old_state->application_protocol != new_state->application_protocol ||
+#endif
         old_state->direction != new_state->direction)
     {
         ha_flags |= HA_FLAG_MODIFIED;
@@ -1882,9 +1886,7 @@ static int Stream5SetApplicationData(
     return -1;
 }
 
-static void *Stream5GetApplicationData(
-                    void *ssnptr,
-                    uint32_t protocol)
+static void *Stream5GetApplicationData(void *ssnptr, uint32_t protocol)
 {
     Stream5LWSession *ssn;
     Stream5AppData *appData = NULL;
@@ -2319,8 +2321,8 @@ static void Stream5StopInspection(
     switch (dir)
     {
         case SSN_DIR_BOTH:
-        case SSN_DIR_CLIENT:
-        case SSN_DIR_SERVER:
+        case SSN_DIR_FROM_CLIENT:
+        case SSN_DIR_FROM_SERVER:
             if (ssn->ha_state.ignore_direction != dir)
             {
                 ssn->ha_state.ignore_direction = dir;
@@ -2339,12 +2341,12 @@ static void Stream5StopInspection(
     /* Flush any queued data on the client and/or server */
     if (ssn->protocol == IPPROTO_TCP)
     {
-        if (ssn->ha_state.ignore_direction & SSN_DIR_CLIENT)
+        if (ssn->ha_state.ignore_direction & SSN_DIR_FROM_CLIENT)
         {
             Stream5FlushClient(p, ssn);
         }
 
-        if (ssn->ha_state.ignore_direction & SSN_DIR_SERVER)
+        if (ssn->ha_state.ignore_direction & SSN_DIR_FROM_SERVER)
         {
             Stream5FlushServer(p, ssn);
         }
@@ -2367,8 +2369,8 @@ static void Stream5ResumeInspection(
     switch (dir)
     {
         case SSN_DIR_BOTH:
-        case SSN_DIR_CLIENT:
-        case SSN_DIR_SERVER:
+        case SSN_DIR_FROM_CLIENT:
+        case SSN_DIR_FROM_SERVER:
             if (ssn->ha_state.ignore_direction & dir)
             {
                 ssn->ha_state.ignore_direction &= ~dir;
@@ -2435,7 +2437,7 @@ static void Stream5DropTraffic(
     if (!ssn)
         return;
 
-    if ((dir & SSN_DIR_CLIENT) && !(ssn->ha_state.session_flags & SSNFLAG_DROP_CLIENT))
+    if ((dir & SSN_DIR_FROM_CLIENT) && !(ssn->ha_state.session_flags & SSNFLAG_DROP_CLIENT))
     {
         ssn->ha_state.session_flags |= SSNFLAG_DROP_CLIENT;
         if ( Active_PacketForceDropped() )
@@ -2445,7 +2447,7 @@ static void Stream5DropTraffic(
 #endif
     }
 
-    if ((dir & SSN_DIR_SERVER) && !(ssn->ha_state.session_flags & SSNFLAG_DROP_SERVER))
+    if ((dir & SSN_DIR_FROM_SERVER) && !(ssn->ha_state.session_flags & SSNFLAG_DROP_SERVER))
     {
         ssn->ha_state.session_flags |= SSNFLAG_DROP_SERVER;
         if ( Active_PacketForceDropped() )
@@ -2727,7 +2729,7 @@ static uint8_t s5GetHopLimit (void* pv, char dir, int outer)
     if ( !ssn )
         return 255;
 
-    if ( SSN_DIR_CLIENT == dir )
+    if ( SSN_DIR_FROM_CLIENT == dir )
         return outer ? ssn->outer_client_ttl : ssn->inner_client_ttl;
 
     return outer ? ssn->outer_server_ttl : ssn->inner_server_ttl;
@@ -2795,7 +2797,7 @@ void Stream5SetApplicationProtocolIdFromHostEntry(Stream5LWSession *lwssn,
         Stream5SetIPProtocol(lwssn);
     }
 
-    if (direction == SSN_DIR_SERVER)
+    if (direction == SSN_DIR_FROM_SERVER)
     {
         application_protocol = getApplicationProtocolId(host_entry,
                                         lwssn->ha_state.ipprotocol,
@@ -2878,7 +2880,7 @@ static void s5SetServiceFilterStatus(
     if (parsing && sc->reloadPolicyFlag)
     {
         tSfPolicyUserContextId s5_swap_config;
-        if (!(s5_swap_config = (tSfPolicyUserContextId)GetReloadStreamConfig(sc)))
+        if ((s5_swap_config = (tSfPolicyUserContextId)GetReloadStreamConfig(sc)))
             config = (Stream5Config *)sfPolicyUserDataGet(s5_swap_config, policyId);
         else
             config = NULL;
@@ -2906,7 +2908,7 @@ static int s5GetServiceFilterStatus (
     if (parsing && sc->reloadPolicyFlag)
     {
         tSfPolicyUserContextId s5_swap_config;
-        if (!(s5_swap_config = (tSfPolicyUserContextId)GetReloadStreamConfig(sc)))
+        if ((s5_swap_config = (tSfPolicyUserContextId)GetReloadStreamConfig(sc)))
             config = (Stream5Config *)sfPolicyUserDataGet(s5_swap_config, policyId);
         else
             config = NULL;
@@ -2954,7 +2956,7 @@ static int16_t Stream5GetApplicationProtocolId(void *ssnptr)
     if (host_entry)
     {
         Stream5SetApplicationProtocolIdFromHostEntry(lwssn,
-                                           host_entry, SSN_DIR_SERVER);
+                                           host_entry, SSN_DIR_FROM_SERVER);
 
         if (lwssn->ha_state.application_protocol != 0)
         {
@@ -2967,7 +2969,7 @@ static int16_t Stream5GetApplicationProtocolId(void *ssnptr)
     if (host_entry)
     {
         Stream5SetApplicationProtocolIdFromHostEntry(lwssn,
-                                           host_entry, SSN_DIR_CLIENT);
+                                           host_entry, SSN_DIR_FROM_CLIENT);
 
         if (lwssn->ha_state.application_protocol != 0)
         {
@@ -3013,9 +3015,9 @@ static snort_ip_p Stream5GetSessionIpAddress(void *ssnptr, uint32_t direction)
     {
         switch (direction)
         {
-            case SSN_DIR_SERVER:
+            case SSN_DIR_FROM_SERVER:
                 return (snort_ip_p)(&((Stream5LWSession *)ssn)->server_ip);
-            case SSN_DIR_CLIENT:
+            case SSN_DIR_FROM_CLIENT:
                 return (snort_ip_p)(&((Stream5LWSession *)ssn)->client_ip);
             default:
                 break;
@@ -3080,7 +3082,7 @@ int isPacketFilterDiscard(
             SetPreprocBit(p, PP_SFPORTSCAN);
             SetPreprocBit(p, PP_PERFMONITOR);
             //otn_tmp = NULL;
-            pPortFilterStats->dropped++;
+            pPortFilterStats->filtered++;
         }
         else
         {

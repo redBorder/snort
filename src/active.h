@@ -1,6 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -52,19 +53,22 @@ void Active_KillSession(Packet*, EncodeFlags*);
 void Active_SendReset(Packet*, EncodeFlags);
 void Active_SendUnreach(Packet*, EncodeType);
 void Active_SendData(Packet*, EncodeFlags, const uint8_t* buf, uint32_t len);
+void Active_InjectData(Packet*, EncodeFlags, const uint8_t* buf, uint32_t len);
 
 int Active_IsRSTCandidate(const Packet*);
 int Active_IsUNRCandidate(const Packet*);
 
 int Active_IsEnabled(void);
 void Active_SetEnabled(int on_off);
+
 #endif // ACTIVE_RESPONSE
 
 typedef enum {
-    ACTIVE_ALLOW = 0,
-    ACTIVE_DROP = 1,
-    ACTIVE_WOULD_DROP = 2,
-    ACTIVE_FORCE_DROP = 3
+    ACTIVE_ALLOW,       // don't drop
+    ACTIVE_CANT_DROP,   // can't drop
+    ACTIVE_WOULD_DROP,  // would drop
+    ACTIVE_DROP,        // should drop
+    ACTIVE_FORCE_DROP   // must drop
 } tActiveDrop;
 
 extern tActiveDrop active_drop_pkt;
@@ -100,24 +104,46 @@ static inline bool Active_Suspended (void)
     return ( active_suspend != 0 );
 }
 
+static tActiveDrop Active_GetDisposition (void)
+{
+    return active_drop_pkt;
+}
+
+static inline void Active_CantDrop(void)
+{
+#if 0
+    // not yet supported
+    if ( active_drop_pkt < ACTIVE_CANT_DROP )
+        active_drop_pkt = ACTIVE_CANT_DROP;
+#else
+    if ( active_drop_pkt < ACTIVE_WOULD_DROP )
+        active_drop_pkt = ACTIVE_WOULD_DROP;
+#endif
+}
+
 static inline void Active_ForceDropPacket (void)
 {
     if ( Active_Suspended() )
-        return;
+        Active_CantDrop();
 
-    active_drop_pkt = ACTIVE_FORCE_DROP;
+    else
+        active_drop_pkt = ACTIVE_FORCE_DROP;
 }
 
-static inline void Active_DropPacket (void)
+static inline void Active_DropPacket (const Packet* p)
 {
     if ( Active_Suspended() )
-        return;
-
-    if ( active_drop_pkt != ACTIVE_FORCE_DROP )
+    {
+        Active_CantDrop();
+    }
+    else if ( active_drop_pkt != ACTIVE_FORCE_DROP )
     {
         if ( ScInlineMode() )
         {
-            active_drop_pkt = ACTIVE_DROP;
+            if ( DAQ_GetInterfaceMode(p->pkth) == DAQ_MODE_INLINE )
+                active_drop_pkt = ACTIVE_DROP;
+            else
+                active_drop_pkt = ACTIVE_WOULD_DROP;
         }
         else if (ScInlineTestMode())
         {
@@ -126,20 +152,24 @@ static inline void Active_DropPacket (void)
     }
 }
 
-static inline void Active_DropSession (void)
+static inline void Active_DropSession (const Packet* p)
 {
     if ( Active_Suspended() )
+    {
+        Active_CantDrop();
         return;
-
+    }
     active_drop_ssn = 1;
-    Active_DropPacket();
+    Active_DropPacket(p);
 }
 
 static inline void Active_ForceDropSession (void)
 {
     if ( Active_Suspended() )
+    {
+        Active_CantDrop();
         return;
-
+    }
     active_drop_ssn = 1;
     Active_ForceDropPacket();
 }
@@ -156,7 +186,7 @@ static inline int Active_PacketForceDropped (void)
 
 static inline int Active_PacketWasDropped (void)
 {
-    return ( active_drop_pkt == ACTIVE_DROP ) || Active_PacketForceDropped();
+    return ( active_drop_pkt >= ACTIVE_DROP );
 }
 
 static inline int Active_SessionWasDropped (void)
@@ -201,6 +231,8 @@ int Active_ForceDropAction(Packet *p);
 // force drops the current session with active response invoked
 // ignores policy/inline test mode and treat drop as alert
 int Active_ForceDropResetAction(Packet *p);
+
+const char* Active_GetDispositionString();
 
 #endif // __ACTIVE_H__
 

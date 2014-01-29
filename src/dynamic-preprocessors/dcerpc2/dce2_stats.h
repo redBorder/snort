@@ -1,4 +1,5 @@
 /****************************************************************************
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -45,8 +46,6 @@ typedef struct _DCE2_Stats
     uint64_t smb_sessions;
     uint64_t smb_pkts;
     uint64_t smb_ignored_bytes;
-    uint64_t smb_non_ipc_packets;
-    uint64_t smb_nbss_not_message;
     uint64_t smb_cli_seg_reassembled;
     uint64_t smb_srv_seg_reassembled;
     uint64_t smb_max_outstanding_requests;
@@ -58,6 +57,8 @@ typedef struct _DCE2_Stats
     uint64_t smb_trans_subcom_stats[2][TRANS_SUBCOM_MAX+1];
     uint64_t smb_trans2_subcom_stats[2][TRANS2_SUBCOM_MAX+1];
     uint64_t smb_nt_transact_subcom_stats[2][NT_TRANSACT_SUBCOM_MAX+1];
+
+    uint64_t smb_files_processed;
 
     uint64_t tcp_sessions;
     uint64_t tcp_pkts;

@@ -185,37 +185,6 @@ InputName=file_api
 # End Source File
 # Begin Source File
 
-SOURCE="..\..\file-process\libs\file_lib.h"
-
-!IF  "$(CFG)" == "sf_dynamic_initialize - Win32 Release"
-
-# Begin Custom Build
-InputPath=..\..\file-process\libs\file_lib.h
-InputName=file_lib
-
-"..\include\$(InputName).h" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
-	mkdir ..\include 
-	copy $(InputPath) ..\include 
-	
-# End Custom Build
-
-!ELSEIF  "$(CFG)" == "sf_dynamic_initialize - Win32 Debug"
-
-# Begin Custom Build
-InputPath=..\..\file-process\libs\file_lib.h
-InputName=file_lib
-
-"..\include\$(InputName).h" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
-	mkdir ..\include 
-	copy $(InputPath) ..\include 
-	
-# End Custom Build
-
-!ENDIF 
-
-# End Source File
-# Begin Source File
-
 SOURCE=..\..\idle_processing.h
 
 !IF  "$(CFG)" == "sf_dynamic_initialize - Win32 Release"

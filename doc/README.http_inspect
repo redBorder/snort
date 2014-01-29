@@ -603,13 +603,13 @@ whitespace_chars section above.
 
 * normalize_headers *
 This option turns on normalization for HTTP Header Fields, not including
-Cookies (using the same configuration parameters as the URI normalization (ie,
+Cookies (using the same configuration parameters as the URI normalization (i.e.,
 multi-slash, directory, etc.).  It is useful for normalizing Referrer URIs
 that may appear in the HTTP Header.
 
 * normalize_cookies *
 This option turns on normalization for HTTP Cookie Fields (using the same
-configuration parameters as the URI normalization (ie, multi-slash, directory,
+configuration parameters as the URI normalization (i.e., multi-slash, directory,
 etc.).  It is useful for normalizing data in HTTP Cookies that may be
 encoded.
 
@@ -873,7 +873,7 @@ extracted Status code field from a HTTP server response. As this keyword is a
 modifier to the previous 'content' keyword, there must be a content in the rule 
 before 'http_stat_code' is specified. 
 
-The Status Code field will be extracted only if the extended_reponse_inspection is 
+The Status Code field will be extracted only if the extended_response_inspection is 
 configured for the HttpInspect.
 
 * http_stat_msg *
@@ -883,7 +883,7 @@ extracted Status Message field from a HTTP server response. As this keyword is a
 modifier to the previous 'content' keyword, there must be a content in the rule 
 before 'http_stat_msg' is specified.
 
-The Status Message field will be extracted only if the extended_reponse_inspection is
+The Status Message field will be extracted only if the extended_response_inspection is
 configured for the HttpInspect.
 
 * http_encode *

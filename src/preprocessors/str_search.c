@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -23,6 +24,7 @@
 
 #include <sys/types.h>
 #include <stdlib.h>
+#include <string.h>
 #include <ctype.h>
 
 #ifdef HAVE_CONFIG_H
@@ -81,7 +83,6 @@ int SearchReInit(unsigned int i)
 
     return 0;
 }
-
 
 void SearchFree(void)
 {
@@ -168,7 +169,7 @@ int SearchFindString(unsigned int mpse_id,
 
     start_state = 0;
     num = mpseSearch(_mpse[mpse_id].mpse, (unsigned char*)str, str_len, Match, (void *) str,
-		    	&start_state );
+		    	&start_state);
 
     return num;
 }
@@ -211,6 +212,7 @@ void *  SearchInstanceNew(void)
 
     return search;
 }
+
 void SearchInstanceFree( void * instance )
 {
     t_search * search = (t_search*)instance;
@@ -265,6 +267,53 @@ int  SearchInstanceFindString(void * instance,
 
 }
 
+int  StatefulSearchInstanceFindString(void * instance,
+                              const char *str,
+                              unsigned int str_len,
+                              int confine,
+                              int (*Match) (void *, void *, int, void *, void *), int *state)
+{
+    int num;
+    t_search * search = (t_search*)instance;
+
+    if ( confine && (search->max_len > 0) )
+    {
+        if ( search->max_len < str_len )
+        {
+            str_len = search->max_len;
+        }
+    }
+    num = mpseSearch( search->mpse, (unsigned char*)str, str_len, Match, (void *) str,
+            state);
+
+    return num;
+
+}
+
+char *SearchInstanceFindStringEnd(char *match_ptr, int buflen, char *search_str, int search_len)
+{
+    char *end;
+    int i = 0;
+
+    if(buflen < search_len)
+    {
+        i = i + (search_len - buflen);
+        search_len = buflen;
+    }
+
+    end =  match_ptr + search_len;
+
+    for (;i < search_len;i++)
+    {
+        if (memcmp(match_ptr, search_str + i, (search_len - i) ) == 0)
+        {
+            end = match_ptr + search_len - i;
+            break;
+        }
+    }
+    return end;
+}
+
 
 /* API exported by this module */
 SearchAPI searchAPI =
@@ -283,6 +332,8 @@ SearchAPI searchAPI =
     SearchInstanceAdd,
     SearchInstancePrepPatterns,
     SearchInstanceFindString,
+    SearchInstanceFindStringEnd,
+    StatefulSearchInstanceFindString,
 };
 
 SearchAPI *search_api = &searchAPI;

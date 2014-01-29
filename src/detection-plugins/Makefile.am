@@ -13,14 +13,6 @@ sf_snort_packet.h \
 sf_snort_plugin_api.h \
 sf_decompression.h
 
-if BUILD_REACT
-REACT_SOURCE = sp_react.c sp_react.h
-endif
-
-if BUILD_RESPOND3
-RESPOND3_SOURCE = sp_respond3.c sp_respond.h
-endif
-
 libspd_a_SOURCES = \
 detection_options.c detection_options.h \
 sp_asn1.c sp_asn1.h \
@@ -47,8 +39,6 @@ sp_ipoption_check.c sp_ipoption_check.h \
 sp_isdataat.c sp_isdataat.h \
 sp_pattern_match.c sp_pattern_match.h  \
 sp_pcre.c sp_pcre.h \
-$(REACT_SOURCE) \
-$(RESPOND3_SOURCE) \
 sp_replace.c sp_replace.h \
 sp_rpc_check.c sp_rpc_check.h \
 sp_session.c sp_session.h \
@@ -62,6 +52,18 @@ sp_file_data.c sp_file_data.h \
 sp_base64_decode.c sp_base64_decode.h \
 sp_base64_data.c sp_base64_data.h \
 sp_pkt_data.c sp_pkt_data.h
+
+if BUILD_REACT
+libspd_a_SOURCES += sp_react.c sp_react.h
+endif
+
+if BUILD_RESPOND3
+libspd_a_SOURCES += sp_respond3.c sp_respond.h
+endif
+
+if FEAT_FILE_INSPECT
+libspd_a_SOURCES += sp_file_type.c sp_file_type.h
+endif
 
 copy_files = \
 	if test -f $$dst_file; then \

@@ -286,7 +286,7 @@ Configuration
    This is different from "block" action, which disables further detection. 
    This new action helps users evaluate their IP lists before applying it.
    
-   An exmple manifest file:
+   An example manifest file:
    
    #ipreputation manifest file
    white.wlf, 111 ,white, 

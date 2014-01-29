@@ -1,4 +1,5 @@
 /*
+ ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2012-2013 Sourcefire, Inc.
  **
  ** This program is free software; you can redistribute it and/or modify
@@ -29,6 +30,7 @@
 #include "file_api.h"
 #include "sf_email_attach_decode.h"
 #include "mempool.h"
+#include "sfPolicy.h"
 
 #define BOUNDARY     0
 
@@ -71,4 +73,9 @@ const uint8_t* process_mime_data(void *packet, const uint8_t *start, const uint8
         const uint8_t *data_end_marker, uint8_t *data_end, MimeState *mime_ssn, bool upload);
 void free_mime_session(MimeState *mime_ssn);
 void finalize_mime_position(void *ssnptr, void *decode_state, FilePosition *position);
+#ifdef TARGET_BASED
+void register_mime_paf_service(struct _SnortConfig *sc, int16_t app, tSfPolicyId policy);
+#endif
+void register_mime_paf_port(struct _SnortConfig *sc, unsigned int i, tSfPolicyId policy);
+void force_flush_stream (void *ssn);
 #endif 

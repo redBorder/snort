@@ -1,4 +1,5 @@
 /*
+ ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2012-2013 Sourcefire, Inc.
  **
  ** This program is free software; you can redistribute it and/or modify
@@ -40,8 +41,10 @@
 /* The hash table of expected files */
 static SFXHASH *fileHash = NULL;
 extern Log_file_action_func log_file_action;
-extern File_type_done_func  file_type_done;
-extern File_signature_done_func file_signature_done;
+extern File_type_callback_func  file_type_cb;
+extern File_signature_callback_func file_signature_cb;
+
+static FileState sig_file_state = { FILE_CAPTURE_SUCCESS, FILE_SIG_DONE };
 
 typedef struct _FileHashKey
 {
@@ -163,20 +166,24 @@ static inline File_Verdict checkVerdict(Packet *p, FileNode *node, SFXHASH_NODE 
 
     /*Query the file policy in case verdict has been changed*/
     /*Check file type first*/
-    if (file_type_done && (node->file_type_id))
+    if (file_type_cb)
     {
-        verdict = file_type_done(p, p->ssnptr, node->file_type_id, 0);
+        verdict = file_type_cb(p, p->ssnptr, node->file_type_id, 0,
+                DEFAULT_FILE_ID);
     }
 
-    if (verdict == FILE_VERDICT_UNKNOWN)
+    if ((verdict == FILE_VERDICT_UNKNOWN) ||
+            (verdict == FILE_VERDICT_STOP_CAPTURE))
     {
-        if (file_signature_done)
+        if (file_signature_cb)
         {
-            verdict = file_signature_done(p, p->ssnptr, node->sha256, 0);
+            verdict = file_signature_cb(p, p->ssnptr, node->sha256, 0,
+                    &sig_file_state, 0, DEFAULT_FILE_ID);
         }
     }
 
-    if (verdict == FILE_VERDICT_UNKNOWN)
+    if ((verdict == FILE_VERDICT_UNKNOWN) ||
+            (verdict == FILE_VERDICT_STOP_CAPTURE))
     {
         verdict = node->verdict;
     }
@@ -192,7 +199,7 @@ static inline File_Verdict checkVerdict(Packet *p, FileNode *node, SFXHASH_NODE 
     else if (verdict == FILE_VERDICT_BLOCK)
     {
         Active_ForceDropPacket();
-        Active_DropSession();
+        Active_DropSession(p);
         if (log_file_action)
         {
             log_file_action(p->ssnptr, FILE_RESUME_BLOCK);
@@ -202,7 +209,7 @@ static inline File_Verdict checkVerdict(Packet *p, FileNode *node, SFXHASH_NODE 
     else if (verdict == FILE_VERDICT_REJECT)
     {
         Active_ForceDropPacket();
-        Active_DropSession();
+        Active_DropSession(p);
         Active_QueueReject();
         if (log_file_action)
         {
@@ -214,7 +221,7 @@ static inline File_Verdict checkVerdict(Packet *p, FileNode *node, SFXHASH_NODE 
     {
         /*Take the cached verdict*/
         Active_ForceDropPacket();
-        Active_DropSession();
+        Active_DropSession(p);
         if (FILE_VERDICT_REJECT == node->verdict)
             Active_QueueReject();
         if (log_file_action)

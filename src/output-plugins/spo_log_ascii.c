@@ -1,7 +1,7 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
-**           (C) 2002 Sourcefire, Inc.
 **
 ** Author(s):   Martin Roesch <roesch@sourcefire.com>
 **              Andrew R. Baker <andrewb@sourcefire.com>
@@ -190,9 +190,9 @@ static FILE *OpenLogFile(int mode, Packet * p)
 #endif
 
     /* zero out our buffers */
-    bzero((char *) log_path, STD_BUF);
-    bzero((char *) log_file, STD_BUF);
-    bzero((char *) proto, 5);
+    memset((char *) log_path, 0, STD_BUF);
+    memset((char *) log_file, 0, STD_BUF);
+    memset((char *) proto, 0, 5);
 
     if (mode == GENERIC_LOG || mode == DUMP || mode == BOGUS ||
         mode == NON_IP || mode == ARP)

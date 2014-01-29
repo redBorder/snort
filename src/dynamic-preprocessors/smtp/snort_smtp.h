@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -108,6 +109,7 @@
 #define SMTP_FLAG_IN_CONT_DISP_CONT          0x00000400
 #define SMTP_FLAG_MIME_END                   0x00000800
 #define SMTP_FLAG_BDAT                       0x00001000
+#define SMTP_FLAG_ABORT                      0x00002000
 
 /* log flags */
 #define SMTP_FLAG_MAIL_FROM_PRESENT          0x00000001
@@ -131,6 +133,8 @@
 #define MAX_HEADER_NAME_LEN 64
 
 #define SMTP_PROTO_REF_STR  "smtp"
+
+#define MAX_AUTH_NAME_LEN  20  /* Max length of SASL mechanisms, defined in RFC 4422 */
 
 /**************************************************************************/
 
@@ -185,6 +189,7 @@ typedef enum _SMTPCmdEnum
     CMD_XSTA,
     CMD_XTRN,
     CMD_XUSR,
+    CMD_ABORT,
     CMD_LAST
 
 } SMTPCmdEnum;
@@ -245,6 +250,7 @@ typedef struct _SMTPSearchInfo
 
 typedef struct _SMTPMimeBoundary
 {
+    int   state;
     char   boundary[2 + MAX_BOUNDARY_LEN + 1];  /* '--' + MIME boundary string + '\0' */
     int    boundary_len;
     void  *boundary_search;
@@ -257,6 +263,12 @@ typedef struct _SMTPPcre
     pcre_extra *pe;
 
 } SMTPPcre;
+
+typedef struct _SMTPAuthName
+{
+    int length;
+    char name[MAX_AUTH_NAME_LEN];
+} SMTPAuthName;
 
 typedef struct _SMTP
 {
@@ -281,7 +293,7 @@ typedef struct _SMTP
     SMTPMimeBoundary  mime_boundary;
     Email_DecodeState *decode_state;
     MAIL_LogState *log_state;
-
+    SMTPAuthName *auth_name;
     /* In future if we look at forwarded mail (message/rfc822) we may
      * need to keep track of additional mime boundaries
      * SMTPMimeBoundary  mime_boundary[8];

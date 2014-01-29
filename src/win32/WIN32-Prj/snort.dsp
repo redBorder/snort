@@ -1548,7 +1548,31 @@ SOURCE="..\..\file-process\libs\file_sha256.h"
 # End Group
 # Begin Source File
 
+SOURCE="..\..\file-process\circular_buffer.c"
+# End Source File
+# Begin Source File
+
+SOURCE="..\..\file-process\circular_buffer.h"
+# End Source File
+# Begin Source File
+
 SOURCE="..\..\file-process\file_api.h"
+# End Source File
+# Begin Source File
+
+SOURCE="..\..\file-process\file_capture.c"
+# End Source File
+# Begin Source File
+
+SOURCE="..\..\file-process\file_capture.h"
+# End Source File
+# Begin Source File
+
+SOURCE="..\..\file-process\file_mempool.c"
+# End Source File
+# Begin Source File
+
+SOURCE="..\..\file-process\file_mempool.h"
 # End Source File
 # Begin Source File
 
@@ -1589,6 +1613,14 @@ SOURCE="..\..\file-process\file_service_config.c"
 # Begin Source File
 
 SOURCE="..\..\file-process\file_service_config.h"
+# End Source File
+# Begin Source File
+
+SOURCE="..\..\file-process\file_stats.c"
+# End Source File
+# Begin Source File
+
+SOURCE="..\..\file-process\file_stats.h"
 # End Source File
 # End Group
 # Begin Source File

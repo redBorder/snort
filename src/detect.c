@@ -1,6 +1,7 @@
 /* $Id$ */
 /*
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 **    Dan Roelker <droelker@sourcefire.com>
 **    Marc Norton <mnorton@sourcefire.com>
@@ -326,9 +327,10 @@ static int CheckTagging(Packet *p)
 
     if(check_tags_flag == 1 && !(p->packet_flags & PKT_REBUILT_STREAM))
     {
+        void* listhead = NULL;
         DEBUG_WRAP(DebugMessage(DEBUG_FLOW, "calling CheckTagList\n"););
 
-        if(CheckTagList(p, &event))
+        if(CheckTagList(p, &event, &listhead))
         {
             DEBUG_WRAP(DebugMessage(DEBUG_FLOW, "Matching tag node found, "
                         "calling log functions\n"););
@@ -336,7 +338,7 @@ static int CheckTagging(Packet *p)
             /* if we find a match, we want to send the packet to the
              * logging mechanism
              */
-            CallLogFuncs(p, "Tagged Packet", NULL, &event);
+            CallLogFuncs(p, "Tagged Packet", listhead, &event);
         }
     }
 
@@ -1196,7 +1198,7 @@ int DropAction(Packet * p, OptTreeNode * otn, Event *event)
                 " <!!> Alert Came From Midstream Session Silently Drop! "
                 "\"%s\"\n", otn->sigInfo.message););
 
-            Active_DropSession();
+            Active_DropSession(p);
             return 1;
         }
     }
@@ -1205,7 +1207,7 @@ int DropAction(Packet * p, OptTreeNode * otn, Event *event)
     **  Set packet flag so output plugins will know we dropped the
     **  packet we just logged.
     */
-    Active_DropSession();
+    Active_DropSession(p);
 
     CallAlertFuncs(p, otn->sigInfo.message, rtn->listhead, event);
 
@@ -1221,7 +1223,7 @@ int SDropAction(Packet * p, OptTreeNode * otn, Event *event)
                otn->sigInfo.message););
 
     // Let's silently drop the packet
-    Active_DropSession();
+    Active_DropSession(p);
 
     return 1;
 }

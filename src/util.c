@@ -1,5 +1,6 @@
 /* $Id$ */
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -46,6 +47,11 @@
 #include <timersub.h>
 #include <pthread.h>
 #include <string.h>
+
+#ifdef HAVE_MALLINFO
+#include <malloc.h>
+static struct mallinfo mi;
+#endif
 
 #ifndef WIN32
 #include <grp.h>
@@ -197,6 +203,7 @@ int DisplayBanner(void)
                BUILD,
                info);
     LogMessage("   ''''    By Martin Roesch & The Snort Team: http://www.snort.org/snort/snort-team\n");
+    LogMessage("           Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.\n");
     LogMessage("           Copyright (C) 1998-2013 Sourcefire, Inc., et al.\n");
 #ifdef HAVE_PCAP_LIB_VERSION
     LogMessage("           Using %s\n", pcap_lib_version());
@@ -239,7 +246,7 @@ void ts_print(register const struct timeval *tvp, char *timebuf)
     if(!tvp)
     {
         /* manual page (for linux) says tz is never used, so.. */
-        bzero((char *) &tz, sizeof(tz));
+        memset((char *) &tz, 0, sizeof(tz));
         gettimeofday(&tv, &tz);
         tvp = &tv;
     }
@@ -816,8 +823,16 @@ void CreatePidFile(const char *intf, pid_t pid)
         FatalError("CreatePidFile() failed to lookup interface or pid_path is unknown!\n");
     }
 
-    SnortSnprintf(snort_conf->pid_filename, sizeof(snort_conf->pid_filename),
+    if (ScNoInterfacePidFile())
+    {
+        SnortSnprintf(snort_conf->pid_filename, sizeof(snort_conf->pid_filename),
+                  "%s/snort%s.pid", snort_conf->pid_path, snort_conf->pidfile_suffix);
+    }
+    else
+    {
+        SnortSnprintf(snort_conf->pid_filename, sizeof(snort_conf->pid_filename),
                   "%s/snort_%s%s.pid", snort_conf->pid_path, intf, snort_conf->pidfile_suffix);
+    }
 
 #ifndef WIN32
     if (!ScNoLockPidFile())
@@ -1071,6 +1086,28 @@ static const char* Verdicts[MAX_DAQ_VERDICT] = {
     "Ignore"
 };
 
+#ifdef HAVE_MALLINFO
+static void display_mallinfo(void)
+{
+    mi = mallinfo();
+    LogMessage("%s\n", STATS_SEPARATOR);
+    LogMessage("Memory usage summary:\n");
+    LogMessage("  Total non-mmapped bytes (arena):       %d\n", mi.arena);
+    LogMessage("  Bytes in mapped regions (hblkhd):      %d\n", mi.hblkhd);    
+    LogMessage("  Total allocated space (uordblks):      %d\n", mi.uordblks);
+    LogMessage("  Total free space (fordblks):           %d\n", mi.fordblks);
+    LogMessage("  Topmost releasable block (keepcost):   %d\n", mi.keepcost);
+#ifdef DEBUG    
+    LogMessage("  Number of free chunks (ordblks):       %d\n", mi.ordblks);
+    LogMessage("  Number of free fastbin blocks (smblks):%d\n", mi.smblks);
+    LogMessage("  Number of mapped regions (hblks):      %d\n", mi.hblks);
+    LogMessage("  Max. total allocated space (usmblks):  %d\n", mi.usmblks);
+    LogMessage("  Free bytes held in fastbins (fsmblks): %d\n", mi.fsmblks);
+#endif
+
+}
+#endif
+
 /* exiting should be 0 for if not exiting, 1 if restarting, and 2 if exiting */
 void DropStats(int exiting)
 {
@@ -1079,6 +1116,11 @@ void DropStats(int exiting)
     uint64_t pkts_recv = pc.total_from_daq;
 
     const DAQ_Stats_t* pkt_stats = DAQ_GetStats();
+
+    /*Display all the memory usage in main arena*/
+#ifdef HAVE_MALLINFO
+    display_mallinfo();
+#endif
 
 #ifdef PPM_MGR
     PPM_PRINT_SUMMARY(&snort_conf->ppm_cfg);
@@ -2261,7 +2303,7 @@ char *fasthex(const u_char *xdata, int length)
  *   Fatal Integer Parser
  *   Ascii to Integer conversion with fatal error support
  */
-long int xatol(const char *s , const char *etext)
+int xatol(const char *s , const char *etext)
 {
     long int val;
     char *endptr;
@@ -2287,17 +2329,17 @@ long int xatol(const char *s , const char *etext)
      */
     val = SnortStrtol(s, &endptr, 0);
 
-    if ((errno == ERANGE) || (*endptr != '\0'))
+    if ((errno == ERANGE) || (val > INT_MAX) || (val < INT_MIN) || (*endptr != '\0'))
         FatalError("%s: Invalid integer input: %s\n", etext, s);
 
-    return val;
+    return (int)val;
 }
 
 /*
  *   Fatal Integer Parser
  *   Ascii to Integer conversion with fatal error support
  */
-unsigned long int xatou(const char *s , const char *etext)
+unsigned int xatou(const char *s , const char *etext)
 {
     unsigned long int val;
     char *endptr;
@@ -2328,18 +2370,18 @@ unsigned long int xatou(const char *s , const char *etext)
      */
     val = SnortStrtoul(s, &endptr, 0);
 
-    if ((errno == ERANGE) || (*endptr != '\0'))
+    if ((errno == ERANGE) || (val > UINT_MAX) || (*endptr != '\0'))
         FatalError("%s: Invalid integer input: %s\n", etext, s);
 
-    return val;
+    return (unsigned int)val;
 }
 
-unsigned long int xatoup(const char *s , const char *etext)
+unsigned int xatoup(const char *s , const char *etext)
 {
     unsigned long int val = xatou(s, etext);
     if ( !val )
         FatalError("%s: must be > 0\n", etext);
-    return val;
+    return (unsigned int)val;
 }
 
 char * ObfuscateIpToText(sfip_t *ip)
@@ -2495,7 +2537,7 @@ int CheckValueInRange(const char *value_str, char *option,
 
     if ( (errno == ERANGE) || (*value) < lo || (*value) > hi)
     {
-        ParseError("Invalid value for %s."
+        ParseError("Invalid value for %s. "
                 "It should range between %u and %u.", option,
                 lo, hi);
         return -1;

@@ -336,6 +336,7 @@
 124 || 11 || smtp: Quoted-Printable Decoding failed
 124 || 12 || smtp: Non-Encoded MIME attachment Extraction failed
 124 || 13 || smtp: Unix-to-Unix Decoding failed
+124 || 14 || smtp: Cyrus SASL authentication attack
 125 || 1 || ftp_pp: Telnet command on FTP command channel
 125 || 2 || ftp_pp: Invalid FTP command
 125 || 3 || ftp_pp: FTP parameter length overflow
@@ -435,6 +436,7 @@
 133 || 54 || dcerpc2: SMB - Unusual command used
 133 || 55 || dcerpc2: SMB - Invalid setup count
 133 || 56 || dcerpc2: SMB - Client attempted multiple dialect negotiations on session
+133 || 57 || dcerpc2: SMB - Client attempted to create or set a file's attributes to readonly/hidden/system
 134 || 1 || ppm: rule tree disabled
 134 || 2 || ppm: rule tree enabled
 134 || 3 || ppm: packet aborted

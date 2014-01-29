@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -91,18 +92,21 @@ void POP_DecodeAlert(void)
 {
     switch( pop_ssn->decode_state->decode_type )
     {
-        case DECODE_B64:
+    case DECODE_B64:
+        if (pop_eval_config->b64_depth > -1)
             POP_GenerateAlert(POP_B64_DECODING_FAILED, "%s", POP_B64_DECODING_FAILED_STR);
-            break;
-        case DECODE_QP:
+        break;
+    case DECODE_QP:
+        if (pop_eval_config->qp_depth > -1)
             POP_GenerateAlert(POP_QP_DECODING_FAILED, "%s", POP_QP_DECODING_FAILED_STR);
-            break;
-        case DECODE_UU:
+        break;
+    case DECODE_UU:
+        if (pop_eval_config->uu_depth > -1)
             POP_GenerateAlert(POP_UU_DECODING_FAILED, "%s", POP_UU_DECODING_FAILED_STR);
-            break;
+        break;
 
-        default:
-            break;
+    default:
+        break;
     }
 }
 

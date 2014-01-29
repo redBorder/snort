@@ -1,6 +1,7 @@
 /*
  **
  **
+ **  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  **  Copyright (C) 2012-2013 Sourcefire, Inc.
  **
  **  This program is free software; you can redistribute it and/or modify
@@ -52,6 +53,9 @@ typedef struct _IdentifierSharedNode
 static IdentifierMemoryBlock *id_memory_root = NULL;
 static IdentifierMemoryBlock *id_memory_current = NULL;
 
+#ifdef DEBUG_MSGS
+static char *file_type_test(void *conf);
+#endif
 
 static void identifierMergeHashFree(void)
 {
@@ -67,13 +71,13 @@ static void identifierMergeHashInit(void)
     if (identifier_merge_hash != NULL)
         identifierMergeHashFree();
 
-    identifier_merge_hash = sfghash_new(1000, sizeof(IdentifierSharedNode), 0, NULL);
+    identifier_merge_hash = sfghash_new(1000, sizeof(IdentifierSharedNode), 0,
+            NULL);
     if (identifier_merge_hash == NULL)
     {
         FatalError("%s(%d) Could not create identifier merge hash.\n",
                 __FILE__, __LINE__);
     }
-
 }
 
 static inline void *calloc_mem(size_t size)
@@ -111,10 +115,10 @@ static void  set_node_state_shared(IdentifierNode *start)
         return;
 
     if (start->state == ID_NODE_USED)
-       start->state = ID_NODE_SHARED;
+        start->state = ID_NODE_SHARED;
     else
     {
-       start->state = ID_NODE_USED;
+        start->state = ID_NODE_USED;
     }
 
     for(i = 0; i < MAX_BRANCH; i++)
@@ -156,7 +160,8 @@ static void verify_magic_offset(MagicData *parent, MagicData *current)
 
     }
 
-    if ((current->next) && (current->content_len + current->offset > current->next->offset))
+    if ((current->next) &&
+            (current->content_len + current->offset > current->next->offset))
     {
         ParseError(" Magic content at offset %d overlaps with offset %d.",
                 current->offset, current->next->offset);
@@ -197,7 +202,6 @@ static void add_to_sorted_magic(MagicData **head, MagicData *new )
         }
         current = next;
     }
-
 }
 
 /* Content magics are sorted based on offset, this
@@ -251,14 +255,15 @@ static inline IdentifierNode *create_trie_from_magic(MagicData **head, uint32_t 
 
     /*Last node has type name*/
     current->type_id = type_id;
-    DEBUG_WRAP( print_identifiers(root););
+    DEBUG_WRAP( if (DEBUG_FILE & GetDebugLevel()){file_identifiers_print(root);})
     return root;
 
 }
 
 /*This function examines whether to update the trie based on shared state*/
 
-static inline bool updateNext(IdentifierNode *start,IdentifierNode **next_ptr, IdentifierNode *append)
+static inline bool updateNext(IdentifierNode *start,IdentifierNode **next_ptr,
+        IdentifierNode *append)
 {
 
     IdentifierNode *next = (*next_ptr);
@@ -277,8 +282,9 @@ static inline bool updateNext(IdentifierNode *start,IdentifierNode **next_ptr, I
         set_node_state_shared(append);
         return false;
     }
-    else if ((result = sfghash_find(identifier_merge_hash, &sharedIdentifier))) /*the same pointer has been processed, reuse it*/
+    else if ((result = sfghash_find(identifier_merge_hash, &sharedIdentifier)))
     {
+        /*the same pointer has been processed, reuse it*/
         *next_ptr = result;
         set_node_state_shared(result);
         return false;
@@ -301,7 +307,6 @@ static inline bool updateNext(IdentifierNode *start,IdentifierNode **next_ptr, I
             }
 
             set_node_state_shared(next);
-            DEBUG_WRAP(DebugMessage(DEBUG_FILE,"MEM:Add new node after next %p.\n", next););
             next = new;
             sfghash_add(identifier_merge_hash, &sharedIdentifier, next);
         }
@@ -311,12 +316,8 @@ static inline bool updateNext(IdentifierNode *start,IdentifierNode **next_ptr, I
             IdentifierNode *current_next = next;
             sharedIdentifier.shared_node = current_next;
             sharedIdentifier.append_node = append;
-            DEBUG_WRAP(DebugMessage(DEBUG_FILE,"MEM:Clone node on %p.\n", current_next););
-            DEBUG_WRAP(DebugMessage(DEBUG_FILE,"MEM:Before clone: %d.\n",  memory_usage_identifiers()););
             next = clone_node(current_next);
             set_node_state_shared(next);
-            DEBUG_WRAP(DebugMessage(DEBUG_FILE,"MEM:Cloned node on %p.\n", next););
-            DEBUG_WRAP(DebugMessage(DEBUG_FILE,"MEM:After clone: %d.\n", memory_usage_identifiers()););
             sfghash_add(identifier_merge_hash, &sharedIdentifier, next);
         }
 
@@ -384,7 +385,7 @@ static void update_trie(IdentifierNode *start, IdentifierNode *append)
 }
 
 
-void insert_file_rule(RuleInfo *rule, void *conf)
+void file_identifers_update(RuleInfo *rule, void *conf)
 {
     IdentifierNode *new;
     FileConfig *file_config = NULL;
@@ -393,7 +394,7 @@ void insert_file_rule(RuleInfo *rule, void *conf)
 
     if (!file_config->identifier_root)
     {
-        init_file_identifers();
+        file_identifers_init();
         file_config->identifier_root = calloc_mem(sizeof(*file_config->identifier_root));
         file_config->id_memory_root = id_memory_root;
         identifierMergeHashInit();
@@ -402,11 +403,11 @@ void insert_file_rule(RuleInfo *rule, void *conf)
     new = create_trie_from_magic(&(rule->magics), rule->id);
 
     update_trie(file_config->identifier_root, new);
-    DEBUG_WRAP(test_find_file_type(file_config););
+    DEBUG_WRAP( if (DEBUG_FILE & GetDebugLevel()){file_type_test(file_config);});
 }
 
 
-void init_file_identifers(void)
+void file_identifers_init(void)
 {
     memory_used = 0;
     id_memory_root = NULL;
@@ -414,7 +415,7 @@ void init_file_identifers(void)
 }
 
 
-uint32_t memory_usage_identifiers(void)
+uint32_t file_identifiers_usage(void)
 {
     return memory_used;
 }
@@ -422,15 +423,16 @@ uint32_t memory_usage_identifiers(void)
 /*
  * This is the main function to find file type
  * Find file type is to traverse the tries.
- * Context is saved to continue file type identification as data becomes available
+ * Context is saved to continue file type identification
+ * when more data are available
  */
-uint32_t find_file_type_id(uint8_t *buf, uint16_t len, FileContext *context)
+uint32_t file_identifiers_match(uint8_t *buf, int len, FileContext *context)
 {
     FileConfig *file_config;
     IdentifierNode* current;
     uint64_t end;
 
-    if ((!context)||(!buf))
+    if ((!context)||(!buf)||(len <= 0))
         return 0;
 
     file_config = (FileConfig *)context->file_config;
@@ -442,7 +444,8 @@ uint32_t find_file_type_id(uint8_t *buf, uint16_t len, FileContext *context)
 
     end = context->processed_bytes + len;
 
-    while(current && (current->offset < end) && len && (current->offset >= context->processed_bytes))
+    while(current && (current->offset < end) && len &&
+            (current->offset >= context->processed_bytes))
     {
         /*Found file id, save and continue*/
         if (current->type_id)
@@ -451,9 +454,12 @@ uint32_t find_file_type_id(uint8_t *buf, uint16_t len, FileContext *context)
         }
 
         /*Move to the next level*/
-        current = current->next[buf[current->offset - context->processed_bytes ]];
+        current = current->next[buf[current->offset - context->processed_bytes]];
         len--;
     }
+
+    /* save current state */
+    context->file_type_context = current;
 
     /*No more checks are needed*/
     if (!current)
@@ -464,12 +470,8 @@ uint32_t find_file_type_id(uint8_t *buf, uint16_t len, FileContext *context)
         else
             return SNORT_FILE_TYPE_UNKNOWN;
     }
-    else if ((context->file_type_id) && (current->state == ID_NODE_SHARED))
-        return context->file_type_id;
     else if (current->offset >= end)
     {
-        /*No file type found, save current state and continue*/
-        context->file_type_context = current;
         return SNORT_FILE_TYPE_CONTINUE;
     }
     else
@@ -477,7 +479,7 @@ uint32_t find_file_type_id(uint8_t *buf, uint16_t len, FileContext *context)
 }
 
 
-void free_file_identifiers(void *conf)
+void file_identifiers_free(void *conf)
 {
     IdentifierMemoryBlock *id_memory_next;
     FileConfig *file_config = (FileConfig *)conf;
@@ -499,29 +501,31 @@ void free_file_identifiers(void *conf)
 }
 
 #ifdef DEBUG_MSGS
-void print_identifiers(IdentifierNode* current)
+void file_identifiers_print(IdentifierNode* current)
 {
     int i;
 
-    printf("Working on pointer %p, offset:%d\n", (void *) current, current->offset);
+    DEBUG_WRAP(DebugMessage(DEBUG_FILE, "Working on pointer %p, offset:%d\n",
+            (void *) current, current->offset););
 
     for (i = 0; i < MAX_BRANCH; i++)
     {
         if (current->next[i])
         {
-            printf("Magic number: %x ", i);
-            print_identifiers(current->next[i]);
+            DEBUG_WRAP(DebugMessage(DEBUG_FILE, "Magic number: %x ", i););
+            file_identifiers_print(current->next[i]);
         }
 
     }
     if (current->type_id)
     {
-        printf("Type: %d\n", current->type_id);
+        DEBUG_WRAP(DebugMessage(DEBUG_FILE, "Type: %d\n", current->type_id););
     }
 
     return;
 }
-char *test_find_file_type(void *conf)
+
+char *file_type_test(void *conf)
 {
     uint8_t str[100] = {0x4d, 0x5a, 0x46, 0x38, 0x66, 0x72, 0x65, 0x65, 0};
     unsigned int i;
@@ -541,13 +545,14 @@ char *test_find_file_type(void *conf)
 
     context->file_config = conf;
 
-    type_id = find_file_type_id(str, strlen((char *)str), context);
+    type_id = file_identifiers_match(str, strlen((char *)str), context);
     if (SNORT_FILE_TYPE_UNKNOWN == type_id)
     {
         printf("File type is unknown\n");
     }
     else if (SNORT_FILE_TYPE_CONTINUE != type_id)
-        printf("File type is: %s (%d)\n",file_info_from_ID(conf, type_id), type_id);
+        printf("File type is: %s (%d)\n",
+                file_type_name(conf, type_id), type_id);
 
     free(context);
     return ((char *)file_type);

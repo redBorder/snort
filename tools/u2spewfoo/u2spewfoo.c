@@ -1,4 +1,5 @@
 /*
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2002-2013 Sourcefire, Inc.
  * Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
  * Author: Adam Keeton
@@ -53,7 +54,7 @@ typedef unsigned short uint16_t;
 typedef unsigned char uint8_t;
 #endif
 #else
-void inet_ntop(int family, const void *ip_raw, char *buf, int bufsize) {
+static void inet_ntop(int family, const void *ip_raw, char *buf, int bufsize) {
     int i;
 
     if(!ip_raw || !buf || !bufsize ||
@@ -129,7 +130,7 @@ static long s_pos = 0, s_off = 0;
 
 #define TO_IP(x) x >> 24, (x >> 16) & 0xff, (x >> 8) & 0xff, x & 0xff
 
-u2iterator *new_iterator(char *filename) {
+static u2iterator *new_iterator(char *filename) {
     FILE *f = fopen(filename, "rb");
     u2iterator *ret;
 
@@ -152,13 +153,13 @@ u2iterator *new_iterator(char *filename) {
     return ret;
 }
 
-inline void free_iterator(u2iterator *it) {
+static inline void free_iterator(u2iterator *it) {
     if(it->file) fclose(it->file);
     if(it->filename) free(it->filename);
     if(it) free(it);
 }
 
-int get_record(u2iterator *it, u2record *record) {
+static int get_record(u2iterator *it, u2record *record) {
     uint32_t bytes_read;
     uint8_t *tmp;
 
@@ -225,7 +226,7 @@ int get_record(u2iterator *it, u2record *record) {
     return SUCCESS;
 }
 
-void extradata_dump(u2record *record) {
+static void extradata_dump(u2record *record) {
     uint8_t *field, *data;
     int i;
     int len = 0;
@@ -349,7 +350,7 @@ void extradata_dump(u2record *record) {
 
 }
 
-void event_dump(u2record *record) {
+static void event_dump(u2record *record) {
     uint8_t *field;
     int i;
     Serial_Unified2IDSEvent_legacy event;
@@ -386,7 +387,7 @@ void event_dump(u2record *record) {
              event.impact_flag, event.blocked);
 }
 
-void event6_dump(u2record *record) {
+static void event6_dump(u2record *record) {
     uint8_t *field;
     int i;
     Serial_Unified2IDSEventIPv6_legacy event;
@@ -433,7 +434,7 @@ void event6_dump(u2record *record) {
 
 
 
-void event2_dump(u2record *record) {
+static void event2_dump(u2record *record) {
     uint8_t *field;
     int i;
 
@@ -481,7 +482,7 @@ void event2_dump(u2record *record) {
 
 }
 
-void event2_6_dump(u2record *record) {
+static void event2_6_dump(u2record *record) {
     uint8_t *field;
     int i;
     char ip6buf[INET6_ADDRSTRLEN+1];
@@ -576,7 +577,7 @@ static void LogBuffer (const uint8_t* p, unsigned n)
     }
 }
 
-void packet_dump(u2record *record) {
+static void packet_dump(u2record *record) {
     uint32_t counter;
     uint8_t *field;
 
@@ -620,7 +621,7 @@ void packet_dump(u2record *record) {
     LogBuffer(record->data+offset, reclen);
 }
 
-int u2dump(char *file) {
+static int u2dump(char *file) {
     u2record record;
     u2iterator *it = new_iterator(file);
 

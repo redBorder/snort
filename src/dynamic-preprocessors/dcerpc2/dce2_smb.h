@@ -1,4 +1,5 @@
 /****************************************************************************
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -46,6 +47,10 @@
 #define DCE2_SMB_ID   0xff534d42  /* \xffSMB */
 #define DCE2_SMB2_ID  0xfe534d42  /* \xfeSMB */
 
+// MS-FSCC Section 2.1.5 - Pathname
+#define DCE2_SMB_MAX_PATH_LEN  32760
+#define DCE2_SMB_MAX_COMP_LEN    255
+
 /********************************************************************
  * Externs
  ********************************************************************/
@@ -54,6 +59,7 @@ extern const char *smb_com_strings[SMB_MAX_NUM_COMS];
 extern const char *smb_transaction_sub_command_strings[TRANS_SUBCOM_MAX];
 extern const char *smb_transaction2_sub_command_strings[TRANS2_SUBCOM_MAX];
 extern const char *smb_nt_transact_sub_command_strings[NT_TRANSACT_SUBCOM_MAX];
+extern char smb_file_name[DCE2_SMB_MAX_PATH_LEN+1];
 
 /********************************************************************
  * Enums
@@ -62,8 +68,8 @@ typedef enum _DCE2_SmbSsnState
 {
     DCE2_SMB_SSN_STATE__START         = 0x00,
     DCE2_SMB_SSN_STATE__NEGOTIATED    = 0x01,
-    DCE2_SMB_SSN_STATE__FP_CLIENT     = 0x02,
-    DCE2_SMB_SSN_STATE__FP_SERVER     = 0x04 
+    DCE2_SMB_SSN_STATE__FP_CLIENT     = 0x02,  // Fingerprinted client
+    DCE2_SMB_SSN_STATE__FP_SERVER     = 0x04   // Fingerprinted server
 
 } DCE2_SmbSsnState;
 
@@ -82,35 +88,86 @@ typedef enum _DCE2_SmbPduState
 
 } DCE2_SmbPduState;
 
+typedef enum _DCE2_SmbFileDirection
+{
+    DCE2_SMB_FILE_DIRECTION__UNKNOWN = 0,
+    DCE2_SMB_FILE_DIRECTION__UPLOAD,
+    DCE2_SMB_FILE_DIRECTION__DOWNLOAD
+
+} DCE2_SmbFileDirection;
+
 /********************************************************************
  * Structures
  ********************************************************************/
 typedef struct _DCE2_SmbWriteAndXRaw
 {
-    int remaining;  // An unsigned integer so it can be negative
+    int remaining;  // A signed integer so it can be negative
     DCE2_Buffer *buf;
 
 } DCE2_SmbWriteAndXRaw;
 
-typedef struct _DCE2_SmbPipeTracker
+typedef struct _DCE2_SmbFileChunk
 {
-    int fid;   // An unsigned integer so it can be set to sentinel
+    uint64_t offset;
+    uint32_t length;
+    uint8_t *data;
+
+} DCE2_SmbFileChunk;
+
+typedef struct _DCE2_SmbFileTracker
+{
+    int fid;   // A signed integer so it can be set to sentinel
     uint16_t uid;
     uint16_t tid;
+    bool is_ipc;
+    char *file_name;
 
-    // If pipe has been set to byte mode via TRANS_SET_NMPIPE_STATE
-    bool byte_mode;
+    union
+    {
+        struct
+        {
+            // If pipe has been set to byte mode via TRANS_SET_NMPIPE_STATE
+            bool byte_mode;
 
-    bool used;   // For Windows 2000
+            // For Windows 2000
+            bool used;
 
-    // For WriteAndX requests that use raw mode flag
-    // Windows only
-    DCE2_SmbWriteAndXRaw *writex_raw;
+            // For WriteAndX requests that use raw mode flag
+            // Windows only
+            DCE2_SmbWriteAndXRaw *writex_raw;
 
-    // Connection-oriented DCE/RPC tracker
-    DCE2_CoTracker co_tracker;
+            // Connection-oriented DCE/RPC tracker
+            DCE2_CoTracker *co_tracker;
 
-} DCE2_SmbPipeTracker;
+        } nmpipe;
+
+        struct
+        {
+            uint64_t file_size;
+            uint64_t file_offset;
+            uint64_t bytes_processed;
+            DCE2_List *file_chunks;
+            uint32_t bytes_queued;
+            DCE2_SmbFileDirection file_direction;
+            bool sequential_only;
+
+        } file;
+
+    } tracker;
+
+#define fp_byte_mode   tracker.nmpipe.byte_mode
+#define fp_used        tracker.nmpipe.used
+#define fp_writex_raw  tracker.nmpipe.writex_raw
+#define fp_co_tracker  tracker.nmpipe.co_tracker
+#define ff_file_size          tracker.file.file_size
+#define ff_file_offset        tracker.file.file_offset
+#define ff_bytes_processed    tracker.file.bytes_processed
+#define ff_file_direction     tracker.file.file_direction
+#define ff_file_chunks        tracker.file.file_chunks
+#define ff_bytes_queued       tracker.file.bytes_queued
+#define ff_sequential_only    tracker.file.sequential_only
+
+} DCE2_SmbFileTracker;
 
 typedef struct _DCE2_SmbTransactionTracker
 {
@@ -125,6 +182,8 @@ typedef struct _DCE2_SmbTransactionTracker
     uint32_t tpcnt;
     uint32_t psent;
     DCE2_Buffer *pbuf;
+    // For Transaction2/Query File Information
+    uint16_t info_level;
 
 } DCE2_SmbTransactionTracker;
 
@@ -132,7 +191,7 @@ typedef struct _DCE2_SmbRequestTracker
 {
     int smb_com;
 
-    int mid;   // An unsigned integer so it can be set to sentinel
+    int mid;   // A signed integer so it can be set to sentinel
     uint16_t uid;
     uint16_t tid;
     uint16_t pid;
@@ -146,10 +205,20 @@ typedef struct _DCE2_SmbRequestTracker
 
     // Client can chain a write to an open.  Need to write data, but also
     // need to associate tracker with fid returned from server
-    DCE2_Queue *pt_queue;
+    DCE2_Queue *ft_queue;
 
-    // This is a reference to an existing pipe tracker
-    DCE2_SmbPipeTracker *ptracker;
+    // This is a reference to an existing file tracker
+    DCE2_SmbFileTracker *ftracker;
+
+    // Used for requests to cache data that will ultimately end up in
+    // the file tracker upon response.
+    char *file_name;
+    uint64_t file_size;
+    uint64_t file_offset;
+    bool sequential_only;
+
+    // For TreeConnect to know whether it's to IPC
+    bool is_ipc;
 
 } DCE2_SmbRequestTracker;
 
@@ -167,16 +236,14 @@ typedef struct _DCE2_SmbSsnData
 
     DCE2_SmbPduState pdu_state;
 
-    // UIDs and IPC TIDs created on session
-    // IPC tids created on session
-    int uid;   // An unsigned integer so it can be set to sentinel
-    int tid;   // An unsigned integer so it can be set to sentinel
+    int uid;   // A signed integer so it can be set to sentinel
+    int tid;   // A signed integer so it can be set to sentinel
     DCE2_List *uids;
     DCE2_List *tids;
 
-    // Specific for Samba and Windows 2000
-    DCE2_SmbPipeTracker ptracker;
-    DCE2_List *ptrackers;  // List of DCE2_SmbPipeTracker
+    // For tracking files and named pipes
+    DCE2_SmbFileTracker ftracker;
+    DCE2_List *ftrackers;  // List of DCE2_SmbFileTracker
 
     // For tracking requests / responses
     DCE2_SmbRequestTracker rtracker;
@@ -191,11 +258,31 @@ typedef struct _DCE2_SmbSsnData
     DCE2_Buffer *cli_seg;
     DCE2_Buffer *srv_seg;
 
-    // These are used when for commands we don't need to process
+    // These are used for commands we don't need to process
     uint32_t cli_ignore_bytes;
     uint32_t srv_ignore_bytes;
 
+    // The file API supports one concurrent upload/download per session.
+    // This is a reference to a file tracker so shouldn't be freed.
+    DCE2_SmbFileTracker *fapi_ftracker;
+
+#ifdef ACTIVE_RESPONSE
+    DCE2_SmbFileTracker *fb_ftracker;
+    bool block_pdus;
+#endif
+
+    // Maximum file depth as returned from file API
+    int64_t max_file_depth;
+
 } DCE2_SmbSsnData;
+
+typedef struct _DCE2SmbFsm
+{
+    char input;
+    int next_state;
+    int fail_state;
+
+} DCE2_SmbFsm;
 
 /********************************************************************
  * Inline function prototypes
@@ -216,6 +303,9 @@ DCE2_SmbSsnData * DCE2_SmbSsnInit(SFSnortPacket *);
 void DCE2_SmbProcess(DCE2_SmbSsnData *);
 void DCE2_SmbDataFree(DCE2_SmbSsnData *);
 void DCE2_SmbSsnFree(void *);
+#ifdef ACTIVE_RESPONSE
+void DCE2_SmbInitDeletePdu(void);
+#endif
 
 /*********************************************************************
  * Function: DCE2_SmbAutodetect()
@@ -278,6 +368,21 @@ static inline void DCE2_SmbSetFingerprintedServer(DCE2_SmbSsnData *ssd)
 static inline bool DCE2_SmbFingerprintedServer(DCE2_SmbSsnData *ssd)
 {
     return ssd->ssn_state_flags & DCE2_SMB_SSN_STATE__FP_SERVER;
+}
+
+static inline bool DCE2_SmbFileDirUnknown(DCE2_SmbFileDirection dir)
+{
+    return dir == DCE2_SMB_FILE_DIRECTION__UNKNOWN;
+}
+
+static inline bool DCE2_SmbFileUpload(DCE2_SmbFileDirection dir)
+{
+    return dir == DCE2_SMB_FILE_DIRECTION__UPLOAD;
+}
+
+static inline bool DCE2_SmbFileDownload(DCE2_SmbFileDirection dir)
+{
+    return dir == DCE2_SMB_FILE_DIRECTION__DOWNLOAD;
 }
 
 #endif  /* _DCE2_SMB_H_ */

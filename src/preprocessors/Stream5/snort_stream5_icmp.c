@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -405,7 +406,7 @@ void IcmpUpdateDirection(Stream5LWSession *ssn, char dir,
 
     if (IP_EQUALITY(&icmpssn->icmp_sender_ip, ip))
     {
-        if ((dir == SSN_DIR_SENDER) && (ssn->ha_state.direction == SSN_DIR_SENDER))
+        if ((dir == SSN_DIR_FROM_SENDER) && (ssn->ha_state.direction == SSN_DIR_FROM_SENDER))
         {
             /* Direction already set as SENDER */
             return;
@@ -413,7 +414,7 @@ void IcmpUpdateDirection(Stream5LWSession *ssn, char dir,
     }
     else if (IP_EQUALITY(&icmpssn->icmp_responder_ip, ip))
     {
-        if ((dir == SSN_DIR_RESPONDER) && (ssn->ha_state.direction == SSN_DIR_RESPONDER))
+        if ((dir == SSN_DIR_FROM_RESPONDER) && (ssn->ha_state.direction == SSN_DIR_FROM_RESPONDER))
         {
             /* Direction already set as RESPONDER */
             return;

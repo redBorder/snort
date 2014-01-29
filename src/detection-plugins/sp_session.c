@@ -1,6 +1,7 @@
 /* $Id$ */
 
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -377,8 +378,8 @@ FILE *OpenSessionFile(Packet *p)
         return NULL;
     }
 
-    bzero((char *)session_file, STD_BUF);
-    bzero((char *)log_path, STD_BUF);
+    memset((char *)session_file, 0, STD_BUF);
+    memset((char *)log_path, 0, STD_BUF);
 
     /* figure out which way this packet is headed in relation to the homenet */
     dst = GET_DST_IP(p);

@@ -14,6 +14,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * Author: Steven Sturges
@@ -168,6 +169,7 @@ typedef int (*ControlSocketRegisterHandlerFunc)(uint16_t, OOBPreControlFunc, IBC
 typedef int (*RegisterIdleHandler)(IdleProcessingHandler);
 #ifdef ACTIVE_RESPONSE
 typedef void (*DynamicSendBlockResponse)(void *packet, const uint8_t* buffer, uint32_t buffer_len);
+typedef void (*ActiveInjectDataFunc)(void *, uint32_t, const uint8_t *, uint32_t);
 #endif
 typedef int (*DynamicSetFlowId)(const void* p, uint32_t id);
 
@@ -181,6 +183,7 @@ typedef void (*DisableAllPoliciesFunc)(struct _SnortConfig *);
 typedef int (*ReenablePreprocBitFunc)(struct _SnortConfig *, unsigned int preproc_id);
 typedef int (*DynamicCheckValueInRangeFunc)(const char *, char *,
         unsigned long lo, unsigned long hi, unsigned long *value);
+typedef bool (*DynamicReadyForProcessFunc) (void* pkt);
 
 #define ENC_DYN_FWD 0x80000000
 #define ENC_DYN_NET 0x10000000
@@ -337,6 +340,12 @@ typedef struct _DynamicPreprocessorData
 
     SetHttpBufferFunc setHttpBuffer;
     GetHttpBufferFunc getHttpBuffer;
+
+#ifdef ACTIVE_RESPONSE
+    ActiveInjectDataFunc activeInjectData;
+#endif
+    InlineDropFunc inlineDropPacket;
+    DynamicReadyForProcessFunc readyForProcess;
 } DynamicPreprocessorData;
 
 /* Function prototypes for Dynamic Preprocessor Plugins */

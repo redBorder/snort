@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2007-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -22,7 +23,7 @@
 
 #include "snort_debug.h"
 
-///////////////////
+/*****************/
 /* IPv6 and IPv4 */
 
 #include "sf_ip.h"
@@ -73,7 +74,6 @@ typedef sfip_t *snort_ip_p;
 #define GET_ORIG_IPH_VER(p)     (p)->orig_iph_api->orig_iph_ret_ver(p)
 #define GET_ORIG_IPH_LEN(p)     (p)->orig_iph_api->orig_iph_ret_len(p)
 #define GET_ORIG_IPH_OFF(p)     (p)->orig_iph_api->orig_iph_ret_off(p)
-#define GET_ORIG_IPH_PROTO(p)   (p)->orig_iph_api->orig_iph_ret_proto(p)
 
 /* XXX make sure these aren't getting confused with sfip_is_valid within the code */
 #define IPH_IS_VALID(p) iph_is_valid(p)

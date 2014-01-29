@@ -1,6 +1,7 @@
 /* $Id$ */
 
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -100,7 +101,7 @@ static inline void execDecoderDrop (void *data)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
            "Dropping bad packet\n"););
-        Active_DropSession();
+        Active_DropSession((Packet*)data);
     }
 }
 
@@ -110,7 +111,7 @@ static inline void execIpOptDrop (void *data)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
            "Dropping bad packet (IP opts)\n"););
-        Active_DropPacket();
+        Active_DropPacket((Packet*)data);
     }
 }
 
@@ -122,7 +123,7 @@ static inline void execTtlDrop (void *data)
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
            "Dropping bad packet (IP4 TTL)\n"););
         p->error_flags |= PKT_ERR_BAD_TTL;
-        Active_DropPacket();
+        Active_DropPacket(p);
     }
 }
 
@@ -134,7 +135,7 @@ static inline void execHopDrop (void *data)
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
            "Dropping bad packet (IP6 hop limit)\n"););
         p->error_flags |= PKT_ERR_BAD_TTL;
-        Active_DropPacket();
+        Active_DropPacket(p);
     }
 }
 
@@ -144,7 +145,7 @@ static inline void execTcpOptDrop (void *data)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
            "Dropping bad packet (TCP opts)\n"););
-        Active_DropPacket();
+        Active_DropPacket((Packet*)data);
     }
 }
 
@@ -154,7 +155,7 @@ static inline void execTcpOptExpDrop (void *data)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
            "Dropping bad packet (TCP exp opts)\n"););
-        Active_DropPacket();
+        Active_DropPacket((Packet*)data);
     }
 }
 
@@ -164,7 +165,7 @@ static inline void execTcpOptObsDrop (void *data)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
            "Dropping bad packet (TCP obs opts)\n"););
-        Active_DropPacket();
+        Active_DropPacket((Packet*)data);
     }
 }
 
@@ -174,7 +175,7 @@ static inline void execTcpOptTTcpDrop (void *data)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
             "Dropping bad packet (TTCP opts)\n"););
-        Active_DropPacket();
+        Active_DropPacket((Packet*)data);
     }
 }
 
@@ -186,7 +187,7 @@ static inline void execIpChksmDrop (void *data)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
             "Dropping bad packet (IP checksum)\n"););
-        Active_DropPacket();
+        Active_DropPacket((Packet*)data);
     }
 }
 
@@ -196,7 +197,7 @@ static inline void execTcpChksmDrop (void *data)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
             "Dropping bad packet (TCP checksum)\n"););
-        Active_DropPacket();
+        Active_DropPacket((Packet*)data);
     }
 }
 
@@ -206,7 +207,7 @@ static inline void execUdpChksmDrop (void *data)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
             "Dropping bad packet (UDP checksum)\n"););
-        Active_DropPacket();
+        Active_DropPacket((Packet*)data);
     }
 }
 
@@ -216,7 +217,7 @@ static inline void execIcmpChksmDrop (void *data)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
             "Dropping bad packet (ICMP checksum)\n"););
-        Active_DropPacket();
+        Active_DropPacket((Packet*)data);
     }
 }
 
@@ -348,7 +349,7 @@ static inline void DecoderEventDrop (
 
         if ( drop_flag )
         {
-            Active_DropPacket();
+            Active_DropPacket(p);
         }
     }
 }
@@ -4255,15 +4256,24 @@ void DecodeTeredo(const uint8_t *pkt, uint32_t len, Packet *p)
 void DecodeAH(const uint8_t *pkt, uint32_t len, Packet *p)
 {
     IP6Extension *ah = (IP6Extension *)pkt;
-    uint8_t extlen = sizeof(*ah) + (ah->ip6e_len << 2);
+    unsigned extlen;
 
-    if (extlen > len)
+    if ( len < sizeof(*ah) )
     {
+        DecoderEvent(p, EVARGS(AUTH_HDR_TRUNC), 1, 1);
+        pc.discards++;
+        return;
+    }
+
+    extlen = sizeof(*ah) + (ah->ip6e_len << 2);
+    if ( extlen > len )
+    {
+        DecoderEvent(p, EVARGS(AUTH_HDR_BAD_LEN), 1, 1);
+        pc.discards++;
         return;
     }
 
     PushLayer(PROTO_AH, p, pkt, extlen);
-
     DecodeIPv4Proto(ah->ip6e_nxt, pkt+extlen, len-extlen, p);
 }
 

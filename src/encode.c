@@ -1,6 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -537,9 +538,9 @@ static inline uint8_t GetTTL (const EncState* enc)
         return 0;
 
     if ( enc->p->packet_flags & PKT_FROM_CLIENT )
-        dir = FORWARD(enc) ? SSN_DIR_CLIENT : SSN_DIR_SERVER;
+        dir = FORWARD(enc) ? SSN_DIR_FROM_CLIENT : SSN_DIR_FROM_SERVER;
     else
-        dir = FORWARD(enc) ? SSN_DIR_SERVER : SSN_DIR_CLIENT;
+        dir = FORWARD(enc) ? SSN_DIR_FROM_SERVER : SSN_DIR_FROM_CLIENT;
 
     // outermost ip is considered to be outer here,
     // even if it is the only ip layer ...
@@ -1042,7 +1043,7 @@ static ENC_STATUS TCP_Encode (EncState* enc, Buffer* in, Buffer* out)
     SET_TCP_OFFSET(ho, (TCP_HDR_LEN >> 2));
     ho->th_win = ho->th_urp = 0;
 
-    if ( enc->type == ENC_TCP_FIN )
+    if ( enc->type == ENC_TCP_FIN || enc->type == ENC_TCP_PUSH )
     {
         if ( enc->payLoad && enc->payLen > 0 )
         {
@@ -1050,7 +1051,17 @@ static ENC_STATUS TCP_Encode (EncState* enc, Buffer* in, Buffer* out)
             UPDATE_BOUND(out, enc->payLen);
             memcpy(pdu, enc->payLoad, enc->payLen);
         }
-        ho->th_flags = TH_FIN | TH_ACK;
+
+        ho->th_flags = TH_ACK;
+        if ( enc->type == ENC_TCP_PUSH )
+        {
+            ho->th_flags |= TH_PUSH;
+            ho->th_win = htons(65535);
+        }
+        else
+        {
+            ho->th_flags |= TH_FIN;
+        }
     }
     else
     {

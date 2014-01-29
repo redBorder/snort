@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -172,6 +173,7 @@ typedef struct _POPSearchInfo
 
 typedef struct _POPMimeBoundary
 {
+    int    state;
     char   boundary[2 + MAX_BOUNDARY_LEN + 1];  /* '--' + MIME boundary string + '\0' */
     int    boundary_len;
     void  *boundary_search;

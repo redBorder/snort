@@ -1,5 +1,6 @@
 /* $Id$ */
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -54,6 +55,9 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <pcap.h>
+#ifdef HAVE_MALLOC_TRIM
+#include <malloc.h>
+#endif
 
 #ifndef WIN32
 #include <netdb.h>
@@ -406,6 +410,7 @@ static struct option long_options[] =
    {"pid-path", LONGOPT_ARG_REQUIRED, NULL, PID_PATH},
    {"create-pidfile", LONGOPT_ARG_NONE, NULL, CREATE_PID_FILE},
    {"nolock-pidfile", LONGOPT_ARG_NONE, NULL, NOLOCK_PID_FILE},
+   {"no-interface-pidfile", LONGOPT_ARG_NONE, NULL, NO_IFACE_PID_FILE},
 
 #ifdef INLINE_FAILOPEN
    {"disable-inline-init-failopen", LONGOPT_ARG_NONE, NULL, DISABLE_INLINE_FAILOPEN},
@@ -533,6 +538,7 @@ static void SigRotateStatsHandler(int);
 #ifdef CONTROL_SOCKET
 static void SigPipeHandler(int);
 #endif
+static void SigOopsHandler(int);
 
 #ifdef TARGET_BASED
 static void SigNoAttributeTableHandler(int);
@@ -1607,6 +1613,8 @@ void SetupMetadataCallback(void)
 
 // non-local for easy access from core
 static Packet s_packet;
+static DAQ_PktHdr_t s_pkth;
+static uint8_t s_data[65536];
 
 static DAQ_Verdict PacketCallback(
     void* user, const DAQ_PktHdr_t* pkthdr, const uint8_t* pkt)
@@ -1762,6 +1770,8 @@ static DAQ_Verdict PacketCallback(
 #ifdef SIDE_CHANNEL
     SideChannelDrainRX(0);
 #endif
+
+    s_packet.pkth = NULL;  // no longer avail on segv
 
     PREPROC_PROFILE_END(totalPerfStats);
     return verdict;
@@ -1985,6 +1995,7 @@ static int ShowUsage(char *program_name)
     FPUTS_BOTH ("   --dynamic-output-lib-dir <path> Load all dynamic output libraries from directory\n");
     FPUTS_UNIX ("   --create-pidfile                Create PID file, even when not in Daemon mode\n");
     FPUTS_UNIX ("   --nolock-pidfile                Do not try to lock Snort PID file\n");
+    FPUTS_UNIX ("   --no-interface-pidfile          Do not include the interface name in Snort PID file\n");
 #ifdef INLINE_FAILOPEN
     FPUTS_UNIX ("   --disable-inline-init-failopen  Do not fail open and pass packets while initializing with inline mode.\n");
 #endif
@@ -2284,6 +2295,10 @@ static void ParseCmdLine(int argc, char **argv)
 
             case NOLOCK_PID_FILE:
                 sc->run_flags |= RUN_FLAG__NO_LOCK_PID_FILE;
+                break;
+
+            case NO_IFACE_PID_FILE:
+                sc->run_flags |= RUN_FLAG__NO_IFACE_PID_FILE;
                 break;
 
 #ifdef INLINE_FAILOPEN
@@ -3399,6 +3414,20 @@ static void SigNoAttributeTableHandler(int signal)
 }
 #endif
 
+static void SigOopsHandler(int signal)
+{
+    if ( s_packet.pkth )
+    {
+        s_pkth = *s_packet.pkth;
+
+        if ( s_packet.pkt )
+            memcpy(s_data, s_packet.pkt, 0xFFFF & s_packet.pkth->caplen);
+    }
+    SnortAddSignal(signal, SIG_DFL, 0);
+
+    raise(signal);
+}
+
 static void PrintStatistics (void)
 {
     if ( ScTestMode() || ScVersionMode() || ScRuleDumpMode() )
@@ -3593,7 +3622,7 @@ static void SnortCleanup(int exit_val)
         sfActionQueueDestroy (decoderActionQ);
         mempool_destroy (&decoderAlertMemPool);
         decoderActionQ = NULL;
-        bzero(&decoderAlertMemPool, sizeof(decoderAlertMemPool));
+        memset(&decoderAlertMemPool, 0, sizeof(decoderAlertMemPool));
     }
 
     DAQ_Delete();
@@ -4201,6 +4230,10 @@ void SnortConfFree(SnortConfig *sc)
 #endif
 
     free(sc);
+#ifdef HAVE_MALLOC_TRIM
+    malloc_trim(0);
+#endif
+    
 }
 
 /****************************************************************************
@@ -4812,7 +4845,9 @@ void FreeVarList(VarNode *head)
         DumpOutputPlugins();
 #endif
     }
-    FileAPIInit();
+
+    init_fileAPI();
+
     /* if we're using the rules system, it gets initialized here */
     if (snort_conf_file != NULL)
     {
@@ -5268,6 +5303,12 @@ static void InitSignals(void)
 #endif
 #endif
 
+    SnortAddSignal(SIGABRT, SigOopsHandler, 1);
+    SnortAddSignal(SIGSEGV, SigOopsHandler, 1);
+#ifndef WIN32
+    SnortAddSignal(SIGBUS, SigOopsHandler, 1);
+#endif
+
     errno = 0;
 }
 
@@ -5518,7 +5559,13 @@ static void * ReloadConfigThread(void *data)
 
 static SnortConfig * ReloadConfig(void)
 {
-    SnortConfig *sc = ParseSnortConf();
+    SnortConfig *sc;
+
+#ifdef HAVE_MALLOC_TRIM
+    malloc_trim(0);
+#endif
+
+    sc = ParseSnortConf();
 
     sc = MergeSnortConfs(snort_cmd_line_conf, sc);
 
@@ -5572,6 +5619,12 @@ static SnortConfig * ReloadConfig(void)
     PrintRuleOrder(sc->rule_lists);
 
     SetRuleStates(sc);
+
+    if (file_sevice_config_verify(snort_conf, sc) == -1)
+    {
+        SnortConfFree(sc);
+        return NULL;
+    }
 
     if (VerifyReloadedPreprocessors(sc) == -1)
     {

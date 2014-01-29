@@ -1,4 +1,5 @@
 /*
+ ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2002-2013 Sourcefire, Inc.
  ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
  **
@@ -111,7 +112,7 @@ extern uint16_t detect_flags;
 
 extern uint32_t http_mask;
 extern HttpBuffer http_buffer[HTTP_BUFFER_MAX];
-const char* http_buffer_name[HTTP_BUFFER_MAX];
+extern const char* http_buffer_name[HTTP_BUFFER_MAX];
 
 extern DataPointer DetectBuffer;
 extern DataPointer file_data_ptr;

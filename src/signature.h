@@ -1,5 +1,6 @@
 /* $Id$ */
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Author(s):   Andrew R. Baker <andrewb@sourcefire.com>
 **
@@ -120,7 +121,9 @@ typedef struct _SigInfo
 #ifdef TARGET_BASED
     unsigned int num_services;
     ServiceInfo *services;
+#if 0
     char          *os;
+#endif
 #endif
 } SigInfo;
 

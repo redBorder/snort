@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -70,6 +71,7 @@
 #define PP_MODBUS                 28
 #define PP_DNP3                   29
 #define PP_FILE                   30
+#define PP_FILE_INSPECT           31
 
 #define PP_ALL_ON         0xFFFFFFFF
 #define PP_ALL_OFF        0x00000000

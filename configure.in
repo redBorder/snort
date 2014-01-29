@@ -6,7 +6,7 @@ AC_PREREQ(2.50)
 AM_CONFIG_HEADER(config.h)
 # When changing the snort version, please also update the VERSION
 # definition in "src/win32/WIN32-Includes/config.h"
-AM_INIT_AUTOMAKE(snort,2.9.5.6)
+AM_INIT_AUTOMAKE(snort,2.9.6.0)
 
 NO_OPTIMIZE="no"
 ADD_WERROR="no"
@@ -264,6 +264,8 @@ AM_CONDITIONAL(BUILD_SNPRINTF, test "x$have_snprintf" != "xyes")
 if test "x$have_snprintf" = "xyes"; then
     AC_DEFINE([HAVE_SNPRINTF], [], [snprintf function is available])
 fi
+
+AC_CHECK_FUNCS([malloc_trim mallinfo])
 
 AC_CHECK_SIZEOF([char])
 AC_CHECK_SIZEOF([short])
@@ -577,7 +579,7 @@ if test "x$enable_control_socket" = "xyes"; then
 fi
 
 AC_ARG_ENABLE(side_channel,
-[  --enable-side-channel    Enable the side channel],
+[  --enable-side-channel    Enable the side channel (Experimental)],
        enable_side_channel="$enableval", enable_side_channel="no")
 if test "x$linux" != "xyes"; then
     if test "x$enable_side_channel" = "xyes"; then
@@ -968,6 +970,7 @@ if test "x$enable_corefiles" = "xno"; then
     CPPFLAGS="$CPPFLAGS -DNOCOREFILE"
 fi
 
+
 AC_ARG_ENABLE(active-response,
 [  --disable-active-response Disable reject injection],
        enable_active_response="$enableval", enable_active_response="yes")
@@ -995,7 +998,7 @@ if test "x$enable_reload" = "xyes"; then
 fi
 
 AC_ARG_ENABLE(ha,
-[  --enable-ha              Enable high-availability state sharing],
+[  --enable-ha              Enable high-availability state sharing (Experimental)],
        enable_ha="$enableval", enable_ha="no")
 
 AM_CONDITIONAL(BUILD_HA, test "x$enable_ha" = "xyes")
@@ -1101,7 +1104,7 @@ AM_CONDITIONAL(HAVE_SHARED_REP, test "x$enable_shared_rep" = "xyes")
 AC_ARG_ENABLE(rzb-saac,
 [  --enable-rzb-saac        Enable Razorback SaaC support],
        enable_rzb_saac="$enableval", enable_rzb_saac="no")
-
+      
 AC_ARG_WITH(librzb_api,
 	[  --with-librzb-api=DIR    librazorback_api directory],
 	[with_librzb_api="$withval"],[with_librzb_api="no"])
@@ -1112,10 +1115,11 @@ else
     export PKG_CONFIG_PATH=$with_librzb_api/lib/pkgconfig:$PKG_CONFIG_PATH
 fi
 
-m4_ifdef(
-    [PKG_CHECK_MODULES], [],
-    [m4_define([PKG_CHECK_MODULES], 
-        [ echo "PKG_CHECK_MODULES not defined" ])])
+# Define PKG_CHECK_MODULES if it doesnt already exist. 
+#file_ This prevents './configure' from erroring on machines that dont have
+# 'pkgconfig' installed.
+m4_ifdef([PKG_CHECK_MODULES],[], [m4_define([PKG_CHECK_MODULES], 
+     [echo "PKG_CHECK_MODULES not defined"])])
 
 if test "x$enable_rzb_saac" = "xyes"; then
     AC_CHECK_PROG(PKG_CONFIG,pkg-config,yes)
@@ -1138,6 +1142,7 @@ fi
 
 AM_CONDITIONAL([WANT_SF_SAAC], [test x$enable_rzb_saac = xyes])
 
+
 AC_ARG_ENABLE(large-pcap,
 [  --enable-large-pcap      Enable support for pcaps larger than 2 GB],
       enable_large_pcap="$enableval", enable_large_pcap="no")
@@ -1145,6 +1150,18 @@ AC_ARG_ENABLE(large-pcap,
 if test "x$enable_large_pcap" = "xyes"; then
     CPPFLAGS="${CPPFLAGS} -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64"
 fi
+
+###################################################
+##    [!] File Type Inspection (Experimental)    ##
+###################################################
+
+AC_ARG_ENABLE([file-inspect],
+    [AS_HELP_STRING([--enable-file-inspect],[Build with extended file inspection features. (Experimental)])],
+    [enable_file_inspect=$enableval],[enable_file_inspect=no])
+
+AS_IF([test x$enable_file_inspect = xyes],
+    [AC_DEFINE([FEAT_FILE_INSPECT],[1],[Build with extended file inspection features. (Experimental)]) ])
+AM_CONDITIONAL([FEAT_FILE_INSPECT],[test x$enable_file_inspect = xyes])
 
 # let's make some fixes..
 
@@ -1291,6 +1308,7 @@ src/dynamic-preprocessors/ssl/Makefile   \
 src/dynamic-preprocessors/modbus/Makefile   \
 src/dynamic-preprocessors/dnp3/Makefile   \
 src/dynamic-preprocessors/rzb_saac/Makefile   \
+src/dynamic-preprocessors/file/Makefile   \
 src/dynamic-output/Makefile   \
 src/dynamic-output/plugins/Makefile   \
 src/dynamic-output/libs/Makefile   \
@@ -1312,7 +1330,6 @@ src/preprocessors/Stream5/Makefile \
 src/parser/Makefile \
 src/target-based/Makefile \
 doc/Makefile \
-contrib/Makefile \
 rpm/Makefile \
 preproc_rules/Makefile \
 m4/Makefile \
@@ -1322,5 +1339,6 @@ tools/Makefile \
 tools/control/Makefile \
 tools/u2boat/Makefile \
 tools/u2spewfoo/Makefile \
+tools/file_server/Makefile \
 src/win32/Makefile])
 AC_OUTPUT

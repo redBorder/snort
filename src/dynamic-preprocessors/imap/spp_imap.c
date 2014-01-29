@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -351,6 +352,7 @@ static void _addPortsToStream5Filter(struct _SnortConfig *sc, IMAPConfig *config
             //Add port the port
             _dpd.streamAPI->set_port_filter_status(sc, IPPROTO_TCP, (uint16_t)portNum,
                                                    PORT_MONITOR_SESSION, policy_id, 1);
+            _dpd.fileAPI->register_mime_paf_port(sc, portNum, policy_id);
         }
     }
 }
@@ -359,6 +361,7 @@ static void _addPortsToStream5Filter(struct _SnortConfig *sc, IMAPConfig *config
 static void _addServicesToStream5Filter(struct _SnortConfig *sc, tSfPolicyId policy_id)
 {
     _dpd.streamAPI->set_service_filter_status(sc, imap_proto_id, PORT_MONITOR_SESSION, policy_id, 1);
+    _dpd.fileAPI->register_mime_paf_service(sc, imap_proto_id, policy_id);
 }
 #endif
 

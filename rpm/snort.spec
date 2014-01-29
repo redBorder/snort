@@ -36,14 +36,14 @@
 
 
 Name: %{realname}
-Version: 2.9.5.6
+Version: 2.9.6.0
 Epoch: 1
 Release: %{release}
 Summary: An open source Network Intrusion Detection System (NIDS)
 Group: Applications/Internet
 License: GPL
 Url: http://www.snort.org/
-Source0: http://www.snort.org/snort-downloads/2.9.5.6/%{realname}-%{version}.tar.gz
+Source0: http://www.snort.org/snort-downloads/2.9.6/%{realname}-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 Packager: Official Snort.org %{for_distro}
@@ -117,7 +117,8 @@ SNORT_BASE_CONFIG="--prefix=%{_prefix} \
                    --bindir=%{_sbindir} \
                    --sysconfdir=%{_sysconfdir}/snort \
                    --with-libpcap-includes=%{_includedir} \
-                   --enable-targetbased"
+                   --enable-targetbased \
+                   --enable-control-socket"
 
 # Always build snort-plain
 BuildSnort plain
@@ -132,6 +133,7 @@ InstallSnort() {
 	%__rm -rf $RPM_BUILD_ROOT
 
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_sbindir}
+	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_bindir}
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{SnortRulesDir}
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_sysconfdir}/snort
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_sysconfdir}/sysconfig
@@ -142,6 +144,9 @@ InstallSnort() {
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_docdir}/%{realname}-%{version}
 
 	%__install -p -m 0755 %{name}-plain $RPM_BUILD_ROOT%{_sbindir}/%{name}-plain
+	%__install -p -m 0755 plain/tools/control/snort_control $RPM_BUILD_ROOT%{_bindir}/snort_control
+	%__install -p -m 0755 plain/tools/u2spewfoo/u2spewfoo $RPM_BUILD_ROOT%{_bindir}/u2spewfoo
+	%__install -p -m 0755 plain/tools/u2boat/u2boat $RPM_BUILD_ROOT%{_bindir}/u2boat
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_libdir}/%{realname}-%{version}_dynamicengine
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_libdir}/%{realname}-%{version}_dynamicpreprocessor
 	%__install -p -m 0755 plain/src/dynamic-plugins/sf_engine/.libs/libsf_engine.so.0 $RPM_BUILD_ROOT%{_libdir}/%{realname}-%{version}_dynamicengine
@@ -239,6 +244,9 @@ fi
 %files
 %defattr(-,root,root)
 %attr(0755,root,root) %{_sbindir}/%{name}-plain
+%attr(0755,root,root) %{_bindir}/snort_control
+%attr(0755,root,root) %{_bindir}/u2spewfoo
+%attr(0755,root,root) %{_bindir}/u2boat
 %attr(0644,root,root) %{_mandir}/man8/snort.8.*
 %attr(0755,root,root) %dir %{SnortRulesDir}
 %attr(0644,root,root) %config(noreplace) %{_sysconfdir}/snort/classification.config

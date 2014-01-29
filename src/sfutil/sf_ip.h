@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 1998-2013 Sourcefire, Inc.
 ** Adam Keeton
 ** Kevin Liu <kliu@sourcefire.com>
@@ -504,6 +505,10 @@ char *sfip_to_str(const sfip_t *ip);
 #define sfip_ntoa(x) sfip_to_str(x)
 void sfip_raw_ntop(int family, const void *ip_raw, char *buf, int bufsize);
 void sfip_ntop(const sfip_t *ip, char *buf, int bufsize);
+
+/* Conversions *********************************************************/
+
+SFIP_RET sfip_convert_ip_text_to_binary( const int, char *src, void *dst );
 
 #endif // SF_IP_H
 

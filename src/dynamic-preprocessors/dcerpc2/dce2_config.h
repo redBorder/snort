@@ -1,4 +1,5 @@
 /****************************************************************************
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -136,6 +137,14 @@ typedef enum _DCE2_CS
 
 } DCE2_CS;
 
+typedef enum _DCE2_SmbFileInspection
+{
+    DCE2_SMB_FILE_INSPECTION__OFF = 0,
+    DCE2_SMB_FILE_INSPECTION__ON,
+    DCE2_SMB_FILE_INSPECTION__ONLY
+
+} DCE2_SmbFileInspection;
+
 typedef enum _DCE2_WordCharPosition
 {
     DCE2_WORD_CHAR_POSITION__START,
@@ -191,8 +200,7 @@ typedef enum _DCE2_IpListState
 typedef enum _DCE2_IpState
 {
     DCE2_IP_STATE__START,
-    DCE2_IP_STATE__IP,
-    DCE2_IP_STATE__END
+    DCE2_IP_STATE__IP
 
 } DCE2_IpState;
 
@@ -251,10 +259,14 @@ typedef struct _DCE2_ServerConfig
     uint8_t auto_http_proxy_ports[DCE2_PORTS__MAX_INDEX];
     uint8_t auto_http_server_ports[DCE2_PORTS__MAX_INDEX];
 
-    DCE2_CS autodetect_http_proxy_ports;
-
     uint8_t smb_max_chain;
     uint8_t smb2_max_compound;
+
+    DCE2_CS autodetect_http_proxy_ports;
+
+    DCE2_SmbFileInspection smb_file_inspection;
+    int64_t smb_file_depth;
+
     DCE2_List *smb_invalid_shares;
     int valid_smb_versions_mask;
 
@@ -269,6 +281,10 @@ typedef struct _DCE2_Config
     DCE2_ServerConfig *dconfig;
     table_t *sconfigs;
     uint32_t ref_count;
+
+#ifdef DCE2_LOG_EXTRA_DATA
+    uint32_t xtra_logging_smb_file_name_id;
+#endif
 
 } DCE2_Config;
 
@@ -298,6 +314,9 @@ static inline int DCE2_ScIsAutodetectPortSet(const DCE2_ServerConfig *, const ui
 static inline DCE2_CS DCE2_ScAutodetectHttpProxyPorts(const DCE2_ServerConfig *);
 static inline uint8_t DCE2_ScSmbMaxChain(const DCE2_ServerConfig *);
 static inline DCE2_List * DCE2_ScSmbInvalidShares(const DCE2_ServerConfig *);
+static inline bool DCE2_ScSmbFileInspection(const DCE2_ServerConfig *);
+static inline bool DCE2_ScSmbFileInspectionOnly(const DCE2_ServerConfig *);
+static inline int64_t DCE2_ScSmbFileDepth(const DCE2_ServerConfig *);
 static inline uint8_t DCE2_ScSmb2MaxCompound(const DCE2_ServerConfig *);
 static inline uint8_t DCE2_ScIsValidSmbVersion(const DCE2_ServerConfig *, DCE2_ValidSmbVersionFlag);
 
@@ -728,6 +747,25 @@ static inline DCE2_List * DCE2_ScSmbInvalidShares(const DCE2_ServerConfig *sc)
 {
     if (sc == NULL) return NULL;
     return sc->smb_invalid_shares;
+}
+
+static inline bool DCE2_ScSmbFileInspection(const DCE2_ServerConfig *sc)
+{
+    if (sc == NULL) return false;
+    return ((sc->smb_file_inspection == DCE2_SMB_FILE_INSPECTION__ON)
+            || (sc->smb_file_inspection == DCE2_SMB_FILE_INSPECTION__ONLY));
+}
+
+static inline bool DCE2_ScSmbFileInspectionOnly(const DCE2_ServerConfig *sc)
+{
+    if (sc == NULL) return false;
+    return sc->smb_file_inspection == DCE2_SMB_FILE_INSPECTION__ONLY;
+}
+
+static inline int64_t DCE2_ScSmbFileDepth(const DCE2_ServerConfig *sc)
+{
+    if (!DCE2_ScSmbFileInspection(sc)) return -1;
+    return sc->smb_file_depth;
 }
 
 /********************************************************************

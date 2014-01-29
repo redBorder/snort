@@ -1,6 +1,7 @@
 /* $Id$ */
 
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 ** AUTHOR: Steven Sturges <ssturges@sourcefire.com>
 **
@@ -1248,22 +1249,29 @@ static void checkCacheFlowTimeout(uint32_t flowCount, time_t cur_time, Stream5Se
 {
     uint32_t flowRetiredCount = 0, flowExaminedCount = 0;
     Stream5LWSession *lwssn;
-    SFXHASH_NODE *hnode, *hnode_next;
+    SFXHASH_NODE *hnode, *hnode_prev;
 
     if (!cache)
         return;
 
-    hnode_next = cache->nextTimeoutEvalNode;
+    hnode_prev = cache->nextTimeoutEvalNode;
     while (flowRetiredCount < flowCount && flowExaminedCount < (2 * flowCount))
     {
-        if (!(hnode = hnode_next) && !(hnode = sfxhash_lru_node(cache->hashTable)))
+        if (!(hnode = hnode_prev) && !(hnode = sfxhash_lru_node(cache->hashTable)))
             break;
 
         lwssn = (Stream5LWSession *) hnode->data;
         if ((time_t)(lwssn->last_data_seen + cache->timeoutNominal) > cur_time)
-           break;
+        {
+            uint64_t time_jiffies;
+            /* Give extra 1 second delay*/
+            time_jiffies = ((uint64_t)cur_time - 1) * TCP_HZ;
+            if (!lwssn->expire_time || !cur_time ||
+                    (lwssn->expire_time > time_jiffies))
+                break;
+        }
 
-        hnode_next = hnode->gnext;
+        hnode_prev = hnode->gprev;
         flowExaminedCount++;
 
 #ifdef ENABLE_HA
@@ -1280,7 +1288,7 @@ static void checkCacheFlowTimeout(uint32_t flowCount, time_t cur_time, Stream5Se
         flowRetiredCount++;
     }
 
-    cache->nextTimeoutEvalNode = hnode_next;
+    cache->nextTimeoutEvalNode = hnode_prev;
 }
 
 extern Stream5SessionCache *tcp_lws_cache, *udp_lws_cache;

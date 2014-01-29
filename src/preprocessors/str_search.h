@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -42,6 +43,7 @@ void   SearchInstanceFree( void * insance );
 void   SearchInstanceAdd( void * instance, const char *pat, unsigned int pat_len, int id);
 void   SearchInstancePrepPatterns( void * instance );
 int    SearchInstanceFindString( void * instance, const char *str, unsigned int str_len, int confine, MatchFunction);
+int    SearchInstanceSFindString( void * instance, const char *str, unsigned int str_len, int confine, MatchFunction, int *state);
 
 typedef struct _search_api
 {
@@ -68,6 +70,8 @@ typedef struct _search_api
     void   (*search_instance_add) (void * instance, const char *s, unsigned int s_len, int s_id);
     void   (*search_instance_prep)(void * instance );
     int    (*search_instance_find)(void * instance, const char *s, unsigned int s_len, int confine, MatchFunction); 
+    char * (*search_instance_find_end)(char *match_ptr, int buflen, char *search_str, int search_len);  
+    int    (*stateful_search_instance_find)(void * instance, const char *s, unsigned int s_len, int confine, MatchFunction, int *state); 
     
 } SearchAPI;
 

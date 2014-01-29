@@ -1,4 +1,5 @@
 /*
+ ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2012-2013 Sourcefire, Inc.
  **
  ** This program is free software; you can redistribute it and/or modify
@@ -35,6 +36,26 @@
 #include "str_search.h"
 #include "decode.h"
 #include "detection_util.h"
+
+#include "stream_api.h"
+#ifdef HAVE_STRINGS_H
+#include <strings.h>
+#endif
+
+/* State tracker for MIME PAF */
+typedef enum _MimePafState
+{
+    MIME_PAF_UNKNOWN = 0,  /* UNKNOWN */
+    MIME_PAF_FIRST_LF,     /* First '\n' */
+    MIME_PAF_SECOND_LF    /* Second '\n' */
+} MimePafState;
+
+/* State tracker for MIME PAF */
+typedef struct _MimePafData
+{
+    MimePafState state;
+    bool is_data;
+} MimePafData;
 
 MimePcre mime_boundary_pcre;
 
@@ -242,6 +263,7 @@ int set_log_buffers(MAIL_LogState **log_state, MAIL_LogConfig *conf, void *mempo
             (*log_state)->file_log.filenames = (uint8_t *)bkt->data + (2*MAX_EMAIL);
             (*log_state)->file_log.file_logged = 0;
             (*log_state)->file_log.file_current = 0;
+            (*log_state)->file_log.file_name = 0;
             (*log_state)->emailHdrs = (unsigned char *)bkt->data + (2*MAX_EMAIL) + MAX_FILE;
             (*log_state)->hdrs_logged = 0;
         }
@@ -390,10 +412,12 @@ static int get_boundary(const char *data, int data_len, MimeBoundary *mime_bound
     int ret;
     char *mime_boundary_str;
     int  *mime_boundary_len;
+    int  *mime_boundary_state;
 
 
     mime_boundary_str = &mime_boundary->boundary[0];
     mime_boundary_len = &mime_boundary->boundary_len;
+    mime_boundary_state = &mime_boundary->state;
 
     /* result will be the number of matches (including submatches) */
     result = pcre_exec(mime_boundary_pcre.re, mime_boundary_pcre.pe,
@@ -425,6 +449,7 @@ static int get_boundary(const char *data, int data_len, MimeBoundary *mime_bound
     }
 
     *mime_boundary_len = 2 + boundary_len;
+    *mime_boundary_state = 0;
     mime_boundary_str[*mime_boundary_len] = '\0';
 
     return 0;
@@ -853,14 +878,15 @@ static const uint8_t * process_mime_body(Packet *p, const uint8_t *ptr,
     /* look for boundary */
     if (mime_ssn->state_flags & MIME_FLAG_GOT_BOUNDARY)
     {
-        boundary_found = search_api->search_instance_find
+        boundary_found = search_api->stateful_search_instance_find
                 (mime_ssn->mime_boundary.boundary_search, (const char *)ptr,
-                        data_end_marker - ptr, 0, boundary_str_found);
+                        data_end_marker - ptr, 0, boundary_str_found, &(mime_ssn->mime_boundary.state));
 
         mime_search_info.length = mime_ssn->mime_boundary.boundary_len;
 
         if (boundary_found > 0)
         {
+            mime_ssn->mime_boundary.state = 0;
             boundary_ptr = ptr + mime_search_info.index;
 
             /* should start at beginning of line */
@@ -876,6 +902,9 @@ static const uint8_t * process_mime_body(Packet *p, const uint8_t *ptr,
                     mime_ssn->state_flags &= ~MIME_FLAG_EMAIL_ATTACH;
                     if(attach_start < attach_end)
                     {
+                        if (*(attach_end - 1) == '\r')
+                            attach_end--;
+
                         if(EmailDecode( attach_start, attach_end, decode_state) < DECODE_SUCCESS )
                         {
                             // MIME_DecodeAlert();
@@ -884,8 +913,15 @@ static const uint8_t * process_mime_body(Packet *p, const uint8_t *ptr,
                 }
 
 
+                if(boundary_ptr > ptr)
+                    tmp = boundary_ptr + mime_search_info.length;
+                else
+                {
+                    tmp = (const uint8_t *)search_api->search_instance_find_end((char *)boundary_ptr, 
+                            (data_end_marker - boundary_ptr), mime_ssn->mime_boundary.boundary, mime_search_info.length);
+                }
+
                 /* Check for end boundary */
-                tmp = boundary_ptr + mime_search_info.length;
                 if (((tmp + 1) < data_end_marker) && (tmp[0] == '-') && (tmp[1] == '-'))
                 {
                     DEBUG_WRAP(DebugMessage(DEBUG_FILE, "Mime boundary end found: %s--\n",
@@ -1073,7 +1109,7 @@ const uint8_t * process_mime_data(void *packet, const uint8_t *start, const uint
             setFileDataPtr(((Email_DecodeState *)(mime_ssn->decode_state))->decodePtr, (uint16_t)detection_size);
             /*Process file type/file signature*/
             if (file_api->file_process(p,(uint8_t *)((Email_DecodeState *)(mime_ssn->decode_state))->decodePtr,
-                    (uint16_t)((Email_DecodeState *)(mime_ssn->decode_state))->decoded_bytes, position, upload)
+                    (uint16_t)((Email_DecodeState *)(mime_ssn->decode_state))->decoded_bytes, position, upload, false)
                     && (isFileStart(position)) && mime_ssn->log_state)
             {
                 file_api->set_file_name_from_log(&(mime_ssn->log_state->file_log), p->ssnptr);
@@ -1104,17 +1140,11 @@ const uint8_t * process_mime_data(void *packet, const uint8_t *start, const uint
 
     if((mime_ssn->decode_state) != NULL)
     {
-        if ((position == SNORT_FILE_START) || (position == SNORT_FILE_FULL))
-        {
-            DecodeConfig *conf= mime_ssn->decode_conf;
-            int detection_size = getDetectionSize(conf->b64_depth, conf->qp_depth,
-                    conf->uu_depth, conf->bitenc_depth, (Email_DecodeState *)(mime_ssn->decode_state) );
-            setFileDataPtr(((Email_DecodeState *)(mime_ssn->decode_state))->decodePtr, (uint16_t)detection_size);
-        }
-        else
-        {
-            setFileDataPtr(((Email_DecodeState *)(mime_ssn->decode_state))->decodePtr, 0);
-        }
+        DecodeConfig *conf= mime_ssn->decode_conf;
+        int detection_size = getDetectionSize(conf->b64_depth, conf->qp_depth,
+                conf->uu_depth, conf->bitenc_depth, (Email_DecodeState *)(mime_ssn->decode_state) );
+        setFileDataPtr(((Email_DecodeState *)(mime_ssn->decode_state))->decodePtr, (uint16_t)detection_size);
+
         if ((data_end_marker != end)||(mime_ssn->state_flags & MIME_FLAG_MIME_END))
         {
             finalFilePosition(&position);
@@ -1124,7 +1154,7 @@ const uint8_t * process_mime_data(void *packet, const uint8_t *start, const uint
             position = getFilePoistion(p);*/
 
         if (file_api->file_process(p,(uint8_t *)((Email_DecodeState *)(mime_ssn->decode_state))->decodePtr,
-                (uint16_t)((Email_DecodeState *)(mime_ssn->decode_state))->decoded_bytes, position, upload)
+                (uint16_t)((Email_DecodeState *)(mime_ssn->decode_state))->decoded_bytes, position, upload, false)
                 && (isFileStart(position))&& mime_ssn->log_state)
         {
             file_api->set_file_name_from_log(&(mime_ssn->log_state->file_log), p->ssnptr);
@@ -1248,4 +1278,130 @@ void finalize_mime_position(void *ssnptr, void *decode_state, FilePosition *posi
     if( file_api->get_file_processed_size(ssnptr) ||
             (decode_state && ((Email_DecodeState *)decode_state)->decoded_bytes) )
         finalFilePosition(position);
+}
+
+static inline  uint8_t* find_boundary (const uint8_t* data, uint32_t len,
+        MimePafData *pfdata)
+{
+    uint32_t index = 0;
+    uint32_t b_end = 0;
+
+    MimePafState state = pfdata->state;
+
+    /* start from end*/
+    while (index < len)
+    {
+        uint8_t val = data[index];
+
+        switch (state)
+        {
+        case MIME_PAF_UNKNOWN:
+            if (val == '\n')
+            {
+                state = MIME_PAF_FIRST_LF;
+            }
+            break;
+
+        case MIME_PAF_FIRST_LF:
+            if (val == '\n')
+            {
+                state = MIME_PAF_SECOND_LF;
+                b_end = index;
+            }
+            else if ((val != '.') && (val != '\r') && (val != ')'))
+            {
+                state = MIME_PAF_UNKNOWN;
+            }
+            break;
+
+        case MIME_PAF_SECOND_LF:
+            /* include all continous crlf and . ) in the flushed packet
+             * It might flush for pattern \r\n.)\r\n, but this should be ok
+             * when this is inside MIME body. This won't happen for MIME header
+             * because this means ')' is an illegal header field.
+             */
+            if ((val == '\r') || (val == '\n') || (val == '.') || (val == ')'))
+            {
+                b_end++;
+            }
+            else
+            {
+                state = MIME_PAF_UNKNOWN;
+            }
+            break;
+
+        default:
+            state = MIME_PAF_UNKNOWN;
+            break;
+        }
+
+        index++;
+    }
+
+    pfdata->state = state;
+
+    if (!b_end)
+    {
+        pfdata->state = state;
+        return NULL;
+    }
+
+    return ( (uint8_t *)data + b_end + 1);
+}
+
+/* flush at double CRLF or end of data*/
+static PAF_Status mime_paf(void* ssn, void** ps, const uint8_t* data,
+        uint32_t len, uint32_t flags, uint32_t* fp)
+{
+    MimePafData *pfdata = *(MimePafData **)ps;
+    uint8_t* boundary_end;
+
+    if (pfdata == NULL)
+    {
+        pfdata = calloc(1, sizeof(*pfdata));
+        if (pfdata == NULL)
+        {
+            return PAF_ABORT;
+        }
+
+        *ps = pfdata;
+        pfdata->state = MIME_PAF_UNKNOWN;
+    }
+
+    if ((boundary_end = find_boundary(data, len,  pfdata)))
+    {
+        DEBUG_WRAP(DebugMessage(DEBUG_FILE, "Find boundary!\n"););
+        pfdata->is_data = true;
+        *fp = boundary_end - data;
+        return PAF_FLUSH;
+    }
+
+    if ((!pfdata->is_data ) && (pfdata->state == MIME_PAF_FIRST_LF))
+    {
+        *fp = len;
+        return PAF_FLUSH;
+    }
+
+    return PAF_SEARCH;
+}
+
+
+#ifdef TARGET_BASED
+void register_mime_paf_service (struct _SnortConfig *sc, int16_t app, tSfPolicyId policy)
+{
+    if (ScPafEnabled())
+    {
+        stream_api->register_paf_service(sc, policy, app, true, mime_paf, true);
+        stream_api->register_paf_service(sc, policy, app, false, mime_paf, true);
+    }
+}
+#endif
+
+void register_mime_paf_port(struct _SnortConfig *sc, unsigned int i, tSfPolicyId policy)
+{
+    if (ScPafEnabled())
+    {
+        stream_api->register_paf_port(sc, policy, (uint16_t)i, true, mime_paf, true);
+        stream_api->register_paf_port(sc, policy, (uint16_t)i, false, mime_paf, true);
+    }
 }

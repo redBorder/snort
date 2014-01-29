@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -205,7 +206,7 @@ void ParseTcpWin(struct _SnortConfig *sc, char *data, OptTreeNode *otn)
         start = &data[0];
     }
 
-    if(index(start, (int) 'x') == NULL && index(start, (int)'X') == NULL)
+    if(strchr(start, (int) 'x') == NULL && strchr(start, (int)'X') == NULL)
     {
         win_size = SnortStrtolRange(start, &endTok, 10, 0, UINT16_MAX);
         if ((endTok == start) || (*endTok != '\0'))
@@ -217,10 +218,10 @@ void ParseTcpWin(struct _SnortConfig *sc, char *data, OptTreeNode *otn)
     else
     {
         /* hex? */
-        start = index(data,(int)'x');
+        start = strchr(data,(int)'x');
         if(!start)
         {
-            start = index(data,(int)'X');
+            start = strchr(data,(int)'X');
         }
         if (start)
         {

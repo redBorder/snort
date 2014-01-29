@@ -1,6 +1,7 @@
 /*
  **
  **
+ **  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  **  Copyright (C) 2012-2013 Sourcefire, Inc.
  **
  **  This program is free software; you can redistribute it and/or modify
@@ -37,15 +38,13 @@
 #include "mstring.h"
 #include "parser.h"
 
+#if defined(FEAT_FILE_INSPECT)
+# include "sfutil/strvec.h"
+#endif /* FEAT_FILE_INSPECT */
+
 #include "file_lib.h"
 #include "file_identifier.h"
 #include "file_config.h"
-
-#define DEFAULT_FILE_TYPE_DEPTH 1460
-#define DEFAULT_FILE_SIGNATURE_DEPTH 10485760 /*10 Mbytes*/
-#define DEFAULT_FILE_SHOW_DATA_DEPTH 100
-#define DEFAULT_FILE_BLOCK_TIMEOUT 86400 /*1 day*/
-#define DEFAULT_FILE_LOOKUP_TIMEOUT 2 /*2 seconds*/
 
 typedef void (*ParseFileOptFunc)(RuleInfo*, char *);
 
@@ -68,6 +67,9 @@ typedef struct _FileOptFunc
 #define FILE_OPT__CONTENT           "content"
 #define FILE_OPT__OFFSET            "offset"
 
+#if defined(FEAT_FILE_INSPECT)
+# define FILE_OPT__GROUP            "group"
+#endif /* FEAT_FILE_INSPECT */
 
 #define FILE_REVISION_MAX    UINT32_MAX
 #define FILE_OFFSET_MAX      UINT32_MAX
@@ -81,17 +83,24 @@ static void ParseFileRevision(RuleInfo *, char *);
 static void ParseFileContent(RuleInfo *, char *);
 static void ParseFileOffset(RuleInfo *, char *);
 
+#if defined(FEAT_FILE_INSPECT)
+static void ParseFileGroup(RuleInfo *, char *);
+#endif /* FEAT_FILE_INSPECT */
 
 static const FileOptFunc file_options[] =
 {
-        { FILE_OPT__TYPE,             1, 1, ParseFileRuleType },
-        { FILE_OPT__ID,               1, 1, ParseFileRuleID },
-        { FILE_OPT__VERSION,          0, 1, ParseFileRuleVersion },
-        { FILE_OPT__CATEGORY,         1, 1, ParseFileRuleCategory },
-        { FILE_OPT__MSG,              0, 1, ParseFileRuleMessage },
-        { FILE_OPT__REVISION,         0, 1, ParseFileRevision },
-        { FILE_OPT__CONTENT,          1, 0, ParseFileContent },
-        { FILE_OPT__OFFSET,           1, 0, ParseFileOffset},
+        { FILE_OPT__TYPE,     1, 1, ParseFileRuleType },
+        { FILE_OPT__ID,       1, 1, ParseFileRuleID },
+        { FILE_OPT__VERSION,  0, 1, ParseFileRuleVersion },
+        { FILE_OPT__CATEGORY, 1, 1, ParseFileRuleCategory },
+        { FILE_OPT__MSG,      0, 1, ParseFileRuleMessage },
+        { FILE_OPT__REVISION, 0, 1, ParseFileRevision },
+        { FILE_OPT__CONTENT,  1, 0, ParseFileContent },
+        { FILE_OPT__OFFSET,   1, 0, ParseFileOffset },
+
+#if defined(FEAT_FILE_INSPECT)
+        { FILE_OPT__GROUP,    1, 0, ParseFileGroup },
+#endif /* FEAT_FILE_INSPECT */
 
         { NULL, 0, 0, NULL }   /* Marks end of array */
 };
@@ -230,7 +239,8 @@ static void ParseFileRuleMessage(RuleInfo *rule, char *args)
 
     if (escaped)
     {
-        ParseError("Message in 'msg' rule option has invalid escape character\n");
+        ParseError("Message in 'msg' rule option has invalid escape character."
+                "\n");
     }
 
     if (i == sizeof(msg_buf))
@@ -303,7 +313,8 @@ static uint8_t* convertTextToHex(char *text, int *size)
         }
         else
         {
-            ParseError("\"%c\" is not a valid hex value, please input hex values (0x0 - 0xF)",
+            ParseError("\"%c\" is not a valid hex value, "
+                    "please input hex values (0x0 - 0xF)",
                     (char) *current_ptr);
         }
 
@@ -315,7 +326,8 @@ static uint8_t* convertTextToHex(char *text, int *size)
         }
         else
         {
-            ParseError("\"%c\" is not a valid hex value, please input hex values (0x0 - 0xF)",
+            ParseError("\"%c\" is not a valid hex value, "
+                    "please input hex values (0x0 - 0xF)",
                     (char) *current_ptr);
         }
         DEBUG_WRAP(DebugMessage(DEBUG_FILE,"Hex buffer: %s\n", hex_buf););
@@ -327,6 +339,7 @@ static uint8_t* convertTextToHex(char *text, int *size)
     mSplitFree(&toks, num_toks);
     return hex;
 }
+
 static void ParseFileContent(RuleInfo *rule, char *args)
 {
     MagicData *predata = NULL;
@@ -374,7 +387,8 @@ static void ParseFileContent(RuleInfo *rule, char *args)
 
     if (rule->magics)
     {
-        for (predata = rule->magics; predata->next != NULL; predata = predata->next);
+        for (predata = rule->magics; predata->next != NULL;
+                predata = predata->next);
     }
 
     newdata = SnortAlloc(sizeof(*newdata));
@@ -415,7 +429,32 @@ static void ParseFileOffset(RuleInfo *rule, char *args)
     mdata->offset = (uint32_t)offset;
 }
 
-static void parse_options(char *option_name, char *option_args, char *configured, RuleInfo *rule)
+#if defined(FEAT_FILE_INSPECT)
+static void ParseFileGroup(RuleInfo * rule, char * args)
+{
+    char **toks;
+    int num_toks, i;
+
+    DEBUG_WRAP( DebugMessage(DEBUG_FILE,"Group args: %s\n", args); );
+
+    toks = mSplit(args, ",", 0, &num_toks, 0);
+
+    if (num_toks < 1)
+    {
+        ParseError("Group rule option requires an argument.");
+    }
+
+    rule->groups = StringVector_New();
+
+    for (i = 0; i < num_toks; i++)
+        StringVector_Add(rule->groups, toks[i]);
+
+    mSplitFree(&toks, num_toks);
+}
+#endif /* FEAT_FILE_INSPECT */
+
+static void parse_options(char *option_name, char *option_args,
+        char *configured, RuleInfo *rule)
 {
     int i;
     for (i = 0; file_options[i].name != NULL; i++)
@@ -445,7 +484,7 @@ static void parse_options(char *option_name, char *option_args, char *configured
 }
 
 #ifdef DEBUG_MSGS
-static int print_rule(RuleInfo *rule)
+static int file_rule_print(RuleInfo *rule)
 {
     MagicData *mdata;
 
@@ -488,42 +527,129 @@ static int print_rule(RuleInfo *rule)
 }
 #endif
 
-FileConfig *get_file_config(void **conf)
+#if defined(FEAT_FILE_INSPECT)
+static inline void
+__add_id_to_list( uint32_t **list, int *list_size, const uint32_t id )
 {
-    FileConfig *file_config = NULL;
-    if (!conf)
+    uint32_t *_temp;
+
+    (*list_size)++;
+    _temp = *list;
+
+    if ( (*list = realloc(_temp, sizeof(**list)*(*list_size))) == NULL )
     {
-        return NULL;
+        free(_temp);
+        FatalError("Failed realloc!");
     }
 
-    if (!(*conf))
-    {
-        file_config = SnortAlloc(sizeof(*file_config));
-        *conf = file_config;
-        file_config->file_type_depth = DEFAULT_FILE_TYPE_DEPTH;
-        file_config->file_signature_depth = DEFAULT_FILE_SIGNATURE_DEPTH;
-        file_config->file_block_timeout = DEFAULT_FILE_BLOCK_TIMEOUT;
-        file_config->file_lookup_timeout = DEFAULT_FILE_LOOKUP_TIMEOUT;
-        file_config->block_timeout_lookup = false;
-#if defined(DEBUG_MSGS) || defined (REG_TEST)
-        file_config->show_data_depth = DEFAULT_FILE_SHOW_DATA_DEPTH;
-#endif
-    }
-    else
-        file_config = (FileConfig *) (*conf);
-
-    return file_config;
+    (*list)[(*list_size)-1] = id;
 }
 
+bool get_ids_from_type(const void *conf, const char *type, uint32_t **ids,
+        int *count)
+{
+    const FileConfig *file_config = (FileConfig *)conf;
+    bool status = false;
+    int i;
+
+    if ( !file_config )
+        return NULL;
+
+    /* Search for the matching rules */
+    for ( i = 0; i <= FILE_ID_MAX; i++ ) {
+        const RuleInfo * rule = file_config->FileRules[i];
+
+        if ( !rule )
+            continue;
+
+        if ( strcmp(rule->type, type) )
+            continue;
+
+        __add_id_to_list( ids, count, rule->id );
+        status = true;
+    }
+
+    return status;
+}
+
+bool get_ids_from_type_version(const void *conf, const char *type,
+        const char *version, uint32_t **ids, int *count)
+{
+    const FileConfig *file_config = (FileConfig *)conf;
+    bool status = false;
+    int i;
+
+    if ( !file_config )
+        return NULL;
+
+    /* Search for the matching rules */
+    for ( i = 0; i <= FILE_ID_MAX; i++ )
+    {
+        const RuleInfo *rule = file_config->FileRules[i];
+
+        if ( !rule || !rule->version )
+            continue;
+
+        if ( strcmp(rule->type, type) )
+            continue;
+
+        if ( strcmp(rule->version, version) )
+            continue;
+
+        __add_id_to_list( ids, count, rule->id );
+        status = true;
+    }
+
+    return status;
+}
+
+bool get_ids_from_group(const void *conf, const char *group, uint32_t **ids,
+        int *count)
+{
+    const FileConfig *file_config = (FileConfig*)conf;
+    bool status = false;
+    int i;
+
+    if ( !file_config )
+        return NULL;
+
+    /* Search for the matching rules */
+    for ( i = 0; i <= FILE_ID_MAX; i++ )
+    {
+        const RuleInfo *rule = file_config->FileRules[i];
+        const char *_group;
+        int j = 0;
+
+        if ( !rule || !rule->groups )
+            continue;
+
+        /* Check if this rule belongs to the caller provided group */
+        while( (_group = StringVector_Get(rule->groups, j++)) )
+        {
+            if ( _group && !strcmp(_group, group) )
+                break;
+        }
+
+        if ( !_group )
+            continue;
+
+        __add_id_to_list( ids, count, rule->id );
+        status = true;
+    }
+
+    return status;
+}
+#endif /* FEAT_FILE_INSPECT */
+
 /*The main function for parsing rule option*/
-void parse_file_rule(char *args, void **conf)
+void file_rule_parse(char *args, void *config)
 {
     char **toks;
     int num_toks;
     int i;
     char configured[sizeof(file_options) / sizeof(FileOptFunc)];
     RuleInfo *rule;
-    FileConfig *file_config = get_file_config(conf);
+    FileConfig *file_config = (FileConfig *)config;
 
     if (!file_config)
     {
@@ -531,7 +657,8 @@ void parse_file_rule(char *args, void **conf)
     }
 
     rule = SnortAlloc(sizeof (*rule));
-    DEBUG_WRAP(DebugMessage(DEBUG_FILE,"Loading file configuration: %s\n", args););
+    DEBUG_WRAP(DebugMessage(DEBUG_FILE,"Loading file configuration: %s\n",
+            args););
 
     toks = mSplit(args, ";", 0, &num_toks, 0);  /* get rule option pairs */
 
@@ -556,7 +683,8 @@ void parse_file_rule(char *args, void **conf)
         if (num_opts == 2)
         {
             option_args = opts[1];
-            DEBUG_WRAP(DebugMessage(DEBUG_FILE,"   option args: %s\n", option_args););
+            DEBUG_WRAP(DebugMessage(DEBUG_FILE,"   option args: %s\n",
+                    option_args););
         }
         parse_options(opts[0], option_args, configured, rule);
         mSplitFree(&opts, num_opts);
@@ -569,12 +697,14 @@ void parse_file_rule(char *args, void **conf)
     }
     file_config->FileRules[rule->id] = rule;
 
-    DEBUG_WRAP(DebugMessage(DEBUG_FILE,"Rule parsed: %d\n", print_rule(rule)););
-    insert_file_rule(rule,file_config);
-    DEBUG_WRAP(DebugMessage(DEBUG_FILE,"Total memory used for identifiers: %d\n", memory_usage_identifiers()););
+    DEBUG_WRAP(DebugMessage(DEBUG_FILE,"Rule parsed: %d\n", file_rule_print(rule)););
+    file_identifers_update(rule,file_config);
+    DEBUG_WRAP(DebugMessage(DEBUG_FILE,"Total memory used for identifiers: "
+            "%d\n", file_identifiers_usage()););
     mSplitFree(&toks, num_toks);
 }
-RuleInfo *get_rule_from_id(void *conf, uint32_t id)
+
+RuleInfo *file_rule_get(void *conf, uint32_t id)
 {
     if (conf)
     {
@@ -585,30 +715,42 @@ RuleInfo *get_rule_from_id(void *conf, uint32_t id)
     return NULL;
 }
 
-static void free_file_magic (MagicData  *magics)
+static void _free_file_magic (MagicData  *magics)
 {
     if (!magics)
         return;
-    free_file_magic(magics->next);
+    _free_file_magic(magics->next);
     free (magics->content);
     free (magics);
 }
-static void free_file_rule(RuleInfo *rule)
+
+static void _free_file_rule(RuleInfo *rule)
 {
-    if (!rule)
+    if ( !rule )
         return;
-    if (rule->category)
-        free (rule->category);
-    if (rule->message)
+
+    if ( rule->category )
+        free(rule->category);
+
+    if ( rule->message )
         free(rule->message);
-    if (rule->type)
-        free (rule->type);
-    if (rule->version)
-        free (rule->version);
-    free_file_magic(rule->magics);
+
+    if ( rule->type )
+        free(rule->type);
+
+    if ( rule->version )
+        free(rule->version);
+
+#if defined(FEAT_FILE_INSPECT)
+    if ( rule->groups )
+            StringVector_Delete(rule->groups);
+#endif /* FEAT_FILE_INSPECT */
+
+    _free_file_magic(rule->magics);
     free(rule);
 }
-void free_file_rules(void *conf)
+
+void file_rule_free(void *conf)
 {
     int id;
     FileConfig *file_config = (FileConfig *)conf;
@@ -618,7 +760,7 @@ void free_file_rules(void *conf)
 
     for (id = 0; id < FILE_ID_MAX + 1; id++)
     {
-        free_file_rule (file_config->FileRules[id]);
+        _free_file_rule (file_config->FileRules[id]);
         file_config->FileRules[id] = NULL;
     }
 }

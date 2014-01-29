@@ -1,6 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -285,6 +286,25 @@ void Active_SendData (
     }
 }
 
+void Active_InjectData (
+    Packet* p, EncodeFlags flags, const uint8_t* buf, uint32_t blen)
+{
+    uint32_t plen = 0;
+    const uint8_t* seg;
+
+    if ( !s_attempts )
+        return;
+
+    flags |= GetFlags();
+    flags &= ~ENC_FLAG_VAL;
+
+    seg = Encode_Response(ENC_TCP_PUSH, flags, p, &plen, buf, blen);
+    if ( !seg )
+        return;
+
+    s_send(p->pkth, !(flags & ENC_FLAG_FWD), seg, plen);
+}
+
 //--------------------------------------------------------------------
 
 int Active_IsRSTCandidate(const Packet* p)
@@ -385,7 +405,7 @@ static inline void _Active_DoIgnoreSession(Packet *p)
 
 int Active_IgnoreSession (Packet* p)
 {
-    Active_DropPacket();
+    Active_DropPacket(p);
 
     _Active_DoIgnoreSession(p);
 
@@ -404,7 +424,7 @@ int Active_ForceDropAction(Packet *p)
     {
         case IPPROTO_TCP:
         case IPPROTO_UDP:
-            Active_DropSession();
+            Active_DropSession(p);
             _Active_ForceIgnoreSession(p);
     }
     return 0;
@@ -414,9 +434,6 @@ static inline int _Active_DoReset(Packet *p)
 {
 #ifdef ACTIVE_RESPONSE
     if ( !Active_IsEnabled() )
-        return 0;
-
-    if ( Active_PacketWouldBeDropped() )
         return 0;
 
     if ( !IPH_IS_VALID(p) )

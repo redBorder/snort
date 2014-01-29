@@ -1,6 +1,7 @@
 /*
 **
 **
+**  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 **  Copyright (C) 2012-2013 Sourcefire, Inc.
 **
 **  This program is free software; you can redistribute it and/or modify
@@ -46,14 +47,52 @@ typedef struct _fileConfig
     int64_t file_block_timeout;
     int64_t file_lookup_timeout;
     bool block_timeout_lookup;
-
+    int64_t file_capture_memcap;
+    int64_t file_capture_max_size;
+    int64_t file_capture_min_size;
+    int64_t file_capture_block_size;
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
     int64_t show_data_depth;
 #endif
+    int64_t file_depth;
 } FileConfig;
-FileConfig *get_file_config(void **file_config);
-void parse_file_rule(char *args, void **file_config);
-RuleInfo *get_rule_from_id(void *conf, uint32_t);
-void free_file_rules(void*);
+
+
+#if defined(FEAT_FILE_INSPECT)
+/* Return all rule id's that match a a given "type" string.  */
+bool get_ids_from_type( const void * conf, const char * type, uint32_t ** ids, int * count );
+
+/* Return all rule id's that match a a given "type" and "version" strings.  */
+bool get_ids_from_type_version( const void * conf, const char * type, const char * version,
+        uint32_t ** ids, int * count );
+
+/* Return all rule id's in a given file rule group. */
+bool get_ids_from_group( const void * conf, const char * group, uint32_t ** ids, int * count );
+#endif /* FEAT_FILE_INSPECT */
+
+/*
+ * Parse file magic rule
+ *
+ * Args:
+ *   char *args: file magic rule string
+ *   void *file_config: pointer to file config
+ */
+void file_rule_parse(char *args, void *file_config);
+
+/*
+ * Get rule information
+ *
+ * Args:
+ *   void *file_config: pointer to file config
+ *   uint32_t rule_id: file rule ID
+ */
+RuleInfo *file_rule_get(void *conf, uint32_t rule_id);
+
+/* Free resource used by file rules
+ *
+ * Args:
+ *   void *file_config: pointer to file config
+ */
+void file_rule_free(void* conf);
 #endif
 

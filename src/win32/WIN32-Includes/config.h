@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -125,7 +126,7 @@
  * should both match the ones specified in the
  * AM_INIT_AUTOMAKE() macro of configure.in
  */
-#define VERSION "2.9.5.6"VERSION_ENABLE_ODBC""VERSION_ENABLE_MYSQL""VERSION_ENABLE_MSSQL""VERSION_ENABLE_ORACLE""VERSION_ENABLE_RESPONSE"-WIN32"VERSION_DEBUG
+#define VERSION "2.9.6.0"VERSION_ENABLE_ODBC""VERSION_ENABLE_MYSQL""VERSION_ENABLE_MSSQL""VERSION_ENABLE_ORACLE""VERSION_ENABLE_RESPONSE"-WIN32"VERSION_DEBUG
 #define PACKAGE "snort"
 
 #define IFNAMSIZ   255
@@ -304,6 +305,14 @@ char *print_interface(const char *);
 void  PrintDeviceList(const char *);
 int   init_winsock(void);
 int   ffs(int x);
+
+inline int isblank(int c)
+{
+	if (c == ' ' || c == '\t' || c == '\v')
+		return 1;
+
+	return 0;
+}
 
 #if defined(ENABLE_WIN32_SERVICE)
 #define SERVICE_CMDLINE_PARAM            "/SERVICE"

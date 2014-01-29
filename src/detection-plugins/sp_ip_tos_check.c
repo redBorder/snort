@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -200,7 +201,7 @@ void ParseIpTos(struct _SnortConfig *sc, char *data, OptTreeNode *otn)
         start = &data[0];
     }
 
-    if(index(start, (int) 'x') == NULL && index(start, (int)'X') == NULL)
+    if(strchr(start, (int) 'x') == NULL && strchr(start, (int)'X') == NULL)
     {
         ds_ptr->ip_tos = (uint8_t)SnortStrtoulRange(start, &endTok, 10, 0, UINT8_MAX);
         if ((endTok == start) || (*endTok != '\0'))
@@ -212,10 +213,10 @@ void ParseIpTos(struct _SnortConfig *sc, char *data, OptTreeNode *otn)
     else
     {
         /* hex? */
-        start = index(data,(int)'x');
+        start = strchr(data,(int)'x');
         if(!start)
         {
-            start = index(data,(int)'X');
+            start = strchr(data,(int)'X');
         }
         if (start)
         {

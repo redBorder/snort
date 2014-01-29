@@ -20,7 +20,7 @@ The ASN.1 keywords provide programmatic detection capabilities as well as some
 more dynamic type detection.  Most of the keywords don't have arguments as the
 detection is looking for non-configurable information.  If a keyword does have
 an argument, the keyword is followed by a comma and the argument is the next
-word.  If a keyword has multiple arguments, then a comman separates each.
+word.  If a keyword has multiple arguments, then a command separates each.
 
 bitstring_overflow
 ------------------

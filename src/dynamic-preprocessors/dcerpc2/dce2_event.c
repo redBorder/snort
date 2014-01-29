@@ -1,4 +1,5 @@
 /****************************************************************************
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -358,6 +359,11 @@ void DCE2_EventsInit(void)
             DCE2_EVENT_FLAG__SMB,
             DCE2_EVENT__SMB_MULTIPLE_NEGOTIATIONS,
             "SMB - Client attempted multiple dialect negotiations on session"
+        },
+        {
+            DCE2_EVENT_FLAG__SMB,
+            DCE2_EVENT__SMB_EVASIVE_FILE_ATTRS,
+            "SMB - Client attempted to create or set a file's attributes to readonly/hidden/system"
         }
     };
 

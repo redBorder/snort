@@ -25,7 +25,7 @@ attacks within them.  When IP stacks are written for different operating
 systems, they are usually implemented by people who read the RFCs and then
 their interpretation of what the RFC outlines into code.  Unfortunately, there
 are ambiguities in the way that the RFCs define some of the edge conditions 
-that may occur and when this happens differnt people implement certain aspects
+that may occur and when this happens different people implement certain aspects
 of their IP stacks differently.  For an IDS this is a big problem.
 
 In an environment where the attacker can determine what style of IP 
@@ -123,7 +123,7 @@ Engine Configuration
                      frag3 is using to describe policy types.  It has been
                      extended to address differences between a true "first"
                      policy and how Windows and Solaris platforms handle
-                     fagmented traffic.  The known mappings are as follows.
+                     fragmented traffic.  The known mappings are as follows.
 
                      Anyone who develops more mappings and would like to add
                      to this list please feel free to send us an email!

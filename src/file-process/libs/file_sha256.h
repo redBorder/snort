@@ -1,4 +1,5 @@
 /*
+ ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2012-2013 Sourcefire, Inc.
  **
  **
@@ -27,7 +28,7 @@
 #include <sys/types.h>
 #include "sf_types.h"
 
-#define SHA256_HASH_SIZE  64
+#define SHA256_HASH_SIZE  32
 
 #ifdef HAVE_OPENSSL_SHA
 #include <openssl/sha.h>

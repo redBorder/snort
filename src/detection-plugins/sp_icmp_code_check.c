@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -222,7 +223,7 @@ void ParseIcmpCode(struct _SnortConfig *sc, char *data, OptTreeNode *otn)
      * icmp_code2
      */
 
-    if (isdigit((int)*data) && strstr(data, "<>"))
+    if ((isdigit((int)*data) || (*data == '-') || (*data == '+')) && strstr(data, "<>"))
     {
         ds_ptr->icmp_code = strtol(data, &endptr, 10);
         while (isspace((int)*endptr))
@@ -248,6 +249,18 @@ void ParseIcmpCode(struct _SnortConfig *sc, char *data, OptTreeNode *otn)
                        file_name, file_line, code);
         }
 
+        if( (ds_ptr->icmp_code < -1) || (ds_ptr->icmp_code > 254) )
+             FatalError("%s (%d): Invalid ICMP icode lower limit in rule: %d\n",
+                       file_name, file_line, ds_ptr->icmp_code);
+
+        if( (ds_ptr->icmp_code2 <= 0) || (ds_ptr->icmp_code2 > 256) )
+             FatalError("%s (%d): Invalid ICMP icode upper limit in rule: %d\n",
+                       file_name, file_line, ds_ptr->icmp_code2);
+
+        if( (ds_ptr->icmp_code2 - ds_ptr->icmp_code) <= 1 )
+             FatalError("%s (%d): Invalid ICMP icode (upper-lower) <= 1 in rule: %s\n",
+                       file_name, file_line, code);
+
         ds_ptr->operator = ICMP_CODE_TEST_RG;
     }
     /* otherwise if its greater than... */
@@ -263,6 +276,10 @@ void ParseIcmpCode(struct _SnortConfig *sc, char *data, OptTreeNode *otn)
             FatalError("%s (%d): Invalid ICMP icode in rule: %s\n",
                        file_name, file_line, code);
         }
+
+        if( (ds_ptr->icmp_code < 0) || (ds_ptr->icmp_code > 254) )
+             FatalError("%s (%d): Invalid ICMP icode lower limit in rule: %d\n",
+                       file_name, file_line, ds_ptr->icmp_code);
 
         ds_ptr->operator = ICMP_CODE_TEST_GT;
     }
@@ -280,6 +297,10 @@ void ParseIcmpCode(struct _SnortConfig *sc, char *data, OptTreeNode *otn)
                        file_name, file_line, code);
         }
 
+        if( (ds_ptr->icmp_code <= 0) || (ds_ptr->icmp_code > 256) )
+             FatalError("%s (%d): Invalid ICMP icode upper limit in rule: %d\n",
+                       file_name, file_line, ds_ptr->icmp_code);
+
         ds_ptr->operator = ICMP_CODE_TEST_LT;
     }
     /* otherwise check if its a digit */
@@ -291,6 +312,10 @@ void ParseIcmpCode(struct _SnortConfig *sc, char *data, OptTreeNode *otn)
             FatalError("%s (%d): Invalid ICMP icode in rule: %s\n",
                        file_name, file_line, code);
         }
+
+        if( (ds_ptr->icmp_code < 0) || (ds_ptr->icmp_code > 255) )
+             FatalError("%s (%d): Invalid ICMP icode upper limit in rule: %d\n",
+                       file_name, file_line, ds_ptr->icmp_code);
 
         ds_ptr->operator = ICMP_CODE_TEST_EQ;
     }

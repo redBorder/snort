@@ -1,6 +1,7 @@
 /*
  * ftpp_ui_server_lookup.c
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  * Steven A. Sturges <ssturges@sourcefire.com>
  * Kevin Liu <kliu@sourcefire.com>

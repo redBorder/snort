@@ -1,4 +1,5 @@
 /****************************************************************************
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -37,6 +38,7 @@ typedef enum _DCE2_MemType
     DCE2_MEM_TYPE__SMB_UID,  /* SMB uid tracking */
     DCE2_MEM_TYPE__SMB_TID,  /* SMB tid tracking */
     DCE2_MEM_TYPE__SMB_FID,  /* SMB fid tracking */
+    DCE2_MEM_TYPE__SMB_FILE, /* SMB file tracking */
     DCE2_MEM_TYPE__SMB_REQ,  /* SMB request/response tracking */
     DCE2_MEM_TYPE__TCP_SSN,  /* TCP session data */
     DCE2_MEM_TYPE__CO_SEG,   /* TCP segmentation buffer */
@@ -86,6 +88,8 @@ typedef struct _DCE2_Memory
     uint32_t smb_tid_max;   /* max amount allocated for tid tracking */
     uint32_t smb_fid;       /* amount allocated for fid tracking */
     uint32_t smb_fid_max;   /* max amount allocated for fid tracking */
+    uint32_t smb_file;      /* amount allocated for file tracking */
+    uint32_t smb_file_max;  /* max amount allocated for file tracking */
     uint32_t smb_req;       /* amount allocated for request tracking */
     uint32_t smb_req_max;   /* max amount allocated for request tracking */
 

@@ -14,6 +14,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * Author: Ryan Jordan
@@ -496,17 +497,6 @@ static void ProcessDNP3(void *ipacketp, void *contextp)
 
         if (tmp_bucket == NULL)
         {
-            /* Mempool was full, don't process this session. */
-            static unsigned int times_mempool_alloc_failed = 0;
-
-            /* Print a message, but only every 1000 times.
-               Don't want to flood the log if there's a lot of DNP3 traffic. */
-            if (times_mempool_alloc_failed % 1000)
-            {
-                _dpd.logMsg("WARNING: DNP3 memcap exceeded.\n");
-            }
-            times_mempool_alloc_failed++;
-
             PREPROC_PROFILE_END(dnp3PerfStats);
             return;
         }
@@ -579,7 +569,20 @@ static MemBucket * DNP3CreateSessionData(SFSnortPacket *packet)
 
     tmp_bucket = mempool_alloc(dnp3_mempool);
     if (!tmp_bucket)
+    {
+        /* Mempool was full, don't process this session. */
+        static unsigned int times_mempool_alloc_failed = 0;
+
+        /* Print a message, but only every 1000 times.
+                      Don't want to flood the log if there's a lot of DNP3 traffic. */
+        if (times_mempool_alloc_failed % 1000 == 0)
+        {
+            _dpd.logMsg("WARNING: DNP3 memcap exceeded.\n");
+        }
+        times_mempool_alloc_failed++;
+
         return NULL;
+    }
 
     data = (dnp3_session_data_t *)tmp_bucket->data;
 

@@ -1,5 +1,6 @@
 /****************************************************************************
 *
+*  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 *  Copyright (C) 2005-2013 Sourcefire, Inc.
 *
 *  This program is free software; you can redistribute it and/or modify
@@ -305,7 +306,11 @@ static inline int BlockedSession (Packet* p, Stream5LWSession* lws)
         DisableDetect(p);
         /* Still want to add this number of bytes to totals */
         SetPreprocBit(p, PP_PERFMONITOR);
-        Active_DropPacket();
+
+        if ( lws->ha_state.session_flags & SSNFLAG_FORCE_BLOCK )
+            Active_ForceDropPacket();
+        else
+            Active_DropPacket(p);
 
 #ifdef ACTIVE_RESPONSE
         Stream5ActiveResponse(p, lws);
@@ -318,8 +323,8 @@ static inline int BlockedSession (Packet* p, Stream5LWSession* lws)
 static inline int IgnoreSession (Packet* p, Stream5LWSession* lws)
 {
     if (
-        ((p->packet_flags & PKT_FROM_SERVER) && (lws->ha_state.ignore_direction & SSN_DIR_CLIENT)) ||
-        ((p->packet_flags & PKT_FROM_CLIENT) && (lws->ha_state.ignore_direction & SSN_DIR_SERVER)) )
+        ((p->packet_flags & PKT_FROM_SERVER) && (lws->ha_state.ignore_direction & SSN_DIR_FROM_CLIENT)) ||
+        ((p->packet_flags & PKT_FROM_CLIENT) && (lws->ha_state.ignore_direction & SSN_DIR_FROM_SERVER)) )
     {
         DEBUG_WRAP(DebugMessage(DEBUG_STREAM_STATE,
             "Stream5 Ignoring packet from %d. Session marked as ignore\n",

@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2009-2013 Sourcefire, Inc.
 **
 **
@@ -54,9 +55,12 @@ typedef struct _sdf_tree_node
 
 typedef struct _SDFSessionData
 {
+    sdf_tree_node *part_match_node;
+    uint16_t part_match_index;
     uint32_t num_patterns, global_counter;
     uint8_t *counters;
     int8_t *rtns_matched;
+    uint32_t config_num;
 } SDFSessionData;
 
 typedef struct _SDFContext
@@ -76,6 +80,7 @@ typedef struct _SDFConfig
     unsigned char src_ports[MAX_PORTS/8];
     unsigned char dst_ports[MAX_PORTS/8];
     unsigned char protocol_ordinals[MAX_PROTOCOL_ORDINAL];
+    uint32_t config_num;
 } SDFConfig;
 
 /* Definitions of config options */

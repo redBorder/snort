@@ -1,6 +1,7 @@
 /*
  * ftpp_si.c
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  * Steven A. Sturges <ssturges@sourcefire.com>
  * Daniel J. Roelker <droelker@sourcefire.com>
@@ -765,80 +766,6 @@ bool FTPDataDirection(SFSnortPacket *p, FTP_DATA_SESSION *ftpdata)
     return (pktdir == direction);
 }
 
-/* Function: SetFTPDataEOFDirection
- *
- * Set EOF in the direction of Packet "p".
- */
-void SetFTPDataEOFDirection(SFSnortPacket *p, FTP_DATA_SESSION *ftpdata)
-{
-    uint32_t direction = _dpd.streamAPI->get_packet_direction(p);
-
-    /* Active transfers are backwards */
-    if (ftpdata->mode == FTPP_XFER_ACTIVE)
-    {
-        if (direction == FLAG_FROM_SERVER)
-        {
-            ftpdata->flags |= FTPDATA_FLG_CLIENT_EOF;
-        }
-        else
-        {
-            ftpdata->flags |= FTPDATA_FLG_SERVER_EOF;
-        }
-    }
-    else
-    {
-        if (direction == FLAG_FROM_SERVER)
-        {
-            ftpdata->flags |= FTPDATA_FLG_SERVER_EOF;
-        }
-        else
-        {
-            ftpdata->flags |= FTPDATA_FLG_CLIENT_EOF;
-        }
-    }
-}
-
-/* Function: FTPDataEOFDirection
- *
- * Return true if we've seen EOF in the direction of Packet "p".
- * Return false otherwise
- */
-bool FTPDataEOFDirection(SFSnortPacket *p, FTP_DATA_SESSION *ftpdata)
-{
-    uint32_t direction = _dpd.streamAPI->get_packet_direction(p);
-    uint32_t eof = 0;
-
-    /* Then return which directions are set */
-    if (ftpdata->mode == FTPP_XFER_ACTIVE)
-    {
-        if (ftpdata->flags & FTPDATA_FLG_CLIENT_EOF)
-            eof |= FLAG_FROM_SERVER;
-
-        if (ftpdata->flags & FTPDATA_FLG_SERVER_EOF)
-            eof |= FLAG_FROM_CLIENT;
-    }
-    else
-    {
-        if (ftpdata->flags & FTPDATA_FLG_CLIENT_EOF)
-            eof |= FLAG_FROM_CLIENT;
-
-        if (ftpdata->flags & FTPDATA_FLG_SERVER_EOF)
-            eof |= FLAG_FROM_SERVER;
-    }
-
-    return ( (direction & eof) != 0 );
-}
-
-/* Function: FTPDataEOF
- *
- * Return true if we've seen EOF from both sides of the connection.
- * Return false otherwise.
- */
-bool FTPDataEOF(FTP_DATA_SESSION *ftpdata)
-{
-    unsigned char mask = FTPDATA_FLG_SERVER_EOF|FTPDATA_FLG_CLIENT_EOF;
-    return ((ftpdata->flags & mask) == mask);
-}
 #endif /* TARGET_BASED */
 
 /*

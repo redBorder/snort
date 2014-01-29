@@ -109,9 +109,9 @@ This keyword is the reverse of isset.  It returns true if isset is false, it ret
 false if isset is true. Isnotset works on the final result, not on individual bits.
 
 Syntax:  
-   flowbits:isnoset, bits => Check whether not any bit is set
-   flowbits:isnoset, bats => Check whether not all bits are set
-   flowbits:isnoset, any, group => Check whether not bit in the group is set.
+   flowbits:isnotset, bits => Check whether not any bit is set
+   flowbits:isnotset, bats => Check whether not all bits are set
+   flowbits:isnotset, any, group => Check whether not bit in the group is set.
    flowbits:isnotset, all, group => Check whether not all bits in the group are set. 
    
 Usage

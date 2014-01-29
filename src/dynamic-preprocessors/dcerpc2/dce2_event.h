@@ -1,4 +1,5 @@
 /****************************************************************************
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -108,6 +109,7 @@ typedef enum _DCE2_Event
     DCE2_EVENT__SMB_UNUSUAL_COMMAND_USED,
     DCE2_EVENT__SMB_INVALID_SETUP_COUNT,
     DCE2_EVENT__SMB_MULTIPLE_NEGOTIATIONS,
+    DCE2_EVENT__SMB_EVASIVE_FILE_ATTRS,
     DCE2_EVENT__MAX
 
 } DCE2_Event;

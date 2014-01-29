@@ -47,8 +47,7 @@ BUILT_SOURCES = \
 	include/event.h \
 	include/sfcontrol.h \
 	include/idle_processing.h \
-	include/file_api.h \
-	include/file_lib.h
+	include/file_api.h
 
 sed_ipv6_headers = \
 	sed -e "s/->iph->ip_src/->ip4_header->source/" \
@@ -316,8 +315,6 @@ include/plugin_enum.h: $(srcdir)/../plugin_enum.h
 include/file_api.h: $(top_srcdir)/src/file-process/file_api.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
-include/file_lib.h: $(top_srcdir)/src/file-process/libs/file_lib.h
-	@src_header=$?; dst_header=$@; $(copy_headers)
 INCLUDES = @INCLUDES@
 
 if BUILD_DYNAMIC_EXAMPLES

@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -32,9 +33,9 @@
 
 extern Rule *rules[];
 
-DETECTION_LINKAGE int InitializeDetection(void)
+DETECTION_LINKAGE int InitializeDetection(struct _SnortConfig *sc)
 {
-    return RegisterRules(rules);
+    return RegisterRules(sc, rules);
 }
 
 DETECTION_LINKAGE int DumpSkeletonRules(void)

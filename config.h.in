@@ -19,6 +19,9 @@
 /* Define if errlist is predefined */
 #undef ERRLIST_PREDEFINED
 
+/* Build with extended file inspection features. (Experimental) */
+#undef FEAT_FILE_INSPECT
+
 /* Define if FreeBSD */
 #undef FREEBSD
 
@@ -99,6 +102,12 @@
 
 /* Define whether linuxthreads is being used */
 #undef HAVE_LINUXTHREADS
+
+/* Define to 1 if you have the `mallinfo' function. */
+#undef HAVE_MALLINFO
+
+/* Define to 1 if you have the `malloc_trim' function. */
+#undef HAVE_MALLOC_TRIM
 
 /* Define to 1 if you have the <math.h> header file. */
 #undef HAVE_MATH_H

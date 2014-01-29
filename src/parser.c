@@ -1,5 +1,6 @@
 /* $Id$ */
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 ** Copyright (C) 2000,2001 Andrew R. Baker <andrewb@uab.edu>
@@ -194,6 +195,7 @@
 #define TAG_OPT__SECONDS   "seconds"
 #define TAG_OPT__SESSION   "session"
 #define TAG_OPT__SRC       "src"
+#define TAG_OPT__EXCLUSIVE "exclusive"
 
 /* Dynamic library specifier option values */
 #define DYNAMIC_LIB_OPT__FILE       "file"
@@ -4258,7 +4260,7 @@ static char * ExpandVars(SnortConfig *sc, char *string)
     if(!string || !*string || !strchr(string, '$'))
         return(string);
 
-    bzero((char *) estring, PARSERULE_SIZE);
+    memset((char *) estring, 0, PARSERULE_SIZE);
 
     i = j = 0;
     l_string = strlen(string);
@@ -4277,7 +4279,7 @@ static char * ExpandVars(SnortConfig *sc, char *string)
 
         if(c == '$' && !quote_toggle)
         {
-            bzero((char *) rawvarname, sizeof(rawvarname));
+            memset((char *) rawvarname, 0, sizeof(rawvarname));
             varname_completed = 0;
             name_only = 1;
             iv = i;
@@ -4317,8 +4319,8 @@ static char * ExpandVars(SnortConfig *sc, char *string)
 
                 varcontents = NULL;
 
-                bzero((char *) varname, sizeof(varname));
-                bzero((char *) varaux, sizeof(varaux));
+                memset((char *) varname, 0, sizeof(varname));
+                memset((char *) varaux, 0, sizeof(varaux));
                 varmodifier = ' ';
 
                 p = strchr(rawvarname, ':');
@@ -4335,7 +4337,7 @@ static char * ExpandVars(SnortConfig *sc, char *string)
                 else
                     SnortStrncpy(varname, rawvarname, sizeof(varname));
 
-                bzero((char *) varbuffer, sizeof(varbuffer));
+                memset((char *) varbuffer, 0, sizeof(varbuffer));
 
                 varcontents = VarSearch(sc, varname);
 
@@ -6494,8 +6496,7 @@ void ConfigClassification(SnortConfig *sc, char *args)
             if (getParserPolicy(sc) == getDefaultPolicy())
             {
                 ParseWarning("Duplicate classification \"%s\""
-                        "found, ignoring this line\n", file_name, file_line,
-                        new_node->type);
+                        "found, ignoring this line\n", new_node->type);
             }
 
             break;
@@ -9086,7 +9087,11 @@ void ConfigFile(SnortConfig *sc, char *args)
     if (sc == NULL)
         return;
     if ( args != NULL )
-        file_service_config(args, &(sc->file_config));
+    {
+        if (!sc->file_config)
+            sc->file_config = file_service_config_create();
+        file_service_config(args, sc->file_config);
+    }
 }
 
 void ConfigTunnelVerdicts ( SnortConfig *sc, char *args )
@@ -9657,8 +9662,11 @@ static void ParseVar(SnortConfig *sc, SnortPolicy *p, char *args)
 
 static void ParseFile(SnortConfig *sc, SnortPolicy *p, char *args)
 {
-    parse_file_rule(args, &(sc->file_config));
+    if (!sc->file_config)
+        sc->file_config = file_service_config_create();
+    file_rule_parse(args, sc->file_config);
 }
+
 static void AddVarToTable(SnortConfig *sc, char *name, char *value)
 {
     //TODO: snort.cfg and rules should use PortVar instead ...this allows compatability for now.
@@ -10521,10 +10529,9 @@ static void ParseOtnMetadata(SnortConfig *sc, RuleTreeNode *rtn,
             if (value == NULL)
                 ParseError("Metadata key '%s' requires a value.", key);
 
-            /* value is a '|' separated pair of gid|sid representing
-             * the GID/SID of the original rule.  This is used when
-             * the rule is duplicated rule by a user with different
-             * IP/port info.
+            /* value is a '|' separated pair of gid|sid representing the
+             * GID/SID of the original rule.  This is used when the rule
+             * is duplicated rule by a user with different IP/port info.
              */
             toks = mSplit(value, "|", 2, &num_toks, 0);
             if (num_toks != 2)
@@ -10562,28 +10569,44 @@ static void ParseOtnMetadata(SnortConfig *sc, RuleTreeNode *rtn,
             }
             else
             {
-                char *svc_name;
-                int svc_count = otn->sigInfo.num_services;
+                unsigned int i, svc_count = otn->sigInfo.num_services;
+                int16_t ordinal;
+                bool found = false;
 
                 if (otn->sigInfo.services == NULL)
                 {
                     otn->sigInfo.services = SnortAlloc(sizeof(ServiceInfo) * sc->max_metadata_services);
                 }
 
-                svc_name = otn->sigInfo.services[svc_count].service = SnortStrdup(value);
-                otn->sigInfo.services[svc_count].service_ordinal = FindProtocolReference(svc_name);
-                if (otn->sigInfo.services[svc_count].service_ordinal == SFTARGET_UNKNOWN_PROTOCOL)
+                ordinal = FindProtocolReference(value);
+                if (ordinal == SFTARGET_UNKNOWN_PROTOCOL)
                 {
-                    otn->sigInfo.services[svc_count].service_ordinal = AddProtocolReference(svc_name);
+                    ordinal = AddProtocolReference(value);
                 }
 
-                otn->sigInfo.num_services++;
+                for (i=0;i<svc_count;i++)
+                {
+                    if (otn->sigInfo.services[i].service_ordinal == ordinal)
+                    {
+                        found = true;
+                        ParseWarning("Duplicate service metadata \"%s\" found.\n", value);
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    otn->sigInfo.services[svc_count].service = SnortStrdup(value);
+                    otn->sigInfo.services[svc_count].service_ordinal = ordinal;
+                    otn->sigInfo.num_services++;
+                }
             }
         }
         /* track all of the rules for each os */
+#if 0
         else if (strcasecmp(key, METADATA_KEY__OS) == 0 )
         {
-            // metadata: os = Linux:w
+            // metadata: os = Linux
             //
             if (value == NULL)
                 ParseError("Metadata key '%s' requires a value.", key);
@@ -10591,9 +10614,11 @@ static void ParseOtnMetadata(SnortConfig *sc, RuleTreeNode *rtn,
             otn->sigInfo.os = SnortStrdup(value);
         }
 #endif
+#endif
         else
         {
-            /* XXX Why not fatal error? */
+            /* ignore metadata that a user might include that Snort doesn't
+             * use directly. */
             //ParseMessage("Ignoring Metadata : %s = %s", key, value);
         }
 
@@ -10710,7 +10735,7 @@ static void ParseOtnTag(SnortConfig *sc, RuleTreeNode *rtn,
     DEBUG_WRAP(DebugMessage(DEBUG_RULES, "Parsing tag args: %s\n", args););
     toks = mSplit(args, " ,", 0, &num_toks, 0);
 
-    if (num_toks < 3)
+    if (num_toks < 1)
         ParseError("Invalid tag arguments: %s", args);
 
     if (strcasecmp(toks[0], TAG_OPT__SESSION) == 0)
@@ -10742,7 +10767,7 @@ static void ParseOtnTag(SnortConfig *sc, RuleTreeNode *rtn,
             }
             else
             {
-                /* Check for src/dst */
+                /* Check for src/dst/exclusive */
                 break;
             }
         }
@@ -10754,6 +10779,7 @@ static void ParseOtnTag(SnortConfig *sc, RuleTreeNode *rtn,
                     ParseError("Can only configure seconds metric to tag rule option once");
                 if (!count)
                     ParseError("Tag seconds metric must have a positive count");
+
                 metric |= TAG_METRIC_SECONDS;
                 seconds = count;
             }
@@ -10765,6 +10791,7 @@ static void ParseOtnTag(SnortConfig *sc, RuleTreeNode *rtn,
                     metric |= TAG_METRIC_PACKETS;
                 else
                     metric |= TAG_METRIC_UNLIMITED;
+
                 packets = count;
             }
             else if (strcasecmp(toks[i], TAG_OPT__BYTES) == 0)
@@ -10773,6 +10800,7 @@ static void ParseOtnTag(SnortConfig *sc, RuleTreeNode *rtn,
                     ParseError("Can only configure bytes metric to tag rule option once");
                 if (!count)
                     ParseError("Tag bytes metric must have a positive count");
+
                 metric |= TAG_METRIC_BYTES;
                 bytes = count;
             }
@@ -10780,12 +10808,11 @@ static void ParseOtnTag(SnortConfig *sc, RuleTreeNode *rtn,
             {
                 ParseError("Invalid tag metric: %s", toks[i]);
             }
-
             got_count = 0;
         }
     }
 
-    if (!metric || got_count)
+    if ( got_count )
         ParseError("Invalid tag rule option: %s", args);
 
     if ((metric & TAG_METRIC_UNLIMITED) &&
@@ -10797,16 +10824,22 @@ static void ParseOtnTag(SnortConfig *sc, RuleTreeNode *rtn,
 
     if (i < num_toks)
     {
-        if (type != TAG_HOST)
-            ParseError("Only tag host type can configure direction");
-
-        if (strcasecmp(toks[i], TAG_OPT__SRC) == 0)
-            direction = TAG_HOST_SRC;
-        else if (strcasecmp(toks[i], TAG_OPT__DST) == 0)
-            direction = TAG_HOST_DST;
+        if (type == TAG_HOST)
+        {
+            if (strcasecmp(toks[i], TAG_OPT__SRC) == 0)
+                direction = TAG_HOST_SRC;
+            else if (strcasecmp(toks[i], TAG_OPT__DST) == 0)
+                direction = TAG_HOST_DST;
+            else
+                ParseError("Invalid 'tag:host' option: %s.", toks[i]);
+        }
         else
-            ParseError("Invalid 'tag' option: %s.", toks[i]);
-
+        {
+            if (strcasecmp(toks[i], TAG_OPT__EXCLUSIVE) == 0)
+                metric |= TAG_METRIC_SESSION;
+            else
+                ParseError("Invalid 'tag:session' option: %s.", toks[i]);
+        }
         i++;
     }
     else if (type == TAG_HOST)
@@ -10814,8 +10847,7 @@ static void ParseOtnTag(SnortConfig *sc, RuleTreeNode *rtn,
         ParseError("Tag host type must specify direction");
     }
 
-    /* Shouldn't be any more tokens */
-    if (i != num_toks)
+    if ( !metric || (i != num_toks) )
         ParseError("Invalid 'tag' option: %s.", args);
 
     mSplitFree(&toks, num_toks);

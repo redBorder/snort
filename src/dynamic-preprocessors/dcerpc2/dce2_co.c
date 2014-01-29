@@ -1,4 +1,5 @@
 /****************************************************************************
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -49,7 +50,7 @@
 /********************************************************************
  * Macros
  ********************************************************************/
-#define DCE2_FRAG__MIN_ALLOC_SIZE  50
+#define DCE2_CO__MIN_ALLOC_SIZE     50
 #define DCE2_MAX_XMIT_SIZE_FUZZ    500
 
 /********************************************************************
@@ -430,17 +431,12 @@ static inline DCE2_Ret DCE2_CoHandleSegmentation(DCE2_CoSeg *seg,
 
     if (seg->buf == NULL)
     {
-        /* No initial size or min alloc size */
-        seg->buf = DCE2_BufferNew(need_len, need_len, DCE2_MEM_TYPE__CO_SEG);
+        seg->buf = DCE2_BufferNew(need_len, DCE2_CO__MIN_ALLOC_SIZE, DCE2_MEM_TYPE__CO_SEG);
         if (seg->buf == NULL)
         {
             PREPROC_PROFILE_END(dce2_pstat_co_seg);
             return DCE2_RET__ERROR;
         }
-    }
-    else if (DCE2_BufferMinAllocSize(seg->buf) != need_len)
-    {
-        DCE2_BufferSetMinAllocSize(seg->buf, need_len);
     }
 
     status = DCE2_HandleSegmentation(seg->buf,
@@ -1695,7 +1691,7 @@ static void DCE2_CoHandleFrag(DCE2_SsnData *sd, DCE2_CoTracker *cot,
                               const DceRpcCoHdr *co_hdr, const uint8_t *frag_ptr, uint16_t frag_len)
 {
     DCE2_Buffer *frag_buf = DCE2_CoGetFragBuf(sd, &cot->frag_tracker);
-    uint32_t size = (frag_len < DCE2_FRAG__MIN_ALLOC_SIZE) ? DCE2_FRAG__MIN_ALLOC_SIZE : frag_len;
+    uint32_t size = (frag_len < DCE2_CO__MIN_ALLOC_SIZE) ? DCE2_CO__MIN_ALLOC_SIZE : frag_len;
     uint16_t max_frag_data;
     DCE2_BufferMinAddFlag mflag = DCE2_BUFFER_MIN_ADD_FLAG__USE;
     DCE2_Ret status;
@@ -1725,13 +1721,13 @@ static void DCE2_CoHandleFrag(DCE2_SsnData *sd, DCE2_CoTracker *cot,
         if (DCE2_SsnFromServer(sd->wire_pkt))
         {
             cot->frag_tracker.srv_stub_buf =
-                DCE2_BufferNew(size, DCE2_FRAG__MIN_ALLOC_SIZE, DCE2_MEM_TYPE__CO_FRAG);
+                DCE2_BufferNew(size, DCE2_CO__MIN_ALLOC_SIZE, DCE2_MEM_TYPE__CO_FRAG);
             frag_buf = cot->frag_tracker.srv_stub_buf;
         }
         else
         {
             cot->frag_tracker.cli_stub_buf =
-                DCE2_BufferNew(size, DCE2_FRAG__MIN_ALLOC_SIZE, DCE2_MEM_TYPE__CO_FRAG);
+                DCE2_BufferNew(size, DCE2_CO__MIN_ALLOC_SIZE, DCE2_MEM_TYPE__CO_FRAG);
             frag_buf = cot->frag_tracker.cli_stub_buf;
         }
 

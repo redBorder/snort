@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -207,30 +208,34 @@ int hi_server_norm(HI_SESSION *Session, HttpSessionData *hsd)
 
                     if (!memcmp(ServerResp->body, "\x00\x00\xFE\xFF", 4))
                     {
-                        set_decode_utf_state_charset(&(hsd->utf_state), CHARSET_UTF32BE);
+                        charset = CHARSET_UTF32BE;
                         size = 4;
                     }
                     else if (!memcmp(ServerResp->body, "\xFF\xFE\x00\x00", 4))
                     {
-                        set_decode_utf_state_charset(&(hsd->utf_state), CHARSET_UTF32LE);
+                        charset = CHARSET_UTF32LE;
                         size = 4;
                     }
                     else if (!memcmp(ServerResp->body, "\xFE\xFF", 2))
                     {
-                        set_decode_utf_state_charset(&(hsd->utf_state), CHARSET_UTF16BE);
+                        charset = CHARSET_UTF16BE;
                         size = 2;
                     }
                     else if (!memcmp(ServerResp->body, "\xFF\xFE", 2))
                     {
-                        set_decode_utf_state_charset(&(hsd->utf_state), CHARSET_UTF16LE);
+                        charset = CHARSET_UTF16LE;
                         size = 2;
                     }
+                    else
+                        charset = CHARSET_DEFAULT; // ensure we don't try again
 
                     ServerResp->body += size;
                     ServerResp->body_size -= size;
-
-                    charset = get_decode_utf_state_charset(&(hsd->utf_state));
                 }
+                else
+                    charset = CHARSET_DEFAULT; // ensure we don't try again
+
+                set_decode_utf_state_charset(&(hsd->utf_state), charset);
             }
 
             /* Normalize server responses with utf-16le, utf-16be, utf-32le,

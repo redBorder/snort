@@ -1,6 +1,7 @@
 /* $Id$ */
 
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 ** AUTHOR: Steven Sturges
 **
@@ -498,8 +499,8 @@ int StreamExpectIsExpected(Packet *p, SFXHASH_NODE **expected_hash_node)
         {
             case SSN_DIR_BOTH:
                 break;
-            case SSN_DIR_CLIENT:
-            case SSN_DIR_SERVER:
+            case SSN_DIR_FROM_CLIENT:
+            case SSN_DIR_FROM_SERVER:
                 if (node->reversed_key != reversed_key)
                 {
                     DEBUG_WRAP(DebugMessage(DEBUG_STREAM, "Expected is the wrong direction\n"););

@@ -1,5 +1,6 @@
 /* $Id$ */
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -1288,7 +1289,7 @@ void ValidateFastPattern(OptTreeNode *otn)
         if (fp_only == 1)
         {
             if (fpl->isRelative)
-                ParseError("relative rule option used after "
+                ParseWarning("relative rule option used after "
                     "fast_pattern:only");
         }
 
@@ -1336,21 +1337,21 @@ static char *PayloadExtractParameter(char *data, int *result_len)
     char *quote_one = NULL, *quote_two = NULL;
     char *comma = NULL;
 
-    quote_one = index(data, '"');
+    quote_one = strchr(data, '"');
     if (quote_one)
     {
-        quote_two = index(quote_one+1, '"');
+        quote_two = strchr(quote_one+1, '"');
         while ( quote_two && quote_two[-1] == '\\' )
-            quote_two = index(quote_two+1, '"');
+            quote_two = strchr(quote_two+1, '"');
     }
 
     if (quote_one && quote_two)
     {
-        comma = index(quote_two, ',');
+        comma = strchr(quote_two, ',');
     }
     else if (!quote_one)
     {
-        comma = index(data, ',');
+        comma = strchr(data, ',');
     }
 
     if (comma)
@@ -1483,7 +1484,7 @@ void ParsePattern(char *rule, OptTreeNode * otn, int type)
     PatternMatchData *ds_idx;
 
     /* clear out the temp buffer */
-    bzero(tmp_buf, MAX_PATTERN_SIZE);
+    memset(tmp_buf, 0, MAX_PATTERN_SIZE);
 
     if (rule == NULL)
         ParseError("ParsePattern Got Null enclosed in quotation marks (\")!");
@@ -1498,7 +1499,7 @@ void ParsePattern(char *rule, OptTreeNode * otn, int type)
     }
 
     /* find the start of the data */
-    start_ptr = index(rule, '"');
+    start_ptr = strchr(rule, '"');
 
     if (start_ptr != rule)
         ParseError("Content data needs to be enclosed in quotation marks (\")!");
@@ -1542,8 +1543,8 @@ void ParsePattern(char *rule, OptTreeNode * otn, int type)
     dummy_end = (dummy_idx + size);
 
     /* why is this buffer so small? */
-    bzero(hex_buf, 3);
     memset(hex_buf, '0', 2);
+    hex_buf[2] = '\0';
 
     /* BEGIN BAD JUJU..... */
     while(idx < end_ptr)
@@ -1652,8 +1653,8 @@ void ParsePattern(char *rule, OptTreeNode * otn, int type)
                                     strtol(hex_buf, (char **) NULL, 16)&0xFF;
 
                                 dummy_size++;
-                                bzero(hex_buf, 3);
                                 memset(hex_buf, '0', 2);
+                                hex_buf[2] = '\0';
                             }
                             else
                             {
@@ -2471,7 +2472,7 @@ static void PayloadSearchListInit(char *data, OptTreeNode * otn, int protocol)
         data++;
 
     /* grab everything between the starting " and the end one */
-    sptr = index(data, '"');
+    sptr = strchr(data, '"');
     eptr = strrchr(data, '"');
 
     if(sptr != NULL && eptr != NULL)
@@ -2530,8 +2531,8 @@ static void ParseContentListFile(char *file, OptTreeNode * otn, int protocol)
     }
 
     /* clear the line and rule buffers */
-    bzero((char *) buf, STD_BUF);
-    bzero((char *) rule_buf, STD_BUF);
+    memset((char *) buf, 0, STD_BUF);
+    memset((char *) rule_buf, 0, STD_BUF);
     frazes_count = 0;
 
     /* loop thru each list_file line and content to the rule */

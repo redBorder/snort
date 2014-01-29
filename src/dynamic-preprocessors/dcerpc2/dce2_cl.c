@@ -1,4 +1,5 @@
 /****************************************************************************
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -261,7 +262,7 @@ void DCE2_ClProcess(DCE2_SsnData *sd, DCE2_ClTracker *clt)
 
             case DCERPC_PDU_TYPE__RESPONSE:
                 DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__CL, "Response from client.  Changing stream direction."));
-                _dpd.streamAPI->update_direction(sd->wire_pkt->stream_session_ptr, SSN_DIR_RESPONDER,
+                _dpd.streamAPI->update_direction(sd->wire_pkt->stream_session_ptr, SSN_DIR_FROM_RESPONDER,
                                                  GET_SRC_IP(((SFSnortPacket *)sd->wire_pkt)),
                                                  sd->wire_pkt->src_port);
                 break;

@@ -1,4 +1,5 @@
 /*
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 1998-2013 Sourcefire, Inc.
  * 
  * This program is free software; you can redistribute it and/or modify
@@ -382,7 +383,7 @@ static uint32_t SSL_decode_v2(const uint8_t *pkt, int size, uint32_t pkt_flags)
     return retval | SSL_VER_SSLV2_FLAG;
 }
 
-uint32_t SSL_decode(const uint8_t *pkt, int size, uint32_t pkt_flags)
+uint32_t SSL_decode(const uint8_t *pkt, int size, uint32_t pkt_flags, uint32_t prev_flags)
 {
     SSL_record_t *record;
     uint16_t reclen;
@@ -394,61 +395,65 @@ uint32_t SSL_decode(const uint8_t *pkt, int size, uint32_t pkt_flags)
     if (size < (int)SSL_REC_PAYLOAD_OFFSET)
         return SSL_TRUNCATED_FLAG | SSL_UNKNOWN_FLAG;
 
-    /* Determine the protocol type. */
-
-    /* Only SSL v2 will have these bits set */
-    if(pkt[0] & 0x80 || pkt[0] & 0x40)
-        return SSL_decode_v2(pkt, size, pkt_flags);
-
-    /* If this packet is only 5 bytes, it inconclusive whether its SSLv2 or TLS. 
-     * If it is v2, it's definitely truncated anyway.  By decoding a 5 byte 
-     * SSLv2 as TLS,the decoder will either catch a bad type, bad version, or 
-     * indicate that it is truncated. */
-    if(size == 5)
-        return SSL_decode_v3(pkt, size, pkt_flags);
-
-    /* At this point, 'size' has to be > 5 */
-
-    /* If the field below contains a 2, it's either an SSLv2 client hello or 
-     * it is TLS and is containing a server hello. */
-    if(pkt[4] == 2)
+    if(!( prev_flags & SSL_HS_SDONE_FLAG ))
     {
-        /* This could be a TLS server hello.  Check for a TLS version string */
-        if(size >= 10)
+
+        /* Determine the protocol type. */
+
+        /* Only SSL v2 will have these bits set */
+        if(pkt[0] & 0x80 || pkt[0] & 0x40)
+            return SSL_decode_v2(pkt, size, pkt_flags);
+
+        /* If this packet is only 5 bytes, it inconclusive whether its SSLv2 or TLS. 
+         * If it is v2, it's definitely truncated anyway.  By decoding a 5 byte 
+         * SSLv2 as TLS,the decoder will either catch a bad type, bad version, or 
+         * indicate that it is truncated. */
+        if(size == 5)
+            return SSL_decode_v3(pkt, size, pkt_flags);
+
+        /* At this point, 'size' has to be > 5 */
+
+        /* If the field below contains a 2, it's either an SSLv2 client hello or 
+         * it is TLS and is containing a server hello. */
+        if(pkt[4] == 2)
         {
-            if(pkt[9] == 3)
+            /* This could be a TLS server hello.  Check for a TLS version string */
+            if(size >= 10)
             {
-               /* Saw a TLS version, but this could also be an SSHv2 length.
-                 * If it is, check if a hypothetical TLS record-data length agress 
-                 * with its record length */
-                datalen = THREE_BYTE_LEN( (pkt+6) );
-    
-                record = (SSL_record_t*)pkt;
-                reclen = ntohs(record->length);
-    
-                /* If these lengths match, it's v3 */
-                /* Otherwise, it's v2 */
-                if(reclen - SSL_HS_PAYLOAD_OFFSET != datalen)
-                    return SSL_decode_v2(pkt, size, pkt_flags);
+                if(pkt[9] == 3)
+                {
+                   /* Saw a TLS version, but this could also be an SSHv2 length.
+                     * If it is, check if a hypothetical TLS record-data length agress 
+                     * with its record length */
+                    datalen = THREE_BYTE_LEN( (pkt+6) );
+        
+                    record = (SSL_record_t*)pkt;
+                    reclen = ntohs(record->length);
+        
+                    /* If these lengths match, it's v3 */
+                    /* Otherwise, it's v2 */
+                    if(reclen - SSL_HS_PAYLOAD_OFFSET != datalen)
+                        return SSL_decode_v2(pkt, size, pkt_flags);
+                }
             }
         }
-    }
-    /* Check if it's possibly a SSLv2 server-hello, in which case the version
-     * is at byte 7 */
-    else if(size >= 8 && pkt[7] == 2)
-    {
-        /* A version of '2' at byte 7 overlaps with TLS record-data length.  
-         * Check if a hypothetical TLS record-data length agress with its 
-         * record length */
-        datalen = THREE_BYTE_LEN( (pkt+6) );
+        /* Check if it's possibly a SSLv2 server-hello, in which case the version
+         * is at byte 7 */
+        else if(size >= 8 && pkt[7] == 2)
+        {
+            /* A version of '2' at byte 7 overlaps with TLS record-data length.  
+             * Check if a hypothetical TLS record-data length agress with its 
+             * record length */
+            datalen = THREE_BYTE_LEN( (pkt+6) );
 
-        record = (SSL_record_t*)pkt;
-        reclen = ntohs(record->length);
+            record = (SSL_record_t*)pkt;
+            reclen = ntohs(record->length);
 
-        /* If these lengths match, it's v3 */
-        /* Otherwise, it's v2 */
-        if(reclen - SSL_HS_PAYLOAD_OFFSET != datalen)
-            return SSL_decode_v2(pkt, size, pkt_flags);
+            /* If these lengths match, it's v3 */
+            /* Otherwise, it's v2 */
+            if(reclen - SSL_HS_PAYLOAD_OFFSET != datalen)
+                return SSL_decode_v2(pkt, size, pkt_flags);
+        }
     }
 
     return SSL_decode_v3(pkt, size, pkt_flags);

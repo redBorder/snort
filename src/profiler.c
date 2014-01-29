@@ -3,6 +3,7 @@
 **
 **  profiler.c
 **
+**  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 **  Copyright (C) 2005-2013 Sourcefire, Inc.
 **  Steven Sturges <ssturges@sourcefire.com>
 **
@@ -118,7 +119,8 @@ void ResetRuleProfiling(void)
               policyId++ )
         {
             rtn = getRtnFromOtn(otn, policyId);
-            //rtn = currHeadNodeOtn->proto_node[currHeadNodePolicy];
+            if (rtn == NULL)
+                continue;
 
             if ((rtn->proto == IPPROTO_TCP) || (rtn->proto == IPPROTO_UDP)
                     || (rtn->proto == IPPROTO_ICMP) || (rtn->proto == ETHERNET_TYPE_IP))

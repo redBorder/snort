@@ -1,5 +1,6 @@
 /*
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 **               Chris Green <cmg@sourcefire.com>
 **
@@ -39,6 +40,7 @@
 #include "util.h"
 #include "generators.h"
 #include "log.h"
+#include "parser.h"
 #include "snort.h"
 #include "tag.h"
 
@@ -102,8 +104,7 @@ typedef struct _TagNode
     uint16_t event_id;
     struct timeval event_time;
 
-    /** for later expansion... */
-    OptTreeNode *otn;
+    void* log_list;  // retain custom logging if any from triggering alert
 
 } TagNode;
 
@@ -118,7 +119,13 @@ static uint32_t last_prune_time;
 static uint32_t tag_alloc_faults;
 static uint32_t tag_memory_usage;
 
-extern char check_tags_flag;
+static bool s_exclusive = false;
+static unsigned s_sessions = 0;
+
+// TBD when tags leverage sessions, tag nodes can be freed at end
+// of session.  then we can configure this to allow multiple
+// (consecutive) sessions to be captured.
+static const unsigned s_max_sessions = 1;
 
 /*  P R O T O T Y P E S  ********************************************/
 static TagNode * TagAlloc(SFXHASH *);
@@ -127,9 +134,9 @@ static int TagFreeSessionNodeFunc(void *key, void *data);
 static int TagFreeHostNodeFunc(void *key, void *data);
 static int PruneTagCache(uint32_t, int);
 static int PruneTime(SFXHASH* tree, uint32_t thetime);
-static void TagSession(Packet *, TagData *, uint32_t, uint16_t);
-static void TagHost(Packet *, TagData *, uint32_t, uint16_t);
-static void AddTagNode(Packet *, TagData *, int, uint32_t, uint16_t);
+static void TagSession(Packet *, TagData *, uint32_t, uint16_t, void*);
+static void TagHost(Packet *, TagData *, uint32_t, uint16_t, void*);
+static void AddTagNode(Packet *, TagData *, int, uint32_t, uint16_t, void*);
 static inline void SwapTag(TagNode *);
 
 /**Calculated memory needed per node insertion into respective cache. Its includes
@@ -219,6 +226,9 @@ static void TagFree(
 {
     if (node == NULL)
         return;
+
+    if ( node->metric & TAG_METRIC_SESSION )
+        s_exclusive = false;
 
     free((void *)node);
     tag_memory_usage -= memory_per_node(hash);
@@ -354,15 +364,14 @@ void CleanupTag(void)
     }
 }
 
-static void TagSession(Packet *p, TagData *tag, uint32_t time, uint16_t event_id)
+static void TagSession(Packet *p, TagData *tag, uint32_t time, uint16_t event_id, void* log_list)
 {
     DEBUG_WRAP(DebugMessage(DEBUG_FLOW, "TAGGING SESSION\n"););
 
-    AddTagNode(p, tag, TAG_SESSION, time, event_id);
+    AddTagNode(p, tag, TAG_SESSION, time, event_id, log_list);
 }
 
-
-static void TagHost(Packet *p, TagData *tag, uint32_t time, uint16_t event_id)
+static void TagHost(Packet *p, TagData *tag, uint32_t time, uint16_t event_id, void* log_list)
 {
     int mode;
 
@@ -381,11 +390,11 @@ static void TagHost(Packet *p, TagData *tag, uint32_t time, uint16_t event_id)
             break;
     }
 
-    AddTagNode(p, tag, mode, time, event_id);
+    AddTagNode(p, tag, mode, time, event_id, log_list);
 }
 
 static void AddTagNode(Packet *p, TagData *tag, int mode, uint32_t now,
-                uint16_t event_id)
+                uint16_t event_id, void* log_list)
 {
     TagNode *idx;  /* index pointer */
     TagNode *returned;
@@ -393,6 +402,17 @@ static void AddTagNode(Packet *p, TagData *tag, int mode, uint32_t now,
 
     DEBUG_WRAP(DebugMessage(DEBUG_FLOW, "Adding new Tag Head\n"););
 
+    if ( tag->tag_metric & TAG_METRIC_SESSION )
+    {
+        if ( s_exclusive )
+            return;
+
+        if ( s_sessions >= s_max_sessions )
+            return;
+
+        s_exclusive = true;
+        ++s_sessions;
+    }
     if(mode == TAG_SESSION)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_FLOW,"Session Tag!\n"););
@@ -427,6 +447,7 @@ static void AddTagNode(Packet *p, TagData *tag, int mode, uint32_t now,
     idx->event_time.tv_usec = p->pkth->ts.tv_usec;
     idx->mode = mode;
     idx->pkt_count = 0;
+    idx->log_list = log_list;
 
     if(idx->metric & TAG_METRIC_SECONDS)
     {
@@ -447,7 +468,6 @@ static void AddTagNode(Packet *p, TagData *tag, int mode, uint32_t now,
     }
 
     DEBUG_WRAP(PrintTagNode(idx););
-
 
     /* check for duplicates */
     returned = (TagNode *) sfxhash_find(tag_cache_ptr, idx);
@@ -499,7 +519,7 @@ static void AddTagNode(Packet *p, TagData *tag, int mode, uint32_t now,
 }
 
 
-int CheckTagList(Packet *p, Event *event)
+int CheckTagList(Packet *p, Event *event, void** log_list)
 {
     TagNode idx;
     TagNode *returned = NULL;
@@ -582,55 +602,50 @@ int CheckTagList(Packet *p, Event *event)
         DEBUG_WRAP(DebugMessage(DEBUG_FLOW, "    ! Found tag node !\n"););
 
         returned->last_access = p->pkth->ts.tv_sec;
+        returned->pkt_count++;
 
-        if(returned->metric & TAG_METRIC_SECONDS)
+        if ( returned->metric & TAG_METRIC_SECONDS )
         {
             if(p->pkth->ts.tv_sec > returned->seconds)
             {
-                returned->seconds = 0;
-            }
-        }
-
-        if(returned->metric & TAG_METRIC_PACKETS)
-        {
-            /* decrement the packet count */
-            returned->packets--;
-
-            if (returned->packets < 0)
-            {
-                returned->packets = 0;
+                returned->metric = 0;
                 create_event = 0;
             }
         }
 
-        if(returned->metric & TAG_METRIC_BYTES)
+        if ( returned->metric & TAG_METRIC_BYTES )
         {
-            returned->bytes -= (int) ntohs(GET_IPH_LEN(p));
+            int n = p->pkth->caplen;
 
-            if(returned->bytes < 0)
-            {
-                returned->bytes = 0;
-            }
+            if ( n < returned->bytes )
+                returned->bytes -= n;
+            else
+                returned->metric = 0;
         }
 
-        returned->pkt_count++;
-
-        /* Check whether or not to actually log an event.
-         * This is used to prevent a poorly written tag rule
-         * from DOSing a backend event processors on high
-         * bandwidth sensors. */
-        if (!(returned->metric & (TAG_METRIC_PACKETS|TAG_METRIC_UNLIMITED)))
+        if ( returned->metric & TAG_METRIC_PACKETS )
         {
+            if ( returned->packets > 1 )
+                returned->packets--;
+            else
+                returned->metric = 0;
+        }
+        if ( !(returned->metric & TAG_METRIC_UNLIMITED) )
+        {
+            /* Check whether or not to actually log an event.
+             * This is used to prevent a poorly written tag rule
+             * from DOSing a backend event processors on high
+             * bandwidth sensors. */
             /* Use the global max. */
             /* If its non-0, check count for this tag node */
-            if (ScTaggedPacketLimit() &&
-                returned->pkt_count > ScTaggedPacketLimit())
+            if ( ScTaggedPacketLimit() &&
+                returned->pkt_count >= ScTaggedPacketLimit() )
             {
-                create_event = 0;
+                returned->metric = 0;
             }
         }
 
-        if (create_event)
+        if ( create_event )
         {
             /* set the event info */
             SetEvent(event, GENERATOR_TAG, TAG_LOG_PKT, 1, 1, 1,
@@ -639,13 +654,14 @@ int CheckTagList(Packet *p, Event *event)
             event->ref_time.tv_sec = returned->event_time.tv_sec;
             event->ref_time.tv_usec = returned->event_time.tv_usec;
             event->event_reference = returned->event_id | ScEventLogId();
+            *log_list = returned->log_list;
         }
 
-        if(returned->bytes == 0 && returned->packets == 0 &&
-                returned->seconds == 0)
+        if ( !returned->metric )
         {
-            DEBUG_WRAP(DebugMessage(DEBUG_FLOW,"    Prune condition met for tag, removing"
-				    " from list\n"););
+            DEBUG_WRAP(DebugMessage(DEBUG_FLOW,
+                "    Prune condition met for tag, removing from list\n"););
+
             if (sfxhash_remove(taglist, returned) != SFXHASH_OK)
             {
                 LogMessage("WARNING: failed to remove tagNode from hash.\n");
@@ -653,7 +669,7 @@ int CheckTagList(Packet *p, Event *event)
         }
     }
 
-    if( (u_int)(p->pkth->ts.tv_sec) > last_prune_time + TAG_PRUNE_QUANTUM)
+    if ( (u_int)(p->pkth->ts.tv_sec) > last_prune_time + TAG_PRUNE_QUANTUM )
     {
         DEBUG_WRAP(DebugMessage(DEBUG_FLOW,
                                 "Exceeded Prune Quantum, pruning tag trees\n"););
@@ -661,14 +677,11 @@ int CheckTagList(Packet *p, Event *event)
         last_prune_time = p->pkth->ts.tv_sec;
     }
 
-    if((returned != NULL) && (create_event))
-    {
+    if ( returned && create_event )
         return 1;
-    }
 
     return 0;
 }
-
 
 static int PruneTagCache(uint32_t thetime, int mustdie)
 {
@@ -747,6 +760,9 @@ void SetTags(Packet *p, OptTreeNode *otn, uint16_t event_id)
     {
         if (otn->tag->tag_type != 0)
         {
+            RuleTreeNode* rtn = getRuntimeRtnFromOtn(otn);
+            void* log_list = rtn ? rtn->listhead : NULL;
+
             switch(otn->tag->tag_type)
             {
                 case TAG_SESSION:
@@ -755,7 +771,7 @@ void SetTags(Packet *p, OptTreeNode *otn, uint16_t event_id)
                             sfip_ntoa(GET_SRC_IP(p)), p->sp);
                         DebugMessage(DEBUG_FLOW,"DIP: %s  DP: %d\n",
 					        sfip_ntoa(GET_DST_IP(p)),p->dp););
-                    TagSession(p, otn->tag, p->pkth->ts.tv_sec, event_id);
+                    TagSession(p, otn->tag, p->pkth->ts.tv_sec, event_id, log_list);
                     break;
                 case TAG_HOST:
                     DEBUG_WRAP(DebugMessage(DEBUG_FLOW,"Setting host tag:\n");
@@ -763,7 +779,7 @@ void SetTags(Packet *p, OptTreeNode *otn, uint16_t event_id)
 	    			        sfip_ntoa(GET_SRC_IP(p)),p->sp);
                         DebugMessage(DEBUG_FLOW, "DIP: %s  DP: %d\n",
                             sfip_ntoa(GET_DST_IP(p)),p->dp););
-                    TagHost(p, otn->tag, p->pkth->ts.tv_sec, event_id);
+                    TagHost(p, otn->tag, p->pkth->ts.tv_sec, event_id, log_list);
                     break;
 
                 default:

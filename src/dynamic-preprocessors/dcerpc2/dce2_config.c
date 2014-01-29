@@ -1,4 +1,5 @@
 /****************************************************************************
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -121,6 +122,13 @@ static char dce2_config_error[1024];
 #define DCE2_SMB_MAX_CHAIN__DEFAULT    3
 #define DCE2_SMB_MAX_CHAIN__MAX      255   /* uint8_t is used to store value */
 
+#define DCE2_SOPT__SMB_FILE_INSPECTION           "smb_file_inspection"
+#define DCE2_SARG__SMB_FILE_INSPECTION_ON        "on"
+#define DCE2_SARG__SMB_FILE_INSPECTION_OFF       "off"
+#define DCE2_SARG__SMB_FILE_INSPECTION_ONLY      "only"
+#define DCE2_SARG__SMB_FILE_INSPECTION_DEPTH     "file-depth"
+#define DCE2_SMB_FILE_DEPTH_DEFAULT  16384
+
 #define DCE2_SOPT__VALID_SMB_VERSIONS        "valid_smb_versions"
 #define DCE2_SARG__VALID_SMB_VERSIONS_V1     "v1"
 #define DCE2_SARG__VALID_SMB_VERSIONS_V2     "v2"
@@ -188,7 +196,8 @@ typedef enum _DCE2_ScOptFlag
     DCE2_SC_OPT_FLAG__SMB_INVALID_SHARES = 0x0040,
     DCE2_SC_OPT_FLAG__SMB_MAX_CHAIN = 0x0080,
     DCE2_SC_OPT_FLAG__VALID_SMB_VERSIONS = 0x0100,
-    DCE2_SC_OPT_FLAG__SMB2_MAX_COMPOUND = 0x0200
+    DCE2_SC_OPT_FLAG__SMB2_MAX_COMPOUND = 0x0200,
+    DCE2_SC_OPT_FLAG__SMB_FILE_INSPECTION = 0x0400
 
 } DCE2_ScOptFlag;
 
@@ -204,6 +213,21 @@ typedef enum _DCE2_DetectListState
     DCE2_DETECT_LIST_STATE__END
 
 } DCE2_DetectListState;
+
+typedef enum _DCE2_SmbFileListState
+{
+    DCE2_SMB_FILE_LIST_STATE__START,
+    DCE2_SMB_FILE_LIST_STATE__ENABLEMENT_START,
+    DCE2_SMB_FILE_LIST_STATE__ENABLEMENT,
+    DCE2_SMB_FILE_LIST_STATE__ENABLEMENT_END,
+    DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH_START,
+    DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH,
+    DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH_VALUE_START,
+    DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH_VALUE,
+    DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH_VALUE_END,
+    DCE2_SMB_FILE_LIST_STATE__END
+
+} DCE2_SmbFileListState;
 
 /********************************************************************
  * Structures
@@ -246,6 +270,7 @@ static DCE2_Ret DCE2_ScParseSmbShares(DCE2_ServerConfig *, char **, char *);
 static DCE2_Ret DCE2_ScParseSmbMaxChain(DCE2_ServerConfig *, char **, char *);
 static DCE2_Ret DCE2_ScParseSmb2MaxCompound(DCE2_ServerConfig *, char **, char *);
 static DCE2_Ret DCE2_ScParseValidSmbVersions(DCE2_ServerConfig *, char **, char *);
+static DCE2_Ret DCE2_ScParseSmbFileInspection(DCE2_ServerConfig *, char **, char *);
 static inline DCE2_ValidSmbVersionFlag DCE2_ScParseValidSmbVersion(char *, char *, int *);
 static inline void DCE2_ScSetValidSmbVersion(DCE2_ServerConfig *, DCE2_ValidSmbVersionFlag);
 static inline void DCE2_ScClearValidSmbVersion(DCE2_ServerConfig *, DCE2_ValidSmbVersionFlag);
@@ -1131,6 +1156,8 @@ static DCE2_Ret DCE2_ScInitConfig(DCE2_ServerConfig *sc)
     sc->smb2_max_compound = DCE2_SMB2_MAX_COMPOUND__DEFAULT;
     sc->valid_smb_versions_mask = DCE2_VALID_SMB_VERSION_FLAG__ALL;
     sc->autodetect_http_proxy_ports = DCE2_CS__ENABLED;
+    sc->smb_file_inspection = DCE2_SMB_FILE_INSPECTION__OFF;
+    sc->smb_file_depth = DCE2_SMB_FILE_DEPTH_DEFAULT;
 
     /* Add default detect ports */
     if (DCE2_ScInitPortArray(sc, DCE2_DETECT_FLAG__SMB, 0) != DCE2_RET__SUCCESS)
@@ -1622,6 +1649,16 @@ static DCE2_Ret DCE2_ScParseConfig(DCE2_Config *config, DCE2_ServerConfig *sc,
                                 return DCE2_RET__ERROR;
                             break;
 
+                        case DCE2_SC_OPT_FLAG__SMB_FILE_INSPECTION:
+                            if (DCE2_ScParseSmbFileInspection(sc, &ptr, end) != DCE2_RET__SUCCESS)
+                                return DCE2_RET__ERROR;
+#ifdef ACTIVE_RESPONSE
+                            if ((sc->smb_file_inspection == DCE2_SMB_FILE_INSPECTION__ONLY)
+                                    || (sc->smb_file_inspection == DCE2_SMB_FILE_INSPECTION__ON))
+                                _dpd.activeSetEnabled(1);
+#endif
+                            break;
+
                         case DCE2_SC_OPT_FLAG__DEFAULT:
                         case DCE2_SC_OPT_FLAG__NET:
                             DCE2_ScError("\"%s\" or \"%s\" must be the first "
@@ -1742,6 +1779,11 @@ static inline DCE2_ScOptFlag DCE2_ScParseOption(char *opt_start, char *opt_end, 
              strncasecmp(DCE2_SOPT__SMB2_MAX_COMPOUND, opt_start, opt_len) == 0)
     {
         opt_flag = DCE2_SC_OPT_FLAG__SMB2_MAX_COMPOUND;
+    }
+    else if (opt_len == strlen(DCE2_SOPT__SMB_FILE_INSPECTION) &&
+             strncasecmp(DCE2_SOPT__SMB_FILE_INSPECTION, opt_start, opt_len) == 0)
+    {
+        opt_flag = DCE2_SC_OPT_FLAG__SMB_FILE_INSPECTION;
     }
     else
     {
@@ -2234,33 +2276,33 @@ static inline DCE2_DetectFlag DCE2_ScParseDetectType(char *start, char *end, int
     DCE2_DetectFlag dflag = DCE2_DETECT_FLAG__NULL;
     size_t dtype_len = end - start;
 
-    if (dtype_len == strlen(DCE2_SARG__DETECT_SMB) &&
-        strncasecmp(DCE2_SARG__DETECT_SMB, start, strlen(DCE2_SARG__DETECT_SMB)) == 0)
+    if (dtype_len == strlen(DCE2_SARG__DETECT_SMB)
+            && strncasecmp(DCE2_SARG__DETECT_SMB, start, dtype_len) == 0)
     {
         dflag = DCE2_DETECT_FLAG__SMB;
     }
-    else if (dtype_len == strlen(DCE2_SARG__DETECT_TCP) &&
-             strncasecmp(DCE2_SARG__DETECT_TCP, start, strlen(DCE2_SARG__DETECT_TCP)) == 0)
+    else if (dtype_len == strlen(DCE2_SARG__DETECT_TCP)
+            && strncasecmp(DCE2_SARG__DETECT_TCP, start, dtype_len) == 0)
     {
         dflag = DCE2_DETECT_FLAG__TCP;
     }
-    else if (dtype_len == strlen(DCE2_SARG__DETECT_UDP) &&
-             strncasecmp(DCE2_SARG__DETECT_UDP, start, strlen(DCE2_SARG__DETECT_UDP)) == 0)
+    else if (dtype_len == strlen(DCE2_SARG__DETECT_UDP)
+            && strncasecmp(DCE2_SARG__DETECT_UDP, start, dtype_len) == 0)
     {
         dflag = DCE2_DETECT_FLAG__UDP;
     }
-    else if (dtype_len == strlen(DCE2_SARG__DETECT_HTTP_PROXY) &&
-             strncasecmp(DCE2_SARG__DETECT_HTTP_PROXY, start, strlen(DCE2_SARG__DETECT_HTTP_PROXY)) == 0)
+    else if (dtype_len == strlen(DCE2_SARG__DETECT_HTTP_PROXY)
+            && strncasecmp(DCE2_SARG__DETECT_HTTP_PROXY, start, dtype_len) == 0)
     {
         dflag = DCE2_DETECT_FLAG__HTTP_PROXY;
     }
-    else if (dtype_len == strlen(DCE2_SARG__DETECT_HTTP_SERVER) &&
-             strncasecmp(DCE2_SARG__DETECT_HTTP_SERVER, start, strlen(DCE2_SARG__DETECT_HTTP_SERVER)) == 0)
+    else if (dtype_len == strlen(DCE2_SARG__DETECT_HTTP_SERVER)
+            && strncasecmp(DCE2_SARG__DETECT_HTTP_SERVER, start, dtype_len) == 0)
     {
         dflag = DCE2_DETECT_FLAG__HTTP_SERVER;
     }
-    else if (dtype_len == strlen(DCE2_SARG__DETECT_NONE) &&
-             strncasecmp(DCE2_SARG__DETECT_NONE, start, strlen(DCE2_SARG__DETECT_NONE)) == 0)
+    else if (dtype_len == strlen(DCE2_SARG__DETECT_NONE)
+            && strncasecmp(DCE2_SARG__DETECT_NONE, start, dtype_len) == 0)
     {
         dflag = DCE2_DETECT_FLAG__NONE;
     }
@@ -2900,6 +2942,274 @@ static inline void DCE2_ScClearAllValidSmbVersionFlags(DCE2_ServerConfig *sc)
 }
 
 /********************************************************************
+ * Function: DCE2_ScParseSmbFileInspection()
+ *
+ * Parses the arguments to the smb_file_inspection option.
+ *
+ * Arguments:
+ *  DCE2_ServerConfig *
+ *      Pointer to a server configuration structure.
+ *  char **
+ *      Pointer to the pointer to the current position in the
+ *      configuration line.  This is updated to the current position
+ *      after parsing the policy argument.
+ *  char *
+ *      Pointer to the end of the configuration line.
+ *
+ * Returns:
+ *  DCE2_Ret
+ *      DCE2_RET__SUCCESS if we were able to successfully parse.
+ *      DCE2_RET__ERROR if an error occured in parsing.
+ *
+ ********************************************************************/
+static DCE2_Ret DCE2_ScParseSmbFileInspection(DCE2_ServerConfig *sc, char **ptr, char *end)
+{
+    DCE2_SmbFileListState state = DCE2_SMB_FILE_LIST_STATE__START;
+    const char *option = DCE2_SOPT__SMB_FILE_INSPECTION;
+    char *option_start = *ptr;
+    char *optr;
+    int no_list = 0;
+    char last_char = 0;
+
+    while (*ptr < end)
+    {
+        char c = **ptr;
+
+        if (state == DCE2_SMB_FILE_LIST_STATE__END)
+            break;
+
+        switch (state)
+        {
+            case DCE2_SMB_FILE_LIST_STATE__START:
+                if (DCE2_IsWordChar(c, DCE2_WORD_CHAR_POSITION__START))
+                {
+                    optr = *ptr;
+                    no_list = 1;
+                    state = DCE2_SMB_FILE_LIST_STATE__ENABLEMENT;
+                }
+                else if (DCE2_IsListStartChar(c))
+                {
+                    state = DCE2_SMB_FILE_LIST_STATE__ENABLEMENT_START;
+                }
+                else if (!DCE2_IsSpaceChar(c))
+                {
+                    DCE2_ScError("Invalid \"%s\" syntax: \"%.*s\"",
+                            option, *ptr - option_start, option_start);
+                    return DCE2_RET__ERROR;
+                }
+
+                break;
+
+            case DCE2_SMB_FILE_LIST_STATE__ENABLEMENT_START:
+                if (DCE2_IsWordChar(c, DCE2_WORD_CHAR_POSITION__START))
+                {
+                    optr = *ptr;
+                    state = DCE2_SMB_FILE_LIST_STATE__ENABLEMENT;
+                }
+                else if (!DCE2_IsSpaceChar(c))
+                {
+                    DCE2_ScError("Invalid \"%s\" syntax: \"%.*s\"",
+                            option, *ptr - option_start, option_start);
+                    return DCE2_RET__ERROR;
+                }
+
+                break;
+
+            case DCE2_SMB_FILE_LIST_STATE__ENABLEMENT:
+                if (!DCE2_IsWordChar(c, DCE2_WORD_CHAR_POSITION__MIDDLE))
+                {
+                    int olen = *ptr - optr;
+
+                    if (!DCE2_IsWordChar(last_char, DCE2_WORD_CHAR_POSITION__END))
+                    {
+                        DCE2_ScError("Invalid \"%s\" argument: \"%.*s\"",
+                                option, *ptr - optr, optr);
+                        return DCE2_RET__ERROR;
+                    }
+
+                    if ((olen == strlen(DCE2_SARG__SMB_FILE_INSPECTION_ON))
+                            && (strncasecmp(DCE2_SARG__SMB_FILE_INSPECTION_ON, optr, olen) == 0))
+                    {
+                        sc->smb_file_inspection = DCE2_SMB_FILE_INSPECTION__ON;
+                    }
+                    else if ((olen == strlen(DCE2_SARG__SMB_FILE_INSPECTION_OFF))
+                            && (strncasecmp(DCE2_SARG__SMB_FILE_INSPECTION_OFF, optr, olen) == 0))
+                    {
+                        sc->smb_file_inspection = DCE2_SMB_FILE_INSPECTION__OFF;
+                    }
+                    else if ((olen == strlen(DCE2_SARG__SMB_FILE_INSPECTION_ONLY))
+                            && (strncasecmp(DCE2_SARG__SMB_FILE_INSPECTION_ONLY, optr, olen) == 0))
+                    {
+                        sc->smb_file_inspection = DCE2_SMB_FILE_INSPECTION__ONLY;
+                    }
+                    else
+                    {
+                        DCE2_ScError("Invalid \"%s\" argument: \"%.*s\"",
+                                option, *ptr - optr, optr);
+                        return DCE2_RET__ERROR;
+                    }
+
+                    state = DCE2_SMB_FILE_LIST_STATE__ENABLEMENT_END;
+                    continue;
+                }
+
+                break;
+
+            case DCE2_SMB_FILE_LIST_STATE__ENABLEMENT_END:
+                if (no_list)
+                {
+                    return DCE2_RET__SUCCESS;
+                }
+                else if (DCE2_IsListSepChar(c))
+                {
+                    state = DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH_START;
+                }
+                else if (DCE2_IsListEndChar(c))
+                {
+                    state = DCE2_SMB_FILE_LIST_STATE__END;
+                }
+                else if (!DCE2_IsSpaceChar(c))
+                {
+                    DCE2_ScError("Invalid \"%s\" syntax: \"%.*s\"",
+                            option, *ptr - option_start, option_start);
+                    return DCE2_RET__ERROR;
+                }
+
+                break;
+
+            case DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH_START:
+                if (DCE2_IsWordChar(c, DCE2_WORD_CHAR_POSITION__START))
+                {
+                    optr = *ptr;
+                    state = DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH;
+                }
+                else if (!DCE2_IsSpaceChar(c))
+                {
+                    DCE2_ScError("Invalid \"%s\" syntax: \"%.*s\"",
+                            option, *ptr - option_start, option_start);
+                    return DCE2_RET__ERROR;
+                }
+
+                break;
+
+            case DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH:
+                if (!DCE2_IsWordChar(c, DCE2_WORD_CHAR_POSITION__MIDDLE))
+                {
+                    int olen = *ptr - optr;
+
+                    if (!DCE2_IsWordChar(last_char, DCE2_WORD_CHAR_POSITION__END))
+                    {
+                        DCE2_ScError("Invalid \"%s\" argument: \"%.*s\"",
+                                option, *ptr - optr, optr);
+                        return DCE2_RET__ERROR;
+                    }
+
+                    if ((olen == strlen(DCE2_SARG__SMB_FILE_INSPECTION_DEPTH))
+                            && (strncasecmp(DCE2_SARG__SMB_FILE_INSPECTION_DEPTH, optr, olen) == 0))
+                    {
+                        state = DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH_VALUE_START;
+                    }
+                    else
+                    {
+                        DCE2_ScError("Invalid \"%s\" argument: \"%.*s\"",
+                                option, *ptr - optr, optr);
+                        return DCE2_RET__ERROR;
+                    }
+
+                    continue;
+                }
+
+                break;
+
+            case DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH_VALUE_START:
+                if (DCE2_IsWordChar(c, DCE2_WORD_CHAR_POSITION__MIDDLE))
+                {
+                    optr = *ptr;
+                    state = DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH_VALUE;
+                }
+                else if (!DCE2_IsSpaceChar(c))
+                {
+                    DCE2_ScError("Invalid \"%s\" syntax: \"%.*s\"",
+                            option, *ptr - option_start, option_start);
+                    return DCE2_RET__ERROR;
+                }
+
+                break;
+
+            case DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH_VALUE:
+                if (!DCE2_IsWordChar(c, DCE2_WORD_CHAR_POSITION__MIDDLE))
+                {
+                    char *start_value = optr;
+
+                    if (!DCE2_IsWordChar(last_char, DCE2_WORD_CHAR_POSITION__END))
+                    {
+                        DCE2_ScError("Invalid argument to \"%s\": \"%.*s\".  Value "
+                                "must be between -1 and "STDi64".\n",
+                                DCE2_SARG__SMB_FILE_INSPECTION_DEPTH,
+                                optr - start_value, start_value, INT64_MAX);
+                        return DCE2_RET__ERROR;
+                    }
+
+                    if (DCE2_ParseValue(&optr, *ptr, &sc->smb_file_depth,
+                                DCE2_INT_TYPE__INT64) != DCE2_RET__SUCCESS)
+                    {
+                        DCE2_ScError("Invalid argument to \"%s\": \"%.*s\".  Value "
+                                "must be between -1 and "STDi64".\n",
+                                DCE2_SARG__SMB_FILE_INSPECTION_DEPTH,
+                                optr - start_value, start_value, INT64_MAX);
+                        return DCE2_RET__ERROR;
+                    }
+
+                    if ((sc->smb_file_depth < 0) && (sc->smb_file_depth != -1))
+                    {
+                        DCE2_ScError("Invalid argument to \"%s\": "STDi64".  Value "
+                                "must be between -1 and "STDi64".\n",
+                                DCE2_SARG__SMB_FILE_INSPECTION_DEPTH,
+                                sc->smb_file_depth, INT64_MAX);
+                        return DCE2_RET__ERROR;
+                    }
+
+                    state = DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH_VALUE_END;
+                    continue;
+                }
+
+                break;
+
+            case DCE2_SMB_FILE_LIST_STATE__FILE_DEPTH_VALUE_END:
+                if (DCE2_IsListEndChar(c))
+                {
+                    state = DCE2_SMB_FILE_LIST_STATE__END;
+                }
+                else if (!DCE2_IsSpaceChar(c))
+                {
+                    DCE2_ScError("Invalid \"%s\" syntax: \"%.*s\"",
+                            option, *ptr - option_start, option_start);
+                    return DCE2_RET__ERROR;
+                }
+
+                break;
+
+            default:
+                DCE2_Log(DCE2_LOG_TYPE__ERROR, "%s(%d) Invalid %s state: %d",
+                         __FILE__, __LINE__, option, state);
+                return DCE2_RET__ERROR;
+        }
+
+        last_char = c;
+        (*ptr)++;
+    }
+
+    if (state != DCE2_SMB_FILE_LIST_STATE__END)
+    {
+        DCE2_ScError("Invalid \"%s\" syntax: \"%.*s\"",
+                option, *ptr - option_start, option_start);
+        return DCE2_RET__ERROR;
+    }
+
+    return DCE2_RET__SUCCESS;
+}
+
+/********************************************************************
  * Function: DCE2_ScAddToRoutingTable()
  *
  * Adds the server configuration to the appropriate routing table
@@ -3414,6 +3724,27 @@ static void DCE2_ScPrintConfig(const DCE2_ServerConfig *sc, DCE2_Queue *net_queu
             _dpd.logMsg("    Maximum SMB command chaining: No chaining allowed\n");
         else
             _dpd.logMsg("    Maximum SMB command chaining: %u commands\n", sc->smb_max_chain);
+
+        if (!DCE2_ScSmbFileInspection(sc))
+        {
+            _dpd.logMsg("    SMB file inspection: Disabled\n");
+        }
+        else
+        {
+            int64_t file_depth = DCE2_ScSmbFileDepth(sc);
+
+            if (DCE2_ScSmbFileInspectionOnly(sc))
+                _dpd.logMsg("    SMB file inspection: Only\n");
+            else
+                _dpd.logMsg("    SMB file inspection: Enabled\n");
+
+            if (file_depth == -1)
+                _dpd.logMsg("      File depth: Disabled\n");
+            else if (file_depth == 0)
+                _dpd.logMsg("      File depth: Unlimited\n");
+            else
+                _dpd.logMsg("      File depth: "STDi64"\n", file_depth);
+        }
     }
 }
 
@@ -3988,10 +4319,6 @@ DCE2_Ret DCE2_ParseIp(char **ptr, char *end, sfip_t *ip)
                 }
 
                 break;
-
-            case DCE2_IP_STATE__END:
-                // make the compiler happy
-                break;
         }
 
         (*ptr)++;
@@ -4353,6 +4680,21 @@ DCE2_Ret DCE2_ParseValue(char **ptr, char *end, void *value, DCE2_IntType int_ty
         (*ptr)++;
     }
 
+    // In case we hit the end before getting a non-type character.
+    switch (state)
+    {
+        case DCE2_VALUE_STATE__HEX_OR_OCT:
+            return DCE2_GetValue(value_start, end, value, negate, int_type, 8);
+        case DCE2_VALUE_STATE__DECIMAL:
+            return DCE2_GetValue(value_start, end, value, negate, int_type, 10);
+        case DCE2_VALUE_STATE__HEX:
+            return DCE2_GetValue(value_start, end, value, negate, int_type, 16);
+        case DCE2_VALUE_STATE__OCTAL:
+            return DCE2_GetValue(value_start, end, value, negate, int_type, 8);
+        default:
+            break;
+    }
+
     /* If we break out of the loop before finishing, didn't
      * get a valid value */
     return DCE2_RET__ERROR;
@@ -4394,8 +4736,8 @@ DCE2_Ret DCE2_GetValue(char *start, char *end, void *int_value, int negate,
                        DCE2_IntType int_type, uint8_t base)
 {
     uint64_t value = 0;
-    int place = 1;
-    uint64_t max_value;
+    uint64_t place = 1;
+    uint64_t max_value = 0;
 
     if ((end == NULL) || (start == NULL) || (int_value == NULL))
         return DCE2_RET__ERROR;
@@ -4418,7 +4760,7 @@ DCE2_Ret DCE2_GetValue(char *start, char *end, void *int_value, int negate,
         else
             add_value = (uint64_t)((toupper((int)c) - 'A') + 10) * place;
 
-        if ((uint64_t)(UINT64_MAX - value) < add_value)
+        if ((UINT64_MAX - value) < add_value)
             return DCE2_RET__ERROR;
 
         value += add_value;
@@ -4598,7 +4940,7 @@ void DCE2_FreeConfig(DCE2_Config *config)
         sfrt_free(config->sconfigs);
     }
 
-    free(config);
+    DCE2_Free((void *)config, sizeof(DCE2_Config), DCE2_MEM_TYPE__CONFIG);
 }
 
 /********************************************************************

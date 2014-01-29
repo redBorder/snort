@@ -26,7 +26,7 @@ IP4 normalizations are enabled with:
 
 Base normalizations enabled with "preprocessor normalize_ip4" include:
 
-* TTL normalizaton if enabled (explained below).
+* TTL normalization if enabled (explained below).
 
 * NOP all options octets.
 
@@ -39,7 +39,7 @@ Optional normalizations include:
 * tos - type of service (differentiated services): clear this byte.
 
 * trim - truncate packets with excess payload to the datagram length specified in the
-  IP header + the layer 2 header (eg ethernet), but don't truncate below minimum
+  IP header + the layer 2 header (e.g. ethernet), but don't truncate below minimum
   frame length.  This is automatically disabled if the DAQ can't inject packets.
 
 
@@ -52,7 +52,7 @@ IP6 normalizations are enabled with:
 
 Base normalizations enabled with "preprocessor normalize_ip6" include:
 
-* Hop limit normalizaton if enabled (explained below).
+* Hop limit normalization if enabled (explained below).
 
 * NOP all options octets in hop-by-hop and destination options extension
   headers.

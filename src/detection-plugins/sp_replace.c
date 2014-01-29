@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -109,13 +110,13 @@ static PatternMatchData * Replace_Parse(char *rule, OptTreeNode * otn)
             file_name, file_line);
     }
     /* clear out the temp buffer */
-    bzero(tmp_buf, MAX_PATTERN_SIZE);
+    memset(tmp_buf, 0, MAX_PATTERN_SIZE);
 
     while(isspace((int)*rule))
         rule++;
 
     /* find the start of the data */
-    start_ptr = index(rule, '"');
+    start_ptr = strchr(rule, '"');
 
     if(start_ptr == NULL)
     {
@@ -156,8 +157,9 @@ static PatternMatchData * Replace_Parse(char *rule, OptTreeNode * otn)
     dummy_end = (dummy_idx + size);
 
     /* why is this buffer so small? */
-    bzero(hex_buf, 3);
     memset(hex_buf, '0', 2);
+    hex_buf[2] = '\0';
+
 
     /* BEGIN BAD JUJU..... */
     while(idx < end_ptr)
@@ -262,8 +264,8 @@ static PatternMatchData * Replace_Parse(char *rule, OptTreeNode * otn)
                                     strtol(hex_buf, (char **) NULL, 16)&0xFF;
 
                                 dummy_size++;
-                                bzero(hex_buf, 3);
                                 memset(hex_buf, '0', 2);
+                                hex_buf[2] = '\0';
                             }
                             else
                             {

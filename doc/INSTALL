@@ -7,7 +7,7 @@ short version.
 
 2.) *** Make sure you have libdnet, libpcap, libpcre installed!!! ***
     Also make sure that dnet-config, pcre-config, and daq-modules-config are in
-    your PATH (eg you should be able to `which` these).
+    your PATH (e.g. you should be able to `which` these).
 
 3.) ./configure
 
@@ -370,7 +370,7 @@ On certain BSD-based platforms, the make install may not symlink the version
 specific shared libraries to the non-versioned shared library.  This could
 cause a failure to load when using dynamic libraries.
 
-Work arounds:
+Workarounds:
 
 1) Create the symlinks by hand after make install.  The shared libraries can
 be located under /usr/local/lib/snort_dynamicengine and
@@ -384,7 +384,7 @@ be located under /usr/local/lib/snort_dynamicengine and
 dynamicpreprocessor directory) to load the version specific shared library.
 
 Note that on FreeBSD and OpenBSD, divert sockets don't work with bridges. Please 
-refer to the DAQ distro README for work arounds and more details.
+refer to the DAQ distro README for workarounds and more details.
 
 When using the alert_unixsock output plugin on FreeBSD, please refer to the
 Output Modules section of the Snort Manual.

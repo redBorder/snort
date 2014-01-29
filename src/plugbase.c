@@ -1,5 +1,6 @@
 /* $Id$ */
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -102,6 +103,9 @@
 #include "detection-plugins/sp_ftpbounce.h"
 #include "detection-plugins/sp_urilen_check.h"
 #include "detection-plugins/sp_cvs.h"
+#if defined(FEAT_FILE_INSPECT)
+#include "detection-plugins/sp_file_type.h"
+#endif
 
 /* built-in output plugins */
 #include "output-plugins/spo_alert_syslog.h"
@@ -201,6 +205,9 @@ void RegisterRuleOptions(void)
     SetupFTPBounce();
     SetupUriLenCheck();
     SetupCvs();
+#if defined(FEAT_FILE_INSPECT)
+    SetupFileType();
+#endif
 }
 
 /****************************************************************************

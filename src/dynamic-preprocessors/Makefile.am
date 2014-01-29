@@ -70,8 +70,7 @@ include/preprocids.h \
 include/sfcontrol.h \
 include/idle_processing.h \
 include/sf_seqnums.h \
-include/file_api.h \
-include/file_lib.h
+include/file_api.h
 
 all-local: $(LTLIBRARIES)
 	$(MAKE) DESTDIR=`pwd`/build install-preproclibLTLIBRARIES
@@ -144,8 +143,7 @@ BUILT_SOURCES = \
 	include/sfcontrol.h \
 	include/idle_processing.h \
 	include/sf_seqnums.h \
-	include/file_api.h \
-	include/file_lib.h
+	include/file_api.h
 
 sed_ipv6_headers = \
 	sed -e "s/->iph->ip_src/->ip4_header->source/" \
@@ -486,14 +484,15 @@ include/sf_seqnums.h: $(top_srcdir)/src/sfutil/sf_seqnums.h
 include/file_api.h: $(top_srcdir)/src/file-process/file_api.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
-include/file_lib.h: $(top_srcdir)/src/file-process/libs/file_lib.h
-	@src_header=$?; dst_header=$@; $(copy_headers)
-	
 if WANT_SF_SAAC
 RZB_SAAC_DIR=rzb_saac
 endif
 
-SUBDIRS = . libs ftptelnet pop imap smtp ssh dns ssl dcerpc2 sdf sip reputation gtp modbus dnp3 $(RZB_SAAC_DIR)
+if FEAT_FILE_INSPECT
+FILE_INSPECT_DIR = file
+endif
+
+SUBDIRS = . libs ftptelnet pop imap smtp ssh dns ssl dcerpc2 sdf sip reputation gtp modbus dnp3 $(RZB_SAAC_DIR) $(FILE_INSPECT_DIR)
 
 clean-local:
 	rm -rf include build
@@ -548,8 +547,7 @@ include/Unified2_common.h \
 include/sfcontrol.h \
 include/idle_processing.h \
 include/sf_seqnums.h \
-include/file_api.h \
-include/file_lib.h
+include/file_api.h
 
 install-data-local:
 	@for f in $(exported_files); do \

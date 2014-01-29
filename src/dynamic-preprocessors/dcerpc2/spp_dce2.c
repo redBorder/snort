@@ -1,4 +1,5 @@
 /****************************************************************************
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -45,8 +46,12 @@
 #include "sf_snort_packet.h"
 #include "sf_dynamic_preprocessor.h"
 #include "stream_api.h"
-#include <sfPolicy.h>
-#include <sfPolicyUserData.h>
+#include "sfPolicy.h"
+#include "sfPolicyUserData.h"
+
+#ifdef DCE2_LOG_EXTRA_DATA
+#include "Unified2_common.h"
+#endif
 
 /********************************************************************
  * Global variables
@@ -63,6 +68,9 @@ PreprocStats dce2_pstat_smb_req;
 PreprocStats dce2_pstat_smb_uid;
 PreprocStats dce2_pstat_smb_tid;
 PreprocStats dce2_pstat_smb_fid;
+PreprocStats dce2_pstat_smb_file;
+PreprocStats dce2_pstat_smb_file_detect;
+PreprocStats dce2_pstat_smb_file_api;
 PreprocStats dce2_pstat_smb_fingerprint;
 PreprocStats dce2_pstat_smb_negotiate;
 PreprocStats dce2_pstat_co_seg;
@@ -96,6 +104,9 @@ const char *PREPROC_NAME = "SF_DCERPC2";
 #define DCE2_PSTAT__SMB_UID      "DceRpcSmbUid"
 #define DCE2_PSTAT__SMB_TID      "DceRpcSmbTid"
 #define DCE2_PSTAT__SMB_FID      "DceRpcSmbFid"
+#define DCE2_PSTAT__SMB_FILE     "DceRpcSmbFile"
+#define DCE2_PSTAT__SMB_FILE_DETECT "DceRpcSmbFileDetect"
+#define DCE2_PSTAT__SMB_FILE_API "DceRpcSmbFileAPI"
 #define DCE2_PSTAT__SMB_FP       "DceRpcSmbFingerprint"
 #define DCE2_PSTAT__SMB_NEG      "DceRpcSmbNegotiate"
 #define DCE2_PSTAT__CO_SEG       "DceRpcCoSeg"
@@ -118,6 +129,9 @@ static void DCE2_PrintStats(int);
 static void DCE2_Reset(int, void *);
 static void DCE2_ResetStats(int, void *);
 static void DCE2_CleanExit(int, void *);
+#ifdef DCE2_LOG_EXTRA_DATA
+static int DCE2_LogSmbFileName(void *, uint8_t **, uint32_t *, uint32_t *);
+#endif
 
 #ifdef SNORT_RELOAD
 static void DCE2_ReloadGlobal(struct _SnortConfig *, char *, void **);
@@ -190,9 +204,14 @@ static void DCE2_InitGlobal(struct _SnortConfig *sc, char *args)
         DCE2_MemInit();
         DCE2_StatsInit();
         DCE2_EventsInit();
+        smb_file_name[0] = '\0';
 
         /* Initialize reassembly packet */
         DCE2_InitRpkts();
+
+#ifdef ACTIVE_RESPONSE
+        DCE2_SmbInitDeletePdu();
+#endif
 
         DCE2_SmbInitGlobals();
 
@@ -214,6 +233,9 @@ static void DCE2_InitGlobal(struct _SnortConfig *sc, char *args)
         _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_UID, &dce2_pstat_smb_uid, 1, &dce2_pstat_main);
         _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_TID, &dce2_pstat_smb_tid, 1, &dce2_pstat_main);
         _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FID, &dce2_pstat_smb_fid, 1, &dce2_pstat_main);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FILE, &dce2_pstat_smb_file, 1, &dce2_pstat_main);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FILE_DETECT, &dce2_pstat_smb_file_detect, 2, &dce2_pstat_smb_file);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FILE_API, &dce2_pstat_smb_file_api, 2, &dce2_pstat_smb_file);
         _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FP, &dce2_pstat_smb_fingerprint, 1, &dce2_pstat_main);
         _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_NEG, &dce2_pstat_smb_negotiate, 1, &dce2_pstat_main);
         _dpd.addPreprocProfileFunc(DCE2_PSTAT__CO_SEG, &dce2_pstat_co_seg, 1, &dce2_pstat_main);
@@ -269,7 +291,6 @@ static void DCE2_InitGlobal(struct _SnortConfig *sc, char *args)
     if ( pCurrentPolicyConfig->gconfig->disabled )
         return;
 
-
     /* Register callbacks */
     _dpd.addPreproc(sc, DCE2_Main, PRIORITY_APPLICATION,
         PP_DCE2, PROTO_BIT__TCP | PROTO_BIT__UDP);
@@ -298,11 +319,14 @@ static void DCE2_InitServer(struct _SnortConfig *sc, char *args)
     tSfPolicyId policy_id = _dpd.getParserPolicy(sc);
     DCE2_Config *pPolicyConfig = NULL;
 
-    sfPolicyUserPolicySet (dce2_config, policy_id);
+    if (dce2_config != NULL)
+    {
+        sfPolicyUserPolicySet (dce2_config, policy_id);
+        pPolicyConfig = (DCE2_Config *)sfPolicyUserDataGetCurrent(dce2_config);
+    }
 
-    pPolicyConfig = (DCE2_Config *)sfPolicyUserDataGetCurrent(dce2_config);
-
-    if ((pPolicyConfig == NULL) || (pPolicyConfig->gconfig == NULL))
+    if ((dce2_config == NULL) || (pPolicyConfig == NULL)
+            || (pPolicyConfig->gconfig == NULL))
     {
         DCE2_Die("%s(%d) \"%s\" configuration: \"%s\" must be configured "
                  "before \"%s\".", *_dpd.config_file, *_dpd.config_line,
@@ -355,6 +379,11 @@ static int DCE2_CheckConfigPolicy(
 #ifdef TARGET_BASED
     DCE2_PafRegisterService(sc, dce2_proto_ids.nbss, policyId, DCE2_TRANS_TYPE__SMB);
     DCE2_PafRegisterService(sc, dce2_proto_ids.dcerpc, policyId, DCE2_TRANS_TYPE__TCP);
+#endif
+
+#ifdef DCE2_LOG_EXTRA_DATA
+    pPolicyConfig->xtra_logging_smb_file_name_id =
+        _dpd.streamAPI->reg_xtra_data_cb(DCE2_LogSmbFileName);
 #endif
 
     /* Register routing table memory */
@@ -454,6 +483,38 @@ static void DCE2_Main(void *pkt, void *context)
     DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__ALL, "%s\n", DCE2_DEBUG__END_MSG));
 }
 
+#ifdef DCE2_LOG_EXTRA_DATA
+/******************************************************************
+ * Function: DCE2_LogSmbFileName
+ *
+ * Purpose: Callback for unified2 logging of extra data, in this
+ *  case the SMB file name.
+ *
+ * Arguments:
+ *  void *      - stream session pointer
+ *  uint8_t **  - pointer to buffer for extra data
+ *  uint32_t *  - pointer to length of extra data
+ *  uint32_t *  - pointer to type of extra data
+ *
+ * Returns:
+ *  int - 1 for success
+ *        0 for failure
+ *
+ ******************************************************************/
+static int DCE2_LogSmbFileName(void *ssn_ptr, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    if ((_dpd.streamAPI->get_application_data(ssn_ptr, PP_DCE2) == NULL)
+            || (strlen(smb_file_name) == 0))
+        return 0;
+
+    *buf = (uint8_t *)smb_file_name; 
+    *len = strlen(smb_file_name);
+    *type = EVENT_INFO_SMB_FILENAME;
+
+    return 1;
+}
+#endif
+
 /******************************************************************
  * Function: DCE2_PrintStats()
  *
@@ -521,10 +582,8 @@ static void DCE2_PrintStats(int exiting)
             _dpd.logMsg("        Packets: "STDu64"\n", dce2_stats.smb_pkts);
             if (dce2_stats.smb_ignored_bytes > 0)
                 _dpd.logMsg("        Ignored bytes: "STDu64"\n", dce2_stats.smb_ignored_bytes);
-            if (dce2_stats.smb_nbss_not_message > 0)
-                _dpd.logMsg("        Not NBSS Session Message: "STDu64"\n", dce2_stats.smb_nbss_not_message);
-            if (dce2_stats.smb_non_ipc_packets > 0)
-                _dpd.logMsg("        Not IPC packets (after tree connect): "STDu64"\n", dce2_stats.smb_non_ipc_packets);
+            if (dce2_stats.smb_files_processed > 0)
+                _dpd.logMsg("        Files processed: "STDu64"\n", dce2_stats.smb_files_processed);
             if (dce2_stats.smb_cli_seg_reassembled > 0)
                 _dpd.logMsg("        Client TCP reassembled: "STDu64"\n", dce2_stats.smb_cli_seg_reassembled);
             if (dce2_stats.smb_srv_seg_reassembled > 0)
@@ -633,6 +692,8 @@ static void DCE2_PrintStats(int exiting)
             _dpd.logMsg("        Maximum tid tracking: %u\n", dce2_memory.smb_tid_max);
             _dpd.logMsg("        Current fid tracking: %u\n", dce2_memory.smb_fid);
             _dpd.logMsg("        Maximum fid tracking: %u\n", dce2_memory.smb_fid_max);
+            _dpd.logMsg("        Current file tracking: %u\n", dce2_memory.smb_file);
+            _dpd.logMsg("        Maximum file tracking: %u\n", dce2_memory.smb_file_max);
             _dpd.logMsg("        Current request tracking: %u\n", dce2_memory.smb_req);
             _dpd.logMsg("        Maximum request tracking: %u\n", dce2_memory.smb_req_max);
 #endif
@@ -998,11 +1059,15 @@ static void DCE2_ReloadServer(struct _SnortConfig *sc, char *args, void **new_co
     DCE2_Config *pPolicyConfig = NULL;
 
     dce2_swap_config = (tSfPolicyUserContextId)_dpd.getRelatedReloadData(sc, DCE2_GNAME);
-    sfPolicyUserPolicySet (dce2_swap_config, policy_id);
 
-    pPolicyConfig = (DCE2_Config *)sfPolicyUserDataGetCurrent(dce2_swap_config);
+    if (dce2_swap_config != NULL)
+    {
+        sfPolicyUserPolicySet (dce2_swap_config, policy_id);
+        pPolicyConfig = (DCE2_Config *)sfPolicyUserDataGetCurrent(dce2_swap_config);
+    }
 
-    if ((pPolicyConfig == NULL) || (pPolicyConfig->gconfig == NULL))
+    if ((dce2_swap_config == NULL) || (pPolicyConfig == NULL)
+            || (pPolicyConfig->gconfig == NULL))
     {
         DCE2_Die("%s(%d) \"%s\" configuration: \"%s\" must be configured "
                  "before \"%s\".", *_dpd.config_file, *_dpd.config_line,
@@ -1058,6 +1123,11 @@ static int DCE2_ReloadVerifyPolicy(
 #ifdef TARGET_BASED
     DCE2_PafRegisterService(sc, dce2_proto_ids.nbss, policyId, DCE2_TRANS_TYPE__SMB);
     DCE2_PafRegisterService(sc, dce2_proto_ids.dcerpc, policyId, DCE2_TRANS_TYPE__TCP);
+#endif
+
+#ifdef DCE2_LOG_EXTRA_DATA
+    swap_config->xtra_logging_smb_file_name_id =
+        _dpd.streamAPI->reg_xtra_data_cb(DCE2_LogSmbFileName);
 #endif
 
     /* Register routing table memory */

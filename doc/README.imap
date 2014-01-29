@@ -8,8 +8,8 @@ It will also mark the command, data header data body sections and
 extract the IMAP4 attachments and decode it appropriately.
 
 IMAP will handle stateful processing. It saves state between individual 
-packets. However maintaining correct state is dependent on the resassembly
-of the server side of the stream (ie, a loss of coherent stream data results
+packets. However maintaining correct state is dependent on the reassembly
+of the server side of the stream (i.e., a loss of coherent stream data results
 in a loss of state).
 
 Stream5 should be turned on for IMAP. Please ensure that the IMAP ports are added
@@ -114,7 +114,7 @@ sessions that will be decoded at any given instant. The default value for this o
 is 838860.
 
 Note: It is suggested to set this value such that the max imap session calculated as
-follows is atleast 1.
+follows is at least 1.
 
 max imap session = memcap /(2 * max of (b64_decode_depth, uu_decode_depth, qp_decode_depth 
 					or bitenc_decode_depth))

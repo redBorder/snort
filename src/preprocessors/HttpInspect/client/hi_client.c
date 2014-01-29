@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1417,7 +1418,7 @@ static int SetClientVars(HI_CLIENT *Client, URI_PTR *uri_ptr, u_int dsize)
     **  This is one of the last checks we do to make sure that we didn't
     **  mess up or anything.
     */
-    if(Client->request.uri_size < 1 || Client->request.uri_size > dsize)
+    if(Client->request.uri_size > dsize)
     {
         /*
         **  Bad stuff, let's just bail.
@@ -1725,9 +1726,11 @@ static inline int hi_client_extract_uri(
 
         ptr++;
     }
+    /* No uri in this request. We shouldn't process this request */
+    if(uri_ptr->uri == uri_ptr->uri_end)
+        return HI_NONFATAL_ERR;
     return iRet;
 }
-
 
 const u_char *extract_http_cookie(const u_char *p, const u_char *end, HEADER_PTR *header_ptr,
         HEADER_FIELD_PTR *header_field_ptr)
@@ -2545,7 +2548,6 @@ static inline const u_char *hi_client_extract_header(
     header_ptr->header.uri_end = p;
     return p;
 }
-
 #define CLR_POST(Client) \
     do { \
                 Client->request.post_raw = NULL;\
@@ -2561,6 +2563,14 @@ static inline const u_char *hi_client_extract_header(
                 Client->request.header_norm_size = 0 ;\
                 Client->request.cookie.cookie = NULL;\
                 Client->request.cookie.cookie_end = NULL;\
+                if(Client->request.cookie.next) { \
+                    COOKIE_PTR *cookie = Client->request.cookie.next; \
+                    do { \
+                        Client->request.cookie.next = Client->request.cookie.next->next; \
+                        free(cookie); \
+                        cookie = Client->request.cookie.next; \
+                    } while(cookie); \
+                }\
                 Client->request.cookie.next = NULL;\
                 Client->request.cookie_norm = NULL;\
                 Client->request.cookie_norm_size = 0;\
@@ -2795,13 +2805,13 @@ int StatelessInspection(Packet *p, HI_SESSION *Session, HttpSessionData *hsd, in
 
     if (!sans_uri )
     {
-        uri_ptr.uri = ptr;
+        uri_ptr.uri = method_ptr.uri_end; 
         uri_ptr.uri_end = end;
 
         /* This will set up the URI pointers - effectively extracting
          * the URI. */
         iRet = hi_client_extract_uri(
-             Session, ServerConf, Client, start, end, ptr, &uri_ptr, hsd, stream_ins);
+             Session, ServerConf, Client, start, end, uri_ptr.uri, &uri_ptr, hsd, stream_ins);
     }
 
     /* Check if the URI exceeds the max header field length */
@@ -2960,6 +2970,9 @@ int StatelessInspection(Packet *p, HI_SESSION *Session, HttpSessionData *hsd, in
     iRet = SetClientVars(Client, &uri_ptr, dsize);
     if (iRet)
     {
+        CLR_HEADER(Client);
+        CLR_POST(Client);
+        CLR_METHOD(Client);
         return iRet;
     }
     /*

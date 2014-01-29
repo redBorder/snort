@@ -1,6 +1,7 @@
 /*
  **
  **
+ **  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  **  Copyright (C) 2012-2013 Sourcefire, Inc.
  **
  **  This program is free software; you can redistribute it and/or modify
@@ -27,20 +28,20 @@
 #ifndef __FILE_SERVICE_H__
 #define __FILE_SERVICE_H__
 
+#include "file_service_config.h"
+#include "file_lib.h"
 
-/*
- * Generator id. Define here the same as the official registry
- * in generators.h
- */
-#define GENERATOR_FILE_TYPE        146
-#define GENERATOR_FILE_SIGNATURE   147
+/* Initialize file API, this must be called when snort restarts */
+void init_fileAPI(void);
 
-#define FILE_SIGNATURE_SHA256        1
-#define FILE_SIGNATURE_SHA256_STR       "(file) malware detected"
-
-void FileAPIInit(void);
-void FileAPIPostInit(void);
+/* Free file configuration, this must be called when snort reloads/restarts*/
 void free_file_config(void*);
+
+void FileAPIPostInit(void);
+/* Close file API, this must be called when snort exits */
 void close_fileAPI(void);
+
+/* Get current file context */
+FileContext* get_current_file_context(void *ssnptr);
 #endif
 

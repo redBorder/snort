@@ -1,4 +1,5 @@
 /*
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 1998-2013 Sourcefire, Inc.
  * 
  * This program is free software; you can redistribute it and/or modify
@@ -203,6 +204,6 @@ typedef struct _SSLv2_shello
                                SSL_BAD_VER_FLAG | SSL_BAD_TYPE_FLAG | \
                                SSL_TRAILING_GARB_FLAG | SSL_UNKNOWN_FLAG))
 
-uint32_t SSL_decode(const uint8_t *pkt, int size, uint32_t pktflags);
+uint32_t SSL_decode(const uint8_t *pkt, int size, uint32_t pktflags, uint32_t prevflags);
 
 #endif

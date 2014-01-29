@@ -1,6 +1,7 @@
 /*
  * ftpp_si.h
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  * Steven A. Sturges <ssturges@sourcefire.com>
  * Daniel J. Roelker <droelker@sourcefire.com>
@@ -156,7 +157,7 @@ typedef struct s_FTP_SESSION
     int data_chan_state;
     int data_chan_index;
     int data_xfer_index;
-    int data_xfer_dir;
+    bool data_xfer_dir;
     snort_ip      clientIP;
     uint16_t clientPort;
     snort_ip      serverIP;
@@ -190,15 +191,14 @@ typedef struct s_FTP_DATA_SESSION
     int data_chan;
     int file_xfer_info;
     FilePosition position;
-    unsigned char direction;
+    bool direction;
     unsigned char mode;
     unsigned char flags;
 } FTP_DATA_SESSION;
 
 #define FTPDATA_FLG_REASSEMBLY_SET  (1<<0)
-#define FTPDATA_FLG_CLIENT_EOF      (1<<1)
-#define FTPDATA_FLG_SERVER_EOF      (1<<2)
-#define FTPDATA_FLG_FILENAME_SET    (1<<3)
+#define FTPDATA_FLG_FILENAME_SET    (1<<1)
+#define FTPDATA_FLG_STOP            (1<<2)
 
 #endif
 
@@ -231,12 +231,7 @@ int FTPGetPacketDir(SFSnortPacket *);
 /* FTP-Data file processing */
 FTP_DATA_SESSION * FTPDataSessionNew(SFSnortPacket *p);
 void FTPDataSessionFree(void *p_ssn);
-
-void SetFTPDataEOFDirection(SFSnortPacket *p, FTP_DATA_SESSION *ftpdata);
-
 bool FTPDataDirection(SFSnortPacket *p, FTP_DATA_SESSION *ftpdata);
-bool FTPDataEOFDirection(SFSnortPacket *p, FTP_DATA_SESSION *ftpdata);
-bool FTPDataEOF(FTP_DATA_SESSION *ftpdata);
 #endif
 
 #endif /* ! __FTPP_SI_H__ */

@@ -1,4 +1,5 @@
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 1998-2013 Sourcefire, Inc.
 ** Adam Keeton
 ** Kevin Liu <kliu@sourcefire.com>
@@ -37,6 +38,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h> /* For ceil */
+#include "sf_types.h" /* For bool */
 #include "sf_ip.h"
 
 /* For inet_pton */
@@ -224,6 +226,44 @@ static inline int _netmask_str_to_bit_count(char *mask, int family) {
     return bits;
 }
 
+/* Converts string IP format to an array of values. Also checks IP address format.
+   Specifically look for issues that inet_pton either overlooks or is inconsistent
+   about.  */
+SFIP_RET sfip_convert_ip_text_to_binary( const int family, char *ip, void *dst)
+{
+    char *my_ip;
+
+    my_ip = ip;
+
+    if( my_ip == NULL )
+        return( SFIP_FAILURE );
+
+    /* Across platforms, inet_pton() is inconsistent about leading 0's in
+       AF_INET (ie IPv4 addresses. */
+    if( family == AF_INET ) {
+        char chr;
+        bool new_octet;
+
+        new_octet = true;
+        while( (chr = *my_ip++) != '\0') {
+
+        /* If we are at the first char of a new octet, look for a leading zero
+           followed by another digit */
+        if( new_octet && (chr == '0') && isdigit(*my_ip))
+            return( SFIP_INET_PARSE_ERR );
+
+        /* when we see an octet separator, set the flag to start looking for a
+           leading zero. */
+        new_octet = (chr == '.');
+        }
+    }
+
+    if( inet_pton(family, ip, dst) < 1 )
+        return( SFIP_INET_PARSE_ERR );
+
+    return( SFIP_SUCCESS );  /* Otherwise, ip is OK */
+}
+
 /* Parses "src" and stores results in "dst" */
 SFIP_RET sfip_pton(const char *src, sfip_t *dst) {
     char *mask;
@@ -299,7 +339,7 @@ SFIP_RET sfip_pton(const char *src, sfip_t *dst) {
         else bits = 128;
     }
 
-    if(inet_pton(dst->family, ip, dst->ip8) < 1) {
+    if(sfip_convert_ip_text_to_binary(dst->family, ip, dst->ip8) != SFIP_SUCCESS) {
         free(sfip_buf);
         return SFIP_INET_PARSE_ERR;
     }

@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -108,18 +109,21 @@ void SMTP_DecodeAlert(void)
 {
     switch( smtp_ssn->decode_state->decode_type )
     {
-        case DECODE_B64:
-                SMTP_GenerateAlert(SMTP_B64_DECODING_FAILED, "%s", SMTP_B64_DECODING_FAILED_STR);
-                break;
-        case DECODE_QP:
-                SMTP_GenerateAlert(SMTP_QP_DECODING_FAILED, "%s", SMTP_QP_DECODING_FAILED_STR);
-                break;
-        case DECODE_UU:
-                SMTP_GenerateAlert(SMTP_UU_DECODING_FAILED, "%s", SMTP_UU_DECODING_FAILED_STR);
-                break;
+    case DECODE_B64:
+        if (smtp_eval_config->b64_depth > -1)
+            SMTP_GenerateAlert(SMTP_B64_DECODING_FAILED, "%s", SMTP_B64_DECODING_FAILED_STR);
+        break;
+    case DECODE_QP:
+        if (smtp_eval_config->qp_depth > -1)
+            SMTP_GenerateAlert(SMTP_QP_DECODING_FAILED, "%s", SMTP_QP_DECODING_FAILED_STR);
+        break;
+    case DECODE_UU:
+        if (smtp_eval_config->uu_depth > -1)
+            SMTP_GenerateAlert(SMTP_UU_DECODING_FAILED, "%s", SMTP_UU_DECODING_FAILED_STR);
+        break;
 
-        default:
-                break;
+    default:
+        break;
     }
 }
 

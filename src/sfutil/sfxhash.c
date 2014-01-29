@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -235,6 +236,13 @@ SFXHASH * sfxhash_new( int nrows, int keysize, int datasize, unsigned long maxme
     h->anrfree  = anrfree;
     h->usrfree  = usrfree;
     h->keysize  = keysize;
+
+#ifdef WORDS_MUSTALIGN
+    if ((h->keysize) & 7)
+        h->pad = (8 - ((h->keysize) & 7));
+#else
+    h->pad = 0;
+#endif
     h->datasize = datasize;
     h->nrows    = nrows;
     h->max_nodes = 0;
@@ -579,7 +587,7 @@ SFXHASH_NODE * sfxhash_newnode( SFXHASH * t )
     {
         if ((t->max_nodes == 0) || (t->count < t->max_nodes))
         {
-            hnode = (SFXHASH_NODE*)s_alloc( t, sizeof(SFXHASH_NODE) +
+            hnode = (SFXHASH_NODE*)s_alloc( t, sizeof(SFXHASH_NODE) + t->pad +
                                          t->keysize + t->datasize );
         }
     }
@@ -727,7 +735,7 @@ int sfxhash_add( SFXHASH * t, void * key, void * data )
     if( t->datasize )
     {
         /* Set up the new data pointer */
-        hnode->data= (char*)hnode + sizeof(SFXHASH_NODE) + t->keysize;
+        hnode->data= (char*)hnode + sizeof(SFXHASH_NODE) + t->pad + t->keysize;
 
         if(data)
         {
@@ -806,7 +814,7 @@ SFXHASH_NODE * sfxhash_get_node( SFXHASH * t, const void * key )
     if( t->datasize )
     {
         /* Set up the new data pointer */
-        hnode->data= (char*)hnode + sizeof(SFXHASH_NODE) + t->keysize;
+        hnode->data= (char*)hnode + sizeof(SFXHASH_NODE) + t->pad + t->keysize;
     }
     else
     {

@@ -1,6 +1,7 @@
 /*
  * snort_ftptelnet.c
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  * Steven A. Sturges <ssturges@sourcefire.com>
  * Daniel J. Roelker <droelker@sourcefire.com>
@@ -99,6 +100,10 @@ extern PreprocStats ftpPerfStats;
 extern PreprocStats telnetPerfStats;
 PreprocStats ftppDetectPerfStats;
 int ftppDetectCalled = 0;
+#endif
+
+#ifdef TARGET_BASED
+static unsigned s_ftpdata_eof_cb_id = 0;
 #endif
 
 extern tSfPolicyUserContextId ftp_telnet_config;
@@ -1915,7 +1920,7 @@ int DoNextFormat(FTP_PARAM_FMT *ThisFmt, int allocated,
     }
     else if ( *fmt == *F_LITERAL )
     {
-        char* end = index(++fmt, *F_LITERAL);
+        char* end = strchr(++fmt, *F_LITERAL);
         int len = end ? end - fmt : 0;
 
         if ( len < 1 )
@@ -2886,7 +2891,7 @@ static int PrintFTPServerConf(char * server, FTP_SERVER_PROTO_CONF *ServerConf)
 
     PrintConfOpt(&ServerConf->telnet_cmds, "  Check for Telnet Cmds");
     PrintConfOpt(&ServerConf->ignore_telnet_erase_cmds, "  Ignore Telnet Cmd Operations");
-    _dpd.logMsg("        Identify open data channels: %s\n",
+    _dpd.logMsg("        Ignore open data channels: %s\n",
         ServerConf->data_chan ? "YES" : "NO");
 
     if (ServerConf->print_commands)
@@ -3651,10 +3656,15 @@ int FTPTelnetCheckConfigs(struct _SnortConfig *sc, void* pData, tSfPolicyId poli
     /* Add FTPTelnet into the preprocessor list */
 #ifdef TARGET_BASED
     if ( _dpd.fileAPI->get_max_file_depth() >= 0 )
+    {
         _dpd.addPreproc(sc, FTPDataTelnetChecks, PRIORITY_SESSION, PP_FTPTELNET, PROTO_BIT__TCP);
+        s_ftpdata_eof_cb_id = _dpd.streamAPI->register_event_handler(SnortFTPData_EOF);
+    }
     else
 #endif
+    {
         _dpd.addPreproc(sc, FTPTelnetChecks, PRIORITY_APPLICATION, PP_FTPTELNET, PROTO_BIT__TCP);
+    }
 
     if ((rval = FTPTelnetCheckFTPServerConfigs(sc, pPolicyConfig)))
         return rval;
@@ -4039,13 +4049,6 @@ int SnortTelnet(FTPTELNET_GLOBAL_CONF *GlobalConf, TELNET_SESSION *TelnetSession
     return FTPP_SUCCESS;
 }
 
-static inline int InspectClientPacket (SFSnortPacket* p)
-{
-    if ( _dpd.isPafEnabled() )
-        return PacketHasPAFPayload(p);
-
-    return !(p->flags & FLAG_STREAM_INSERT);
-}
 /*
  * Function: SnortFTP(FTPTELNET_GLOBAL_CONF *GlobalConf,
  *                       Packet *p,
@@ -4098,7 +4101,7 @@ int SnortFTP(FTPTELNET_GLOBAL_CONF *GlobalConf, FTP_SESSION *FTPSession,
     }
     else
     {
-        if ( !InspectClientPacket(p) )
+        if ( !_dpd.readyForProcess(p) )
         {
             DEBUG_WRAP(DebugMessage(DEBUG_FTPTELNET,
                 "Client packet will be reassembled\n"));
@@ -4298,14 +4301,15 @@ int SnortFTPTelnet(SFSnortPacket *p)
 }
 
 #ifdef TARGET_BASED
-static void FTPDataProcess(SFSnortPacket *p, FTP_DATA_SESSION *data_ssn)
+static void FTPDataProcess(SFSnortPacket *p, FTP_DATA_SESSION *data_ssn,
+        uint8_t *file_data, uint16_t data_length)
 {
     int status;
 
     _dpd.setFileDataPtr((uint8_t *)p->payload, (uint16_t)p->payload_size);
 
-    status = _dpd.fileAPI->file_process(p, (uint8_t *)p->payload,
-        (uint16_t)p->payload_size, data_ssn->position, data_ssn->direction);
+    status = _dpd.fileAPI->file_process(p, (uint8_t *)file_data,
+        data_length, data_ssn->position, data_ssn->direction, false);
 
     /* Filename needs to be set AFTER the first call to file_process( ) */
     if (data_ssn->filename && !(data_ssn->flags & FTPDATA_FLG_FILENAME_SET))
@@ -4324,6 +4328,19 @@ static void FTPDataProcess(SFSnortPacket *p, FTP_DATA_SESSION *data_ssn)
     }
 }
 
+void SnortFTPData_EOF(SFSnortPacket *p)
+{
+    FTP_DATA_SESSION *data_ssn = (FTP_DATA_SESSION *)
+        _dpd.streamAPI->get_application_data(p->stream_session_ptr, PP_FTPTELNET);
+
+    if (!PROTO_IS_FTP_DATA(data_ssn) || !FTPDataDirection(p, data_ssn))
+        return;
+
+    initFilePosition(&data_ssn->position, _dpd.fileAPI->get_file_processed_size(p->stream_session_ptr));
+    finalFilePosition(&data_ssn->position);
+    _dpd.streamAPI->alert_flush_stream(p);
+}
+
 int SnortFTPData(SFSnortPacket *p)
 {
     FTP_DATA_SESSION *data_ssn;
@@ -4337,9 +4354,14 @@ int SnortFTPData(SFSnortPacket *p)
     if (!PROTO_IS_FTP_DATA(data_ssn))
         return -2;
 
+    if (data_ssn->flags & FTPDATA_FLG_STOP)
+        return 0;
+
     /* Do this now before splitting the work for rebuilt and raw packets. */
+#if 0
     if ((p->flags & FLAG_PDU_TAIL) || (p->tcp_header->flags & TCPHEADER_FIN))
         SetFTPDataEOFDirection(p, data_ssn);
+#endif
 
     /*
      * Raw Packet Processing
@@ -4357,24 +4379,10 @@ int SnortFTPData(SFSnortPacket *p)
             data_ssn->flags |= FTPDATA_FLG_REASSEMBLY_SET;
         }
 
-        if (data_ssn->file_xfer_info == FTPP_FILE_UNKNOWN)
-            return 0;
-
-        if (!FTPDataDirection(p, data_ssn) && FTPDataEOF(data_ssn))
+        if (isFileEnd(data_ssn->position))
         {
-            /* flush any remaining data from transmitter. */
-            _dpd.streamAPI->response_flush_stream(p);
-
-            /* If position is not set to END then no data has been flushed */
-            if ((data_ssn->position != SNORT_FILE_END) ||
-                (data_ssn->position != SNORT_FILE_FULL))
-            {
-                DEBUG_WRAP(DebugMessage(DEBUG_FTPTELNET,
-                  "FTP-DATA Processing Raw Packet\n"););
-
-                finalFilePosition(&data_ssn->position);
-                FTPDataProcess(p, data_ssn);
-            }
+            data_ssn->flags |= FTPDATA_FLG_STOP;
+            FTPDataProcess(p, data_ssn, (uint8_t *)p->payload, (uint16_t)p->payload_size);
         }
 
         return 0;
@@ -4408,7 +4416,8 @@ int SnortFTPData(SFSnortPacket *p)
             case FTPP_FILE_IGNORE:
                 /* This wasn't a file transfer; ignore it */
                 if (data_ssn->data_chan)
-                    _dpd.streamAPI->set_ignore_direction(p->stream_session_ptr, SSN_DIR_BOTH);
+                    _dpd.streamAPI->set_ignore_direction(
+                        p->stream_session_ptr, SSN_DIR_BOTH);
                 return 0;
 
             default:
@@ -4418,6 +4427,19 @@ int SnortFTPData(SFSnortPacket *p)
                 ftp_ssn->file_xfer_info  = 0;
                 data_ssn->filename  = ftp_ssn->filename;
                 ftp_ssn->filename   = NULL;
+
+                if ( p->tcp_header->flags & TCPHEADER_FIN )
+                {
+                    initFilePosition(&data_ssn->position,
+                        _dpd.fileAPI->get_file_processed_size(p->stream_session_ptr));
+                    finalFilePosition(&data_ssn->position);
+                }
+                else
+                {
+                    _dpd.streamAPI->set_event_handler(
+                        p->stream_session_ptr, s_ftpdata_eof_cb_id, SE_EOF); 
+                }
+
                 break;
         }
     }
@@ -4425,13 +4447,17 @@ int SnortFTPData(SFSnortPacket *p)
     if (!FTPDataDirection(p, data_ssn))
         return 0;
 
-    if (FTPDataEOFDirection(p, data_ssn))
-        finalFilePosition(&data_ssn->position);
+    if (isFileEnd(data_ssn->position))
+    {
+        data_ssn->flags |= FTPDATA_FLG_STOP;
+    }
     else
+    {
         initFilePosition(&data_ssn->position,
-          _dpd.fileAPI->get_file_processed_size(p->stream_session_ptr));
+            _dpd.fileAPI->get_file_processed_size(p->stream_session_ptr));
+    }
 
-    FTPDataProcess(p, data_ssn);
+    FTPDataProcess(p, data_ssn, (uint8_t *)p->payload, (uint16_t)p->payload_size);
     return 0;
 }
 #endif /* TARGET_BASED */

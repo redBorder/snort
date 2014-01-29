@@ -3,6 +3,7 @@
 ** Copyright (C) 2000,2001 Christopher Cramer <cec@ee.duke.edu>
 ** Snort is Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Marc Norton <mnorton@sourcefire.com>
 **

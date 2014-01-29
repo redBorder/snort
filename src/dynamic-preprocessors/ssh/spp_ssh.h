@@ -1,6 +1,7 @@
 /* $Id */
 
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 **
@@ -191,6 +192,7 @@ typedef struct _sshData
  * Length of SSH2 header, in bytes.
  */
 #define SSH2_HEADERLEN		(5)
+#define SSH2_PACKET_MAX_SIZE    (256 * 1024)
 
 /*
  * SSH2 binary packet struct.

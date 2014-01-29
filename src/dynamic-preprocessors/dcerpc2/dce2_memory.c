@@ -1,4 +1,5 @@
 /****************************************************************************
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -96,6 +97,7 @@ void DCE2_RegMem(uint32_t size, DCE2_MemType mtype)
         case DCE2_MEM_TYPE__SMB_UID:
         case DCE2_MEM_TYPE__SMB_TID:
         case DCE2_MEM_TYPE__SMB_FID:
+        case DCE2_MEM_TYPE__SMB_FILE:
         case DCE2_MEM_TYPE__SMB_REQ:
             DCE2_RegMemSmb(size, mtype);
             break;
@@ -207,6 +209,11 @@ static void DCE2_RegMemSmb(uint32_t size, DCE2_MemType mtype)
             dce2_memory.smb_fid += size;
             if (dce2_memory.smb_fid > dce2_memory.smb_fid_max)
                 dce2_memory.smb_fid_max = dce2_memory.smb_fid;
+            break;
+        case DCE2_MEM_TYPE__SMB_FILE:
+            dce2_memory.smb_file += size;
+            if (dce2_memory.smb_file > dce2_memory.smb_file_max)
+                dce2_memory.smb_file_max = dce2_memory.smb_file;
             break;
         case DCE2_MEM_TYPE__SMB_REQ:
             dce2_memory.smb_req += size;
@@ -339,6 +346,10 @@ void DCE2_UnRegMem(uint32_t size, DCE2_MemType mtype)
             dce2_memory.smb_total -= size;
             dce2_memory.smb_fid -= size;
             break;
+        case DCE2_MEM_TYPE__SMB_FILE:
+            dce2_memory.smb_total -= size;
+            dce2_memory.smb_file -= size;
+            break;
         case DCE2_MEM_TYPE__SMB_REQ:
             dce2_memory.smb_total -= size;
             dce2_memory.smb_req -= size;
@@ -410,12 +421,15 @@ static int DCE2_CheckMemcap(uint32_t size, DCE2_MemType mtype)
 {
     switch (mtype)
     {
+        /*Avoid checking memcap for configurations*/
         case DCE2_MEM_TYPE__CONFIG:
         case DCE2_MEM_TYPE__ROPTION:
         case DCE2_MEM_TYPE__RT:
         case DCE2_MEM_TYPE__INIT:
             break;
         default:
+            if (dce2_mem_state == DCE2_MEM_STATE__MEMCAP)
+                break;
             if ((dce2_memory.rtotal + size) > DCE2_GcMemcap())
             {
                 DCE2_Alert(NULL, DCE2_EVENT__MEMCAP);
@@ -443,9 +457,6 @@ static int DCE2_CheckMemcap(uint32_t size, DCE2_MemType mtype)
 void * DCE2_Alloc(uint32_t size, DCE2_MemType mtype)
 {
     void *mem;
-
-    if (dce2_mem_state == DCE2_MEM_STATE__MEMCAP)
-        return NULL;
 
     if (DCE2_CheckMemcap(size, mtype) != DCE2_MEMCAP_OK)
         return NULL;
@@ -494,9 +505,6 @@ void * DCE2_ReAlloc(void *old_mem, uint32_t old_size, uint32_t new_size, DCE2_Me
 {
     void *new_mem;
     DCE2_Ret status;
-
-    if (dce2_mem_state == DCE2_MEM_STATE__MEMCAP)
-        return NULL;
 
     if (old_mem == NULL)
     {

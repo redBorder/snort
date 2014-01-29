@@ -159,7 +159,7 @@ Verdicts are rendered by Snort on each packet:
 
 * Allow = packets Snort analyzed and did not take action on. 
 
-* Block = packets Snort did not forward, eg due to a block rule.  "Block" is
+* Block = packets Snort did not forward, e.g. due to a block rule.  "Block" is
   used instead of "Drop" to avoid confusion between dropped packets (those
   Snort didn't actually see) and blocked packets (those Snort did not allow to
   pass).

@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -49,8 +50,9 @@
 * #define SMTP_BITENC_DECODING_FAILED 12
 */
 #define SMTP_UU_DECODING_FAILED     13
+#define SMTP_AUTH_ABORT_AUTH        14
 
-#define SMTP_EVENT_MAX  14
+#define SMTP_EVENT_MAX  15
 
 /* Messages for each event */
 #define SMTP_COMMAND_OVERFLOW_STR        "(smtp) Attempted command buffer overflow"
@@ -65,6 +67,7 @@
 #define SMTP_B64_DECODING_FAILED_STR     "(smtp) Base64 Decoding failed."
 #define SMTP_QP_DECODING_FAILED_STR      "(smtp) Quoted-Printable Decoding failed."
 #define SMTP_UU_DECODING_FAILED_STR      "(smtp) Unix-to-Unix Decoding failed."
+#define SMTP_AUTH_ABORT_AUTH_STR         "(smtp) Cyrus SASL authentication attack."
 
 #define EVENT_STR_LEN  256
 

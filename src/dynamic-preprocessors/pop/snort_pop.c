@@ -1,5 +1,6 @@
 /****************************************************************************
  *
+ * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -467,13 +468,13 @@ static POP * POP_GetNewSession(SFSnortPacket *p, tSfPolicyId policy_id)
     if (p->stream_session_ptr != NULL)
     {
         /* check to see if we're doing client reassembly in stream */
-        if (_dpd.streamAPI->get_reassembly_direction(p->stream_session_ptr) & SSN_DIR_CLIENT)
+        if (_dpd.streamAPI->get_reassembly_direction(p->stream_session_ptr) & SSN_DIR_FROM_CLIENT)
             ssn->reassembling = 1;
 
         if(!ssn->reassembling)
         {
             _dpd.streamAPI->set_reassembly(p->stream_session_ptr,
-                    STREAM_FLPOLICY_FOOTPRINT, SSN_DIR_CLIENT, STREAM_FLPOLICY_SET_ABSOLUTE);
+                    STREAM_FLPOLICY_FOOTPRINT, SSN_DIR_FROM_CLIENT, STREAM_FLPOLICY_SET_ABSOLUTE);
             ssn->reassembling = 1;
         }
     }
@@ -515,7 +516,7 @@ static int POP_Setup(SFSnortPacket *p, POP *ssn)
         (p->flags & FLAG_REBUILT_STREAM))
     {
         int missing_in_rebuilt =
-            _dpd.streamAPI->missing_in_reassembled(p->stream_session_ptr, SSN_DIR_CLIENT);
+            _dpd.streamAPI->missing_in_reassembled(p->stream_session_ptr, SSN_DIR_FROM_CLIENT);
 
         if (ssn->session_flags & POP_FLAG_NEXT_STATE_UNKNOWN)
         {
@@ -525,25 +526,11 @@ static int POP_Setup(SFSnortPacket *p, POP *ssn)
             ssn->session_flags &= ~POP_FLAG_NEXT_STATE_UNKNOWN;
         }
 
-        if (missing_in_rebuilt == SSN_MISSING_BOTH)
-        {
-            DEBUG_WRAP(DebugMessage(DEBUG_POP, "Found missing packets before and after "
-                                    "in reassembly buffer - set state to unknown and "
-                                    "next state to unknown\n"););
-            ssn->state = STATE_UNKNOWN;
-            ssn->session_flags |= POP_FLAG_NEXT_STATE_UNKNOWN;
-        }
-        else if (missing_in_rebuilt == SSN_MISSING_BEFORE)
+        if (missing_in_rebuilt == SSN_MISSING_BEFORE)
         {
             DEBUG_WRAP(DebugMessage(DEBUG_POP, "Found missing packets before "
                                     "in reassembly buffer - set state to unknown\n"););
             ssn->state = STATE_UNKNOWN;
-        }
-        else if (missing_in_rebuilt == SSN_MISSING_AFTER)
-        {
-            DEBUG_WRAP(DebugMessage(DEBUG_POP, "Found missing packets after "
-                                    "in reassembly buffer - set next state to unknown\n"););
-            ssn->session_flags |= POP_FLAG_NEXT_STATE_UNKNOWN;
         }
     }
 
@@ -805,10 +792,12 @@ static int POP_GetBoundary(const char *data, int data_len)
     int ret;
     char *mime_boundary;
     int  *mime_boundary_len;
+    int  *mime_boundary_state;
 
 
     mime_boundary = &pop_ssn->mime_boundary.boundary[0];
     mime_boundary_len = &pop_ssn->mime_boundary.boundary_len;
+    mime_boundary_state = &pop_ssn->mime_boundary.state;
 
     /* result will be the number of matches (including submatches) */
     result = pcre_exec(mime_boundary_pcre.re, mime_boundary_pcre.pe,
@@ -840,6 +829,7 @@ static int POP_GetBoundary(const char *data, int data_len)
     }
 
     *mime_boundary_len = 2 + boundary_len;
+    *mime_boundary_state = 0;
     mime_boundary[*mime_boundary_len] = '\0';
 
     return 0;
@@ -1033,7 +1023,7 @@ static const uint8_t * POP_HandleData(SFSnortPacket *p, const uint8_t *ptr, cons
             _dpd.setFileDataPtr(pop_ssn->decode_state->decodePtr, (uint16_t)detection_size);
             /*Download*/
             if (_dpd.fileAPI->file_process(p,(uint8_t *)pop_ssn->decode_state->decodePtr,
-                    (uint16_t)pop_ssn->decode_state->decoded_bytes, position, 0)
+                    (uint16_t)pop_ssn->decode_state->decoded_bytes, position, false, false)
                     && (isFileStart(position)) && pop_ssn->log_state)
             {
                 _dpd.fileAPI->set_file_name_from_log(&(pop_ssn->log_state->file_log), p->stream_session_ptr);
@@ -1057,6 +1047,7 @@ static const uint8_t * POP_HandleData(SFSnortPacket *p, const uint8_t *ptr, cons
             case STATE_DATA_BODY:
                 DEBUG_WRAP(DebugMessage(DEBUG_POP, "DATA BODY STATE ~~~~~~~~~~~~~~~~~~~~~~~~\n"););
                 ptr = POP_HandleDataBody(p, ptr, data_end_marker);
+                _dpd.fileAPI->update_file_name(pop_ssn->log_state);
                 break;
         }
     }
@@ -1065,23 +1056,18 @@ static const uint8_t * POP_HandleData(SFSnortPacket *p, const uint8_t *ptr, cons
 
     if(pop_ssn->decode_state != NULL)
     {
-        if ((position == SNORT_FILE_START) || (position == SNORT_FILE_FULL))
-        {
-            int detection_size = getDetectionSize(pop_eval_config->b64_depth, pop_eval_config->qp_depth,
-                    pop_eval_config->uu_depth, pop_eval_config->bitenc_depth,pop_ssn->decode_state );
-            _dpd.setFileDataPtr(pop_ssn->decode_state->decodePtr, (uint16_t)detection_size);
-        }
-        else
-        {
-            _dpd.setFileDataPtr(pop_ssn->decode_state->decodePtr, 0);
-        }
+
+        int detection_size = getDetectionSize(pop_eval_config->b64_depth, pop_eval_config->qp_depth,
+                pop_eval_config->uu_depth, pop_eval_config->bitenc_depth,pop_ssn->decode_state );
+        _dpd.setFileDataPtr(pop_ssn->decode_state->decodePtr, (uint16_t)detection_size);
+
         if ((data_end_marker != end) || (pop_ssn->state_flags & POP_FLAG_MIME_END))
         {
            finalFilePosition(&position);
         }
         /*Download*/
         if (_dpd.fileAPI->file_process(p,(uint8_t *)pop_ssn->decode_state->decodePtr,
-                (uint16_t)pop_ssn->decode_state->decoded_bytes, position, 0)
+                (uint16_t)pop_ssn->decode_state->decoded_bytes, position, false, false)
                 && (isFileStart(position)) && pop_ssn->log_state)
         {
             _dpd.fileAPI->set_file_name_from_log(&(pop_ssn->log_state->file_log), p->stream_session_ptr);
@@ -1365,7 +1351,7 @@ static const uint8_t * POP_HandleHeader(SFSnortPacket *p, const uint8_t *ptr,
 
 
 /*
- * Handle DATA_BODY statesmtp_ssn->log_state
+ * Handle DATA_BODY statepop_ssn->log_state
  *
  * @param   packet  standard Packet structure
  *
@@ -1386,12 +1372,13 @@ static const uint8_t * POP_HandleDataBody(SFSnortPacket *p, const uint8_t *ptr,
     /* look for boundary */
     if (pop_ssn->state_flags & POP_FLAG_GOT_BOUNDARY)
     {
-        boundary_found = _dpd.searchAPI->search_instance_find
+        boundary_found = _dpd.searchAPI->stateful_search_instance_find
             (pop_ssn->mime_boundary.boundary_search, (const char *)ptr,
-             data_end_marker - ptr, 0, POP_BoundaryStrFound);
+             data_end_marker - ptr, 0, POP_BoundaryStrFound, &(pop_ssn->mime_boundary.state));
 
         if (boundary_found > 0)
         {
+            pop_ssn->mime_boundary.state = 0;
             boundary_ptr = ptr + pop_search_info.index;
 
             /* should start at beginning of line */
@@ -1407,6 +1394,9 @@ static const uint8_t * POP_HandleDataBody(SFSnortPacket *p, const uint8_t *ptr,
                     pop_ssn->state_flags &= ~POP_FLAG_EMAIL_ATTACH;
                     if(attach_start < attach_end)
                     {
+                        if (*(attach_end - 1) == '\r')
+                            attach_end--;
+
                         if(EmailDecode( attach_start, attach_end, pop_ssn->decode_state) < DECODE_SUCCESS )
                         {
                             POP_DecodeAlert();
@@ -1415,8 +1405,15 @@ static const uint8_t * POP_HandleDataBody(SFSnortPacket *p, const uint8_t *ptr,
                 }
 
 
+                if(boundary_ptr > ptr)
+                    tmp = boundary_ptr + pop_search_info.length;
+                else
+                {
+                    tmp = (const uint8_t *)_dpd.searchAPI->search_instance_find_end((char *)boundary_ptr, 
+                            (data_end_marker - boundary_ptr), pop_ssn->mime_boundary.boundary, pop_search_info.length);
+                }
+
                 /* Check for end boundary */
-                tmp = boundary_ptr + pop_search_info.length;
                 if (((tmp + 1) < data_end_marker) && (tmp[0] == '-') && (tmp[1] == '-'))
                 {
                     DEBUG_WRAP(DebugMessage(DEBUG_POP, "Mime boundary end found: %s--\n",
@@ -1688,7 +1685,7 @@ void SnortPOP(SFSnortPacket *p)
         }
 #endif
 
-        if (p->flags & FLAG_STREAM_INSERT)
+        if (!_dpd.readyForProcess(p))
         {
             /* Packet will be rebuilt, so wait for it */
             DEBUG_WRAP(DebugMessage(DEBUG_POP, "Client packet will be reassembled\n"));

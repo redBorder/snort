@@ -1,5 +1,6 @@
 /* $Id$ */
 /*
+** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -229,9 +230,9 @@ int GetFilesUnderDir(const char *, SF_QUEUE *, const char *);
 ***********************************************************/
 char *hex(const u_char *, int);
 char *fasthex(const u_char *, int);
-long int xatol(const char *, const char *);
-unsigned long int xatou(const char *, const char *);
-unsigned long int xatoup(const char *, const char *); // return > 0
+int xatol(const char *, const char *);
+unsigned int xatou(const char *, const char *);
+unsigned int xatoup(const char *, const char *); // return > 0
 
 static inline void* SnortAlloc (unsigned long size)
 {

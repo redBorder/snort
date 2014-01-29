@@ -22,7 +22,7 @@ config binding: <path_to_snort.conf> policy_id <policyId>
 <path_to_snort.conf> : Refers to the absolute or relative path to the snort.conf
 for specific configuration.
 
-<vlanIdList>     : Refers to the comma seperated list of vlandIds and vlanId
+<vlanIdList>     : Refers to the comma separated list of vlandIds and vlanId
 ranges.  The format for ranges is two vlanId separated by a "-". Spaces are 
 allowed within ranges.  Valid vlanId is any number in 0-4095 range. Negative 
 vland Ids and alphanumeric are not supported.
@@ -31,7 +31,7 @@ vland Ids and alphanumeric are not supported.
 or IPv4.  A maximum of 512 individual IPv4 or IPv6 addresses or CIDRs can be
 specified.
 
-<policyIdList>   : Refers to the comma seperated list of 16bit policyIds
+<policyIdList>   : Refers to the comma separated list of 16bit policyIds
 
 NOTE: Vlan and Subnets can not be used in the same line. Configurations can be 
 applied based on either Vlans or Subnets not both. 

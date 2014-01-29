@@ -117,7 +117,7 @@ is:
 - CPU Ticks
 - Avg Ticks per Check
 - Percent of caller
-  For non layer 0 preprocessors -- ie, subroutines within preprocessors,
+  For non layer 0 preprocessors -- i.e., subroutines within preprocessors,
   this identifies the percent of the caller's ticks that is spent for
   this subtask.
 
