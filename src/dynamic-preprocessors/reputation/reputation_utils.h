@@ -31,4 +31,7 @@
 #include <string.h>
 int Reputation_IsEmptyStr(char *);
 int numLinesInFile(char *fname);
+#ifdef REPUTATION_GEOIP
+int numLinesInGeoIPDatabase(const char *cur_tokenp,const char *separators);
+#endif
 #endif /* REPUTATION_UTILS_H_ */

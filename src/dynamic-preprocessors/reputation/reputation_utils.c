@@ -103,3 +103,79 @@ int numLinesInFile(char *fname)
     fclose(fp);
     return numlines;
 }
+
+#ifdef REPUTATION_GEOIP
+/********************************************************************
+ * Function: copyPath()
+ *
+ * Copy only the path of the file: /foo/bar/xyz -> /foo/bar/
+ *
+ * Arguments:
+ *  buf: buffer to write the path
+ *  path: fill path of the file
+ *
+ * Returns:
+ *  size_t Memory copied to buf
+ *
+ * Note: Be sure buf is big enough to save path: sizeof(buf) must be <= strlen(path);
+ *
+ ********************************************************************/
+static inline size_t copyPath(char *buf,const char *path)
+{
+    char *last_path_separator = strrchr(path,'/');
+    if(last_path_separator)
+    {
+                                                       /* +1: include '/' */
+        const size_t path_len = last_path_separator - path + 1;
+        memcpy(buf,path,path_len);
+        return path_len;
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+/********************************************************************
+ * Function: numLinesInGeiIPDatabase()
+ *
+ * Number of lines in the files pointed by GeoIP database
+ *
+ * Arguments:
+ *  fname: database file name
+ *
+ * Returns:
+ *  uint32_t  number of lines
+ *
+ ********************************************************************/
+int numLinesInGeoIPManifest(const char *manifest_fname, const char *separators)
+{
+    uint32_t numlines = 0;
+    char buf[MAX_ADDR_LINE_LENGTH];
+
+    FILE *fp = fopen(manifest_fname, "rb");
+
+    if (NULL == fp)
+        return 0;
+
+    char geo_filename[MAX_ADDR_LINE_LENGTH];
+    const size_t path_len = copyPath(geo_filename,manifest_fname);
+
+    char *last_geo_filename_separator = geo_filename + path_len;
+    const size_t avail_geo_filename_space = MAX_ADDR_LINE_LENGTH - path_len;
+
+    while((fgets(buf, MAX_ADDR_LINE_LENGTH, fp)) != NULL)
+    {
+        char *aux;
+        char *filename = strtok_r(buf,separators,&aux);
+        snprintf(last_geo_filename_separator,avail_geo_filename_space,"%s", filename);
+
+        if (buf[0] != '#')
+            numlines += numLinesInFile(geo_filename);
+    }
+
+    fclose(fp);
+    return numlines;
+}
+
+#endif

@@ -1629,6 +1629,24 @@ int EstimateNumEntries(ReputationConfig *config, u_char* argp)
 
         }
 #endif
+#ifdef REPUTATION_GEOIP
+        else if ( !strcasecmp( cur_tokenp, REPUTATION_GEOIP_PATH_KEYWORD))
+        {
+            cur_tokenp = strtok_r( next_tokenp, REPUTATION_CONFIG_VALUE_SEPERATORS, &next_tokenp);
+            DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Check geoip entries size %s\n",cur_tokenp ););
+            if(cur_tokenp == NULL)
+            {
+                DynamicPreprocessorFatalMessage("%s(%d) => Bad geoip db filename in IP List.\n",
+                        *(_dpd.config_file), *(_dpd.config_line));
+            }
+
+            char full_path_filename[PATH_MAX+1];
+            UpdatePathToFile(full_path_filename,PATH_MAX, cur_tokenp);
+            strcat(full_path_filename,"/" GEOIP_MANIFEST_FILENAME);
+            int numlines = numLinesInGeoIPManifest(full_path_filename,REPUTATION_GEOIP_MANIFEST_SEPARATORS);
+            totalLines += numlines;
+        }
+#endif
 
         cur_sectionp = strtok_r( next_sectionp, REPUTATION_CONFIG_SECTION_SEPERATORS, &next_sectionp);
         DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Arguments token: %s\n",cur_sectionp ););
