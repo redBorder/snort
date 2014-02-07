@@ -120,7 +120,7 @@ int numLinesInFile(char *fname)
  * Note: Be sure buf is big enough to save path: sizeof(buf) must be <= strlen(path);
  *
  ********************************************************************/
-static inline size_t copyPath(char *buf,const char *path)
+size_t copyPath(char *buf,const char *path)
 {
     char *last_path_separator = strrchr(path,'/');
     if(last_path_separator)

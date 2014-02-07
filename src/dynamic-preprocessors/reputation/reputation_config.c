@@ -89,6 +89,7 @@ enum
 //redBorder: New Options: default action, keep ordered and reputation geoip (this option must be enabled at configure)
 #define REPUTATION_DEFAULT_ACTION_KEYWORD  "default_action"
 #define REPUTATION_ORDERED_KEYWORD         "ordered"
+#define REPUTATION_MANIFEST_KEYWORD        "manifest"
 
 #ifdef REPUTATION_GEOIP
 
@@ -195,6 +196,97 @@ uint32_t estimateSizeFromEntries(uint32_t num_entries, uint32_t memcap)
 
     return (uint32_t) size;
 }
+
+static int UpdatePathToFile(char *full_path_filename, unsigned int max_size, char *filename);
+
+int EstimateNumEntries_Manifest(const char *manifest_fname)
+{
+    char buffer[MAX_ADDR_LINE_LENGTH];
+    FILE *file = fopen(manifest_fname,"r");
+    int total_numlines = 0;
+    
+    char manifest_filename[MAX_ADDR_LINE_LENGTH];
+    const size_t path_len = copyPath(manifest_filename,manifest_fname);
+
+    char *last_manifest_filename_separator = manifest_filename + path_len;
+    const size_t avail_manifest_filename_space = MAX_ADDR_LINE_LENGTH - path_len;
+
+    while(fgets(buffer,MAX_ADDR_LINE_LENGTH,file))
+    {
+        if( strlen(buffer) > 0 && buffer[0] != '#' && buffer[0] != '\n' )
+        {
+            char *aux;
+            char *filename = strtok_r(buffer,REPUTATION_GEOIP_MANIFEST_SEPARATORS,&aux);
+            snprintf(last_manifest_filename_separator,avail_manifest_filename_space,"%s", filename);
+
+            total_numlines += numLinesInFile(manifest_filename);
+        }
+    }
+
+    return total_numlines;
+}
+
+void LoadManifestFile(const char *manifest_file, ReputationConfig *config)
+{
+    char buffer[MAX_ADDR_LINE_LENGTH];
+    FILE *file = fopen(manifest_file,"r");
+
+    while(fgets(buffer,MAX_ADDR_LINE_LENGTH,file))
+    {
+        if(strlen(buffer) > 0 && buffer[0] != '#' && buffer[0] != '\n' )
+        {
+            char *aux;
+            char *file = strtok_r(buffer,REPUTATION_GEOIP_MANIFEST_SEPARATORS,&aux);
+            if( !file )
+                DynamicPreprocessorFatalMessage("File was not given in manifest file %s",manifest_file);
+            
+            char *list_id_char = strtok_r(NULL,REPUTATION_GEOIP_MANIFEST_SEPARATORS, &aux);
+            if ( !list_id_char )
+                DynamicPreprocessorFatalMessage("List ID was not given in manifest file %s",manifest_file);
+
+            char *reputation_type = strtok_r(NULL,REPUTATION_GEOIP_MANIFEST_SEPARATORS,&aux);
+
+            if ( !strcasecmp( reputation_type, REPUTATION_BLACKLIST_KEYWORD ))
+            {
+                DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Loading blacklist from %s\n",file ););
+                if(file == NULL)
+                {
+                    DynamicPreprocessorFatalMessage("%s(%d) => Bad list filename in IP List.\n",
+                            *(_dpd.config_file), *(_dpd.config_line));
+                }
+                if (!config->sharedMem.path)
+                    LoadListFile(file, config->local_black_ptr, config);
+                else
+                {
+                    _dpd.logMsg("WARNING: %s(%d) => List file %s is not loaded "
+                            "when using shared memory.\n",
+                            *(_dpd.config_file), *(_dpd.config_line), file);
+                }
+            }
+
+            else if ( !strcasecmp( reputation_type, REPUTATION_WHITELIST_KEYWORD ))
+            {
+                DEBUG_WRAP(DebugMessage(DEBUG_REPUTATION, "Loading whitelist from %s\n",file ););
+                if(file == NULL)
+                {
+                    DynamicPreprocessorFatalMessage("%s(%d) => Bad list filename in IP List.\n",
+                            *(_dpd.config_file), *(_dpd.config_line));
+                }
+
+                if (!config->sharedMem.path)
+                    LoadListFile(file, config->local_white_ptr, config);
+                else
+                {
+                    _dpd.logMsg("WARNING: %s(%d) => List file %s is not loaded "
+                            "when using shared memory.\n",
+                            *(_dpd.config_file), *(_dpd.config_line), file);
+                }
+            }
+
+        }
+    }
+}
+
 #ifdef SHARED_REP
 /****************************************************************************
  *
@@ -1600,6 +1692,16 @@ int EstimateNumEntries(ReputationConfig *config, u_char* argp)
             }
 
         }
+        else if ( !strcasecmp( cur_tokenp, REPUTATION_MANIFEST_KEYWORD ))
+        {
+            cur_tokenp = strtok_r(next_tokenp, REPUTATION_CONFIG_VALUE_SEPERATORS, &next_tokenp);
+            if( NULL==cur_tokenp )
+            {
+                DynamicPreprocessorFatalMessage(" %s(%d) => Invalid argument: %s for %s\n",
+                        *(_dpd.config_file), *(_dpd.config_line), cur_tokenp);
+            }
+            totalLines += EstimateNumEntries_Manifest(cur_tokenp);
+        }
 #ifdef SHARED_REP
         else if ( !strcasecmp( cur_tokenp, REPUTATION_SHAREMEM_KEYWORD ))
         {
@@ -1872,7 +1974,6 @@ void ParseReputationArgs(ReputationConfig *config, u_char* argp)
             /* processed before */
 
         }
-        //redBorder: REPUTATION_DEFAULT_ACTION_KEYWORD option process
         else if ( !strcasecmp( cur_tokenp, REPUTATION_DEFAULT_ACTION_KEYWORD ) )
         {
             cur_tokenp = strtok( NULL, REPUTATION_CONFIG_VALUE_SEPERATORS);
@@ -1907,9 +2008,18 @@ void ParseReputationArgs(ReputationConfig *config, u_char* argp)
                  return;
             }
         }
-        //redBorder: end of REPUTATION_DEFAULT_ACTION_KEYWORD option
+        else if (!strcasecmp( cur_tokenp, REPUTATION_MANIFEST_KEYWORD ) )
+        {
+            cur_tokenp = strtok(NULL, REPUTATION_CONFIG_VALUE_SEPERATORS);
+            if(!cur_tokenp)
+            {
+                DynamicPreprocessorFatalMessage(" %s(%d) => Missing argument for %s\n",
+                                    *(_dpd.config_file), *(_dpd.config_line), REPUTATION_DEFAULT_ACTION_KEYWORD);
+                return;
+            }
+            LoadManifestFile(cur_tokenp, config);
+        }
 #ifdef REPUTATION_GEOIP
-        //redBorder: REPUTATION_GEOIP_DB_KEYWORD option process
         else if ( !strcasecmp( cur_tokenp, REPUTATION_GEOIP_DB_KEYWORD ) )
         {
             cur_tokenp = strtok( NULL, REPUTATION_CONFIG_VALUE_SEPERATORS);
@@ -1923,9 +2033,7 @@ void ParseReputationArgs(ReputationConfig *config, u_char* argp)
             if (config->geoip_db)
                 strcpy(config->geoip_db, cur_tokenp);
         }
-        //redBorder: end of REPUTATION_GEOIP_DB_KEYWORD option
         
-        //redBorder: REPUTATION_GEOIP_PATH_KEYWORD option process
         else if ( !strcasecmp( cur_tokenp, REPUTATION_GEOIP_PATH_KEYWORD ) )
         {
             cur_tokenp = strtok( NULL, REPUTATION_CONFIG_VALUE_SEPERATORS);
@@ -1939,7 +2047,6 @@ void ParseReputationArgs(ReputationConfig *config, u_char* argp)
             if (config->geoip_path)
                 strcpy(config->geoip_path, cur_tokenp);
         }
-        //redBorder: end of REPUTATION_GEOIP_DB_KEYWORD option
 #endif
 
 #ifdef SHARED_REP

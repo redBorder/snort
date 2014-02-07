@@ -56,11 +56,13 @@ typedef enum _WhiteAction
     TRUST
 }WhiteAction;
 
+#ifdef SHARED_REP
 typedef struct _SharedMem
 {
     char *path;
     uint32_t updateInterval;
 }SharedMem;
+#endif
 
 #ifdef REPUTATION_GEOIP
 typedef struct _GeoFileList
