@@ -199,11 +199,18 @@ uint32_t estimateSizeFromEntries(uint32_t num_entries, uint32_t memcap)
 
 static int UpdatePathToFile(char *full_path_filename, unsigned int max_size, char *filename);
 
+#ifdef REPUTATION_GEOIP
+
 int EstimateNumEntries_Manifest(const char *manifest_fname)
 {
     char buffer[MAX_ADDR_LINE_LENGTH];
     FILE *file = fopen(manifest_fname,"r");
     int total_numlines = 0;
+
+    if( NULL == file )
+    {
+        DynamicPreprocessorFatalMessage("Manifest %s not found.\n",manifest_fname);
+    }
     
     char manifest_filename[MAX_ADDR_LINE_LENGTH];
     const size_t path_len = copyPath(manifest_filename,manifest_fname);
@@ -286,6 +293,8 @@ void LoadManifestFile(const char *manifest_file, ReputationConfig *config)
         }
     }
 }
+
+#endif
 
 #ifdef SHARED_REP
 /****************************************************************************
