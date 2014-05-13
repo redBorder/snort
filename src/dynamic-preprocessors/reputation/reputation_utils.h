@@ -31,7 +31,6 @@
 #include <string.h>
 int Reputation_IsEmptyStr(char *);
 int numLinesInFile(char *fname);
-size_t copyPath(char *buf,const char *path);
 #ifdef REPUTATION_GEOIP
 int numLinesInGeoIPManifest(const char *cur_tokenp,const char *separators);
 #endif
