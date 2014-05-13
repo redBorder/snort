@@ -519,6 +519,16 @@ int InitPerProcessZeroSegment(void*** data_ptr)
     return 0;
 }
 
+// redborder
+static int getInstancesGroupId(){
+    const char *groupId = getenv("INSTANCES_GROUP");
+    if(groupId)
+        return atoi(groupId);
+    else
+        return GROUP_0;
+}
+
+
 /* ********************************************************************
  * Function: initShareMemory
  *
@@ -536,6 +546,7 @@ void initShareMemory(struct _SnortConfig *sc, void *conf)
 {
     uint32_t snortID;
     ReputationConfig *config = (ReputationConfig *)conf;
+    const int redborder_group_id = getInstancesGroupId();
 
     switch_state = SWITCHING;
     reputation_shmem_config = config;
@@ -549,7 +560,7 @@ void initShareMemory(struct _SnortConfig *sc, void *conf)
     snortID = _dpd.getSnortInstance();
     if (SHMEM_SERVER_ID == snortID)
     {
-        if ((available_segment = InitShmemWriter(snortID,IPREP,GROUP_0,NUMA_0,
+        if ((available_segment = InitShmemWriter(snortID,IPREP,redborder_group_id,NUMA_0,
                 config->sharedMem.path, &IPtables,config->sharedMem.updateInterval)) == NO_ZEROSEG)
         {
             DynamicPreprocessorFatalMessage("Unable to init share memory writer\n");
@@ -559,7 +570,7 @@ void initShareMemory(struct _SnortConfig *sc, void *conf)
     }
     else
     {
-        if ((available_segment = InitShmemReader(snortID,IPREP,GROUP_0,NUMA_0,
+        if ((available_segment = InitShmemReader(snortID,IPREP,redborder_group_id,NUMA_0,
                 config->sharedMem.path, &IPtables,config->sharedMem.updateInterval)) == NO_ZEROSEG)
         {
             DynamicPreprocessorFatalMessage("Unable to init share memory reader\n");
