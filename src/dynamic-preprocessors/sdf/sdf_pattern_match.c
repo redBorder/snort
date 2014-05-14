@@ -601,14 +601,14 @@ sdf_tree_node * FindPiiRecursively(sdf_tree_node *node, char *buf, uint16_t *buf
         }
 
         /* Check the children first. Always err on the side of a larger match. */
-        while (i < node->num_children && matched_node == NULL)
+        while (i < node->num_children && (matched_node == NULL) && !(*partial_index) )
         {
             matched_node = FindPiiRecursively(node->children[i], buf, buf_index, buflen, config,
                     partial_index, partial_node);
             i++;
         }
 
-        if (matched_node != NULL)
+        if ((matched_node != NULL) || *partial_index)
             return matched_node;
 
         /* An sdf_tree_node holds multiple SDFOptionData. It's possible to get
@@ -657,6 +657,7 @@ sdf_tree_node * FindPii(const sdf_tree_node *head, char *buf, uint16_t *buf_inde
     uint16_t i;
     uint16_t *partial_index = &(session->part_match_index);
     sdf_tree_node **partial_node = &(session->part_match_node);
+    *partial_index = 0;
 
     if (head == NULL)
         return NULL;

@@ -30,7 +30,7 @@
 
 #define NUM_BYTE_EXTRACT_VARS 2
 #define BYTE_EXTRACT_NO_VAR -1
-#define BYTE_EXTRACT_INVALID_ERR_STR "Rule option uses an undefined byte_extract variable name."
+#define BYTE_EXTRACT_INVALID_ERR_FMT "Rule option %s uses an undefined byte_extract variable name (%s)." //format: rule name, variable name
 #define MAX_BYTES_TO_GRAB 4
 
 #define MIN_BYTE_EXTRACT_OFFSET -65535

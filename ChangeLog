@@ -1,3 +1,42 @@
+2014-03-04 Steven Sturges <ssturges@sourcefire.com>
+Snort 2.9.6.1
+    * src/build.h:
+      updating build number to 56
+
+    * src/Makefile.am, src/dump.c, src/dump.h, src/snort.c,
+      configure.in, tools/control/Makefile.am,
+      tools/control/README.snort_dump_packets_control,
+      tools/control/sfcontrol.c, tools/control/snort_dump_packets.c:
+      Added a control command (4) to snort that takes a filename and bpf.
+      The instance number (-G <n>) is added to the filename as <filename>.<n>.
+      All packets that match the given bpf are written to the pcap file.
+      Added a control program for dump and a README to describe. Only compile
+      the dump capability if control socket is enabled.
+
+    * src/dynamic-preprocessors/sdf/sdf_pattern_match.c:
+      Update FindPiiRecursively to return the partial index if the child
+      node matches partially.
+     
+2014-02-27 Steven Sturges <ssturges@sourcefire.com>
+	* src/encode.c: 
+      icmp header length now determined by layer size rather than
+	  automatic being 8 bytes.	
+
+	* src/preprocessors/perf-base.c: 
+      pkt_stats.pkts_recv can no longer become a negative number 
+
+	* doc/: snort_manual.pdf, snort_manual.tex: 
+      Modified descriptions of urilen, dsize, and flags rule options.  
+
+	* doc/snort_manual.pdf, doc/snort_manual.tex, src/sfutil/sfPolicy.c:
+      Added check in binding mappings to prevent Snort from loading binding
+	  policy_ids > 4095, having it reject the configuration on load.
+	  Updated documentation to include config binding policy_id.  
+
+	* src/detection-plugins/: sp_byte_check.c, sp_byte_extract.h,
+	  sp_byte_jump.c, sp_isdataat.c, sp_pattern_match.c:
+ 	  Modified error outputs to include the offending rule option.  
+
 2013-12-30 Steven Sturges <ssturges@sourcefire.com>
 Snort 2.9.6.0
 	* src/build.h:

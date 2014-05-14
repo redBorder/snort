@@ -105,7 +105,6 @@ static void DumpHex(FILE *fp, const uint8_t *data, unsigned len)
         {
             if (pos == 8)
             {
-                str[pos] = ' ';
                 pos++;
                 fprintf(fp, "%s", "    ");
             }
@@ -187,7 +186,7 @@ static int ReadResponse(int socket_fd, CSMessageHeader *hdr)
     return 1;
 }
 
-void ConnectToUnixSocket(const char * const name, int * const psock)
+static void ConnectToUnixSocket(const char * const name, int * const psock)
 {
     struct sockaddr_un sunaddr;
     int sock = -1;

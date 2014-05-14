@@ -1,17 +1,17 @@
 ; $Id$
 ;
-; NSIS Installation script for Snort 2.9.6.0 Win32
+; NSIS Installation script for Snort 2.9.6.1 Win32
 ; Written by Chris Reid <chris.reid@codecraftconsultants.com>
 ; Updated by Steven Sturges <ssturges@sourcefire.com>
 ;
-; This script will create a Win32 installer for Snort 2.9.6.0 (Win32 only).
+; This script will create a Win32 installer for Snort 2.9.6.1 (Win32 only).
 ; For more information about NSIS, see their homepage:
 ;     http://nsis.sourceforge.net/
 ;
 ; Note that this NSIS script is designed for NSIS version 2.09.
 ;
 
-Name "Snort 2.9.6.0"
+Name "Snort 2.9.6.1"
 
 CRCCheck On
 
@@ -23,7 +23,7 @@ CRCCheck On
 ;Configuration
 
   ;General
-  OutFile "Snort_2_9_6_0_Installer.exe"  ; The name of the installer executable
+  OutFile "Snort_2_9_6_1_Installer.exe"  ; The name of the installer executable
 
   ;Folder selection page
   InstallDir "C:\Snort"
@@ -210,10 +210,6 @@ Section "Documentation" Doc
   ;Rules are no longer part of the distribution
   ;File "..\..\..\doc\signatures\*.*"
 
-  CreateDirectory "$INSTDIR\contrib"
-  SetOutPath "$INSTDIR\contrib"
-  File "..\..\..\contrib\*.*"
-  Delete "$INSTDIR\contrib\.cvsignore"
 SectionEnd
 
 

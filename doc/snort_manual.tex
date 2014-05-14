@@ -2862,6 +2862,7 @@ specified number of bytes.  The default is "1048576" (1MB), minimum can be eithe
 \hline
 \texttt{enable\_ha} &
 
+
 Enable High Availability state sharing.  The default is set to off.\\
 
 \hline
@@ -13214,6 +13215,7 @@ using the following configuration line:
 \begin{verbatim}
 config binding: <path_to_snort.conf> vlan <vlanIdList>
 config binding: <path_to_snort.conf> net <ipList>
+config binding: <path_to_snort.conf> policy_id <id>
 \end{verbatim}
 
 \begin{description}{}
@@ -13230,6 +13232,7 @@ Ids and alphanumeric are not supported.
 IPV6 or IPv4.  A maximum of 512 individual IPv4 or IPv6 addresses or CIDRs can be
 specified.
 
+\item [\texttt{policy\_id}] - Refers to the specific policyi\_id to be applied. Valid policyi\_id is any number in 0-4095 range.
 \end{description}
 
 \begin{note}
@@ -15289,7 +15292,7 @@ The following example will match URIs that are shorter than 5 bytes:
 \end{verbatim}
 
 The following example will match URIs that are greater than 5 bytes and less
-than 10 bytes:
+than 10 bytes (inclusive):
 
 \begin{verbatim}
     urilen:5<>10;
@@ -16597,7 +16600,7 @@ check for abnormally sized packets that might cause buffer overflows.
 
 \subsubsection{Example}
 
-This example looks for a dsize that is between 300 and 400 bytes.
+This example looks for a dsize that is between 300 and 400 bytes (inclusive).
 
 \begin{verbatim}
     dsize:300<>400;
@@ -16638,7 +16641,7 @@ The following modifiers can be set to change the match criteria:
 
 To handle writing rules for session initiation packets such as ECN where a SYN
 packet is sent with CWR and ECE set, an option mask
-may be specified. A rule could check for a flags value of S,CE if one wishes to
+may be specified by preceding the mask with a comma. A rule could check for a flags value of S,CE if one wishes to
 find packets with just the syn bit, regardless of the values of the reserved
 bits.
 

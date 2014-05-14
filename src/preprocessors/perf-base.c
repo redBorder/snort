@@ -1140,6 +1140,15 @@ static void GetPktDropStats(SFBASE *sfBase, SFBASE_STATS *sfBaseStats)
         const DAQ_Stats_t* ps = DAQ_GetStats();
         recv = ps->packets_received;
         drop = ps->hw_packets_dropped;
+
+        if (perfmon_config->base_reset)
+        {
+            if (recv < sfBase->pkt_stats.pkts_recv)
+                sfBase->pkt_stats.pkts_recv = 0;
+
+            if (drop < sfBase->pkt_stats.pkts_drop)
+                sfBase->pkt_stats.pkts_drop = 0;
+        }
     }
 
     if (perfmon_config->base_reset)

@@ -62,6 +62,10 @@ rule_option_types.h \
 sfdaq.c sfdaq.h \
 idle_processing.c idle_processing.h idle_processing_funcs.h
 
+if BUILD_CONTROL_SOCKET
+snort_SOURCES += dump.c dump.h
+endif
+
 snort_LDADD = output-plugins/libspo.a \
 detection-plugins/libspd.a            \
 dynamic-plugins/libdynamic.a            \

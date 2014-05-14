@@ -541,7 +541,7 @@ static void PayloadSearchOffset(struct _SnortConfig *sc, char *data, OptTreeNode
         pmd->offset_var = GetVarByName(data);
         if (pmd->offset_var == BYTE_EXTRACT_NO_VAR)
         {
-            ParseError(BYTE_EXTRACT_INVALID_ERR_STR);
+            ParseError(BYTE_EXTRACT_INVALID_ERR_FMT, "offset", data);
         }
     }
 
@@ -575,7 +575,7 @@ static void PayloadSearchDepth(struct _SnortConfig *sc, char *data, OptTreeNode 
         pmd->depth_var = GetVarByName(data);
         if (pmd->depth_var == BYTE_EXTRACT_NO_VAR)
         {
-            ParseError(BYTE_EXTRACT_INVALID_ERR_STR);
+            ParseError(BYTE_EXTRACT_INVALID_ERR_FMT, "depth", data);
         }
     }
 
@@ -602,7 +602,7 @@ static void PayloadSearchDistance(struct _SnortConfig *sc, char *data, OptTreeNo
         pmd->distance_var = GetVarByName(data);
         if (pmd->distance_var == BYTE_EXTRACT_NO_VAR)
         {
-            ParseError(BYTE_EXTRACT_INVALID_ERR_STR);
+            ParseError(BYTE_EXTRACT_INVALID_ERR_FMT, "distance", data);
         }
     }
 
@@ -639,7 +639,7 @@ static void PayloadSearchWithin(struct _SnortConfig *sc, char *data, OptTreeNode
         pmd->within_var = GetVarByName(data);
         if (pmd->within_var == BYTE_EXTRACT_NO_VAR)
         {
-            ParseError(BYTE_EXTRACT_INVALID_ERR_STR);
+            ParseError(BYTE_EXTRACT_INVALID_ERR_FMT, "within", data);
         }
     }
 

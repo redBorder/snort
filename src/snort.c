@@ -160,6 +160,10 @@
 #include "stream5_common.h"
 #include "stream5_ha.h"
 
+#ifdef CONTROL_SOCKET
+#include "dump.h"
+#endif
+
 /* Macros *********************************************************************/
 #ifndef DLT_LANE8023
 /*
@@ -873,6 +877,13 @@ int SnortMain(int argc, char *argv[])
     {
         LogMessage("Failed to register the is processing control handler.\n");
     }
+
+#ifdef CONTROL_SOCKET
+    if (ControlSocketRegisterHandler(CS_TYPE_DUMP_PACKETS, &PacketDumpCommand, NULL, NULL))
+    {
+        LogMessage("Failed to register the pacjet dump control handler.\n");
+    }
+#endif
 
     if ( ScTestMode() )
     {
@@ -1755,7 +1766,7 @@ static DAQ_Verdict PacketCallback(
     }
 #ifdef ENABLE_HA
     // This needs to be called here since the session could
-    // have been updated anywhere up to this point. :( 
+    // have been updated anywhere up to this point. :(
     if (stream_api)
         stream_api->process_ha(s_packet.ssnptr);
 #endif
@@ -1875,6 +1886,21 @@ DAQ_Verdict ProcessPacket(
         else
             verdict = DAQ_VERDICT_IGNORE;
     }
+
+#ifdef CONTROL_SOCKET
+    if (packet_dump_stop)
+        PacketDumpClose();
+    else if (packet_dump_file &&
+#ifdef HAVE_DAQ_ADDRESS_SPACE_ID
+             pkthdr->address_space_id == packet_dump_address_space_id &&
+#endif
+             (!packet_dump_fcode.bf_insns || sfbpf_filter(packet_dump_fcode.bf_insns, (uint8_t *)pkt,
+                                                          pkthdr->caplen, pkthdr->pktlen)))
+    {
+        pcap_dump((uint8_t*)packet_dump_file, (const struct pcap_pkthdr*)pkthdr, pkt);
+        pcap_dump_flush((pcap_dumper_t*)packet_dump_file);
+    }
+#endif
 
     return verdict;
 }
@@ -3183,6 +3209,11 @@ void PacketLoop (void)
     {
         error = DAQ_Acquire(pkts_to_read, PacketCallback, NULL);
 
+#ifdef CONTROL_SOCKET
+        if (packet_dump_stop)
+            PacketDumpClose();
+#endif
+
 #ifdef SIDE_CHANNEL
         /* If we didn't manage to lock the process lock in a DAQ acquire callback, lock it now. */
         if (ScSideChannelEnabled() && !snort_process_lock_held)
@@ -3241,6 +3272,9 @@ void PacketLoop (void)
         }
 #endif
     }
+#ifdef CONTROL_SOCKET
+    PacketDumpClose();
+#endif
 
 #ifdef SIDE_CHANNEL
     /* Error conditions can lead to exiting the packet loop prior to unlocking the process lock.  */
@@ -4233,7 +4267,7 @@ void SnortConfFree(SnortConfig *sc)
 #ifdef HAVE_MALLOC_TRIM
     malloc_trim(0);
 #endif
-    
+
 }
 
 /****************************************************************************
@@ -4309,22 +4343,42 @@ static void InitProtoNames(void)
 
     for (i = 0; i < NUM_IP_PROTOS; i++)
     {
-        struct protoent *pt = getprotobynumber(i);
-
-        if (pt != NULL)
+        switch(i)
         {
-            size_t j;
+#ifdef REG_TEST
+#define PROTO_000 "IP"        //Appears as HOPOPT on some systems
+#define PROTO_004 "IPENCAP"   //Appears as IPV4 on some systems
+#define PROTO_255 "PROTO:255" //Appears as RESERVED on some systems
+            case 0:
+                protocol_names[i] = SnortStrdup(PROTO_000);
+                break;
+            case 4:
+                protocol_names[i] = SnortStrdup(PROTO_004);
+                break;
+            case 255:
+                protocol_names[i] = SnortStrdup(PROTO_255);
+                break;
+#endif
+            default:
+            {
+                struct protoent *pt = getprotobynumber(i);
 
-            protocol_names[i] = SnortStrdup(pt->p_name);
-            for (j = 0; j < strlen(protocol_names[i]); j++)
-                protocol_names[i][j] = toupper(protocol_names[i][j]);
-        }
-        else
-        {
-            char protoname[10];
+                if (pt != NULL)
+                {
+                    size_t j;
 
-            SnortSnprintf(protoname, sizeof(protoname), "PROTO:%03d", i);
-            protocol_names[i] = SnortStrdup(protoname);
+                    protocol_names[i] = SnortStrdup(pt->p_name);
+                    for (j = 0; j < strlen(protocol_names[i]); j++)
+                        protocol_names[i][j] = toupper(protocol_names[i][j]);
+                }
+                else
+                {
+                    char protoname[10];
+
+                    SnortSnprintf(protoname, sizeof(protoname), "PROTO:%03d", i);
+                    protocol_names[i] = SnortStrdup(protoname);
+                }
+            }
         }
     }
 }
@@ -4779,7 +4833,7 @@ void FreeVarList(VarNode *head)
     }
 }
 
- void SnortInit(int argc, char **argv)
+void SnortInit(int argc, char **argv)
 {
     InitSignals();
 

@@ -255,7 +255,7 @@ void IsDataAtParse(char *data, IsDataAtData *idx, OptTreeNode *otn)
         idx->offset_var = GetVarByName(offset);
         if (idx->offset_var == BYTE_EXTRACT_NO_VAR)
         {
-            FatalError("%s (%d): %s\n", file_name, file_line, BYTE_EXTRACT_INVALID_ERR_STR);
+            ParseError(BYTE_EXTRACT_INVALID_ERR_FMT, "isdataat", toks[0]);
         }
     }
 

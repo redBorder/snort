@@ -34,6 +34,7 @@
 #define CS_TYPE_HUP_DAQ         0x0001
 #define CS_TYPE_RELOAD          0x0002
 #define CS_TYPE_IS_PROCESSING   0x0003
+#define CS_TYPE_DUMP_PACKETS    0x0004
 #define CS_TYPE_MAX             0x1FFF
 #define CS_HEADER_VERSION       0x0001
 #define CS_HEADER_SUCCESS       0x0000

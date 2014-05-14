@@ -490,7 +490,7 @@ static ByteTestOverrideData * ByteTestParse(char *data, ByteTestData *idx, OptTr
         idx->cmp_value_var = GetVarByName(toks[2]);
         if (idx->cmp_value_var == BYTE_EXTRACT_NO_VAR)
         {
-            FatalError("%s (%d): %s\n", file_name, file_line, BYTE_EXTRACT_INVALID_ERR_STR);
+            ParseError(BYTE_EXTRACT_INVALID_ERR_FMT, "byte_test", toks[2]);
         }
     }
 
@@ -516,7 +516,7 @@ static ByteTestOverrideData * ByteTestParse(char *data, ByteTestData *idx, OptTr
         idx->offset_var = GetVarByName(toks[3]);
         if (idx->offset_var == BYTE_EXTRACT_NO_VAR)
         {
-            FatalError("%s (%d): %s\n", file_name, file_line, BYTE_EXTRACT_INVALID_ERR_STR);
+            ParseError(BYTE_EXTRACT_INVALID_ERR_FMT, "byte_test", toks[3]);
         }
     }
 

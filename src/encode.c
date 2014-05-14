@@ -850,7 +850,7 @@ static ENC_STATUS ICMP4_Update (Packet* p, Layer* lyr, uint32_t* len)
 {
     IcmpHdr* h = (IcmpHdr*)(lyr->start);
 
-    *len += sizeof(*h) + p->dsize;
+    *len += lyr->length + p->dsize;
 
 
     if ( !PacketWasCooked(p) || (p->packet_flags & PKT_REBUILT_FRAG) ) {
@@ -1344,7 +1344,7 @@ static ENC_STATUS ICMP6_Update (Packet* p, Layer* lyr, uint32_t* len)
 {
     IcmpHdr* h = (IcmpHdr*)(lyr->start);
 
-    *len += sizeof(*h) + p->dsize;
+    *len += lyr->length + p->dsize;
 
     if ( !PacketWasCooked(p) || (p->packet_flags & PKT_REBUILT_FRAG) ) {
         pseudoheader6 ps6;

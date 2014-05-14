@@ -79,11 +79,12 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 bin_PROGRAMS = snort$(EXEEXT)
-@BUILD_SIDE_CHANNEL_TRUE@am__append_1 = \
+@BUILD_CONTROL_SOCKET_TRUE@am__append_1 = dump.c dump.h
+@BUILD_SIDE_CHANNEL_TRUE@am__append_2 = \
 @BUILD_SIDE_CHANNEL_TRUE@side-channel/libsidechannel.a \
 @BUILD_SIDE_CHANNEL_TRUE@side-channel/plugins/libsscm.a
 
-@BUILD_SIDE_CHANNEL_TRUE@am__append_2 = side-channel
+@BUILD_SIDE_CHANNEL_TRUE@am__append_3 = side-channel
 subdir = src
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
@@ -114,8 +115,9 @@ am__snort_SOURCES_DIST = cdefs.h event.h generators.h sf_protocols.h \
 	detection_util.c detection_util.h rate_filter.c rate_filter.h \
 	obfuscation.c obfuscation.h rule_option_types.h sfdaq.c \
 	sfdaq.h idle_processing.c idle_processing.h \
-	idle_processing_funcs.h
+	idle_processing_funcs.h dump.c dump.h
 @BUILD_SNPRINTF_TRUE@am__objects_1 = snprintf.$(OBJEXT)
+@BUILD_CONTROL_SOCKET_TRUE@am__objects_2 = dump.$(OBJEXT)
 am_snort_OBJECTS = debug.$(OBJEXT) decode.$(OBJEXT) encode.$(OBJEXT) \
 	active.$(OBJEXT) log.$(OBJEXT) mstring.$(OBJEXT) \
 	parser.$(OBJEXT) profiler.$(OBJEXT) plugbase.$(OBJEXT) \
@@ -128,7 +130,7 @@ am_snort_OBJECTS = debug.$(OBJEXT) decode.$(OBJEXT) encode.$(OBJEXT) \
 	event_queue.$(OBJEXT) ppm.$(OBJEXT) log_text.$(OBJEXT) \
 	detection_filter.$(OBJEXT) detection_util.$(OBJEXT) \
 	rate_filter.$(OBJEXT) obfuscation.$(OBJEXT) sfdaq.$(OBJEXT) \
-	idle_processing.$(OBJEXT)
+	idle_processing.$(OBJEXT) $(am__objects_2)
 snort_OBJECTS = $(am_snort_OBJECTS)
 snort_DEPENDENCIES = output-plugins/libspo.a \
 	detection-plugins/libspd.a dynamic-plugins/libdynamic.a \
@@ -137,7 +139,7 @@ snort_DEPENDENCIES = output-plugins/libspo.a \
 	preprocessors/HttpInspect/libhttp_inspect.a \
 	preprocessors/Stream5/libstream5.a sfutil/libsfutil.a \
 	control/libsfcontrol.a file-process/libfileAPI.a \
-	file-process/libs/libfile.a $(am__append_1)
+	file-process/libs/libfile.a $(am__append_2)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
@@ -381,61 +383,25 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign no-dependencies
 @BUILD_SNPRINTF_TRUE@SNPRINTF_SOURCES = snprintf.c snprintf.h
-snort_SOURCES = cdefs.h \
-event.h \
-generators.h \
-sf_protocols.h \
-plugin_enum.h \
-rules.h \
-treenodes.h \
-checksum.h \
-debug.c snort_debug.h \
-decode.c decode.h \
-encode.c encode.h \
-active.c active.h \
-log.c log.h \
-mstring.c mstring.h \
-parser.c parser.h \
-profiler.c profiler.h \
-plugbase.c plugbase.h \
-preprocids.h \
-snort.c snort.h \
-build.h \
-$(SNPRINTF_SOURCES) \
-strlcatu.c strlcatu.h \
-strlcpyu.c strlcpyu.h \
-tag.c tag.h \
-util.c util.h \
-detect.c detect.h \
-signature.c signature.h \
-mempool.c mempool.h \
-sf_sdlist.c sf_sdlist.h sf_sdlist_types.h \
-fpcreate.c fpcreate.h \
-fpdetect.c fpdetect.h \
-pcrm.c pcrm.h \
-snort_bounds.h \
-byte_extract.c \
-byte_extract.h \
-timersub.h \
-spo_plugbase.h \
-sfthreshold.c sfthreshold.h \
-packet_time.c packet_time.h \
-event_wrapper.c event_wrapper.h \
-event_queue.c event_queue.h \
-ipv6_port.h \
-ppm.c ppm.h \
-pcap_pkthdr32.h \
-cpuclock.h \
-sf_types.h \
-log_text.c log_text.h \
-detection_filter.c detection_filter.h \
-detection_util.c detection_util.h \
-rate_filter.c rate_filter.h \
-obfuscation.c obfuscation.h \
-rule_option_types.h \
-sfdaq.c sfdaq.h \
-idle_processing.c idle_processing.h idle_processing_funcs.h
-
+snort_SOURCES = cdefs.h event.h generators.h sf_protocols.h \
+	plugin_enum.h rules.h treenodes.h checksum.h debug.c \
+	snort_debug.h decode.c decode.h encode.c encode.h active.c \
+	active.h log.c log.h mstring.c mstring.h parser.c parser.h \
+	profiler.c profiler.h plugbase.c plugbase.h preprocids.h \
+	snort.c snort.h build.h $(SNPRINTF_SOURCES) strlcatu.c \
+	strlcatu.h strlcpyu.c strlcpyu.h tag.c tag.h util.c util.h \
+	detect.c detect.h signature.c signature.h mempool.c mempool.h \
+	sf_sdlist.c sf_sdlist.h sf_sdlist_types.h fpcreate.c \
+	fpcreate.h fpdetect.c fpdetect.h pcrm.c pcrm.h snort_bounds.h \
+	byte_extract.c byte_extract.h timersub.h spo_plugbase.h \
+	sfthreshold.c sfthreshold.h packet_time.c packet_time.h \
+	event_wrapper.c event_wrapper.h event_queue.c event_queue.h \
+	ipv6_port.h ppm.c ppm.h pcap_pkthdr32.h cpuclock.h sf_types.h \
+	log_text.c log_text.h detection_filter.c detection_filter.h \
+	detection_util.c detection_util.h rate_filter.c rate_filter.h \
+	obfuscation.c obfuscation.h rule_option_types.h sfdaq.c \
+	sfdaq.h idle_processing.c idle_processing.h \
+	idle_processing_funcs.h $(am__append_1)
 snort_LDADD = output-plugins/libspo.a detection-plugins/libspd.a \
 	dynamic-plugins/libdynamic.a \
 	dynamic-output/plugins/liboutput.a preprocessors/libspp.a \
@@ -443,12 +409,12 @@ snort_LDADD = output-plugins/libspo.a detection-plugins/libspd.a \
 	preprocessors/HttpInspect/libhttp_inspect.a \
 	preprocessors/Stream5/libstream5.a sfutil/libsfutil.a \
 	control/libsfcontrol.a file-process/libfileAPI.a \
-	file-process/libs/libfile.a $(am__append_1)
+	file-process/libs/libfile.a $(am__append_2)
 @BUILD_DYNAMIC_EXAMPLES_TRUE@EXAMPLES_DIR = dynamic-examples
 SUBDIRS = sfutil win32 output-plugins detection-plugins \
 	dynamic-plugins preprocessors parser dynamic-preprocessors \
 	dynamic-output target-based control file-process \
-	$(EXAMPLES_DIR) $(am__append_2)
+	$(EXAMPLES_DIR) $(am__append_3)
 all: all-recursive
 
 .SUFFIXES:

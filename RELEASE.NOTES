@@ -1,3 +1,15 @@
+2014-03-18 - Snort 2.9.6.1
+[*] Improvements
+* Added a control command to dump all packets matching a BPF to a pcap file
+  for capturing specific traffic for further analysis.
+
+* Address issue for encoded packets and icmp header length determination.
+
+* Provide more detailed error output for parsing of invalid rules when
+  byte_test, byte_check, content, and isdataat use a byte_extract value.
+
+* Updated sensitive data to better address partial matches between packets.
+
 2014-01-16 - Snort 2.9.6.0
 [*] New additions
 * Add support to do file specific processing within DCERPC preprocessor for

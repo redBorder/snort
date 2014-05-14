@@ -6,7 +6,7 @@ AC_PREREQ(2.50)
 AM_CONFIG_HEADER(config.h)
 # When changing the snort version, please also update the VERSION
 # definition in "src/win32/WIN32-Includes/config.h"
-AM_INIT_AUTOMAKE(snort,2.9.6.0)
+AM_INIT_AUTOMAKE(snort,2.9.6.1)
 
 NO_OPTIMIZE="no"
 ADD_WERROR="no"
@@ -692,6 +692,20 @@ else
     if test "x$LDAQ" = "xno"; then
         echo
         echo "   ERROR!  daq library not found, go get it from"
+        echo "   http://www.snort.org/."
+        #AC_MSG_ERROR("Fatal!")
+        exit 1
+    fi
+fi
+
+if test "x$enable_control_socket" = "xyes"; then
+    LSFBPF=""
+    AC_CHECK_LIB([sfbpf], [pcap_dump],
+        [LIBS="${LIBS} -lsfbpf"], [LSFBPF="no"], [ ])
+
+    if test "x$LSFBPF" = "xno"; then
+        echo
+        echo "   ERROR!  sfbpf library not found, go get it from"
         echo "   http://www.snort.org/."
         #AC_MSG_ERROR("Fatal!")
         exit 1
