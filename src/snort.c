@@ -936,6 +936,8 @@ static void SnortStartThreads(void)
     }
 # endif
 
+    ControlSocketInit();
+
 # ifdef TARGET_BASED
     SFAT_StartReloadThread();
 # endif
@@ -5146,8 +5148,6 @@ void SnortInit(int argc, char **argv)
 #ifdef PPM_MGR
     PPM_PRINT_CFG(&snort_conf->ppm_cfg);
 #endif
-
-    ControlSocketInit();
 
 #ifdef SIDE_CHANNEL
     RegisterSideChannelModules();
