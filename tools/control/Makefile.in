@@ -80,7 +80,7 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 bin_PROGRAMS = snort_control$(EXEEXT) \
-	snort_dump_packets_control$(EXEEXT)
+	snort_dump_packets_control$(EXEEXT) snort_iplist$(EXEEXT)
 subdir = tools/control
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(top_srcdir)/depcomp $(dist_doc_DATA)
@@ -113,6 +113,12 @@ snort_dump_packets_control_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
 	$(snort_dump_packets_control_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
 	$(LDFLAGS) -o $@
+am_snort_iplist_OBJECTS = snort_iplist-snort_reload_iplist.$(OBJEXT)
+snort_iplist_OBJECTS = $(am_snort_iplist_OBJECTS)
+snort_iplist_LDADD = $(LDADD)
+snort_iplist_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(snort_iplist_CFLAGS) \
+	$(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -148,9 +154,9 @@ am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = $(snort_control_SOURCES) \
-	$(snort_dump_packets_control_SOURCES)
+	$(snort_dump_packets_control_SOURCES) $(snort_iplist_SOURCES)
 DIST_SOURCES = $(snort_control_SOURCES) \
-	$(snort_dump_packets_control_SOURCES)
+	$(snort_dump_packets_control_SOURCES) $(snort_iplist_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -343,6 +349,8 @@ snort_control_SOURCES = sfcontrol.c
 snort_control_CFLAGS = @CFLAGS@ $(AM_CFLAGS)
 snort_dump_packets_control_SOURCES = snort_dump_packets.c
 snort_dump_packets_control_CFLAGS = @CFLAGS@ $(AM_CFLAGS)
+snort_iplist_SOURCES = snort_reload_iplist.c
+snort_iplist_CFLAGS = @CFLAGS@ $(AM_CFLAGS)
 dist_doc_DATA = README.snort_control README.snort_dump_packets_control
 all: all-am
 
@@ -436,6 +444,10 @@ snort_dump_packets_control$(EXEEXT): $(snort_dump_packets_control_OBJECTS) $(sno
 	@rm -f snort_dump_packets_control$(EXEEXT)
 	$(AM_V_CCLD)$(snort_dump_packets_control_LINK) $(snort_dump_packets_control_OBJECTS) $(snort_dump_packets_control_LDADD) $(LIBS)
 
+snort_iplist$(EXEEXT): $(snort_iplist_OBJECTS) $(snort_iplist_DEPENDENCIES) $(EXTRA_snort_iplist_DEPENDENCIES) 
+	@rm -f snort_iplist$(EXEEXT)
+	$(AM_V_CCLD)$(snort_iplist_LINK) $(snort_iplist_OBJECTS) $(snort_iplist_LDADD) $(LIBS)
+
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
 
@@ -444,6 +456,7 @@ distclean-compile:
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/snort_control-sfcontrol.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/snort_dump_packets_control-snort_dump_packets.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/snort_iplist-snort_reload_iplist.Po@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
@@ -493,6 +506,20 @@ snort_dump_packets_control-snort_dump_packets.obj: snort_dump_packets.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='snort_dump_packets.c' object='snort_dump_packets_control-snort_dump_packets.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(snort_dump_packets_control_CFLAGS) $(CFLAGS) -c -o snort_dump_packets_control-snort_dump_packets.obj `if test -f 'snort_dump_packets.c'; then $(CYGPATH_W) 'snort_dump_packets.c'; else $(CYGPATH_W) '$(srcdir)/snort_dump_packets.c'; fi`
+
+snort_iplist-snort_reload_iplist.o: snort_reload_iplist.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(snort_iplist_CFLAGS) $(CFLAGS) -MT snort_iplist-snort_reload_iplist.o -MD -MP -MF $(DEPDIR)/snort_iplist-snort_reload_iplist.Tpo -c -o snort_iplist-snort_reload_iplist.o `test -f 'snort_reload_iplist.c' || echo '$(srcdir)/'`snort_reload_iplist.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/snort_iplist-snort_reload_iplist.Tpo $(DEPDIR)/snort_iplist-snort_reload_iplist.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='snort_reload_iplist.c' object='snort_iplist-snort_reload_iplist.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(snort_iplist_CFLAGS) $(CFLAGS) -c -o snort_iplist-snort_reload_iplist.o `test -f 'snort_reload_iplist.c' || echo '$(srcdir)/'`snort_reload_iplist.c
+
+snort_iplist-snort_reload_iplist.obj: snort_reload_iplist.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(snort_iplist_CFLAGS) $(CFLAGS) -MT snort_iplist-snort_reload_iplist.obj -MD -MP -MF $(DEPDIR)/snort_iplist-snort_reload_iplist.Tpo -c -o snort_iplist-snort_reload_iplist.obj `if test -f 'snort_reload_iplist.c'; then $(CYGPATH_W) 'snort_reload_iplist.c'; else $(CYGPATH_W) '$(srcdir)/snort_reload_iplist.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/snort_iplist-snort_reload_iplist.Tpo $(DEPDIR)/snort_iplist-snort_reload_iplist.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='snort_reload_iplist.c' object='snort_iplist-snort_reload_iplist.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(snort_iplist_CFLAGS) $(CFLAGS) -c -o snort_iplist-snort_reload_iplist.obj `if test -f 'snort_reload_iplist.c'; then $(CYGPATH_W) 'snort_reload_iplist.c'; else $(CYGPATH_W) '$(srcdir)/snort_reload_iplist.c'; fi`
 
 mostlyclean-libtool:
 	-rm -f *.lo
