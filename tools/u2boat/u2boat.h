@@ -30,6 +30,15 @@ typedef struct _record {
     uint8_t *data;
 } u2record;
 
+typedef struct _extendedu2record {
+	uint32_t sensor_id;
+    uint32_t event_id;
+    uint32_t event_second;
+    uint32_t event_microsecond;
+    uint32_t signature_id;
+    uint32_t generator_id;
+} u2event;
+
 typedef struct _u2iterator {
     FILE *file;
     char *filename;

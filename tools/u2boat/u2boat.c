@@ -51,14 +51,26 @@
 #define PCAP_LINKTYPE ETHERNET
 #define MAX_U2RECORD_DATA_LENGTH 65536
 
-static int ConvertLog(FILE *input, FILE *output, char *format);
+struct filters {
+    uint64_t lower_timestamp;
+    uint64_t upper_timestamp;
+    uint32_t signature_id;
+    uint32_t generator_id;
+};
+
+#define DEFAULT_FILTERS_INITIALIZER {0,0,0,0}
+
+static int ConvertLog(FILE *input, FILE *output, char *format, struct filters *defined_filters);
 static int GetRecord(FILE *input, u2record *rec);
 static int PcapInitOutput(FILE *output);
 static int PcapConversion(u2record *rec, FILE *output);
+static const u2event *ExtendedRecordOf(const u2record *record);
+static int EventPassFilters(const struct filters *defined_filters,const u2event *extended_record);
 
-static int ConvertLog(FILE *input, FILE *output, char *format)
+static int ConvertLog(FILE *input, FILE *output, char *format, struct filters *defined_filters)
 {
     u2record tmp_record;
+    int filters_passed = 1;
 
     /* Determine conversion function */
     int (* ConvertRecord)(u2record *, FILE *) = NULL;
@@ -91,6 +103,14 @@ static int ConvertLog(FILE *input, FILE *output, char *format)
         {
             break;
         }
+
+        const u2event *extended_record = ExtendedRecordOf(&tmp_record);
+        if(extended_record)
+            filters_passed = EventPassFilters(defined_filters,extended_record);
+
+        if(filters_passed == 0)
+            continue;
+
         if (ConvertRecord(&tmp_record, output) == FAILURE)
         {
             break;
@@ -136,6 +156,52 @@ static int PcapInitOutput(FILE *output)
         return FAILURE;
     }
     return SUCCESS;
+}
+
+/* Obtains the extended version of unified2 record, that can be used to filtering */
+static const u2event *ExtendedRecordOf(const u2record *record)
+{
+    if(record->type == UNIFIED2_IDS_EVENT
+        || record->type == UNIFIED2_IDS_EVENT_IPV6
+        || record->type == UNIFIED2_IDS_EVENT_VLAN
+        || record->type == UNIFIED2_IDS_EVENT_IPV6_VLAN)
+    {
+        return (u2event *)record->data;
+    }
+    else
+    {
+        return NULL;
+    }
+}
+
+/* Check if an event pass the filters. If no filter is set (value==0), it pass the filter */
+static int EventPassFilters(const struct filters *defined_filters,
+    const u2event *extended_record)
+{
+    int filters_passed = 1; // Assume true as default
+
+    if(defined_filters->lower_timestamp > 0 
+        && ntohl(extended_record->event_second) < defined_filters->lower_timestamp)
+    {
+        filters_passed = 0;
+    }
+    if(defined_filters->upper_timestamp > 0 
+        && ntohl(extended_record->event_second) < defined_filters->upper_timestamp)
+    {
+        filters_passed = 0;
+    }
+    if(defined_filters->signature_id != 0 
+        && ntohl(extended_record->signature_id) != defined_filters->signature_id)
+    {
+        filters_passed = 0;
+    }
+    if(defined_filters->generator_id != 0
+        && ntohl(extended_record->generator_id) != defined_filters->generator_id)
+    {
+        filters_passed = 0;
+    }
+
+    return filters_passed;
 }
 
 /* Convert a unified2 packet record to pcap format, then dump */
@@ -253,8 +319,10 @@ int main (int argc, char *argv[])
     int c, i, errnum;
     opterr = 0;
 
+    struct filters defined_filters = DEFAULT_FILTERS_INITIALIZER;
+
     /* Use Getopt to parse options */
-    while ((c = getopt (argc, argv, "t:")) != -1)
+    while ((c = getopt (argc, argv, "g:s:l:u:t:")) != -1)
     {
         switch (c)
         {
@@ -268,6 +336,18 @@ int main (int argc, char *argv[])
                 else if (isprint (optopt))
                     fprintf(stderr, "Unknown option -%c.\n", optopt);
                 return FAILURE;
+            case 'g':
+                defined_filters.generator_id = atol(optarg);
+                break;
+            case 's':
+                defined_filters.signature_id = atol(optarg);
+                break;
+            case 'u':
+                defined_filters.upper_timestamp = atol(optarg);
+                break;
+            case 'l':
+                defined_filters.lower_timestamp = atol(optarg);
+                break;
             default:
                 abort();
         }
@@ -322,7 +402,7 @@ int main (int argc, char *argv[])
         return FAILURE;
     }
 
-    ConvertLog(input_file, output_file, output_type);
+    ConvertLog(input_file, output_file, output_type, &defined_filters);
 
     if (fclose(input_file) != 0)
     {
