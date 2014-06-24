@@ -56,6 +56,10 @@ struct filters {
     uint64_t upper_timestamp;
     uint32_t signature_id;
     uint32_t generator_id;
+
+    int src_ip_family,dst_ip_family;
+    char src_ip[sizeof(struct in6_addr)], dst_ip[sizeof(struct in6_addr)];
+    char *src_ip_str,*dst_ip_str;
 };
 
 #define DEFAULT_FILTERS_INITIALIZER {0,0,0,0}
@@ -66,6 +70,7 @@ static int PcapInitOutput(FILE *output);
 static int PcapConversion(u2record *rec, FILE *output);
 static const u2event *ExtendedRecordOf(const u2record *record);
 static int EventPassFilters(const struct filters *defined_filters,const u2event *extended_record);
+static int SmartInetpton(int *family,const char *str,void *buffer);
 
 static int ConvertLog(FILE *input, FILE *output, char *format, struct filters *defined_filters)
 {
@@ -173,6 +178,18 @@ static const u2event *ExtendedRecordOf(const u2record *record)
     {
         return NULL;
     }
+}
+
+static int SmartInetpton(int *family,const char *str,void *dst){
+    const int pfamily = strchr(str,':') ? AF_INET6 : AF_INET;
+    const int rc = inet_pton(pfamily,str,dst);
+    if(rc <= 0)
+        return rc;
+
+    if(family)
+        *family = pfamily;
+
+    return pfamily;
 }
 
 /* Check if an event pass the filters. If no filter is set (value==0), it pass 
@@ -324,7 +341,7 @@ int main (int argc, char *argv[])
     struct filters defined_filters = DEFAULT_FILTERS_INITIALIZER;
 
     /* Use Getopt to parse options */
-    while ((c = getopt (argc, argv, "g:s:l:u:t:")) != -1)
+    while ((c = getopt (argc, argv, "g:s:l:o:d:u:t:")) != -1)
     {
         switch (c)
         {
@@ -350,6 +367,12 @@ int main (int argc, char *argv[])
             case 'l':
                 defined_filters.lower_timestamp = atol(optarg);
                 break;
+            case 'o':
+                defined_filters.src_ip_str = optarg;
+                break;
+            case 'd':
+                defined_filters.dst_ip_str = optarg;
+                break;
             default:
                 abort();
         }
@@ -360,6 +383,8 @@ int main (int argc, char *argv[])
     {
         fprintf(stderr, "Usage: u2boat [-t type] <infile> <outfile>\n");
         fprintf(stderr, "Filter options:\n");
+        fprintf(stderr, "\t-o : origin (source) ip\n");
+        fprintf(stderr, "\t-d : destination ip\n");
         fprintf(stderr, "\t-s : sid\n");
         fprintf(stderr, "\t-g : gid\n");
         fprintf(stderr, "\t-l : lower timestamp\n");
@@ -407,6 +432,42 @@ int main (int argc, char *argv[])
     {
         fprintf(stderr, "Unable to open/create file: %s\n", output_filename);
         return FAILURE;
+    }
+
+    /* Convert ip to numeric (and faster) versions */
+    if (defined_filters.src_ip_str != NULL)
+    {
+        const int rc = SmartInetpton( &defined_filters.src_ip_family,
+            defined_filters.src_ip_str,defined_filters.src_ip);
+        if(rc <= 0)
+        {
+            if(rc == 0)
+            {
+                fprintf(stderr,"Source ip filter not in a presentation format.\n");
+            }
+            else
+            {
+                perror("Source ip filter conversion");
+            }
+            return FAILURE;
+        }
+    }
+    if (defined_filters.dst_ip_str != NULL)
+    {
+        const int rc = SmartInetpton( &defined_filters.dst_ip_family,
+            defined_filters.dst_ip_str,defined_filters.dst_ip);
+        if(rc <= 0)
+        {
+            if(rc == 0)
+            {
+                fprintf(stderr,"Destination ip filter not in a presentation format.\n");
+            }
+            else
+            {
+                perror("Destination ip filter conversion");
+            }
+            return FAILURE;
+        }
     }
 
     ConvertLog(input_file, output_file, output_type, &defined_filters);
