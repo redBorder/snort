@@ -158,7 +158,8 @@ static int PcapInitOutput(FILE *output)
     return SUCCESS;
 }
 
-/* Obtains the extended version of unified2 record, that can be used to filtering */
+/* Obtains the extended version of unified2 record, that can be used to 
+filtering */
 static const u2event *ExtendedRecordOf(const u2record *record)
 {
     if(record->type == UNIFIED2_IDS_EVENT
@@ -174,7 +175,8 @@ static const u2event *ExtendedRecordOf(const u2record *record)
     }
 }
 
-/* Check if an event pass the filters. If no filter is set (value==0), it pass the filter */
+/* Check if an event pass the filters. If no filter is set (value==0), it pass 
+the filter */
 static int EventPassFilters(const struct filters *defined_filters,
     const u2event *extended_record)
 {
@@ -357,6 +359,11 @@ int main (int argc, char *argv[])
     if (optind != (argc - 2))
     {
         fprintf(stderr, "Usage: u2boat [-t type] <infile> <outfile>\n");
+        fprintf(stderr, "Filter options:\n");
+        fprintf(stderr, "\t-s : sid\n");
+        fprintf(stderr, "\t-g : gid\n");
+        fprintf(stderr, "\t-l : lower timestamp\n");
+        fprintf(stderr, "\t-u : upper timestamp\n");
         return FAILURE;
     }
 
