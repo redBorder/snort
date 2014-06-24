@@ -21,4 +21,16 @@ Usage
 "type" specifies the type of output u2boat should create. Valid options are:
 
  - pcap: Tcpdump format (default)
+ - text: Plain text (u2spewfoo format)
 
+Filters
+-------
+
+   You can filter the events displayed based on a serie of parameters. 
+   Currently, u2boat support:
+    -o : origin (source) ip
+    -d : destination ip
+    -s : sid
+    -g : gid
+    -l : lower timestamp
+    -u : upper timestamp
