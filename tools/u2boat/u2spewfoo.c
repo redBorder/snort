@@ -119,7 +119,7 @@ static long s_off = 0;
 
 #define TO_IP(x) x >> 24, (x >> 16) & 0xff, (x >> 8) & 0xff, x & 0xff
 
-static void extradata_dump(const u2record *record) {
+static void extradata_dump(const u2record *record,FILE *out_file) {
     uint8_t *field, *data;
     int i;
     int len = 0;
@@ -146,11 +146,11 @@ static void extradata_dump(const u2record *record) {
 
 
 
-    printf("\n(ExtraDataHdr)\n"
+    fprintf(out_file,"\n(ExtraDataHdr)\n"
             "\tevent type: %u\tevent length: %u\n",
             eventHdr.event_type, eventHdr.event_length);
 
-    printf("\n(ExtraData)\n"
+    fprintf(out_file,"\n(ExtraData)\n"
             "\tsensor id: %u\tevent id: %u\tevent second: %u\n"
             "\ttype: %u\tdatatype: %u\tbloblength: %u\t",
              event.sensor_id, event.event_id,
@@ -164,76 +164,76 @@ static void extradata_dump(const u2record *record) {
         case EVENT_INFO_XFF_IPV4:
             memcpy(&ip, record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData), sizeof(uint32_t));
             ip = ntohl(ip);
-            printf("Original Client IP: %u.%u.%u.%u\n",
+            fprintf(out_file,"Original Client IP: %u.%u.%u.%u\n",
                     TO_IP(ip));
             break;
 
         case EVENT_INFO_XFF_IPV6:
             memcpy(&ipAddr, record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData), sizeof(struct in6_addr));
             inet_ntop(AF_INET6, &ipAddr, ip6buf, INET6_ADDRSTRLEN);
-            printf("Original Client IP: %s\n",
+            fprintf(out_file,"Original Client IP: %s\n",
                     ip6buf);
             break;
 
         case EVENT_INFO_GZIP_DATA:
-            printf("GZIP Decompressed Data: %.*s\n",
+            fprintf(out_file,"GZIP Decompressed Data: %.*s\n",
                 len, record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
             break;
 
         case EVENT_INFO_JSNORM_DATA:
-            printf("Normalized JavaScript Data: %.*s\n",
+            fprintf(out_file,"Normalized JavaScript Data: %.*s\n",
                 len, record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
             break;
 
         case EVENT_INFO_SMTP_FILENAME:
-            printf("SMTP Attachment Filename: %.*s\n",
+            fprintf(out_file,"SMTP Attachment Filename: %.*s\n",
                 len,record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
             break;
 
         case EVENT_INFO_SMTP_MAILFROM:
-            printf("SMTP MAIL FROM Addresses: %.*s\n",
+            fprintf(out_file,"SMTP MAIL FROM Addresses: %.*s\n",
                     len,record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
             break;
 
         case EVENT_INFO_SMTP_RCPTTO:
-            printf("SMTP RCPT TO Addresses: %.*s\n",
+            fprintf(out_file,"SMTP RCPT TO Addresses: %.*s\n",
                 len, record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
             break;
 
         case EVENT_INFO_SMTP_EMAIL_HDRS:
-            printf("SMTP EMAIL HEADERS: \n%.*s\n",
+            fprintf(out_file,"SMTP EMAIL HEADERS: \n%.*s\n",
                 len, record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
             break;
 
         case EVENT_INFO_HTTP_URI:
-            printf("HTTP URI: %.*s\n",
+            fprintf(out_file,"HTTP URI: %.*s\n",
                 len, record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
             break;
 
         case EVENT_INFO_HTTP_HOSTNAME:
-            printf("HTTP Hostname: ");
+            fprintf(out_file,"HTTP Hostname: ");
             data = record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData);
             for(i=0; i < len; i++)
             {
                 if(iscntrl(data[i]))
-                    printf("%c",'.');
+                    fprintf(out_file,"%c",'.');
                 else
-                    printf("%c",data[i]);
+                    fprintf(out_file,"%c",data[i]);
             }
-            printf("\n");
+            fprintf(out_file,"\n");
             break;
 
         case EVENT_INFO_IPV6_SRC:
             memcpy(&ipAddr, record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData), sizeof(struct in6_addr));
             inet_ntop(AF_INET6, &ipAddr, ip6buf, INET6_ADDRSTRLEN);
-            printf("IPv6 Source Address: %s\n",
+            fprintf(out_file,"IPv6 Source Address: %s\n",
                     ip6buf);
             break;
 
         case EVENT_INFO_IPV6_DST:
             memcpy(&ipAddr, record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData), sizeof(struct in6_addr));
             inet_ntop(AF_INET6, &ipAddr, ip6buf, INET6_ADDRSTRLEN);
-            printf("IPv6 Destination Address: %s\n",
+            fprintf(out_file,"IPv6 Destination Address: %s\n",
                     ip6buf);
             break;
 
@@ -243,7 +243,7 @@ static void extradata_dump(const u2record *record) {
 
 }
 
-static void event_dump(const u2record *record) {
+static void event_dump(const u2record *record, FILE *out_file) {
     uint8_t *field;
     int i;
     Serial_Unified2IDSEvent_legacy event;
@@ -265,7 +265,8 @@ static void event_dump(const u2record *record) {
     /* done changing the network ordering */
 
 
-    printf("\n(Event)\n"
+    fprintf(out_file,
+        "\n(Event)\n"
             "\tsensor id: %u\tevent id: %u\tevent second: %u\tevent microsecond: %u\n"
             "\tsig id: %u\tgen id: %u\trevision: %u\t classification: %u\n"
             "\tpriority: %u\tip source: %u.%u.%u.%u\tip destination: %u.%u.%u.%u\n"
@@ -280,7 +281,7 @@ static void event_dump(const u2record *record) {
              event.impact_flag, event.blocked);
 }
 
-static void event6_dump(const u2record *record) {
+static void event6_dump(const u2record *record,FILE *out_file) {
     uint8_t *field;
     int i;
     Serial_Unified2IDSEventIPv6_legacy event;
@@ -306,7 +307,7 @@ static void event6_dump(const u2record *record) {
 
     inet_ntop(AF_INET6, &event.ip_source, ip6buf, INET6_ADDRSTRLEN);
 
-    printf("\n(IPv6 Event)\n"
+    fprintf(out_file,"\n(IPv6 Event)\n"
             "\tsensor id: %u\tevent id: %u\tevent second: %u\tevent microsecond: %u\n"
             "\tsig id: %u\tgen id: %u\trevision: %u\t classification: %u\n"
             "\tpriority: %u\tip source: %s\t",
@@ -318,7 +319,7 @@ static void event6_dump(const u2record *record) {
 
 
     inet_ntop(AF_INET6, &event.ip_destination, ip6buf, INET6_ADDRSTRLEN);
-    printf("ip destination: %s\n"
+    fprintf(out_file,"ip destination: %s\n"
             "\tsrc port: %u\tdest port: %u\tprotocol: %u\timpact_flag: %u\tblocked: %u\n",
              ip6buf, event.sport_itype,
              event.dport_icode, event.protocol,
@@ -327,7 +328,7 @@ static void event6_dump(const u2record *record) {
 
 
 
-static void event2_dump(const u2record *record) {
+static void event2_dump(const u2record *record, FILE *out_file) {
     uint8_t *field;
     int i;
 
@@ -357,7 +358,7 @@ static void event2_dump(const u2record *record) {
     /* done changing the network ordering */
 
 
-    printf("\n(Event)\n"
+    fprintf(out_file,"\n(Event)\n"
             "\tsensor id: %u\tevent id: %u\tevent second: %u\tevent microsecond: %u\n"
             "\tsig id: %u\tgen id: %u\trevision: %u\t classification: %u\n"
             "\tpriority: %u\tip source: %u.%u.%u.%u\tip destination: %u.%u.%u.%u\n"
@@ -375,7 +376,7 @@ static void event2_dump(const u2record *record) {
 
 }
 
-static void event2_6_dump(const u2record *record) {
+static void event2_6_dump(const u2record *record,FILE *out_file) {
     uint8_t *field;
     int i;
     char ip6buf[INET6_ADDRSTRLEN+1];
@@ -408,7 +409,7 @@ static void event2_6_dump(const u2record *record) {
 
     inet_ntop(AF_INET6, &event.ip_source, ip6buf, INET6_ADDRSTRLEN);
 
-    printf("\n(IPv6 Event)\n"
+    fprintf(out_file,"\n(IPv6 Event)\n"
             "\tsensor id: %u\tevent id: %u\tevent second: %u\tevent microsecond: %u\n"
             "\tsig id: %u\tgen id: %u\trevision: %u\t classification: %u\n"
             "\tpriority: %u\tip source: %s\t",
@@ -420,7 +421,7 @@ static void event2_6_dump(const u2record *record) {
 
 
     inet_ntop(AF_INET6, &event.ip_destination, ip6buf, INET6_ADDRSTRLEN);
-    printf("ip destination: %s\n"
+    fprintf(out_file,"ip destination: %s\n"
             "\tsrc port: %u\tdest port: %u\tprotocol: %u\timpact_flag: %u\tblocked: %u\n"
             "\tmpls label: %u\tvland id: %u\tpolicy id: %u\n",
              ip6buf, event.sport_itype,
@@ -430,20 +431,9 @@ static void event2_6_dump(const u2record *record) {
 
 }
 
-static inline void print_uuid (const char* label, uint8_t* data)
-{
-#ifdef HAVE_LIBUUID
-    char buf[37];
-    uuid_unparse(data, buf);
-    printf("%s: %s\n", label, buf);
-#else
-    printf("%s: %.*s\n", label, 16, data);
-#endif
-}
-
 #define LOG_CHARS 16
 
-static void LogBuffer (const uint8_t* p, unsigned n)
+static void LogBuffer (const uint8_t* p, unsigned n,FILE *out_file)
 {
     char hex[(3*LOG_CHARS)+1];
     char txt[LOG_CHARS+1];
@@ -458,7 +448,7 @@ static void LogBuffer (const uint8_t* p, unsigned n)
         if ( odx == LOG_CHARS )
         {
             txt[odx] = hex[3*odx] = '\0';
-            printf("[%5u] %s %s\n", at, hex, txt);
+            fprintf(out_file,"[%5u] %s %s\n", at, hex, txt);
             at = idx + 1;
             odx = 0;
         }
@@ -466,11 +456,11 @@ static void LogBuffer (const uint8_t* p, unsigned n)
     if ( odx )
     {
         txt[odx] = hex[3*odx] = '\0';
-        printf("[%5u] %-48.48s %s\n", at, hex, txt);
+        fprintf(out_file,"[%5u] %-48.48s %s\n", at, hex, txt);
     }
 }
 
-static void packet_dump(const u2record *record) {
+static void packet_dump(const u2record *record,FILE *out_file) {
     uint32_t counter;
     uint8_t *field;
 
@@ -488,7 +478,7 @@ static void packet_dump(const u2record *record) {
     }
     /* done changing from network ordering */
 
-    printf("\nPacket\n"
+    fprintf(out_file,"\nPacket\n"
             "\tsensor id: %u\tevent id: %u\tevent second: %u\n"
             "\tpacket second: %u\tpacket microsecond: %u\n"
             "\tlinktype: %u\tpacket_length: %u\n",
@@ -502,7 +492,7 @@ static void packet_dump(const u2record *record) {
 
     if ( packet.packet_length != reclen )
     {
-        printf("ERROR: logged %u but packet_length = %u\n",
+        fprintf(out_file,"ERROR: logged %u but packet_length = %u\n",
             record->length-offset, packet.packet_length);
 
         if ( packet.packet_length < reclen )
@@ -511,16 +501,16 @@ static void packet_dump(const u2record *record) {
             s_off = reclen + offset;
         }
     }
-    LogBuffer(record->data+offset, reclen);
+    LogBuffer(record->data+offset, reclen,out_file);
 }
 
-int u2dump(const u2record *record, FILE *f __attribute__((unused))) {
-    if(record->type == UNIFIED2_IDS_EVENT) event_dump(record);
-    else if(record->type == UNIFIED2_IDS_EVENT_VLAN) event2_dump(record);
-    else if(record->type == UNIFIED2_PACKET) packet_dump(record);
-    else if(record->type == UNIFIED2_IDS_EVENT_IPV6) event6_dump(record);
-    else if(record->type == UNIFIED2_IDS_EVENT_IPV6_VLAN) event2_6_dump(record);
-    else if(record->type == UNIFIED2_EXTRA_DATA) extradata_dump(record);
+int u2dump(const u2record *record, FILE *out_file) {
+    if(record->type == UNIFIED2_IDS_EVENT) event_dump(record, out_file);
+    else if(record->type == UNIFIED2_IDS_EVENT_VLAN) event2_dump(record,out_file);
+    else if(record->type == UNIFIED2_PACKET) packet_dump(record,out_file);
+    else if(record->type == UNIFIED2_IDS_EVENT_IPV6) event6_dump(record,out_file);
+    else if(record->type == UNIFIED2_IDS_EVENT_IPV6_VLAN) event2_6_dump(record,out_file);
+    else if(record->type == UNIFIED2_EXTRA_DATA) extradata_dump(record,out_file);
 
     return 0;
 }
