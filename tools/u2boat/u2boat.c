@@ -39,6 +39,7 @@
 #endif
 
 #include "u2boat.h"
+#include "u2spewfoo.h"
 
 #define FAILURE -1
 #define SUCCESS 0
@@ -67,7 +68,7 @@ struct filters {
 static int ConvertLog(FILE *input, FILE *output, char *format, struct filters *defined_filters);
 static int GetRecord(FILE *input, u2record *rec);
 static int PcapInitOutput(FILE *output);
-static int PcapConversion(u2record *rec, FILE *output);
+static int PcapConversion(const u2record *rec, FILE *output);
 static int isEvent(const u2record *record);
 static int FamilyOfRecord(const u2record *record);
 static const u2event *ExtendedRecordOf(const u2record *record);
@@ -89,13 +90,17 @@ static int ConvertLog(FILE *input, FILE *output, char *format, struct filters *d
     int filters_passed = 1;
 
     /* Determine conversion function */
-    int (* ConvertRecord)(u2record *, FILE *) = NULL;
+    int (* ConvertRecord)(const u2record *, FILE *) = NULL;
 
     /* This will become an if/else series once more formats are supported.
      * Callbacks are used so that this comparison only needs to happen once. */
-    if (strncmp(format, "pcap", 4) == 0)
+    if (strcmp(format, "pcap") == 0)
     {
         ConvertRecord = PcapConversion;
+    }
+    if (strcmp(format, "text") == 0)
+    {
+        ConvertRecord = u2dump;
     }
 
     if (ConvertRecord == NULL)
@@ -124,7 +129,6 @@ static int ConvertLog(FILE *input, FILE *output, char *format, struct filters *d
         if(isEvent(&tmp_record))
             filters_passed = EventPassFilters(defined_filters,&tmp_record);
 
-        fprintf(stderr,"Filter passed:%d\n",filters_passed);
         if(filters_passed == 0)
             continue;
 
@@ -379,7 +383,7 @@ static int IsEqualIPv6(const struct in6_addr *a,const struct in6_addr *b){
 }
 
 /* Convert a unified2 packet record to pcap format, then dump */
-static int PcapConversion(u2record *rec, FILE *output)
+static int PcapConversion(const u2record *rec, FILE *output)
 {
     Serial_Unified2Packet packet;
     struct pcap_pkthdr pcap_hdr;
@@ -566,9 +570,9 @@ int main (int argc, char *argv[])
         for (i = 0; i < (int)strlen(output_type); i++)
             output_type[i] = tolower(output_type[i]);
     }
-    if (strcmp(output_type, "pcap"))
+    if (!strcmp(output_type, "pcap") && !strcmp(output_type,"text"))
     {
-        fprintf(stderr, "Invalid output type. Valid types are: pcap\n");
+        fprintf(stderr, "Invalid output type. Valid types are: pcap, stdout\n");
         return FAILURE;
     }
     if (output_filename == NULL)
