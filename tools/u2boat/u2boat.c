@@ -58,7 +58,7 @@ struct filters {
     uint32_t generator_id;
 
     int src_ip_family,dst_ip_family;
-    char src_ip[sizeof(struct in6_addr)], dst_ip[sizeof(struct in6_addr)];
+    uint8_t src_ip[sizeof(struct in6_addr)], dst_ip[sizeof(struct in6_addr)];
     char *src_ip_str,*dst_ip_str;
 };
 
@@ -68,8 +68,19 @@ static int ConvertLog(FILE *input, FILE *output, char *format, struct filters *d
 static int GetRecord(FILE *input, u2record *rec);
 static int PcapInitOutput(FILE *output);
 static int PcapConversion(u2record *rec, FILE *output);
+static int isEvent(const u2record *record);
+static int FamilyOfRecord(const u2record *record);
 static const u2event *ExtendedRecordOf(const u2record *record);
-static int EventPassFilters(const struct filters *defined_filters,const u2event *extended_record);
+
+/* Filtering prototypes */
+static int EventPassFilters(const struct filters *defined_filters,const u2record *record);
+static int EventPassIPFilters(const struct filters *defined_filters,const u2record *record);
+static int IPPassSourceIpFilter(const struct filters *defined_filters,const u2record *record);
+static int IPPassDestinationIPFilter(const struct filters *defined_filters,const u2record *record);
+static const u2ipv4event *IPv4EventOf(const u2record *record);
+static const u2ipv6event *IPv6EventOf(const u2record *record);
+static int IsEqualIPv4(const struct in_addr *a,const uint32_t b);
+static int IsEqualIPv6(const struct in6_addr *a,const struct in6_addr *b);
 static int SmartInetpton(int *family,const char *str,void *buffer);
 
 static int ConvertLog(FILE *input, FILE *output, char *format, struct filters *defined_filters)
@@ -109,10 +120,11 @@ static int ConvertLog(FILE *input, FILE *output, char *format, struct filters *d
             break;
         }
 
-        const u2event *extended_record = ExtendedRecordOf(&tmp_record);
-        if(extended_record)
-            filters_passed = EventPassFilters(defined_filters,extended_record);
+        /* if is event, update filters_passed status */
+        if(isEvent(&tmp_record))
+            filters_passed = EventPassFilters(defined_filters,&tmp_record);
 
+        fprintf(stderr,"Filter passed:%d\n",filters_passed);
         if(filters_passed == 0)
             continue;
 
@@ -163,14 +175,19 @@ static int PcapInitOutput(FILE *output)
     return SUCCESS;
 }
 
+static int isEvent(const u2record *record)
+{
+    return record->type == UNIFIED2_IDS_EVENT
+        || record->type == UNIFIED2_IDS_EVENT_IPV6
+        || record->type == UNIFIED2_IDS_EVENT_VLAN
+        || record->type == UNIFIED2_IDS_EVENT_IPV6_VLAN;
+}
+
 /* Obtains the extended version of unified2 record, that can be used to 
 filtering */
 static const u2event *ExtendedRecordOf(const u2record *record)
 {
-    if(record->type == UNIFIED2_IDS_EVENT
-        || record->type == UNIFIED2_IDS_EVENT_IPV6
-        || record->type == UNIFIED2_IDS_EVENT_VLAN
-        || record->type == UNIFIED2_IDS_EVENT_IPV6_VLAN)
+    if(isEvent(record))
     {
         return (u2event *)record->data;
     }
@@ -195,32 +212,170 @@ static int SmartInetpton(int *family,const char *str,void *dst){
 /* Check if an event pass the filters. If no filter is set (value==0), it pass 
 the filter */
 static int EventPassFilters(const struct filters *defined_filters,
-    const u2event *extended_record)
+    const u2record *record)
 {
     int filters_passed = 1; // Assume true as default
 
-    if(defined_filters->lower_timestamp > 0 
-        && ntohl(extended_record->event_second) < defined_filters->lower_timestamp)
+    const u2event *extended_record = ExtendedRecordOf(record);
+    if(extended_record)
     {
-        filters_passed = 0;
-    }
-    if(defined_filters->upper_timestamp > 0 
-        && ntohl(extended_record->event_second) < defined_filters->upper_timestamp)
-    {
-        filters_passed = 0;
-    }
-    if(defined_filters->signature_id != 0 
-        && ntohl(extended_record->signature_id) != defined_filters->signature_id)
-    {
-        filters_passed = 0;
-    }
-    if(defined_filters->generator_id != 0
-        && ntohl(extended_record->generator_id) != defined_filters->generator_id)
-    {
-        filters_passed = 0;
+        if(defined_filters->lower_timestamp > 0 
+            && ntohl(extended_record->event_second) < defined_filters->lower_timestamp)
+        {
+            filters_passed = 0;
+        }
+        if(defined_filters->upper_timestamp > 0 
+            && ntohl(extended_record->event_second) < defined_filters->upper_timestamp)
+        {
+            filters_passed = 0;
+        }
+        if(defined_filters->signature_id != 0 
+            && ntohl(extended_record->signature_id) != defined_filters->signature_id)
+        {
+            filters_passed = 0;
+        }
+        if(defined_filters->generator_id != 0
+            && ntohl(extended_record->generator_id) != defined_filters->generator_id)
+        {
+            filters_passed = 0;
+        }
+
+        if(filters_passed)
+        {
+            filters_passed = EventPassIPFilters(defined_filters,record);
+        }
     }
 
     return filters_passed;
+}
+
+static int EventPassIPFilters(const struct filters *defined_filters,const u2record *record)
+{
+    int filters_passed = 1;
+
+    if(filters_passed && defined_filters->src_ip_str)
+    {
+        if(defined_filters->src_ip_family != FamilyOfRecord(record))
+        {
+            filters_passed = 0;
+        }
+        else
+        {
+            filters_passed = IPPassSourceIpFilter(defined_filters,record);
+        }
+    }
+    if(filters_passed && defined_filters->dst_ip_str)
+    {
+        if(defined_filters->dst_ip_family != FamilyOfRecord(record))
+        {
+            filters_passed = 0;
+        }
+        else
+        {
+            filters_passed = IPPassDestinationIPFilter(defined_filters,record);
+            fprintf(stderr,"DST CMP: %d\n",filters_passed);
+        }
+    }
+
+    return filters_passed;
+}
+
+static int IPPassSourceIpFilter(const struct filters *defined_filters,const u2record *record)
+{
+    int filters_passed = 1;
+
+    if(filters_passed && FamilyOfRecord(record) == AF_INET)
+    {
+        const u2ipv4event *ipv4Event = IPv4EventOf(record);
+        if(ipv4Event)
+        {
+            filters_passed = IsEqualIPv4((struct in_addr *)defined_filters->src_ip,ipv4Event->ip_source);
+        }
+        else
+        {
+            filters_passed = 0;
+        }
+    }
+    
+    if(filters_passed && FamilyOfRecord(record) == AF_INET6)
+    {
+        const u2ipv6event *ipv6Event = IPv6EventOf(record);
+        if(ipv6Event)
+        {
+            filters_passed = IsEqualIPv6((struct in6_addr *)defined_filters->src_ip,&ipv6Event->ip_source);
+        }
+        else
+        {
+            filters_passed = 0;
+        }
+    }
+
+    return filters_passed;
+}
+
+static int IPPassDestinationIPFilter(const struct filters *defined_filters,const u2record *record){
+        int filters_passed = 1;
+
+    if(filters_passed && FamilyOfRecord(record) == AF_INET)
+    {
+        const u2ipv4event *ipv4Event = IPv4EventOf(record);
+        if(ipv4Event)
+        {
+            filters_passed = IsEqualIPv4((struct in_addr *)defined_filters->dst_ip,ipv4Event->ip_destination);
+        }
+        else
+        {
+            filters_passed = 0;
+        }
+    }
+    
+    if(filters_passed && FamilyOfRecord(record) == AF_INET6)
+    {
+        const u2ipv6event *ipv6Event = IPv6EventOf(record);
+        if(ipv6Event)
+        {
+            filters_passed = IsEqualIPv6((struct in6_addr *)defined_filters->dst_ip,&ipv6Event->ip_destination);
+        }
+        else
+        {
+            filters_passed = 0;
+        }
+    }
+
+    return filters_passed;
+}
+
+/* return the ip family related to the record */
+static int FamilyOfRecord(const u2record *record)
+{
+    if(record->type == UNIFIED2_IDS_EVENT_IPV6 || record->type == UNIFIED2_IDS_EVENT_IPV6_VLAN)
+    {
+        return AF_INET6;
+    }
+    else if(record->type == UNIFIED2_IDS_EVENT || record->type == UNIFIED2_IDS_EVENT_VLAN)
+    {
+        return AF_INET;
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+static const u2ipv4event *IPv4EventOf(const u2record *record){
+    return FamilyOfRecord(record) == AF_INET ? (u2ipv4event *)record->data : NULL;
+}
+
+static const u2ipv6event *IPv6EventOf(const u2record *record){
+    return FamilyOfRecord(record) == AF_INET6 ? (u2ipv6event *)record->data : NULL;
+}
+
+static int IsEqualIPv4(const struct in_addr *a,const uint32_t b){
+    return !memcmp(&a->s_addr,&b,sizeof(b));
+}
+
+static int IsEqualIPv6(const struct in6_addr *a,const struct in6_addr *b){
+    return !memcmp(a->s6_addr,b->s6_addr,sizeof(a->s6_addr));
 }
 
 /* Convert a unified2 packet record to pcap format, then dump */
