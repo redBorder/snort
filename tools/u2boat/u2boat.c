@@ -229,7 +229,7 @@ static int EventPassFilters(const struct filters *defined_filters,
             filters_passed = 0;
         }
         if(defined_filters->upper_timestamp > 0 
-            && ntohl(extended_record->event_second) < defined_filters->upper_timestamp)
+            && ntohl(extended_record->event_second) > defined_filters->upper_timestamp)
         {
             filters_passed = 0;
         }
@@ -277,7 +277,6 @@ static int EventPassIPFilters(const struct filters *defined_filters,const u2reco
         else
         {
             filters_passed = IPPassDestinationIPFilter(defined_filters,record);
-            fprintf(stderr,"DST CMP: %d\n",filters_passed);
         }
     }
 
