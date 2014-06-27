@@ -1486,7 +1486,16 @@ int VerifyReloadedPreprocessors(SnortConfig *sc)
         if (node->data && (preproc = node->preprocNode) && preproc->reload_verify_func &&
             (rval = preproc->reload_verify_func(sc, node->data)))
         {
-            return rval;
+            if(node->preprocNode)
+            {
+                LogMessage("Preprocessor %s failed to reload\n");
+            }
+            else
+            {
+                LogMessage("Some preprocessor failed to reload\n");
+            }
+                
+            // return rval;
         }
     }
 
