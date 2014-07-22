@@ -106,6 +106,17 @@ I. Configuring Unified2 Output
     generated events for that session.
     * see README.SMTP for more information
 
+    dont_rotate_on_packets
+
+    This options disable the log rotation when u2 is writing packets.
+    This is useful when you want to see the event with u2spewfoo. This
+    way, you don't have to see two different files.
+
+    However, this option broke the strict limit option, because u2 
+    output plugin does not know how long the packet is before write
+    out the event. Depending on the packet length, the limit will be
+    overflow in more or less bytes.
+
 
 II. Reading Unified2 Files
 
