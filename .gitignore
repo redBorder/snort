@@ -1,17 +1,42 @@
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Libraries
+*.lib
+*.a
+*.lo
+*.la
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
 Makefile
-cflags.out
 config.h
 config.log
 config.status
 contrib/Makefile
 cppflags.out
-/doc/.INSTALL.swp
 /libtool
 snort.pc
 snort_output.pc
 snort_preproc.pc
 snort_side_channel.pc
 .deps
+.libs
 stamp-h1
 /tools/u2boat/u2boat
 /tools/u2boat/u2boat-u2boat.o
