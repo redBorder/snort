@@ -85,6 +85,12 @@ typedef struct _Unified2Config
 #if defined(FEAT_OPEN_APPID)
     int appid_event_types;
 #endif /* defined(FEAT_OPEN_APPID) */
+
+    // Barnyard2 can't print events if they are splitted in many log file.
+    // If you turn on this option, snort will only split in events printing.
+    // However, this will broke the limit implementation: spo_unified2 can
+    // write beyond this limit, until it found an event to rotate on.
+    int dont_rotate_on_packets;
 } Unified2Config;
 
 typedef struct _Unified2LogCallbackData
@@ -735,7 +741,7 @@ void _WriteExtraData(Unified2Config *config, uint32_t event_id, uint32_t event_s
     alertHdr.event_length = htonl(write_len - sizeof(Serial_Unified2_Header));
 
 
-    if ((config->current + write_len) > config->limit)
+    if (!config->dont_rotate_on_packets && (config->current + write_len) > config->limit)
         Unified2RotateFile(config);
 
     hdr.length = htonl(write_len - sizeof(Serial_Unified2_Header));
@@ -980,7 +986,7 @@ static void _Unified2LogPacketAlert(Packet *p, char *msg,
         logheader.packet_length = 0;
     }
 
-    if ((config->current + write_len) > config->limit)
+    if (!config->dont_rotate_on_packets && (config->current + write_len) > config->limit)
         Unified2RotateFile(config);
 
     hdr.length = htonl(sizeof(Serial_Unified2Packet) - 4 + pkt_length);
@@ -1034,7 +1040,7 @@ static int Unified2LogStreamCallback(DAQ_PktHdr_t *pkth,
         return -1;
 
     write_len += pkth->caplen;
-    if ((unifiedData->config->current + write_len) > unifiedData->config->limit)
+    if (!unifiedData->config->dont_rotate_on_packets && (unifiedData->config->current + write_len) > unifiedData->config->limit)
         Unified2RotateFile(unifiedData->config);
 
     hdr.type = htonl(UNIFIED2_PACKET);
@@ -1124,7 +1130,7 @@ static ObRet Unified2LogObfuscationCallback(const DAQ_PktHdr_t *pkth,
             return OB_RET_ERROR;
         }
 
-        if ((unifiedData->config->current + record_len) > unifiedData->config->limit)
+        if (!unifiedData->config->dont_rotate_on_packets && (unifiedData->config->current + record_len) > unifiedData->config->limit)
             Unified2RotateFile(unifiedData->config);
 
         hdr.type = htonl(UNIFIED2_PACKET);
@@ -1323,6 +1329,10 @@ static Unified2Config * Unified2ParseArgs(char *args, char *default_filename)
             {
                 config->appid_event_types = 1;
 #endif /* defined(FEAT_OPEN_APPID) */
+            }
+            else if(strcasecmp("dont_rotate_on_packets", stoks[0]) == 0)
+            {
+                config->dont_rotate_on_packets = 1;
             }
             else
             {
