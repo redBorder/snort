@@ -723,7 +723,7 @@ static inline int sfthd_test_suppress (
     else
     {
         if ( !sfthd_node->ip_address ||
-             IpAddrSetContains(sfthd_node->ip_address, sip) )
+             IpAddrSetContains(sfthd_node->ip_address, sfthd_node->tracking == THD_TRK_SRC ? sip : dip) )
         {
 #ifdef THD_DEBUG
             printf("THD_DEBUG: SUPPRESS NODE, do not log events with this IP\n");
