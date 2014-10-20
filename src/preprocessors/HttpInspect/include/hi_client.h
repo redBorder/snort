@@ -38,12 +38,19 @@
 #define URI_END  99
 #define POST_END 100
 #define NO_URI   101
-typedef enum {
-    TRUE_CLIENT_IP_HDR = 0x01,
-    XFF_HDR = 0x02,
-    HDRS_BOTH = 0x03
-} ActionSFCC;
 
+#define XFF_MODE_MASK      (0x000f)
+#define XFF_EXFF_MASK      (0x000c)
+
+#define TRUE_CLIENT_IP_HDR (0x01)
+#define XFF_HDR            (0x02)
+#define HDRS_BOTH          (0x03)
+#define XFF_HEADERS        (0x04)  // Using xff_headers list
+#define XFF_HEADERS_ACTIVE (0x08)  // Looking for highest precedence xff header
+#define XFF_INIT (XFF_HEADERS | XFF_HEADERS_ACTIVE)
+
+#define XFF_TOP_PRECEDENCE (1)
+#define XFF_BOT_PRECEDENCE (255)
 
 typedef struct s_COOKIE_PTR
 {
@@ -186,11 +193,15 @@ typedef struct s_HI_CLIENT_HDR_ARGS
     HttpSessionData *sd; 
     int strm_ins; 
     int hst_name_hdr;
-    int true_clnt_xff;
+    uint8_t true_clnt_xff;
+    uint8_t top_precedence;
+    uint8_t new_precedence;
 } HI_CLIENT_HDR_ARGS;
 
 int hi_client_inspection(Packet *p, void *Session, HttpSessionData *hsd, int stream_ins);
 int hi_client_init(HTTPINSPECT_GLOBAL_CONF *GlobalConf);
+
+char **hi_client_get_field_names();
 
 extern const u_char *proxy_start;
 extern const u_char *proxy_end;

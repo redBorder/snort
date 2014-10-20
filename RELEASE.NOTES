@@ -1,55 +1,14 @@
-2014-03-18 - Snort 2.9.6.1
-[*] Improvements
-* Added a control command to dump all packets matching a BPF to a pcap file
-  for capturing specific traffic for further analysis.
-
-* Address issue for encoded packets and icmp header length determination.
-
-* Provide more detailed error output for parsing of invalid rules when
-  byte_test, byte_check, content, and isdataat use a byte_extract value.
-
-* Updated sensitive data to better address partial matches between packets.
-
-2014-01-16 - Snort 2.9.6.0
+2014-07-09 - Snort 2.9.6.2
 [*] New additions
-* Add support to do file specific processing within DCERPC preprocessor for
-  files being transferred over SMB.
+* Added the ability to specify additional custom 'x-forwarder-for' http field names. 
+  A new http inspection configuration element is used to specify a set of
+  field names and their respective precedence order.  
 
-* File capture and storage -- saves files as they traverse the network via a
-  new preprocessor that ties in support within HTTP, FTP, SMTP, POP, IMAP,
-  and SMB.  See README.file and README.file_server (under tools/file_server)
-  for details.
-
-* Add <= and >= operators to byte_test rule option.
-
-* Update SMTP to detect Cyrus SASL authentication attack.
-
-* Add capability to capture a single session from start to end.
-
-* EXPERIMENTAL: Add support to leverage file type identification in snort
-  rules.  See README.file_ips for details.
+* Added cache flow timeout for IP.
 
 [*] Improvements
-* Only inject active responses when a TCP session is established.
+* Fixed handling of ICMPv6 traffic.
 
-* Update the POP and IMAP protocols to support simple PAF for improved
-  identification and capture of files.
+* Fixed inline stream reassembly during file processing.
 
-* Update SMTP, POP, IMAP to improve inspection when mime boundaries are
-  split across packets.
-
-* Address issue to address end of line incorrectly for Quoted Printable
-  email attachments.
-
-* Handle out of order SSL handshake in SMTP when STARTTLS is used and
-  fix checks for SSL type only within the SSL hand shake.
-
-* Update sensitive data preprocessor to handle a stateful search of
-  patterns across multiple packets.
-
-* Address a few issues in the Snort manual and other READMEs for flowbits
-  and tunneling.
-
-* Save off packet data for quicker debugging in case of a SIGABRT or SIGBUS.
-
-* Fix alignment of sfxhash node for SPARC platforms.
+* Addressed race condition issue with Perfmon stats file rollover.

@@ -159,7 +159,7 @@ SOURCE="..\..\file-process\file_api.h"
 !IF  "$(CFG)" == "sf_dynamic_initialize - Win32 Release"
 
 # Begin Custom Build
-InputPath=..\..\file-process\file_api.h
+InputPath="..\..\file-process\file_api.h"
 InputName=file_api
 
 "..\include\$(InputName).h" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
@@ -171,7 +171,7 @@ InputName=file_api
 !ELSEIF  "$(CFG)" == "sf_dynamic_initialize - Win32 Debug"
 
 # Begin Custom Build
-InputPath=..\..\file-process\file_api.h
+InputPath="..\..\file-process\file_api.h"
 InputName=file_api
 
 "..\include\$(InputName).h" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
@@ -1976,7 +1976,7 @@ InputName=signature
 BuildCmds= \
 	mkdir ..\include \
 	copy $(InputPath) ..\include\$(InputName).h.new \
-	c:\cygwin\bin\sed -f ..\treenodes.sed ../include/$(InputName).h.new > ../include/$(InputName).h \
+	c:\cygwin\bin\sed -f ../treenodes.sed ../include/$(InputName).h.new > ../include/$(InputName).h \
 	
 
 "..\include\$(InputName).h.new" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
@@ -1995,7 +1995,7 @@ InputName=signature
 BuildCmds= \
 	mkdir ..\include \
 	copy $(InputPath) ..\include\$(InputName).h.new \
-	c:\cygwin\bin\sed -f ..\treenodes.sed ../include/$(InputName).h.new > ../include/$(InputName).h \
+	c:\cygwin\bin\sed -f ../treenodes.sed ../include/$(InputName).h.new > ../include/$(InputName).h \
 	
 
 "..\include\$(InputName).h.new" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
@@ -2218,7 +2218,7 @@ InputName=treenodes
 BuildCmds= \
 	mkdir ..\include \
 	copy $(InputPath) ..\include\$(InputName).h.new \
-	c:\cygwin\bin\sed -f ..\treenodes.sed ../include/$(InputName).h.new > ../include/$(InputName).h \
+	c:\cygwin\bin\sed -f ../treenodes.sed ../include/$(InputName).h.new > ../include/$(InputName).h \
 	
 
 "..\include\$(InputName).h.new" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
@@ -2237,7 +2237,7 @@ InputName=treenodes
 BuildCmds= \
 	mkdir ..\include \
 	copy $(InputPath) ..\include\$(InputName).h.new \
-	c:\cygwin\bin\sed -f ..\treenodes.sed ../include/$(InputName).h.new > ../include/$(InputName).h \
+	c:\cygwin\bin\sed -f ../treenodes.sed ../include/$(InputName).h.new > ../include/$(InputName).h \
 	
 
 "..\include\$(InputName).h.new" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"

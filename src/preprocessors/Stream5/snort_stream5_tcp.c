@@ -9235,7 +9235,7 @@ static int Stream5SeglistDeleteNodeTrim (
 
             seg->seq = flush_seq;
             seg->size -= (uint16_t)delta;
-
+            seg->payload += delta;
             st->seg_bytes_logical -= delta;
             return 0;
         }

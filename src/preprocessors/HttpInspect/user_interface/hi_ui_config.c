@@ -194,6 +194,15 @@ int hi_ui_config_reset_global(HTTPINSPECT_GLOBAL_CONF *GlobalConf)
 */
 int hi_ui_config_reset_server(HTTPINSPECT_CONF *ServerConf)
 {
+    int i;
+
+    for( i=0; i<HI_UI_CONFIG_MAX_XFF_FIELD_NAMES; i++ )
+        if( ServerConf->xff_headers[i] != NULL )
+        {
+            free( ServerConf->xff_headers[i] );
+            ServerConf->xff_headers[i] = NULL;
+        }
+
     http_cmd_lookup_cleanup(&ServerConf->cmd_lookup);
     memset(ServerConf, 0x00, sizeof(HTTPINSPECT_CONF));
     http_cmd_lookup_init(&ServerConf->cmd_lookup);

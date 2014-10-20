@@ -84,6 +84,7 @@
 #include "hi_si.h"
 #include "hi_mi.h"
 #include "hi_norm.h"
+#include "hi_client.h"
 #include "snort_httpinspect.h"
 #include "detection_util.h"
 #include "profiler.h"
@@ -215,6 +216,7 @@ HISearchInfo hi_search_info;
 #define EXTENDED_ASCII    "extended_ascii_uri"
 #define OPT_DISABLED      "disabled"
 #define ENABLE_XFF        "enable_xff"
+#define XFF_HEADERS_TOK   "xff_headers"
 #define HTTP_METHODS      "http_methods"
 #define LOG_URI           "log_uri"
 #define LOG_HOSTNAME      "log_hostname"
@@ -250,6 +252,24 @@ HISearchInfo hi_search_info;
 */
 #define START_PORT_LIST "{"
 #define END_PORT_LIST   "}"
+
+/*
+**  XFF Header list delimiters, states, etc.
+*/
+#define START_XFF_HEADER_LIST  "{"
+#define END_XFF_HEADER_LIST    "}"
+#define START_XFF_HEADER_ENTRY "["
+#define END_XFF_HEADER_ENTRY   "]"
+
+#define XFF_MIN_PREC        (1)
+#define XFF_MAX_PREC        (255)
+
+#define XFF_STATE_START     (1)
+#define XFF_STATE_OPEN      (2)
+#define XFF_STATE_NAME      (3)
+#define XFF_STATE_PREC      (4)
+#define XFF_STATE_CLOSE     (5)
+#define XFF_STATE_END       (6)
 
 /*
 **  Keyword for the default server configuration
@@ -1796,6 +1816,307 @@ static int ProcessWhitespaceChars(HTTPINSPECT_CONF *ServerConf,
     return 0;
 }
 
+static bool Is_Field_Prec_Unique( uint8_t *Name_Array[], uint8_t Prec_Array[],
+                                 uint8_t *Name, uint8_t Precedence,
+                                 char *ErrorString, int ErrStrLen )
+{
+    int i;
+
+    for( i=0; i<HI_UI_CONFIG_MAX_XFF_FIELD_NAMES; i++ )
+    {
+        /* A NULL entry indicates the end of the list */
+        if( Name_Array[i] == NULL )
+            break;
+
+        if( strcmp( (char *)Name, (char *)Name_Array[i] ) == 0 )
+        {
+            SnortSnprintf(ErrorString, ErrStrLen,
+                          "Duplicate XFF Field name: %s.", Name);
+
+            return( false );
+        }
+
+        if( (Precedence != 0) && (Precedence == Prec_Array[i]) )
+        {
+            SnortSnprintf(ErrorString, ErrStrLen,
+                          "Duplicate XFF Precedence value: %u.", Precedence);
+
+            return( false );
+        }
+    }
+    return( true );
+}
+
+static int Find_Open_Field( uint8_t *Name_Array[] )
+{
+    int i;
+
+    for( i=0; i<HI_UI_CONFIG_MAX_XFF_FIELD_NAMES; i++ )
+        if( Name_Array[i] == NULL )
+            return( i );
+    return( -1 );
+}
+
+static void Push_Down_XFF_List( uint8_t *Name_Array[], uint8_t *Length_Array, uint8_t Prec_Array[], int Start )
+{
+    int i;
+
+    for( i=(HI_UI_CONFIG_MAX_XFF_FIELD_NAMES-1); i>=Start; i-- )
+    {
+        Name_Array[i] = Name_Array[i-1];
+        Length_Array[i] = Length_Array[i-1];
+        Prec_Array[i] = Prec_Array[i-1];
+    }
+}
+
+/* The caller of Add_XFF_Field is responsible for determining that at least one
+   additional entry is availble in both the field name array and the precedence
+   value array. */
+static int Add_XFF_Field( HTTPINSPECT_CONF *ServerConf, uint8_t *Prec_Array, uint8_t *Field_Name,
+                          uint8_t Precedence, char *ErrorString, int ErrStrLen )
+{
+    uint8_t **Fields = ServerConf->xff_headers;
+    uint8_t *Lengths = ServerConf->xff_header_lengths;
+    uint8_t Length;
+    int i;
+    char **Builtin_Fields;
+    char *cp;
+    const char *Special_Chars = { "_-" };
+
+    if( (Length = strlen( (char *)Field_Name )) > UINT8_MAX )
+    {
+        SnortSnprintf(ErrorString, ErrStrLen,
+                      "Field name limited to %u characters", UINT8_MAX);
+        return -1;
+    }
+
+    cp = Field_Name;
+    while( *cp != '\0' )
+    {
+        *cp = (uint8_t)toupper(*cp);  // Fold to upper case for runtime comparisons
+        if( (isalnum( *cp ) == 0) && (strchr( Special_Chars, (int)(*cp) ) == NULL) ) 
+        {
+            SnortSnprintf(ErrorString, ErrStrLen,
+                          "Invalid xff field name: %s ", Field_Name);
+            return( -1 );
+        }
+        cp += 1;
+    }
+
+    Builtin_Fields = hi_client_get_field_names();
+    for( i=0; Builtin_Fields[i]!=NULL; i++ )
+    {
+        if( strcasecmp(Builtin_Fields[i], HI_UI_CONFIG_XFF_FIELD_NAME) == 0 ) continue;
+        if( strcasecmp(Builtin_Fields[i], HI_UI_CONFIG_TCI_FIELD_NAME) == 0 ) continue;
+        if( strcasecmp(Builtin_Fields[i], (char *)Field_Name) == 0 )
+        {
+            SnortSnprintf(ErrorString, ErrStrLen,
+                          "Cannot use: '%s' as an xff header.", Field_Name);
+            return -1;
+        }
+    }
+
+    if( !Is_Field_Prec_Unique( Fields, Prec_Array, Field_Name, Precedence,
+                              ErrorString, ErrStrLen ) )
+        return( -1 );
+
+    if( Precedence == 0 )
+    {
+        if( (i = Find_Open_Field( Fields )) >= 0 )
+        {
+            Fields[i] = Field_Name;
+            Lengths[i] = Length;
+            Prec_Array[i] = 0;
+            return( 0 );
+        }
+        else
+            return( -1 );
+    }
+
+    for( i=0; i<HI_UI_CONFIG_MAX_XFF_FIELD_NAMES; i++ )
+    {
+        /* If the space is open, place the name & prec */
+        if( Fields[i] == NULL )
+        {
+            Fields[i] = Field_Name;
+            Lengths[i] = Length;
+            Prec_Array[i] = Precedence;
+            break;
+        }
+
+        /* if the new entry is higher precedence than the current list element,
+           push the list down and place the new entry here. */
+        if( Precedence < Prec_Array[i] )
+        {
+            Push_Down_XFF_List( Fields, Lengths, Prec_Array, i+1 );
+            Fields[i] = Field_Name;
+            Lengths[i] = Length;
+            Prec_Array[i] = Precedence;
+            break;
+        }
+    }
+
+    return( 0 );
+}
+
+static int ProcessXFF_HeaderList(HTTPINSPECT_CONF *ServerConf,
+                      char *ErrorString, int ErrStrLen)
+{
+    char *pcToken;
+    int Parse_State;
+    bool Keep_Parsing;
+    bool Have_XFF;
+    bool Have_TCI;
+    uint8_t Prec_List[HI_UI_CONFIG_MAX_XFF_FIELD_NAMES];
+    unsigned char Count = 0;
+    unsigned char Max_XFF = { (HI_UI_CONFIG_MAX_XFF_FIELD_NAMES-XFF_BUILTIN_NAMES) };
+    uint8_t *Field_Name;
+    uint8_t Precedence;
+    int i;
+
+
+    /* NOTE:  This procedure assumes that the ServerConf->xff_headers array
+              contains all NULL's due to the structure allocation process. */
+
+    pcToken = strtok(NULL, CONF_SEPARATORS);
+    if(!pcToken)
+    {
+        SnortSnprintf(ErrorString, ErrStrLen,
+                "Invalid XFF list format.");
+
+        return -1;
+    }
+
+    for( i=0; i<HI_UI_CONFIG_MAX_XFF_FIELD_NAMES; i++ ) Prec_List[i] = 0;
+    Parse_State = XFF_STATE_START;
+    Keep_Parsing = true;
+
+    do
+    {
+        switch( Parse_State )
+        {
+            case( XFF_STATE_START ):
+            {
+                if( strcmp( START_XFF_HEADER_LIST, pcToken ) != 0 )
+                {
+                    SnortSnprintf(ErrorString, ErrStrLen,
+                        "Must start an xff header list with the '%s' token.",
+                        START_XFF_HEADER_LIST);
+                    return( -1 );
+                }
+                Parse_State = XFF_STATE_OPEN;
+                break;
+            }
+            case( XFF_STATE_OPEN ):
+            {
+                if( strcmp( START_XFF_HEADER_ENTRY, pcToken ) == 0 )
+                    Parse_State = XFF_STATE_NAME;
+                else if( strcmp( END_XFF_HEADER_LIST, pcToken ) == 0 )
+                {
+                    Parse_State = XFF_STATE_END;
+                    Keep_Parsing = false;
+                }
+                else
+                {
+                    SnortSnprintf(ErrorString, ErrStrLen,
+                                 "xff header parsing error");
+                    return( -1 );
+                }
+                break;
+            }
+            case( XFF_STATE_NAME ):
+            {
+                Field_Name = (uint8_t *)SnortStrdup( pcToken );
+                Parse_State = XFF_STATE_PREC;
+                break;
+            }
+            case( XFF_STATE_PREC ):
+            {
+                Precedence = xatou( pcToken, "Precedence" );
+
+                if( strcasecmp( (char *)Field_Name, HI_UI_CONFIG_XFF_FIELD_NAME) == 0 )
+                {
+                    Max_XFF += 1;
+                    Have_XFF = true;
+                }
+                else if( strcasecmp( (char *)Field_Name, HI_UI_CONFIG_TCI_FIELD_NAME) == 0 )
+                {
+                    Max_XFF += 1;
+                    Have_TCI = true;
+                }
+                else
+                    Count += 1;
+
+                if( Count > Max_XFF )
+                {
+                    SnortSnprintf(ErrorString, ErrStrLen,
+                                 "too many xff field names");
+                    return( -1 );
+                }
+
+                if( Add_XFF_Field( ServerConf, Prec_List, Field_Name, Precedence,
+                                   ErrorString, ErrStrLen ) != 0 )
+                {
+                    SnortSnprintf(ErrorString, ErrStrLen,
+                                 "Error adding xff header: %s", Field_Name);
+                    return( -1 );
+                }
+
+                Parse_State = XFF_STATE_CLOSE;
+                break;
+            }
+            case( XFF_STATE_CLOSE ):
+            {
+                if( strcmp( END_XFF_HEADER_ENTRY, pcToken ) != 0 )
+                {
+                    SnortSnprintf(ErrorString, ErrStrLen,
+                        "Must end an xff header entry with the '%s' token.",
+                        END_XFF_HEADER_ENTRY);
+                    return( -1 );
+                }
+                Parse_State = XFF_STATE_OPEN;
+                break;
+            }
+            default:
+            {
+                SnortSnprintf(ErrorString, ErrStrLen,
+                             "xff header parsing error");
+                return( -1 );
+            }
+        }
+    }
+    while( Keep_Parsing && ((pcToken = strtok(NULL, CONF_SEPARATORS)) != NULL) );
+
+    /* NOTE:  The number of fields added here MUST be represented in XFF_BUILTIN_NAMES value
+              to assure that we reserve room for them on the list. */
+    if( !Have_XFF )
+    {
+        Field_Name = (uint8_t *)SnortStrdup( HI_UI_CONFIG_XFF_FIELD_NAME );
+        if( Add_XFF_Field( ServerConf, Prec_List, Field_Name, 0,
+                           ErrorString, ErrStrLen ) != 0 )
+        {
+            SnortSnprintf(ErrorString, ErrStrLen,
+                         "problem adding builtin xff field - too many fields?");
+            return( -1 );
+        }
+    }
+
+    if( !Have_TCI )
+    {
+        Field_Name = (uint8_t *)SnortStrdup( HI_UI_CONFIG_TCI_FIELD_NAME );
+        if( Add_XFF_Field( ServerConf, Prec_List, Field_Name, 0,
+                           ErrorString, ErrStrLen ) != 0 )
+        {
+            SnortSnprintf(ErrorString, ErrStrLen,
+                         "problem adding builtin xff field - too many fields?");
+            return( -1 );
+        }
+    }
+
+
+    return 0;
+}
+
 static int ProcessHttpMethodList(HTTPINSPECT_CONF *ServerConf,
                       char *ErrorString, int ErrStrLen)
 {
@@ -2194,6 +2515,20 @@ static int ProcessServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
             {
                 ServerConf->enable_xff = 1;
             }
+            else if(!strcmp(XFF_HEADERS_TOK, pcToken))
+            {
+                if(!ServerConf->enable_xff)
+                {
+                    SnortSnprintf(ErrorString, ErrStrLen,
+                                  "Enable '%s' before setting '%s'",ENABLE_XFF, XFF_HEADERS_TOK);
+                    return -1;
+                }
+
+                if( ((iRet = ProcessXFF_HeaderList(ServerConf, ErrorString, ErrStrLen)) != 0)  )
+                {
+                    return iRet;
+                }
+            }
             else if(!strcmp(LOG_URI, pcToken))
             {
                 ServerConf->log_uri = 1;
@@ -2216,12 +2551,12 @@ static int ProcessServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
                               "Invalid token while configuring the profile token.  "
                               "The only allowed tokens when configuring profiles "
                               "are: '%s', '%s', '%s', '%s', '%s', '%s', '%s', "
-                              "'%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',"
+                              "'%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' "
                               "'%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', and '%s'. ",
                               PORTS,IIS_UNICODE_MAP, ALLOW_PROXY, FLOW_DEPTH,
                               CLIENT_FLOW_DEPTH, GLOBAL_ALERT, OVERSIZE_DIR, MAX_HDR_LENGTH,
                               INSPECT_URI_ONLY, INSPECT_COOKIES, INSPECT_RESPONSE,
-                              EXTRACT_GZIP,MAX_HEADERS, NORMALIZE_COOKIES, ENABLE_XFF,
+                              EXTRACT_GZIP,MAX_HEADERS, NORMALIZE_COOKIES, ENABLE_XFF, XFF_HEADERS_TOK,
                               NORMALIZE_HEADERS, NORMALIZE_UTF, UNLIMIT_DECOMPRESS, HTTP_METHODS, 
                               LOG_URI, LOG_HOSTNAME, MAX_SPACES, NORMALIZE_JS, MAX_JS_WS);
 
@@ -2631,6 +2966,20 @@ static int ProcessServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
         else if(!strcmp(ENABLE_XFF, pcToken))
         {
             ServerConf->enable_xff = 1;
+        }
+        else if(!strcmp(XFF_HEADERS_TOK, pcToken))
+        {
+            if(!ServerConf->enable_xff)
+            {
+                SnortSnprintf(ErrorString, ErrStrLen,
+                        "Enable '%s' before setting '%s'",ENABLE_XFF, XFF_HEADERS_TOK);
+                return -1;
+            }
+
+            if( ((iRet = ProcessXFF_HeaderList(ServerConf, ErrorString, ErrStrLen)) != 0)  )
+            {
+                return iRet;
+            }
         }
         else if(!strcmp(LOG_URI, pcToken))
         {

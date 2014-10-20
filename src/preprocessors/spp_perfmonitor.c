@@ -801,20 +801,6 @@ static void PerfMonitorReload(struct _SnortConfig *sc, char *args, void **new_co
     /* parse the argument list from the rules file */
     ParsePerfMonitorArgs(sc, perfmon_swap_config, args);
 
-    /* Since the file isn't opened again, copy the file handle from the
-     * current configuration.  Verification will be done on file name to
-     * ensure it didn't change. */
-    if (perfmon_config->fh != NULL)
-        perfmon_swap_config->fh = perfmon_config->fh;
-
-    /* Same goes for the FlowIP log file. */
-    if (perfmon_config->flowip_fh != NULL)
-        perfmon_swap_config->flowip_fh = perfmon_config->flowip_fh;
-
-    /* And flow stats file */
-    if (perfmon_config->flow_fh != NULL)
-        perfmon_swap_config->flow_fh = perfmon_config->flow_fh;
-
     AddFuncToPreprocList(sc, ProcessPerfMonitor, PRIORITY_SCANNER, PP_PERFMONITOR, PROTO_BIT__ALL);
 }
 
@@ -879,6 +865,20 @@ static void * PerfMonitorReloadSwap(struct _SnortConfig *sc, void *swap_config)
 
     if (perfmon_swap_config == NULL)
         return NULL;
+
+    /* Since the file isn't opened again, copy the file handle from the
+     * current configuration.  Verification will be done on file name to
+     * ensure it didn't change. */
+    if (perfmon_config->fh != NULL)
+        perfmon_swap_config->fh = perfmon_config->fh;
+
+    /* Same goes for the FlowIP log file. */
+    if (perfmon_config->flowip_fh != NULL)
+        perfmon_swap_config->flowip_fh = perfmon_config->flowip_fh;
+
+    /* And flow stats file */
+    if (perfmon_config->flow_fh != NULL)
+        perfmon_swap_config->flow_fh = perfmon_config->flow_fh;
 
     perfmon_config = perfmon_swap_config;
 

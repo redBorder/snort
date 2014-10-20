@@ -54,6 +54,14 @@ typedef enum {
 
 typedef uint32_t EncodeFlags;
 
+// ICMPv6 Reason codes...ones used by encode are defined here now, ICMP ones
+// are defind in header files from dnet, but none exist for ICMPv6, if these
+// become defined in a system header file those should be used and these removed
+#define ICMP6_UNREACH_NET  0x00
+#define ICMP6_UNREACH_HOST 0x03
+#define ICMP6_UNREACH_PORT 0x04
+#define ICMP6_UNREACH_FILTER_PROHIB 0x01    
+
 // orig must be the current packet from the interface to
 //   ensure proper encoding (not the reassembled packet).
 // len is number of bytes in the encoded packet upon return

@@ -262,12 +262,15 @@ int sfVlanAddBinding(tSfPolicyConfig *config, int vlanId, char *fileName)
 
 tSfPolicyId sfVlanGetBinding(tSfPolicyConfig *config, int vlanId)
 {
-    
-    if(vlanId >= SF_VLAN_BINDING_MAX){
+    tSfPolicyId policyId;
+
+    if(vlanId >= SF_VLAN_BINDING_MAX)
+    {
         //invalid policyid will never be bound. return default
         return config->defaultPolicyId;
     }
-    tSfPolicyId policyId = config->vlanBindings[vlanId];
+    
+    policyId = config->vlanBindings[vlanId];
 
     if ( NotBound(policyId) )
     {
@@ -321,11 +324,15 @@ int sfPolicyIdAddBinding(tSfPolicyConfig *config, int parsedPolicyId, char *file
 
 tSfPolicyId sfPolicyIdGetBinding(tSfPolicyConfig *config, int parsedPolicyId)
 {
-    if(parsedPolicyId >= SF_POLICY_ID_BINDING_MAX){
+    tSfPolicyId policyId;
+
+    if(parsedPolicyId >= SF_POLICY_ID_BINDING_MAX)
+    {
         //invalid policyid will never be bound. return default
         return config->defaultPolicyId;
     }
-    tSfPolicyId policyId = config->policyIdBindings[parsedPolicyId];
+    
+    policyId = config->policyIdBindings[parsedPolicyId];
 
     if ( NotBound(policyId) )
     {

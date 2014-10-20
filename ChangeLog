@@ -1,3 +1,31 @@
+2014-07-09 Joel Cornett <jocornet@cisco.com>
+Snort 2.9.6.2
+
+	* src/build.h: 
+	  updating build number to 77
+
+	* src/: encode.c, encode.h : 	
+	  Fixed handling of ICMPv6 traffic.
+
+	* src/preprocessors/Stream5/snort_stream5_tcp.c : 	
+	  Fixed inline stream reassembly during file processing.
+
+	* src/preprocessors/spp_perfmonitor.c : 	
+	  Fixed race condition in performance monitor.
+
+	* src/preprocessors/: 
+	  snort_httpinspect.c,
+	  HttpInspect/client/hi_client.c, 
+	  HttpInspect/include/hi_client.h,
+	  HttpInspect/include/hi_ui_config.h,
+	  HttpInspect/user_interface/hi_ui_config.c :
+	  Added the ability to specify additional custom 'x-forwarder-for' 
+	  http field names. A new http inspection configuration element is used to 
+	  specify a set of field names and their respective precedence order.  
+	  
+	* src/preprocessors/Stream5/snort_stream5_session.c :
+	  Add cache flow timeout for ip.
+
 2014-03-04 Steven Sturges <ssturges@sourcefire.com>
 Snort 2.9.6.1
     * src/build.h:

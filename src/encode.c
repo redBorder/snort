@@ -117,7 +117,9 @@ static void IpId_Term();
 static const uint8_t* Encode_Packet(
     EncState* enc, const Packet* p, uint32_t* len);
 
-static ENC_STATUS UN6_Encode(EncState*, Buffer*, Buffer*);
+static ENC_STATUS UN6_ICMP6_Encode(EncState*, Buffer*, Buffer*);
+static ENC_STATUS UN6_UDP_Encode(EncState*, Buffer*, Buffer*);
+
 
 //-------------------------------------------------------------------------
 
@@ -932,7 +934,7 @@ static ENC_STATUS UDP_Encode (EncState* enc, Buffer* in, Buffer* out)
     if ( IP_VER((IPHdr*)enc->ip_hdr) == 4 )
         return UN4_Encode(enc, in, out);
 
-    return UN6_Encode(enc, in, out);
+    return UN6_UDP_Encode(enc, in, out);
 }
 
 static ENC_STATUS UDP_Update (Packet* p, Layer* lyr, uint32_t* len)
@@ -1290,7 +1292,19 @@ static ENC_STATUS Opt6_Update (Packet* p, Layer* lyr, uint32_t* len)
 // ICMP6 functions
 //-------------------------------------------------------------------------
 
-static ENC_STATUS UN6_Encode (EncState* enc, Buffer* in, Buffer* out)
+static inline int IcmpV6Code (EncodeType et) {
+    switch ( et ) {
+    case ENC_UNR_NET:  return ICMP6_UNREACH_NET;
+    case ENC_UNR_HOST: return ICMP6_UNREACH_HOST;
+    case ENC_UNR_PORT: return ICMP6_UNREACH_PORT;
+    case ENC_UNR_FW:   return ICMP6_UNREACH_FILTER_PROHIB;
+    default: break;
+    }
+    return ICMP6_UNREACH_PORT;
+}
+
+
+static inline ENC_STATUS UN6_Encode_ICMP6_Response(EncState* enc, Buffer* in, Buffer* out, bool udp_orig)
 {
     uint8_t* p;
     uint8_t* hi = enc->p->layers[enc->layer-1].start;
@@ -1307,25 +1321,25 @@ static ENC_STATUS UN6_Encode (EncState* enc, Buffer* in, Buffer* out)
 
     UPDATE_BOUND(out, sizeof(*ho));
     ho->type = 1;   // dest unreachable
-    ho->code = 4;   // port unreachable
+    ho->code = IcmpV6Code( enc->type ); 
     ho->cksum = 0;
     ho->unused = 0;
-
-    // ip + udp headers are copied separately because there
-    // may be intervening extension headers which aren't copied
 
     // copy original ip header
     p = out->base + out->end;
     UPDATE_BOUND(out, enc->ip_len);
     // TBD should be able to elminate enc->ip_hdr by using layer-2
     memcpy(p, enc->ip_hdr, enc->ip_len);
-    ((IP6RawHdr*)p)->ip6nxt = IPPROTO_UDP;
 
     // copy first 8 octets of original ip data (ie udp header)
     // TBD: copy up to minimum MTU worth of data
+    if( udp_orig )
+    {
+        ((IP6RawHdr*)p)->ip6nxt = IPPROTO_UDP;
     p = out->base + out->end;
     UPDATE_BOUND(out, ICMP_UNREACH_DATA);
     memcpy(p, hi, ICMP_UNREACH_DATA);
+    }
 
     len = BUFF_DIFF(out, ho);
 
@@ -1338,6 +1352,16 @@ static ENC_STATUS UN6_Encode (EncState* enc, Buffer* in, Buffer* out)
     ho->cksum = in_chksum_icmp6(&ps6, (uint16_t *)ho, len);
 
     return ENC_OK;
+}
+
+static ENC_STATUS UN6_ICMP6_Encode (EncState* enc, Buffer* in, Buffer* out)
+{
+    return UN6_Encode_ICMP6_Response( enc, in, out, false );
+}
+
+static ENC_STATUS UN6_UDP_Encode(EncState* enc, Buffer* in, Buffer* out)
+{
+    return UN6_Encode_ICMP6_Response( enc, in, out, true);
 }
 
 static ENC_STATUS ICMP6_Update (Packet* p, Layer* lyr, uint32_t* len)
@@ -1512,7 +1536,7 @@ static EncoderFunctions encoders[PROTO_MAX] = {
     { IP6_Encode,  IP6_Update,   IP6_Format   },
     { Opt6_Encode, Opt6_Update,  XXX_Format   },  // IP6 Hop Opts
     { Opt6_Encode, Opt6_Update,  XXX_Format   },  // IP6 Dst Opts
-    { UN6_Encode,  ICMP6_Update, ICMP6_Format },
+    { UN6_ICMP6_Encode,  ICMP6_Update, ICMP6_Format },
     { XXX_Encode,  XXX_Update,   XXX_Format,  },  // ICMP_IP6
     { XXX_Encode,  XXX_Update,   VLAN_Format  },
 #ifdef GRE

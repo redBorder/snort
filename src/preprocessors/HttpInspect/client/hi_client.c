@@ -73,10 +73,10 @@
 #define HEADER_LENGTH__COOKIE 6
 #define HEADER_NAME__CONTENT_LENGTH "Content-length"
 #define HEADER_LENGTH__CONTENT_LENGTH 14
-#define HEADER_NAME__XFF "X-Forwarded-For"
-#define HEADER_LENGTH__XFF 15
-#define HEADER_NAME__TRUE_IP "True-Client-IP"
-#define HEADER_LENGTH__TRUE_IP 14
+#define HEADER_NAME__XFF HI_UI_CONFIG_XFF_FIELD_NAME
+#define HEADER_LENGTH__XFF (sizeof(HEADER_NAME__XFF)-1)
+#define HEADER_NAME__TRUE_IP HI_UI_CONFIG_TCI_FIELD_NAME
+#define HEADER_LENGTH__TRUE_IP (sizeof(HEADER_NAME__TRUE_IP)-1)
 #define HEADER_NAME__HOSTNAME "Host"
 #define HEADER_LENGTH__HOSTNAME 4
 #define HEADER_NAME__TRANSFER_ENCODING "Transfer-encoding"
@@ -86,6 +86,18 @@
 
 const u_char *proxy_start = NULL;
 const u_char *proxy_end = NULL;
+
+static const char *g_field_names[] =
+{
+    HEADER_NAME__COOKIE,
+    HEADER_NAME__CONTENT_LENGTH,
+    HEADER_NAME__XFF,
+    HEADER_NAME__TRUE_IP,
+    HEADER_NAME__HOSTNAME,
+    HEADER_NAME__TRANSFER_ENCODING,
+    HEADER_NAME__CONTENT_TYPE,
+    NULL
+};
 
 /**  This makes passing function arguments much more readable and easier
 **  to follow.
@@ -102,6 +114,9 @@ int NextNonWhiteSpace(HI_SESSION *Session, const u_char *start,
         const u_char *end, const u_char **ptr, URI_PTR *uri_ptr);
 extern const u_char *extract_http_transfer_encoding(HI_SESSION *, HttpSessionData *,
         const u_char *, const u_char *, const u_char *, HEADER_PTR *, int);
+
+char **hi_client_get_field_names() { return( (char **)g_field_names ); }
+
 /*
 **  NAME
 **    CheckChunkEncoding::
@@ -1810,7 +1825,7 @@ const u_char *extract_http_xff(HI_SESSION *Session, const u_char *p, const u_cha
     if(!true_ip)
         return p;
 
-    if( (hdrs_args->true_clnt_xff & HDRS_BOTH) == HDRS_BOTH)
+    if( (hdrs_args->true_clnt_xff & (HDRS_BOTH | XFF_HEADERS)) == HDRS_BOTH)
     {
         if(hi_eo_generate_event(Session, HI_EO_CLIENT_BOTH_TRUEIP_XFF_HDRS))
         {
@@ -1898,6 +1913,29 @@ const u_char *extract_http_xff(HI_SESSION *Session, const u_char *p, const u_cha
                     return p;
                 }
             }
+            /* At this point we have a new/valid IP from the header being processed.
+               If we are using custom xff headers, check the precedence ranking. */
+            if( (hdrs_args->true_clnt_xff & XFF_HEADERS) != 0 )
+            {
+                /* Have we located any others? */
+                if( (hdrs_args->top_precedence > 0) &&
+                    (hdrs_args->new_precedence >= hdrs_args->top_precedence) )
+                    {
+                        sfip_free( tmp );
+                        free( ipAddr );
+                        return( p );
+                    }
+
+                hdrs_args->top_precedence = hdrs_args->new_precedence;
+
+                /* if we find the top precedence, no need to continue
+                   looking so clear the XFF_HEADERS_ACTIVE flag. */
+                if( hdrs_args->top_precedence == XFF_TOP_PRECEDENCE )
+                    hdrs_args->true_clnt_xff &= (~XFF_HEADERS_ACTIVE);
+            }
+
+            /* If we have already set a 'true_ip' for the session, look to see if the
+               new IP differs from the current IP.  If so, replace it and post an alert. */
             if(*true_ip)
             {
                 if(!IP_EQUALITY(*true_ip, tmp))
@@ -1906,7 +1944,8 @@ const u_char *extract_http_xff(HI_SESSION *Session, const u_char *p, const u_cha
                     *true_ip = tmp;
 
                     //alert
-                    if(hi_eo_generate_event(Session, HI_EO_CLIENT_MULTIPLE_TRUEIP_IN_SESSION))
+                    if( ((hdrs_args->true_clnt_xff & XFF_HEADERS) == 0) &&
+                        hi_eo_generate_event(Session, HI_EO_CLIENT_MULTIPLE_TRUEIP_IN_SESSION))
                     {
                         hi_eo_client_event_log(Session, HI_EO_CLIENT_MULTIPLE_TRUEIP_IN_SESSION, NULL, NULL);
                     }
@@ -2209,6 +2248,79 @@ const u_char *extract_http_content_length(HI_SESSION *Session,
     return p;
 }
 
+static inline bool IsXFFFieldName( HI_CLIENT_HDR_ARGS *hdrs_args,
+                                   u_char **pp, const u_char *end,
+                                   uint8_t **Field_Names, uint8_t *Field_Length )
+{
+    int i;
+    int len;
+    uint8_t *header_ptr;
+    uint8_t *field_ptr;
+
+    i = 0;        // index into the list of XFF field names
+    field_ptr = NULL; // pointer into the active Field_Name entry
+    header_ptr = *pp;  // pointer into the header, will not step past 'end'
+    len = 0;      // len of the matched name entry
+
+    while( true )
+    {
+        /* If we run off the end of the active table, or table is truncated then
+           we can stop.  We didn't locate a match. */
+        if( (i >= (HI_UI_CONFIG_MAX_XFF_FIELD_NAMES)) || (Field_Names[i] == NULL) )
+            break;
+
+        if( field_ptr == NULL )  // didn't start to match any entry
+        {
+            /* If the length doesn't permit a match, move on.  */
+            if( (end - *pp) < Field_Length[i] )
+            {
+                i += 1;
+                continue;
+            }
+
+            if( toupper(*header_ptr) == *Field_Names[i] )  // does the first char match?
+            {
+                /* set our working pointer to the field name */
+                field_ptr = (Field_Names[i] + 1);
+                header_ptr += 1;
+                len = 1;   // We matched one character
+                continue;
+            }
+            i += 1;
+        }
+        else
+        {
+            /* If we are still matching and we get to the end
+               of the field name, then we've located a name match */
+            if( *field_ptr == 0 )  // End of the field name
+            {
+                *pp += len;  // Step input pointer over what we found
+                hdrs_args->new_precedence = (i+1);  // Precedence started with one
+                return( true );
+            }
+            else
+            {
+                /* check for another matching character */
+                if( toupper(*header_ptr) == *field_ptr )
+                {
+                    header_ptr += 1;
+                    field_ptr += 1;
+                    len += 1;
+                }
+                else
+                {
+                    header_ptr = *pp;  // Back to the start for the name
+                    field_ptr = NULL;  // No longer a match
+                    len = 0;
+                    i += 1;
+                }
+            }
+        }
+    }
+
+    return( false );
+}
+
 static inline const u_char *extractHeaderFieldValues(HI_SESSION *Session,
         HTTPINSPECT_CONF *ServerConf, const u_char *p, const u_char *offset,
         const u_char *start, const u_char *end, HI_CLIENT_HDR_ARGS *hdrs_args)
@@ -2216,7 +2328,14 @@ static inline const u_char *extractHeaderFieldValues(HI_SESSION *Session,
     HttpSessionData *hsd;
 
     hsd = hdrs_args->sd;
-    if (((p - offset) == 0) && ((*p == 'C') || (*p == 'c')))
+    if (((p - offset) == 0) && (ServerConf->enable_xff != 0) &&
+        ((hdrs_args->true_clnt_xff & XFF_HEADERS_ACTIVE) != 0) && (hsd) &&
+        IsXFFFieldName(hdrs_args, (u_char **)&p, (const u_char *)end,
+                       ServerConf->xff_headers, ServerConf->xff_header_lengths))
+    {
+        p = extract_http_xff(Session, p, start, end, hdrs_args);
+    }
+    else if (((p - offset) == 0) && ((*p == 'C') || (*p == 'c')))
     {
         /* Search for 'Cookie' at beginning, starting from current *p */
         if ( ServerConf->enable_cookie &&
@@ -2236,7 +2355,8 @@ static inline const u_char *extractHeaderFieldValues(HI_SESSION *Session,
     }
     else if (((p - offset) == 0) && ((*p == 'x') || (*p == 'X') || (*p == 't') || (*p == 'T')))
     {
-        if ( (ServerConf->enable_xff) && hsd )
+        //* The default/legacy behavior with two builtin XFF field names */
+        if ( (ServerConf->enable_xff) && hsd && ((hdrs_args->true_clnt_xff & XFF_HEADERS) == 0) )
         {
             if(IsHeaderFieldName(p, end, HEADER_NAME__XFF, HEADER_LENGTH__XFF))
             {
@@ -2361,7 +2481,8 @@ static inline const u_char *hi_client_extract_header(
     hdrs_args.sd = hsd;
     hdrs_args.strm_ins = stream_ins;
     hdrs_args.hst_name_hdr = 0;
-    hdrs_args.true_clnt_xff = 0;
+    hdrs_args.true_clnt_xff = (ServerConf->xff_headers[0] != NULL) ? XFF_INIT : 0;
+    hdrs_args.top_precedence = 0;
 
     SkipBlankSpace(start,end,&p);
 

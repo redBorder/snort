@@ -1291,7 +1291,7 @@ static void checkCacheFlowTimeout(uint32_t flowCount, time_t cur_time, Stream5Se
     cache->nextTimeoutEvalNode = hnode_prev;
 }
 
-extern Stream5SessionCache *tcp_lws_cache, *udp_lws_cache;
+extern Stream5SessionCache *tcp_lws_cache, *udp_lws_cache, *ip_lws_cache;
 
 /*get next flow from session cache. */
 void checkLWSessionTimeout(uint32_t flowCount, time_t cur_time)
@@ -1299,6 +1299,7 @@ void checkLWSessionTimeout(uint32_t flowCount, time_t cur_time)
     Active_Suspend();
     checkCacheFlowTimeout(flowCount, cur_time, tcp_lws_cache);
     checkCacheFlowTimeout(flowCount, cur_time, udp_lws_cache);
+    checkCacheFlowTimeout(flowCount, cur_time, ip_lws_cache);
     //icmp_lws_cache does not need cleaning
     Active_Resume();
 

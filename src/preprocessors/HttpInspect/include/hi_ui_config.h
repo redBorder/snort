@@ -56,6 +56,8 @@
 #define HI_UI_CONFIG_MAX_HEADERS_DEFAULT 0
 #define HI_UI_CONFIG_MAX_SPACES_DEFAULT 200 
 
+#define HI_UI_CONFIG_MAX_XFF_FIELD_NAMES 8
+
 /*
 **  Special characters treated as whitespace before or after URI
 */
@@ -148,6 +150,8 @@ typedef struct s_HTTPINSPECT_CONF
     char enable_cookie;
     char inspect_response;
     char enable_xff;
+    uint8_t *xff_headers[HI_UI_CONFIG_MAX_XFF_FIELD_NAMES];
+    uint8_t xff_header_lengths[HI_UI_CONFIG_MAX_XFF_FIELD_NAMES];
     char log_uri;
     char log_hostname;
 
@@ -155,6 +159,12 @@ typedef struct s_HTTPINSPECT_CONF
     char extract_gzip;
     char unlimited_decompress;
 #endif
+
+/* NOTE:  The XFF_BUILTING_NAMES value must match the code in snort_httpinspect.c that
+          adds the builtin names to the list. */
+#define HI_UI_CONFIG_XFF_FIELD_NAME  "X-Forwarded-For"
+#define HI_UI_CONFIG_TCI_FIELD_NAME  "True-Client-IP"
+#define XFF_BUILTIN_NAMES            (2)
 
    /* Support Extended ascii codes in the URI */
     char extended_ascii_uri;
