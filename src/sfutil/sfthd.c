@@ -1013,6 +1013,7 @@ static inline int sfthd_test_global(
     int              status=0;
     snort_ip_p       ip;
     tSfPolicyId policy_id = getIpsRuntimePolicy();
+    snort_ip_p       secondary_ip;
 
 #ifdef THD_DEBUG
     printf("THD_DEBUG-GLOBAL:  gen_id=%u, sig_id=%u\n",gen_id,sig_id);
@@ -1044,10 +1045,14 @@ static inline int sfthd_test_global(
     }
 
     /* Get The correct IP */
-    if (sfthd_node->tracking == THD_TRK_SRC)
-       ip = sip;
-    else
-       ip = dip;
+    if (sfthd_node->tracking == THD_TRK_SRC){
+        ip = sip;
+    }else if(sfthd_node->tracking == THD_TRK_SRCDST){
+        ip = sip;
+        secondary_ip = dip;
+    }else{
+        ip = dip;
+    }
 
     /*
     *  Go on and do standard thresholding
@@ -1055,6 +1060,8 @@ static inline int sfthd_test_global(
 
     /* Set up the key */
     key.ip     = IP_VAL(ip);
+    if(sfthd_node->tracking == THD_TRK_SRCDST)
+        key.secondary_ip = IP_VAL(secondary_ip);
     key.gen_id = sfthd_node->gen_id;
     key.sig_id = sig_id;
     key.policyId = policy_id;
