@@ -114,6 +114,7 @@ typedef struct{
     unsigned gen_id;
     unsigned sig_id;
     snort_ip ip;
+    snort_ip secondary_ip;
     tSfPolicyId policyId;
 
 } THD_IP_GNODE_KEY ;

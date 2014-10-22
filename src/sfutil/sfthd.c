@@ -1012,6 +1012,7 @@ static inline int sfthd_test_global(
     THD_IP_NODE      data, *sfthd_ip_node;
     int              status=0;
     snort_ip_p       ip;
+    snort_ip_p       secondary_ip;
     tSfPolicyId policy_id = getRuntimePolicy();
 
 #ifdef THD_DEBUG
@@ -1044,10 +1045,14 @@ static inline int sfthd_test_global(
     }
 
     /* Get The correct IP */
-    if (sfthd_node->tracking == THD_TRK_SRC)
-       ip = sip;
-    else
-       ip = dip;
+    if (sfthd_node->tracking == THD_TRK_SRC){
+        ip = sip;
+    }else if(sfthd_node->tracking == THD_TRK_SRCDST){
+        ip = sip;
+        secondary_ip = dip;
+    }else{
+        ip = dip;
+    }
 
     /*
     *  Go on and do standard thresholding
@@ -1055,6 +1060,8 @@ static inline int sfthd_test_global(
 
     /* Set up the key */
     key.ip     = IP_VAL(ip);
+    if(sfthd_node->tracking == THD_TRK_SRCDST)
+        key.secondary_ip = IP_VAL(secondary_ip);
     key.gen_id = sfthd_node->gen_id;
     key.sig_id = sig_id;
     key.policyId = policy_id;
