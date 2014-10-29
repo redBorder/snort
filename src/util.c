@@ -97,6 +97,8 @@ static struct mallinfo mi;
 #endif
 
 #include "stream_common.h"
+#include "strlcpyu.h"
+#include "strlcatu.h"
 
 #ifdef PATH_MAX
 #define PATH_MAX_UTIL PATH_MAX
@@ -719,6 +721,71 @@ NORETURN void FatalError(const char *format,...)
     }
 }
 
+/****************************************************************************
+ *
+ * Function: CreatePidFile0(char *,pid_t)
+ *
+ * Purpose:  Creates a PID file, knowing that it is safe to create it.
+ *
+ * Arguments: pid filename, pid to store.
+ *
+ * Returns: void function
+ *
+ ****************************************************************************/
+static FILE *CreatePidFile0(char *pid_filename,pid_t pid)
+{
+    FILE *pid_file = fopen(pid_filename, "w");
+    if(pid_file)
+    {
+        LogMessage("Writing PID \"%d\" to file \"%s\"\n", (int)pid, pid_filename);
+        fprintf(pid_file, "%d\n", (int)pid);
+        fflush(pid_file);
+    }
+    else
+    {
+        char errBuf[STD_BUF];
+#ifdef WIN32
+        SnortSnprintf(errBuf, STD_BUF, "%s", strerror(errno));
+#else
+        strerror_r(errno, errBuf, STD_BUF);
+#endif
+        ErrorMessage("Failed to create pid file %s, Error: %s", pid_filename, errBuf);
+        pid_filename[0] = 0;
+    }
+
+    return pid_file;
+}
+
+/****************************************************************************
+ *
+ * Function: ExtractPPidFileName(const char,char,size_t)
+ *
+ * Purpose:  Converts XXX.pid to XXX.ppid string
+ *
+ * Arguments: Original string, buffer to store edited string, size of the last buffer
+ *
+ * Returns: 1 if success. 0 if not
+ *
+ ****************************************************************************/
+static int ExtractPPidFileName(const char *pid_filename, char *ppid_filename, size_t buflen)
+{
+    static const char *fn_extension = ".ppid";
+
+    const size_t strlcpy_rc = strlcpy(ppid_filename,pid_filename,buflen);
+    if(strlcpy_rc > buflen)
+        return 0; /* error */
+
+    char *final_point = strrchr(ppid_filename,'.');
+    if(final_point)
+        *final_point = '\0';
+
+    const size_t strlcat_rc = strlcat(ppid_filename,fn_extension,buflen);
+    if(strlcat_rc > buflen)
+        return 0;
+
+    return 1;
+}
+
 
 /****************************************************************************
  *
@@ -733,13 +800,15 @@ NORETURN void FatalError(const char *format,...)
  ****************************************************************************/
 static FILE *pid_lockfile = NULL;
 static FILE *pid_file = NULL;
-void CreatePidFile(const char *intf, pid_t pid)
+static FILE *ppid_file = NULL;
+void CreatePidFile(const char *intf, pid_t pid,pid_t ppid)
 {
     struct stat pt;
 #ifdef WIN32
     char dir[STD_BUF + 1];
 #endif
-
+    char ppid_filename[STD_BUF+1];
+    
     if (!ScReadMode())
     {
         LogMessage("Checking PID path...\n");
@@ -858,24 +927,11 @@ void CreatePidFile(const char *intf, pid_t pid)
 #endif
 
     /* Okay, were able to lock PID file, now open and write PID */
-    pid_file = fopen(snort_conf->pid_filename, "w");
-    if(pid_file)
-    {
-        LogMessage("Writing PID \"%d\" to file \"%s\"\n", (int)pid, snort_conf->pid_filename);
-        fprintf(pid_file, "%d\n", (int)pid);
-        fflush(pid_file);
-    }
+    pid_file  = CreatePidFile0(snort_conf->pid_filename,pid);
+    if(ExtractPPidFileName(snort_conf->pid_filename, ppid_filename, sizeof(ppid_filename)))
+        ppid_file = CreatePidFile0(ppid_filename,ppid);
     else
-    {
-        char errBuf[STD_BUF];
-#ifdef WIN32
-		SnortSnprintf(errBuf, STD_BUF, "%s", strerror(errno));
-#else
-        strerror_r(errno, errBuf, STD_BUF);
-#endif
-        ErrorMessage("Failed to create pid file %s, Error: %s", snort_conf->pid_filename, errBuf);
-        snort_conf->pid_filename[0] = 0;
-    }
+        LogMessage("Cannot save Parent PID (PPID) file.\n");
 }
 
 /****************************************************************************
@@ -900,6 +956,11 @@ void ClosePidFile(void)
     {
         fclose(pid_lockfile);
         pid_lockfile = NULL;
+    }
+    if (ppid_file)
+    {
+        fclose(ppid_file);
+        ppid_file = NULL;
     }
 }
 
@@ -1427,6 +1488,10 @@ static void SigChildReadyHandler(int signal)
     parent_wait = 0;
 }
 
+static void SaveParentPID(){
+    snort_conf->parent_pid = getppid();
+}
+
 /****************************************************************************
  *
  * Function: GoDaemon()
@@ -1545,6 +1610,7 @@ void GoDaemon(void)
     dup(0);  /* stdout, fd 0 => fd 1 */
     dup(0);  /* stderr, fd 0 => fd 2 */
 
+    SaveParentPID();
     SignalWaitingParent();
 #endif /* ! WIN32 */
 }
