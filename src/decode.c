@@ -77,7 +77,7 @@ static uint8_t decodeRulesArray[DECODE_INDEX_MAX];
 #ifdef NORMALIZER
 static inline int ScNormalDrop (NormFlags nf)
 {
-    return !Normalize_IsEnabled(snort_conf, nf);
+    return Normalize_GetMode(snort_conf, nf) == NORM_MODE_OFF;
 }
 #else
 #define ScNormalDrop(nf) 1
@@ -183,41 +183,41 @@ static inline void execIpChksmDrop (void *data)
 {
     // TBD only set policy csum drop if policy inline
     // and delete this inline mode check
-    if( ScInlineMode() && ScIpChecksumDrops() )
+    if( ScNapInlineMode() && ScIpChecksumDrops() )
     {
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
             "Dropping bad packet (IP checksum)\n"););
-        Active_DropPacket((Packet*)data);
+        Active_NapDropPacket((Packet*)data);
     }
 }
 
 static inline void execTcpChksmDrop (void *data)
 {
-    if( ScInlineMode() && ScTcpChecksumDrops() )
+    if( ScNapInlineMode() && ScTcpChecksumDrops() )
     {
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
             "Dropping bad packet (TCP checksum)\n"););
-        Active_DropPacket((Packet*)data);
+        Active_NapDropPacket((Packet*)data);
     }
 }
 
 static inline void execUdpChksmDrop (void *data)
 {
-    if( ScInlineMode() && ScUdpChecksumDrops() )
+    if( ScNapInlineMode() && ScUdpChecksumDrops() )
     {
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
             "Dropping bad packet (UDP checksum)\n"););
-        Active_DropPacket((Packet*)data);
+        Active_NapDropPacket((Packet*)data);
     }
 }
 
 static inline void execIcmpChksmDrop (void *data)
 {
-    if( ScInlineMode() && ScIcmpChecksumDrops() )
+    if( ScNapInlineMode() && ScIcmpChecksumDrops() )
     {
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
             "Dropping bad packet (ICMP checksum)\n"););
-        Active_DropPacket((Packet*)data);
+        Active_NapDropPacket((Packet*)data);
     }
 }
 
@@ -3393,7 +3393,7 @@ void DecodeIPV6Options(int type, const uint8_t *pkt, uint32_t len, Packet *p)
         return;
     }
 
-    if ( p->ip6_extension_count >= IP6_EXTMAX )
+    if ( p->ip6_extension_count >= ScMaxIP6Extensions() )
     {
         DecoderEvent(p, DECODE_IP6_EXCESS_EXT_HDR,
                      DECODE_IP6_EXCESS_EXT_HDR_STR,

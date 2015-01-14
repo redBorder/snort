@@ -76,6 +76,7 @@
 #include "strlcatu.h"
 #include "detection_util.h"
 
+#include "session_api.h"
 #include "stream_api.h"
 
 #ifdef TARGET_BASED
@@ -157,9 +158,9 @@ static void ParseRpcConfig(RpcDecodeConfig *, char *);
 static int ConvertRPC(RpcDecodeConfig *, RpcSsnData *, Packet *);
 static void RpcDecodeFreeConfig(tSfPolicyUserContextId rpc);
 static void RpcDecodeCleanExit(int, void *);
-static void _addPortsToStream5Filter(struct _SnortConfig *, RpcDecodeConfig *, tSfPolicyId);
+static void enablePortStreamServices(struct _SnortConfig *, RpcDecodeConfig *, tSfPolicyId);
 #ifdef TARGET_BASED
-static void _addServicesToStream5Filter(struct _SnortConfig *, tSfPolicyId);
+static void _addServicesToStreamFilter(struct _SnortConfig *, tSfPolicyId);
 #endif
 static void RpcDecodePortsAssign(uint8_t *, char *);
 static int RpcDecodeIsEligible(RpcDecodeConfig *, Packet *);
@@ -286,6 +287,9 @@ void RpcDecodeInit(struct _SnortConfig *sc, char *args)
         rpc_decode_app_protocol_id = FindProtocolReference("sunrpc");
         if (rpc_decode_app_protocol_id == SFTARGET_UNKNOWN_PROTOCOL)
             rpc_decode_app_protocol_id = AddProtocolReference("sunrpc");
+
+        // register with session to handle applications
+        session_api->register_service_handler( PP_RPCDECODE, rpc_decode_app_protocol_id );
 #endif
     }
 
@@ -309,11 +313,10 @@ void RpcDecodeInit(struct _SnortConfig *sc, char *args)
 
     /* Set the preprocessor function into the function list */
     AddFuncToPreprocList(sc, PreprocRpcDecode, PRIORITY_APPLICATION, PP_RPCDECODE, PROTO_BIT__TCP);
-
-    _addPortsToStream5Filter(sc, pPolicyConfig, policy_id);
+    enablePortStreamServices(sc, pPolicyConfig, policy_id);
 
 #ifdef TARGET_BASED
-    _addServicesToStream5Filter(sc, policy_id);
+    _addServicesToStreamFilter(sc, policy_id);
 #endif
 
     DEBUG_WRAP(DebugMessage(DEBUG_RPC,"Preprocessor: RpcDecode Initialized\n"););
@@ -446,7 +449,7 @@ static void PreprocRpcDecode(Packet *p, void *context)
     RpcSsnData *rsdata = NULL;
     PROFILE_VARS;
 
-    sfPolicyUserPolicySet(rpc_decode_config, getRuntimePolicy());
+    sfPolicyUserPolicySet(rpc_decode_config, getNapRuntimePolicy());
     rconfig = (RpcDecodeConfig *)sfPolicyUserDataGetCurrent(rpc_decode_config);
 
     /* Not configured in this policy */
@@ -468,8 +471,8 @@ static void PreprocRpcDecode(Packet *p, void *context)
         return;
     }
 
-    if ((stream_api != NULL) && (p->ssnptr != NULL))
-        rsdata = stream_api->get_application_data(p->ssnptr, PP_RPCDECODE);
+    if ( ( session_api != NULL ) && ( p->ssnptr != NULL ) )
+        rsdata = session_api->get_application_data(p->ssnptr, PP_RPCDECODE);
 
     if (rsdata == NULL)
     {
@@ -479,9 +482,9 @@ static void PreprocRpcDecode(Packet *p, void *context)
 
     PREPROC_PROFILE_START(rpcdecodePerfStats);
 
-    if ((rsdata == NULL) && (stream_api != NULL) && (p->ssnptr != NULL))
+    if ((rsdata == NULL) && (session_api != NULL) && (p->ssnptr != NULL))
     {
-        if (!(stream_api->get_session_flags(p->ssnptr) & SSNFLAG_MIDSTREAM))
+        if (!(session_api->get_session_flags(p->ssnptr) & SSNFLAG_MIDSTREAM))
             rsdata = RpcSsnDataNew(p);
     }
 
@@ -574,9 +577,9 @@ static int RpcDecodeIsEligible(RpcDecodeConfig *rconfig, Packet *p)
     int16_t app_id = SFTARGET_UNKNOWN_PROTOCOL;
 
     /* check stream info, fall back to checking ports */
-    if (stream_api != NULL)
+    if (session_api != NULL)
     {
-        app_id = stream_api->get_application_protocol_id(p->ssnptr);
+        app_id = session_api->get_application_protocol_id(p->ssnptr);
         if (app_id > 0)
         {
             valid_app_id = 1;
@@ -1116,18 +1119,18 @@ static RpcSsnData * RpcSsnDataNew(Packet *p)
     {
         char rdir = stream_api->get_reassembly_direction(p->ssnptr);
 
-        if (!(rdir & SSN_DIR_FROM_SERVER))
+        if (!(rdir & SSN_DIR_TO_SERVER))
         {
-            rdir |= SSN_DIR_FROM_SERVER;
+            rdir |= SSN_DIR_TO_SERVER;
             stream_api->set_reassembly(p->ssnptr, STREAM_FLPOLICY_FOOTPRINT,
                     rdir, STREAM_FLPOLICY_SET_ABSOLUTE);
         }
 
         rsdata->active = 1;
-        rsdata->ofp = stream_api->get_flush_point(p->ssnptr, SSN_DIR_FROM_SERVER);
+        rsdata->ofp = stream_api->get_flush_point(p->ssnptr, SSN_DIR_TO_SERVER);
 
-        stream_api->set_flush_point(p->ssnptr, SSN_DIR_FROM_SERVER, flush_size);
-        stream_api->set_application_data(p->ssnptr,
+        stream_api->set_flush_point(p->ssnptr, SSN_DIR_TO_SERVER, flush_size);
+        session_api->set_application_data(p->ssnptr,
                 PP_RPCDECODE, (void *)rsdata, RpcSsnDataFree);
 
         DEBUG_WRAP(DebugMessage(DEBUG_RPC, "STATEFUL: Created new session: "
@@ -1389,9 +1392,9 @@ static int ConvertRPC(RpcDecodeConfig *rconfig, RpcSsnData *rsdata, Packet *p)
     return 0;
 }
 
-static void _addPortsToStream5Filter(struct _SnortConfig *sc, RpcDecodeConfig *rpc, tSfPolicyId policy_id)
+static void enablePortStreamServices(struct _SnortConfig *sc, RpcDecodeConfig *rpc, tSfPolicyId policy_id)
 {
-    unsigned int portNum;
+    uint32_t portNum;
 
     if (rpc == NULL)
         return;
@@ -1403,15 +1406,19 @@ static void _addPortsToStream5Filter(struct _SnortConfig *sc, RpcDecodeConfig *r
             if(rpc->RpcDecodePorts[(portNum/8)] & (1<<(portNum%8)))
             {
                 //Add port the port
-                stream_api->set_port_filter_status
-                    (sc, IPPROTO_TCP, (uint16_t)portNum, PORT_MONITOR_SESSION, policy_id, 1);
+                stream_api->set_port_filter_status ( sc, IPPROTO_TCP, (uint16_t) portNum,
+                                                     PORT_MONITOR_SESSION, policy_id, 1 );
+                stream_api->register_reassembly_port( NULL, 
+                                                      (uint16_t) portNum, 
+                                                      SSN_DIR_FROM_SERVER | SSN_DIR_FROM_CLIENT );
+                session_api->enable_preproc_for_port( sc, PP_RPCDECODE, PROTO_BIT__TCP, (uint16_t) portNum ); 
             }
         }
     }
 }
 
 #ifdef TARGET_BASED
-static void _addServicesToStream5Filter(struct _SnortConfig *sc, tSfPolicyId policy_id)
+static void _addServicesToStreamFilter(struct _SnortConfig *sc, tSfPolicyId policy_id)
 {
     if (stream_api)
         stream_api->set_service_filter_status
@@ -1474,10 +1481,10 @@ static void RpcDecodeReload(struct _SnortConfig *sc, char *args, void **new_conf
     /* Set the preprocessor function into the function list */
     AddFuncToPreprocList(sc, PreprocRpcDecode, PRIORITY_APPLICATION, PP_RPCDECODE, PROTO_BIT__TCP);
 
-    _addPortsToStream5Filter(sc, pPolicyConfig, policy_id);
+    enablePortStreamServices(sc, pPolicyConfig, policy_id);
 
 #ifdef TARGET_BASED
-    _addServicesToStream5Filter(sc, policy_id);
+    _addServicesToStreamFilter(sc, policy_id);
 #endif
 }
 

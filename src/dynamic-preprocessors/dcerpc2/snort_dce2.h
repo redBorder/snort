@@ -122,9 +122,6 @@ static inline void DCE2_ResetRopts(DCE2_Roptions *ropts)
 static inline void DCE2_DisableDetect(SFSnortPacket *p)
 {
     _dpd.disableAllDetect(p);
-    _dpd.setPreprocBit(p, PP_SFPORTSCAN);
-    _dpd.setPreprocBit(p, PP_PERFMONITOR);
-    _dpd.setPreprocBit(p, PP_SDF);
 }
 
 #endif  /* _SNORT_DCE2_H_ */

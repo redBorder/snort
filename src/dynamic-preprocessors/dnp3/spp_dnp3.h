@@ -103,7 +103,7 @@ typedef struct _dnp3_reassembly_data_t
 typedef struct _dnp3_config
 {
     uint32_t memcap;
-    char     ports[MAX_PORTS/8];
+    uint8_t  ports[MAX_PORTS/8];
     uint8_t  check_crc;
     int disabled;
 

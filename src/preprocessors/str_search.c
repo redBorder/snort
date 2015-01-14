@@ -174,7 +174,6 @@ int SearchFindString(unsigned int mpse_id,
     return num;
 }
 
-
 void SearchAdd(unsigned int mpse_id, const char *pat, unsigned int pat_len, int id)
 {
     mpseAddPattern(_mpse[mpse_id].mpse, (void *)pat, pat_len, 1, 0, 0, 0, (void *)(long) id, 0);
@@ -196,11 +195,15 @@ void SearchPrepPatterns(unsigned int mpse_id)
  */
 void *  SearchInstanceNew(void)
 {
+    return SearchInstanceNewEx(MPSE_AC_BNFA);
+}
+void *  SearchInstanceNewEx(unsigned method)
+{
     t_search * search = malloc(sizeof(t_search));
     if( !search )
         return NULL;
 
-    search->mpse  = mpseNew(MPSE_AC_BNFA, MPSE_DONT_INCREMENT_GLOBAL_COUNT,
+    search->mpse  = mpseNew(method, MPSE_DONT_INCREMENT_GLOBAL_COUNT,
                             NULL, NULL, NULL);
     if (search-> mpse == NULL )
     {
@@ -228,7 +231,18 @@ void SearchInstanceAdd( void*instance, const char *pat, unsigned int pat_len, in
     t_search * search = (t_search*)instance;
 
     if( search && search->mpse )
-        mpseAddPattern( search->mpse, (void *)pat, pat_len, 1, 0, 0, 0, (void *)(long) id, 0);
+        mpseAddPattern( search->mpse, (void *)pat, pat_len, STR_SEARCH_CASE_INSENSITIVE, 0, 0, 0, (void *)(long) id, 0);
+
+    if ( search && pat_len > search->max_len )
+         search->max_len = pat_len;
+}
+
+void SearchInstanceAddEx( void*instance, const char *pat, unsigned int pat_len, void* id, unsigned nocase)
+{
+    t_search * search = (t_search*)instance;
+
+    if( search && search->mpse )
+        mpseAddPattern( search->mpse, (void *)pat, pat_len, nocase, 0, 0, 0, id, 0);
 
     if ( search && pat_len > search->max_len )
          search->max_len = pat_len;
@@ -260,7 +274,31 @@ int  SearchInstanceFindString(void * instance,
             str_len = search->max_len;
         }
     }
-    num = mpseSearch( search->mpse, (unsigned char*)str, str_len, Match, (void *) str,
+    num = mpseSearch( search->mpse, (unsigned char*)str, str_len, Match, (void *)str,
+            &start_state);
+
+    return num;
+}
+
+int  SearchInstanceFindStringAll(void * instance,
+                              const char *str,
+                              unsigned int str_len,
+                              int confine,
+                              int (*Match) (void *, void *, int, void *, void *),
+                              void *userData)
+{
+    int num;
+    int start_state = 0;
+    t_search * search = (t_search*)instance;
+
+    if ( confine && (search->max_len > 0) )
+    {
+        if ( search->max_len < str_len )
+        {
+            str_len = search->max_len;
+        }
+    }
+    num = mpseSearchAll( search->mpse, (unsigned char*)str, str_len, Match, userData? userData:(void *)str,
             &start_state);
 
     return num;
@@ -328,10 +366,13 @@ SearchAPI searchAPI =
     SearchGetHandle,
     SearchPutHandle,
     SearchInstanceNew,
+    SearchInstanceNewEx,
     SearchInstanceFree,
     SearchInstanceAdd,
+    SearchInstanceAddEx,
     SearchInstancePrepPatterns,
     SearchInstanceFindString,
+    SearchInstanceFindStringAll,
     SearchInstanceFindStringEnd,
     StatefulSearchInstanceFindString,
 };

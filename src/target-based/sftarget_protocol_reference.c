@@ -36,6 +36,7 @@
 #include "util.h"
 #include "snort_debug.h"
 
+#include "session_api.h"
 #include "stream_api.h"
 #include "spp_frag3.h"
 #include "sftarget_reader.h"
@@ -46,6 +47,9 @@ int16_t protocolReferenceUDP;
 int16_t protocolReferenceICMP;
 
 static SFGHASH *proto_reference_table = NULL;
+#if defined(FEAT_OPEN_APPID)
+static SFTargetProtocolReference** proto_name_table = NULL;
+#endif /* defined(FEAT_OPEN_APPID) */
 static int16_t protocol_number = 1;
 
 static char *standard_protocols[] =
@@ -125,6 +129,9 @@ int16_t AddProtocolReference(const char *protocol)
     SnortStrncpy(reference->name, protocol, STD_BUF);
 
     sfghash_add(proto_reference_table, reference->name, reference);
+#if defined(FEAT_OPEN_APPID)
+    proto_name_table[reference->ordinal-1] = reference;
+#endif /* defined(FEAT_OPEN_APPID) */
 
     DEBUG_WRAP(
             DebugMessage(DEBUG_ATTRIBUTE,
@@ -154,6 +161,22 @@ int16_t FindProtocolReference(const char *protocol)
     return SFTARGET_UNKNOWN_PROTOCOL;
 }
 
+#if defined(FEAT_OPEN_APPID)
+const char * FindProtocolName(int16_t protocol_number)
+{
+    if (protocol_number <= 0 || protocol_number > MAX_PROTOCOL_ORDINAL)
+        return NULL;
+
+    if (!proto_reference_table)
+    {
+        return NULL;
+    }
+
+    if (proto_name_table[protocol_number-1])
+        return proto_name_table[protocol_number-1]->name;
+    return NULL;
+}
+#endif /* defined(FEAT_OPEN_APPID) */
 void InitializeProtocolReferenceTable(void)
 {
     char **protocol;
@@ -169,6 +192,15 @@ void InitializeProtocolReferenceTable(void)
         FatalError("Failed to Initialize Target-Based Protocol Reference Table\n");
     }
 
+#if defined(FEAT_OPEN_APPID)
+    proto_name_table = calloc(MAX_PROTOCOL_ORDINAL, sizeof(*proto_name_table));
+    if (!proto_name_table)
+    {
+        FatalError("Failed to Initialize Target-Based Protocol name Table\n");
+    }
+
+
+#endif /* defined(FEAT_OPEN_APPID) */
     /* Initialize the standard protocols from the list above */
     for (protocol = standard_protocols; *protocol; protocol++)
     {
@@ -183,6 +215,10 @@ void FreeProtoocolReferenceTable(void)
 {
     sfghash_delete(proto_reference_table);
     proto_reference_table = NULL;
+#if defined(FEAT_OPEN_APPID)
+    free(proto_name_table);
+    proto_name_table = NULL;
+#endif /* defined(FEAT_OPEN_APPID) */
 }
 
 int16_t GetProtocolReference(Packet *p)
@@ -199,10 +235,10 @@ int16_t GetProtocolReference(Packet *p)
     do /* Simple do loop to break out of quickly, not really a loop */
     {
         HostAttributeEntry *host_entry;
-        if (p->ssnptr && stream_api)
+        if (p->ssnptr && session_api)
         {
-            /* Use session information via Stream API */
-            protocol = stream_api->get_application_protocol_id(p->ssnptr);
+            /* Use session information */
+            protocol = session_api->get_application_protocol_id(p->ssnptr);
             if (protocol != 0)
             {
                 break;

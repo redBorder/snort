@@ -498,7 +498,7 @@ ENGINE_LINKAGE int base64Decode(void *p, base64DecodeData *data, const uint8_t *
     }
     start = start + data->offset;
 
-    if( start > end )
+    if( start >= end )
         return RULE_NOMATCH;
 
     if(_ded.sfUnfold(start, end-start, (uint8_t *)base64_encodebuf, sizeof(base64_encodebuf), &base64_encodesize) != 0)
@@ -730,6 +730,10 @@ int ruleMatchInternal(SFSnortPacket *p, Rule* rule, uint32_t optIndex, const uin
         case OPTION_TYPE_CONTENT:
             retVal = contentMatch(p, rule->options[optIndex]->option_u.content, &thisCursor);
             notFlag = rule->options[optIndex]->option_u.content->flags & NOT_FLAG;
+            break;
+        case OPTION_TYPE_PROTECTED_CONTENT:
+            retVal = protectedContentMatch(p, rule->options[optIndex]->option_u.protectedContent, &thisCursor);
+            notFlag = rule->options[optIndex]->option_u.protectedContent->flags & NOT_FLAG;
             break;
         case OPTION_TYPE_PCRE:
             retVal = pcreMatch(p, rule->options[optIndex]->option_u.pcre, &thisCursor);

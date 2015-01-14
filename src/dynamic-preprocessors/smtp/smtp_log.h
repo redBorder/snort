@@ -75,7 +75,7 @@
 /* Function prototypes  */
 void SMTP_GenerateAlert(int, char *, ...);
 void SMTP_Decode( void );
-void SMTP_DecodeAlert(void);
+void SMTP_DecodeAlert(void *ds);
 
 #endif
 

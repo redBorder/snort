@@ -105,20 +105,21 @@ void SMTP_GenerateAlert(int event, char *format, ...)
     va_end(ap);
 }
 
-void SMTP_DecodeAlert(void)
+void SMTP_DecodeAlert(void *ds)
 {
-    switch( smtp_ssn->decode_state->decode_type )
+    Email_DecodeState *decode_state = (Email_DecodeState *)ds;
+    switch( decode_state->decode_type )
     {
     case DECODE_B64:
-        if (smtp_eval_config->b64_depth > -1)
+        if (smtp_eval_config->decode_conf.b64_depth > -1)
             SMTP_GenerateAlert(SMTP_B64_DECODING_FAILED, "%s", SMTP_B64_DECODING_FAILED_STR);
         break;
     case DECODE_QP:
-        if (smtp_eval_config->qp_depth > -1)
+        if (smtp_eval_config->decode_conf.qp_depth > -1)
             SMTP_GenerateAlert(SMTP_QP_DECODING_FAILED, "%s", SMTP_QP_DECODING_FAILED_STR);
         break;
     case DECODE_UU:
-        if (smtp_eval_config->uu_depth > -1)
+        if (smtp_eval_config->decode_conf.uu_depth > -1)
             SMTP_GenerateAlert(SMTP_UU_DECODING_FAILED, "%s", SMTP_UU_DECODING_FAILED_STR);
         break;
 

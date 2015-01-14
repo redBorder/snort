@@ -121,7 +121,7 @@ int normalize_telnet(FTPTELNET_GLOBAL_CONF *GlobalConf,
         else
         {
             /* Okay, it wasn't an IAC also its a midstream pickup */
-            if (*read_ptr > 0x7F && _dpd.streamAPI->get_session_flags(p->stream_session_ptr) & SSNFLAG_MIDSTREAM)
+            if (*read_ptr > 0x7F && _dpd.sessionAPI->get_session_flags(p->stream_session) & SSNFLAG_MIDSTREAM)
             {
                 consec_8bit_chars++;
                 if (consec_8bit_chars > CONSECUTIVE_8BIT_THRESHOLD)
@@ -144,7 +144,7 @@ int normalize_telnet(FTPTELNET_GLOBAL_CONF *GlobalConf,
                         if (!GlobalConf->check_encrypted_data)
                         {
                             /* Mark this session & packet as one to ignore */
-                            _dpd.streamAPI->stop_inspection(p->stream_session_ptr, p,
+                            _dpd.sessionAPI->stop_inspection(p->stream_session, p,
                                                         SSN_DIR_BOTH, -1, 0);
                             /* No point to do further normalization */
                             return FTPP_ALERT;
@@ -348,7 +348,7 @@ int normalize_telnet(FTPTELNET_GLOBAL_CONF *GlobalConf,
                             if (!GlobalConf->check_encrypted_data)
                             {
                                 /* Mark this session & packet as one to ignore */
-                                _dpd.streamAPI->stop_inspection(p->stream_session_ptr, p,
+                                _dpd.sessionAPI->stop_inspection(p->stream_session, p,
                                                         SSN_DIR_BOTH, -1, 0);
                                 /* No point to do further normalization */
                                 return FTPP_ALERT;

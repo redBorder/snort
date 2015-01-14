@@ -22,12 +22,9 @@
 // file     sp_file_type.c
 // author   Victor Roemer <vroemer@sourcefire.com>
 //
-// This is an "experimental" feature. 
-//
 
 #include <stdlib.h>
 #include <stdint.h>
-#include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
 #include <sys/types.h>
@@ -44,10 +41,12 @@
 #include "snort_debug.h"
 #include "util.h"
 #include "mstring.h"
+#include "strvec.h"
 
 #include "file-process/file_api.h"
 #include "file-process/file_service_config.h"
 #include "file-process/libs/file_lib.h"
+#include "file-process/libs/file_config.h"
 
 typedef struct _FileTypeOpt
 {
@@ -75,7 +74,7 @@ static int Compare_Ids(const void *p1, const void *p2)
 // Sort the rule option file id's 
 static void Sort_Ids(uint32_t *ids, size_t cnt)
 {
-    int i;
+    size_t i;
 
     assert( ids );
     assert( cnt );
@@ -83,15 +82,30 @@ static void Sort_Ids(uint32_t *ids, size_t cnt)
     qsort(ids, cnt, sizeof(*ids), Compare_Ids);
 
     for ( i = 1; i < cnt; ++i )
+    {
+        // XXX I am not sure that this check is necessary anymore.
         if ( ids[i] == ids[i-1] )
             ParseError("Duplicate file type configured in rule.");
+    }
+}
+
+// Check if 'type' was previously configured in the rule option.
+static bool isPrevType(const char *type, void *prev_types)
+{
+    const char * prev;
+    int i = 0;
+
+    while ( (prev = StringVector_Get(prev_types, i++)) )
+        if ( prev && strcmp(type, prev) == 0 )
+            return true;
+    return false;
 }
 
 // Generate a unique digest of the rule option. 
 uint32_t FileTypeHash(const void *option)
 {
     uint32_t abc[3];
-    int i;
+    unsigned i;
     const FileTypeOpt *opt = (FileTypeOpt*)option;
 
     abc[0] = opt->count;
@@ -111,7 +125,7 @@ uint32_t FileTypeHash(const void *option)
 // Compare 2 rule options for duplicity 
 int FileTypeCompare(const void * _left, const void * _right)
 {
-    int i;
+    unsigned i;
     const FileTypeOpt *left = (FileTypeOpt*)_left;
     const FileTypeOpt *right = (FileTypeOpt*)_right;
 
@@ -162,8 +176,7 @@ static void Rule_Init(struct _SnortConfig *conf, OptTreeNode *otn, void *option)
    
     // Auto-magically enable file-type detection when no explicit
     // configuration exists.
-    if ( file_api->is_file_service_enabled() == false )
-        file_api->enable_file_type(NULL);
+    file_api->enable_file_type(NULL);
 
     fpl = AddOptFuncToList(FileType_Check, otn); 
     fpl->type = RULE_OPTION_TYPE_FILE_TYPE;
@@ -196,17 +209,85 @@ static void FileGroup_Init(struct _SnortConfig *conf, char *in,
     Rule_Init(conf, otn, opt);
 }
 
+static int args_look_ok( const char * src, const char **err )
+{
+
+    enum { ST0, ST1, ERR } state;
+
+    assert( err != NULL );
+    state = ST0;
+
+    while ( *src )
+    {
+        char c = *src;
+        src += 1;
+
+        switch ( state ) {
+            case ST0:
+                if ( IS_RULE_TYPE_IDENT((int)c) )
+                {
+                    state = ST1;
+                }
+                else
+                {
+                    *err = "Expected a file type or version.",
+                    state = ERR;
+                }
+                break;
+
+            case ST1:
+                if ( c == ',' || c == '|' )
+                {
+                    state = ST0;
+                }
+                else if ( !IS_RULE_TYPE_IDENT((int)c) )
+                {
+                    *err = "Expected a file type, version or ',' or '|' character.";
+                    state = ERR;
+                }
+                break;
+
+            case ERR:
+                // Cant get here; silence compiler noise.
+                break;
+        }
+
+        if ( state == ERR )
+            return -1;
+    }
+
+    if ( state == ST0 )
+    {
+        *err = "Trailing ',' or '|' character.";
+        return -1;
+    }
+
+    return 0;
+}
+
 // Parse "file_type" keyword 
 static void FileType_Parse(const void *conf, const char *in, FileTypeOpt *opt)
 {
     int i;
     int num_toks = 0;
     char **toks;
+    void *prev_types;
+    const char *err;
 
     toks = mSplit(in, "|", 0, &num_toks, 0);
 
     if ( num_toks < 1 )
+    {
         ParseError("Missing argument to 'file_type' option.");
+    }
+
+    if ( args_look_ok(in, &err) == -1 )
+    {
+        assert( err != NULL );
+        ParseError("Error found in 'file_type' arguments: %s\n", err);
+    }
+
+    prev_types = StringVector_New();
 
     for ( i = 0; i < num_toks; ++i )
     {
@@ -216,28 +297,59 @@ static void FileType_Parse(const void *conf, const char *in, FileTypeOpt *opt)
         bool found = false;
 
         temp = SnortStrdup(toks[i]);
-        subs = mSplit(temp, ",", 2, &num_subs, 0);
+        subs = mSplit(temp, ",", 0, &num_subs, 0);
+
         if ( num_subs >= 2 )
         {
             // Collect all rule ids for a specific version of a type.
+            int j;
             const char *type = subs[0];
-            const char *version = subs[1];
-            found = file_IDs_from_type_version(conf, type, version,
-                    &opt->ids, &opt->count);
+
+            if ( isPrevType(type, prev_types) )
+            {
+                ParseError("file type \'%s\' was specified multiple times.\n", type);
+            }
+        
+            StringVector_Add(prev_types, type);
+
+            for ( j = 1; j < num_subs; j++ )
+            {
+                const char *version = subs[j];
+                found = file_IDs_from_type_version(conf, type, version,
+                            &opt->ids, &opt->count);
+
+                if ( !found )
+                {
+                    ParseError("\'%s\' version \'%s\' is not a configured "
+                            "file type.", type, version);
+                }
+            }
         }
         else
         {
+            const char * type = toks[i];
+
+            if ( isPrevType(type, prev_types) )
+            {
+                ParseError("file type \'%s\' is specified multiple times.\n", type);
+            }
+
+            StringVector_Add(prev_types, type);
+
             // Collect all rule ids for a type.
-            found = file_IDs_from_type(conf, toks[i], &opt->ids, &opt->count);
+            found = file_IDs_from_type(conf, type, &opt->ids, &opt->count);
         }
 
         if ( !found )
+        {
             ParseError("\'%s\' is not a configured file type.", toks[i]);
+        }
 
         mSplitFree(&subs, num_subs);
         free(temp);
     }
 
+    StringVector_Delete(prev_types);
     mSplitFree(&toks, num_toks);
     Sort_Ids(opt->ids, opt->count);
 }

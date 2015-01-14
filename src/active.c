@@ -35,6 +35,7 @@
 #endif
 
 #include "active.h"
+#include "session_api.h"
 #include "stream_api.h"
 #include "snort.h"
 
@@ -49,7 +50,7 @@
 // of these flags following all processing and the drop
 // or response may have been produced by a pseudopacket.
 tActiveDrop active_drop_pkt = ACTIVE_ALLOW;
-int active_drop_ssn = 0;
+tActiveSsnDrop active_drop_ssn = ACTIVE_SSN_ALLOW;
 // TBD consider performance of replacing active_drop_pkt/ssn
 // with a active_verdict.  change over if it is a wash or better.
 
@@ -145,9 +146,9 @@ int Active_SendResponses (Packet* p)
     {
         return 0;
     }
-    if ( p->ssnptr && stream_api )
+    if ( p->ssnptr && session_api )
     {
-        stream_api->init_active_response(p, p->ssnptr);
+        session_api->init_active_response(p, p->ssnptr);
     }
     Active_ClearQueue();
     return 1;
@@ -214,7 +215,7 @@ int Active_Term (void)
 int Active_IsEnabled (void) { return s_enabled; }
 
 void Active_SetEnabled (int on_off)
-{ 
+{
     if ( !on_off || on_off > s_enabled )
         s_enabled = on_off;
 }
@@ -265,25 +266,62 @@ void Active_SendUnreach(Packet* p, EncodeType type)
     s_send(p->pkth, 1, rej, len);
 }
 
-void Active_SendData (
+bool Active_SendData (
     Packet* p, EncodeFlags flags, const uint8_t* buf, uint32_t blen)
 {
-    int i;
+    uint16_t toSend;
+    uint16_t sent;
+    uint16_t maxPayload;
+    const uint8_t* seg;
+    uint32_t plen;
+    EncodeFlags tmp_flags;
+
     flags |= GetFlags();
+    flags &= ~ENC_FLAG_VAL;
 
-    for ( i = 0; i < s_attempts; i++ )
+    if (flags & ENC_FLAG_RST_SRVR)
     {
-        uint32_t plen = 0;
-        const uint8_t* seg;
+        plen = 0;
+        tmp_flags = flags ^ ENC_FLAG_FWD;
+        seg = Encode_Response(ENC_TCP_RST, tmp_flags, p, &plen, NULL, 0);
 
-        flags &= ~ENC_FLAG_VAL;
-        flags |= (i & ENC_FLAG_VAL);
-
-        seg = Encode_Response(ENC_TCP_FIN, flags, p, &plen, buf, blen);
-
-        if ( !seg ) return;
-        s_send(p->pkth, !(flags & ENC_FLAG_FWD), seg, plen);
+        if ( seg )
+            s_send(p->pkth, !(tmp_flags & ENC_FLAG_FWD), seg, plen);
     }
+    flags |= ENC_FLAG_SEQ;
+
+    sent = 0;
+    maxPayload = Encode_GetMaxPayload(p);
+
+    if(!maxPayload)
+        return false;
+
+    do{
+        plen = 0;
+        toSend = blen > maxPayload ? maxPayload : blen;
+        flags = (flags & ~ENC_FLAG_VAL) | sent;
+        seg = Encode_Response(ENC_TCP_PUSH, flags, p, &plen, buf, toSend);
+
+        if ( !seg )
+            return false;
+
+        s_send(p->pkth, !(flags & ENC_FLAG_FWD), seg, plen);
+
+        buf += toSend;
+        sent += toSend;
+    } while(blen -= toSend);
+
+    if (flags & ENC_FLAG_RST_CLNT)
+    {
+        plen = 0;
+        flags = (flags & ~ENC_FLAG_VAL) | sent;
+        seg = Encode_Response(ENC_TCP_RST, flags, p, &plen, NULL, 0);
+
+        if ( seg )
+            s_send(p->pkth, !(flags & ENC_FLAG_FWD), seg, plen);
+    }
+
+    return true;
 }
 
 void Active_InjectData (
@@ -397,7 +435,7 @@ static inline void _Active_ForceIgnoreSession(Packet *p)
 
 static inline void _Active_DoIgnoreSession(Packet *p)
 {
-    if ( ScInlineMode() || ScTreatDropAsIgnore() )
+    if ( ScIpsInlineMode() || ScTreatDropAsIgnore() )
     {
         _Active_ForceIgnoreSession(p);
     }
@@ -463,8 +501,10 @@ int Active_DropAction (Packet* p)
 {
     Active_IgnoreSession(p);
 
-    if ( s_enabled < 2 )
+#ifdef ACTIVE_RESPONSE
+    if (( s_enabled < 2 ) || (active_drop_ssn == ACTIVE_SSN_DROP_WITHOUT_RESET))
         return 0;
+#endif
 
     return _Active_DoReset(p);
 }

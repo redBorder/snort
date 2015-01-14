@@ -189,7 +189,7 @@ static int SDFCheckPorts(SDFConfig *config, SFSnortPacket *packet)
     int16_t app_ordinal = SFTARGET_UNKNOWN_PROTOCOL;
 
     /* Do port checks */
-    app_ordinal = _dpd.streamAPI->get_application_protocol_id(packet->stream_session_ptr);
+    app_ordinal = _dpd.sessionAPI->get_application_protocol_id(packet->stream_session);
     if (app_ordinal == SFTARGET_UNKNOWN_PROTOCOL)
         return 0;
     if (app_ordinal && (config->protocol_ordinals[app_ordinal] == 0))
@@ -241,9 +241,9 @@ static SDFSessionData * NewSDFSession(SDFConfig *config, SFSnortPacket *packet)
                 "SDF preprocessor session data.\n");
     }
 
-    if (packet->stream_session_ptr)
+    if (packet->stream_session)
     {
-        _dpd.streamAPI->set_application_data(packet->stream_session_ptr,
+        _dpd.sessionAPI->set_application_data(packet->stream_session,
                                              PP_SDF, session, FreeSDFSession);
     }
 
@@ -291,15 +291,15 @@ static void SDFSearchRecursively(SDFConfig *config, SFSnortPacket *packet,
                 int16_t app_ordinal;
 #endif
 
-                if (_dpd.getRuntimePolicy() < otn->proto_node_num)
-                    rtn = otn->proto_nodes[_dpd.getRuntimePolicy()];
+                if (_dpd.getIpsRuntimePolicy() < otn->proto_node_num)
+                    rtn = otn->proto_nodes[_dpd.getIpsRuntimePolicy()];
 
 #ifdef TARGET_BASED
                 /* Check the service against the matched OTN. */
-                app_ordinal = _dpd.streamAPI->get_application_protocol_id(packet->stream_session_ptr);
+                app_ordinal = _dpd.sessionAPI->get_application_protocol_id(packet->stream_session);
                 if( app_ordinal != SFTARGET_UNKNOWN_PROTOCOL )
                 {
-                    int16_t i;
+                    unsigned int i;
                     for (i = 0; i < otn->sigInfo.num_services; i++)
                     {
                         if (otn->sigInfo.services[i].service_ordinal == app_ordinal)
@@ -482,12 +482,12 @@ static void ProcessSDF(void *p, void *context)
         return;  // Waiting on stream reassembly
 
     /* Retrieve the corresponding config for this packet */
-    policy_id = _dpd.getRuntimePolicy();
+    policy_id = _dpd.getIpsRuntimePolicy();
     sfPolicyUserPolicySet (sdf_context->context_id, policy_id);
     config = sfPolicyUserDataGetCurrent(sdf_context->context_id);
 
     /* Retrieve stream session data. Create one if it doesn't exist. */
-    session = _dpd.streamAPI->get_application_data(packet->stream_session_ptr, PP_SDF);
+    session = _dpd.sessionAPI->get_application_data(packet->stream_session, PP_SDF);
     if (session == NULL)
     {
         /* Do port checks */
@@ -497,7 +497,7 @@ static void ProcessSDF(void *p, void *context)
         }
 
         /* If there's no stream session, we'll just count PII for one packet */
-        if (packet->stream_session_ptr == NULL)
+        if (packet->stream_session == NULL)
         {
             if (config->stateless_session == NULL)
                 config->stateless_session = NewSDFSession(config, packet);

@@ -273,7 +273,7 @@ int FTPBounce(void *option_data, Packet *p)
         }
     }
 
-    while (isspace((int)*this_param) && (this_param < end_ptr)) this_param++;
+    while ((this_param < end_ptr) && isspace((int)*this_param)) this_param++;
 
     do
     {
@@ -304,7 +304,7 @@ int FTPBounce(void *option_data, Packet *p)
             ip = (ip << 8) + value;
         }
 
-        if (!isspace((int)*this_param))
+        if ((this_param < end_ptr) && !isspace((int)*this_param))
             this_param++;
         octet++;
     } while ((this_param < end_ptr) && !isspace((int)*this_param) && (octet < 4));

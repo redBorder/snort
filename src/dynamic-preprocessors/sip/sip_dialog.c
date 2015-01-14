@@ -33,6 +33,7 @@
 #include "sip_debug.h"
 #include "sf_ip.h"
 #include "spp_sip.h"
+#include "session_api.h"
 #include "stream_api.h"
 #include <assert.h>
 
@@ -207,6 +208,7 @@ static int SIP_processACK(SIPMsg *sipMsg, SIP_DialogData *dialog, SIP_DialogList
 		{
 			SIP_updateMedias(sipMsg->mediaSession, &dialog->mediaSessions);
 			SIP_ignoreChannels(dialog, p);
+            sipMsg->mediaUpdated = 1;
 		}
 	}
 	return SIP_SUCCESS;
@@ -266,6 +268,7 @@ static int SIP_processResponse(SIPMsg *sipMsg, SIP_DialogData *dialog, SIP_Dialo
     			{
     				SIP_updateMedias(sipMsg->mediaSession, &dialog->mediaSessions);
     				SIP_ignoreChannels(currDialog, p);
+                    sipMsg->mediaUpdated = 1;
     			}
     			currDialog->state = SIP_DLG_ESTABLISHED;
     		}
@@ -281,6 +284,7 @@ static int SIP_processResponse(SIPMsg *sipMsg, SIP_DialogData *dialog, SIP_Dialo
     			{
     				SIP_updateMedias(sipMsg->mediaSession, &dialog->mediaSessions);
     				SIP_ignoreChannels(currDialog, p);
+                    sipMsg->mediaUpdated = 1;
     			}
     			currDialog->state = SIP_DLG_ESTABLISHED;
     		}
@@ -401,18 +405,21 @@ static int SIP_ignoreChannels( SIP_DialogData *dialog, SFSnortPacket *p)
     	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Ignoring channels Destine IP: %s Port: %u\n",
     			sfip_to_str(&mdataB->maddress), mdataB->mport););
     	/* Call into Streams to mark data channel as something to ignore. */
-    	if ((ssn = _dpd.streamAPI->get_session_ptr_from_ip_port(&mdataA->maddress,mdataA->mport, &mdataB->maddress,
-    	        mdataB->mport, IPPROTO_UDP, 0, 0, 0)))
+#ifdef HAVE_DAQ_ADDRESS_SPACE_ID
+        ssn = _dpd.sessionAPI->get_session_ptr_from_ip_port(&mdataA->maddress,mdataA->mport, &mdataB->maddress,
+    	                                                    mdataB->mport, IPPROTO_UDP, 0, 0, p->pkt_header->address_space_id);
+#else
+        ssn = _dpd.sessionAPI->get_session_ptr_from_ip_port(&mdataA->maddress,mdataA->mport, &mdataB->maddress,
+    	                                                    mdataB->mport, IPPROTO_UDP, 0, 0, 0);
+#endif
+    	if ( _dpd.sessionAPI->is_session_verified( ssn ) )
     	{
-    	    _dpd.streamAPI->set_ignore_direction(ssn, SSN_DIR_BOTH);
+    	    _dpd.sessionAPI->set_ignore_direction(ssn, SSN_DIR_BOTH);
     	}
     	else
     	{
-    	    _dpd.streamAPI->ignore_session(&mdataA->maddress,
-    	            mdataA->mport, &mdataB->maddress,
-    	            mdataB->mport, IPPROTO_UDP, p->pkt_header->ts.tv_sec,
-    	            PP_SIP, SSN_DIR_BOTH,
-    	            0 /* Not permanent */ );
+    	    _dpd.sessionAPI->ignore_session(p, &mdataA->maddress, mdataA->mport, &mdataB->maddress,
+    	                            mdataB->mport, IPPROTO_UDP, PP_SIP, SSN_DIR_BOTH, 0 /* Not permanent */ );
     	}
     	sip_stats.ignoreChannels++;
     	mdataA = mdataA->nextM;
@@ -640,6 +647,60 @@ static int SIP_deleteDialog(SIP_DialogData *currDialog, SIP_DialogList *dList)
         dList->num_dialogs--;
 	return SIP_SUCCESS;
 }
+
+/*********************************************************************
+ * Update appId sip detector with parsed SIP message and dialog
+ *
+ * Arguments:
+ *  SFSnortPacket * - pointer to packet structure
+ *  SIPMsg        * - pointer to parserd SIP messgage
+ *  SIPData       * - pointer to SIP session
+ *
+ * Returns:
+ *  None
+ *
+ *********************************************************************/
+static void sip_update_appid(const SFSnortPacket *p, const SIPMsg *sipMsg, const SIP_DialogData *dialog)
+{
+    SipHeaders hdrs;
+    SipDialog        dlg;
+    SipEventData sipEventData;
+
+    hdrs.callid = sipMsg->call_id;
+    hdrs.callidLen = sipMsg->callIdLen;
+    hdrs.methodFlag = sipMsg->methodFlag;
+
+    hdrs.userAgent = sipMsg->userAgent;
+    hdrs.userAgentLen = sipMsg->userAgentLen;
+    hdrs.server = sipMsg->server;
+    hdrs.serverLen = sipMsg->serverLen;
+    hdrs.userName = sipMsg->userName;
+    hdrs.userNameLen = sipMsg->userNameLen;
+    hdrs.from = sipMsg->from;
+    hdrs.fromLen= sipMsg->fromLen;
+
+    sipEventData.headers = &hdrs;
+        
+    if (dialog)
+    {
+        dlg.state = dialog->state;
+        dlg.mediaSessions = dialog->mediaSessions;
+        dlg.mediaUpdated = sipMsg->mediaUpdated;
+        sipEventData.dialog = &dlg;
+
+    }
+    else 
+    {
+        sipEventData.dialog = NULL;
+    }
+
+    sipEventData.packet = p;
+
+    if (_dpd.streamAPI->service_event_publish(PP_SIP, p->stream_session, SIP_EVENT_TYPE_SIP_DIALOG, &sipEventData) == false)
+        _dpd.errMsg("failed to publish to SIP_DIALOG\n");
+
+}
+
 /********************************************************************
  * Function: SIP_updateDialog()
  *
@@ -700,6 +761,16 @@ int SIP_updateDialog(SIPMsg *sipMsg, SIP_DialogList *dList, SFSnortPacket *p)
    		ret = SIP_processResponse(sipMsg, dialog, dList, p);
    	else
    		ret = SIP_FAILURE;
+
+       for (dialog = dList->head;
+            dialog;
+             dialog = dialog->nextD)
+       {
+           if (sipMsg->dlgID.callIdHash == dialog->dlgID.callIdHash)
+               break;
+       }
+
+    sip_update_appid(p, sipMsg, dialog);
 
 
 	return ret;

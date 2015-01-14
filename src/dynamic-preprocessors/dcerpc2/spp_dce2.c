@@ -187,7 +187,7 @@ static void DCE2_InitGlobal(struct _SnortConfig *sc, char *args)
     if ((_dpd.streamAPI == NULL) || (_dpd.streamAPI->version != STREAM_API_VERSION5))
     {
         DCE2_Die("%s(%d) \"%s\" configuration: "
-            "Stream5 must be enabled with TCP and UDP tracking.",
+            "Stream must be enabled with TCP and UDP tracking.",
             *_dpd.config_file, *_dpd.config_line, DCE2_GNAME);
     }
 
@@ -256,6 +256,10 @@ static void DCE2_InitGlobal(struct _SnortConfig *sc, char *args)
         dce2_proto_ids.nbss = _dpd.findProtocolReference(DCE2_PROTO_REF_STR__NBSS);
         if (dce2_proto_ids.nbss == SFTARGET_UNKNOWN_PROTOCOL)
             dce2_proto_ids.nbss = _dpd.addProtocolReference(DCE2_PROTO_REF_STR__NBSS);
+
+        // register with session to handle service 
+        _dpd.sessionAPI->register_service_handler( PP_DCE2, dce2_proto_ids.dcerpc );
+        _dpd.sessionAPI->register_service_handler( PP_DCE2, dce2_proto_ids.nbss );
 #endif
     }
 
@@ -292,8 +296,7 @@ static void DCE2_InitGlobal(struct _SnortConfig *sc, char *args)
         return;
 
     /* Register callbacks */
-    _dpd.addPreproc(sc, DCE2_Main, PRIORITY_APPLICATION,
-        PP_DCE2, PROTO_BIT__TCP | PROTO_BIT__UDP);
+    _dpd.addPreproc(sc, DCE2_Main, PRIORITY_APPLICATION, PP_DCE2, PROTO_BIT__TCP | PROTO_BIT__UDP);
 
 #ifdef TARGET_BASED
     _dpd.streamAPI->set_service_filter_status
@@ -335,6 +338,10 @@ static void DCE2_InitServer(struct _SnortConfig *sc, char *args)
 
     /* Parse configuration args */
     DCE2_ServerConfigure(sc, pPolicyConfig, args);
+
+    // enable preproc for ports of interest...
+    // TBD-EDM - verify...
+    DCE2_RegisterPortsWithSession( sc, pPolicyConfig->dconfig );
 }
 
 static int DCE2_CheckConfigPolicy(
@@ -353,9 +360,9 @@ static int DCE2_CheckConfigPolicy(
 
     _dpd.setParserPolicy(sc, policyId);
     // config_file/config_line are not set here
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
+    if (!_dpd.isPreprocEnabled(sc, PP_STREAM))
     {
-        DCE2_Log(DCE2_LOG_TYPE__WARN, "Stream5 must be enabled with TCP and UDP tracking.");
+        DCE2_Log(DCE2_LOG_TYPE__WARN, "Stream must be enabled with TCP and UDP tracking.");
         return -1;
     }
 
@@ -368,7 +375,7 @@ static int DCE2_CheckConfigPolicy(
     }
 
 #ifdef TARGET_BASED
-    if (!_dpd.isAdaptiveConfiguredForSnortConfig(sc, policyId))
+    if (!_dpd.isAdaptiveConfiguredForSnortConfig(sc))
 #endif
     {
         if ((rval = DCE2_ScCheckTransports(pPolicyConfig)))
@@ -433,7 +440,7 @@ static void DCE2_Main(void *pkt, void *context)
 
     DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__ALL, "%s\n", DCE2_DEBUG__START_MSG));
 
-    sfPolicyUserPolicySet (dce2_config, _dpd.getRuntimePolicy());
+    sfPolicyUserPolicySet (dce2_config, _dpd.getNapRuntimePolicy());
 
 #ifdef DEBUG_MSGS
     if (DCE2_SsnFromServer(p))
@@ -450,9 +457,9 @@ static void DCE2_Main(void *pkt, void *context)
     assert((IsUDP(p) || IsTCP(p)) && p->payload && p->payload_size);
 
     /* No inspection to do */
-    if (p->stream_session_ptr == NULL)
+    if ( !_dpd.sessionAPI->is_session_verified( p->stream_session ) )
     {
-        DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__MAIN, "No session pointer - not inspecting.\n"));
+        DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__MAIN, "Session not established - not inspecting.\n"));
         DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__ALL, "%s\n", DCE2_DEBUG__END_MSG));
         return;
     }
@@ -978,7 +985,7 @@ static void DCE2_ReloadGlobal(struct _SnortConfig *sc, char *args, void **new_co
     if ((_dpd.streamAPI == NULL) || (_dpd.streamAPI->version != STREAM_API_VERSION5))
     {
         DCE2_Die("%s(%d) \"%s\" configuration: "
-            "Stream5 must be enabled with TCP and UDP tracking.",
+            "Stream must be enabled with TCP and UDP tracking.",
             *_dpd.config_file, *_dpd.config_line, DCE2_GNAME);
     }
 
@@ -1095,10 +1102,10 @@ static int DCE2_ReloadVerifyPolicy(
     if ( swap_config == NULL || swap_config->gconfig->disabled )
         return 0;
 
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
+    if (!_dpd.isPreprocEnabled(sc, PP_STREAM))
     {
         DCE2_Log(DCE2_LOG_TYPE__WARN, "%s(%d) \"%s\" configuration: "
-            "Stream5 must be enabled with TCP and UDP tracking.",
+            "Stream must be enabled with TCP and UDP tracking.",
             *_dpd.config_file, *_dpd.config_line, DCE2_GNAME);
         return -1;
     }
@@ -1112,7 +1119,7 @@ static int DCE2_ReloadVerifyPolicy(
     }
 
 #ifdef TARGET_BASED
-    if (!_dpd.isAdaptiveConfiguredForSnortConfig(sc, policyId))
+    if (!_dpd.isAdaptiveConfiguredForSnortConfig(sc))
 #endif
     {
         if ((rval = DCE2_ScCheckTransports(swap_config)))

@@ -55,6 +55,14 @@
 #define UNIFIED2_IDS_EVENT_VLAN      104
 #define UNIFIED2_IDS_EVENT_IPV6_VLAN 105
 #define UNIFIED2_EXTRA_DATA          110
+#if defined(FEAT_OPEN_APPID)
+#define UNIFIED2_IDS_EVENT_APPID     111
+#define UNIFIED2_IDS_EVENT_APPID_IPV6     112
+
+#define UNIFIED2_IDS_EVENT_APPSTAT   113
+
+#define MAX_EVENT_APPNAME_LEN        16
+#endif /* defined(FEAT_OPEN_APPID) */
 
 /* Data structure used for serialization of Unified2 Records */
 typedef struct _Serial_Unified2_Header
@@ -88,6 +96,9 @@ typedef struct _Unified2IDSEvent
     uint32_t mpls_label;
     uint16_t vlanId;
     uint16_t pad2;//Policy ID
+#if defined(FEAT_OPEN_APPID)
+    char     app_name[MAX_EVENT_APPNAME_LEN];
+#endif /* defined(FEAT_OPEN_APPID) */
 } Unified2IDSEvent;
 
 
@@ -114,6 +125,9 @@ typedef struct _Unified2IDSEventIPv6
     uint32_t mpls_label;
     uint16_t vlanId;
     uint16_t pad2;/*could be IPS Policy local id to support local sensor alerts*/
+#if defined(FEAT_OPEN_APPID)
+    char     app_name[16];
+#endif /* defined(FEAT_OPEN_APPID) */
 } Unified2IDSEventIPv6;
 
 
@@ -245,6 +259,14 @@ typedef struct _Serial_Unified2IDSEventIPv6_legacy
 } Serial_Unified2IDSEventIPv6_legacy;
 
 
+#if defined(FEAT_OPEN_APPID)
+//UNIFIED2_IDS_EVENT_IPV6_VLAN = type 200
+typedef struct _Serial_Unified2AppStat
+{
+    uint32_t event_second;
+    uint32_t AppCnt;
+} Serial_Unified2AppStat;
+#endif /* defined(FEAT_OPEN_APPID) */
 
 ////////////////////-->LEGACY
 

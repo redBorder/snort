@@ -78,6 +78,19 @@ static inline void SkipWhiteSpace(const u_char *start, const u_char *end,
     while (hi_util_in_bounds(start, end, *ptr) && isspace((int)**ptr) && (**ptr != '\n'))
         (*ptr)++;
 }
+#if defined(FEAT_OPEN_APPID)
+static inline int SkipBlankColon(const u_char *start, const u_char *end,
+       const u_char **ptr)
+{
+    int count = 0;
+    while((hi_util_in_bounds(start, end, *ptr)) && ( **ptr == ' ' || **ptr == '\t' || **ptr == ':') ) 
+    {
+        (*ptr)++;
+        count++;
+    }
+    return count;
+}
+#endif /* defined(FEAT_OPEN_APPID) */
 static inline int SkipBlankSpace(const u_char *start, const u_char *end,
        const u_char **ptr)
 {

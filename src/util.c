@@ -66,9 +66,7 @@ static struct mallinfo mi;
 #include <strings.h>
 #endif
 
-#ifdef ZLIB
 #include <zlib.h>
-#endif
 
 #include "snort.h"
 #include "mstring.h"
@@ -98,7 +96,7 @@ static struct mallinfo mi;
 #include "win32/WIN32-Code/name.h"
 #endif
 
-#include "stream5_common.h"
+#include "stream_common.h"
 
 #ifdef PATH_MAX
 #define PATH_MAX_UTIL PATH_MAX
@@ -176,9 +174,7 @@ int DisplayBanner(void)
 {
     const char * info;
     const char * pcre_ver;
-#ifdef ZLIB
     const char * zlib_ver;
-#endif
 
     info = getenv("HOSTTYPE");
     if( !info )
@@ -187,9 +183,7 @@ int DisplayBanner(void)
     }
 
     pcre_ver = pcre_version();
-#ifdef ZLIB
     zlib_ver = zlib_version;
-#endif
 
     LogMessage("\n");
     LogMessage("   ,,_     -*> Snort! <*-\n");
@@ -202,16 +196,14 @@ int DisplayBanner(void)
 #endif
                BUILD,
                info);
-    LogMessage("   ''''    By Martin Roesch & The Snort Team: http://www.snort.org/snort/snort-team\n");
+    LogMessage("   ''''    By Martin Roesch & The Snort Team: http://www.snort.org/contact#team\n");
     LogMessage("           Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.\n");
     LogMessage("           Copyright (C) 1998-2013 Sourcefire, Inc., et al.\n");
 #ifdef HAVE_PCAP_LIB_VERSION
     LogMessage("           Using %s\n", pcap_lib_version());
 #endif
     LogMessage("           Using PCRE version: %s\n", pcre_ver);
-#ifdef ZLIB
     LogMessage("           Using ZLIB version: %s\n", zlib_ver);
-#endif
     LogMessage("\n");
 
     return 0;
@@ -266,9 +258,10 @@ void ts_print(register const struct timeval *tvp, char *timebuf)
 
     if (ScOutputIncludeYear())
     {
+        int year = (lt->tm_year >= 100) ? (lt->tm_year - 100) : lt->tm_year;
         (void) SnortSnprintf(timebuf, TIMEBUF_SIZE,
                         "%02d/%02d/%02d-%02d:%02d:%02d.%06u ",
-                        lt->tm_mon + 1, lt->tm_mday, lt->tm_year - 100,
+                        lt->tm_mon + 1, lt->tm_mday, year,
                         s / 3600, (s % 3600) / 60, s % 60,
                         (u_int) tvp->tv_usec);
     }
@@ -445,6 +438,9 @@ void ErrorMessage(const char *format,...)
     if (snort_conf == NULL)
         return;
 
+    if (!ScCheckInternalLogLevel(INTERNAL_LOG_LEVEL__ERROR))
+        return;
+
     va_start(ap, format);
 
     if (ScDaemonMode() || ScLogSyslog())
@@ -480,6 +476,9 @@ void ErrorMessageThrottled(ThrottleInfo *throttleInfo, const char *format,...)
     time_t current_time = packet_time();
 
     if ((snort_conf == NULL)||(!throttleInfo))
+        return;
+
+    if (!ScCheckInternalLogLevel(INTERNAL_LOG_LEVEL__ERROR))
         return;
 
     throttleInfo->count++;
@@ -528,7 +527,7 @@ void LogMessage(const char *format,...)
     if (snort_conf == NULL)
         return;
 
-    if (ScLogQuiet() && !ScDaemonMode() && !ScLogSyslog())
+    if (!ScCheckInternalLogLevel(INTERNAL_LOG_LEVEL__MESSAGE) && !ScDaemonMode() && !ScLogSyslog())
         return;
 
     va_start(ap, format);
@@ -565,7 +564,7 @@ void WarningMessage(const char *format,...)
     if (snort_conf == NULL)
         return;
 
-    if (ScLogQuiet() && !ScDaemonMode() && !ScLogSyslog())
+    if (!ScCheckInternalLogLevel(INTERNAL_LOG_LEVEL__WARNING) && !ScDaemonMode() && !ScLogSyslog())
         return;
 
     va_start(ap, format);
@@ -788,16 +787,14 @@ void CreatePidFile(const char *intf, pid_t pid)
                        "system\n", _PATH_VARRUN);
 #endif  /* _PATH_VARRUN */
 
-            stat(_PATH_VARRUN, &pt);
-
-            if(!S_ISDIR(pt.st_mode) || access(_PATH_VARRUN, W_OK) == -1)
+            if ((stat(_PATH_VARRUN, &pt) == -1) ||
+                !S_ISDIR(pt.st_mode) || access(_PATH_VARRUN, W_OK) == -1)
             {
                 LogMessage("WARNING: _PATH_VARRUN is invalid, trying "
                            "/var/log/ ...\n");
                 SnortStrncpy(snort_conf->pid_path, "/var/log/", sizeof(snort_conf->pid_path));
-                stat(snort_conf->pid_path, &pt);
-
-                if(!S_ISDIR(pt.st_mode) || access(snort_conf->pid_path, W_OK) == -1)
+                if ((stat(snort_conf->pid_path, &pt) == -1) ||
+                    !S_ISDIR(pt.st_mode) || access(snort_conf->pid_path, W_OK) == -1)
                 {
                     LogMessage("WARNING: %s is invalid, logging Snort "
                                "PID path to log directory (%s).\n", snort_conf->pid_path,
@@ -1083,7 +1080,12 @@ static const char* Verdicts[MAX_DAQ_VERDICT] = {
     "Replace",
     "Whitelist",
     "Blacklist",
+#ifdef HAVE_DAQ_VERDICT_RETRY
+    "Ignore",
+    "Retry"
+#else
     "Ignore"
+#endif
 };
 
 #ifdef HAVE_MALLINFO
@@ -1266,7 +1268,7 @@ void DropStats(int exiting)
             LogStat("Int Whtlst", pc.internal_whitelist, pkts_recv);
     }
 #ifdef TARGET_BASED
-    if (ScIdsMode() && IsAdaptiveConfigured(getDefaultPolicy()))
+    if (ScIdsMode() && IsAdaptiveConfigured())
     {
         LogMessage("%s\n", STATS_SEPARATOR);
         LogMessage("Attribute Table Stats:\n");

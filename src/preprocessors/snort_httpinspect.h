@@ -24,6 +24,7 @@
 #define __SNORT_HTTPINSPECT_H__
 
 #include "decode.h"
+#include "session_api.h"
 #include "stream_api.h"
 #include "hi_ui_config.h"
 #include "util_utf.h"
@@ -32,9 +33,7 @@
 #include "str_search.h"
 #include "util_jsnorm.h"
 
-#ifdef ZLIB
 #include <zlib.h>
-#endif
 
 extern MemPool *http_mempool;
 extern MemPool *mime_decode_mempool;
@@ -65,8 +64,6 @@ extern DataBuffer HttpDecodeBuf;
 #define MAX_URI_EXTRACTED   2048
 #define MAX_HOSTNAME        256
 
-
-#ifdef ZLIB
 
 #define DEFAULT_MAX_GZIP_MEM 838860
 #define GZIP_MEM_MIN    3276
@@ -100,7 +97,6 @@ typedef struct s_DECOMPRESS_STATE
     bool deflate_initialized;
 
 } DECOMPRESS_STATE;
-#endif
 
 typedef struct s_HTTP_RESP_STATE
 {
@@ -126,11 +122,9 @@ typedef struct s_HTTP_LOG_STATE
 
 typedef struct _HttpSessionData
 {
-    uint32_t event_flags;
+    uint64_t event_flags;
     HTTP_RESP_STATE resp_state;
-#ifdef ZLIB
     DECOMPRESS_STATE *decomp_state;
-#endif
     HTTP_LOG_STATE *log_state;
     sfip_t *true_ip;
     decode_utf_state_t utf_state;
@@ -138,6 +132,7 @@ typedef struct _HttpSessionData
     uint8_t cli_small_chunk_count;
     uint8_t srv_small_chunk_count;
     MimeState *mime_ssn;
+    fd_session_p_t fd_state;
 } HttpSessionData;
 
 typedef struct _HISearch
@@ -198,7 +193,7 @@ void ApplyFlowDepth(HTTPINSPECT_CONF *, Packet *, HttpSessionData *, int, int, u
 int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p);
 int ProcessGlobalConf(HTTPINSPECT_GLOBAL_CONF *, char *, int);
 int PrintGlobalConf(HTTPINSPECT_GLOBAL_CONF *);
-int ProcessUniqueServerConf(HTTPINSPECT_GLOBAL_CONF *, char *, int);
+int ProcessUniqueServerConf(struct _SnortConfig *, HTTPINSPECT_GLOBAL_CONF *, char *, int);
 int HttpInspectInitializeGlobalConfig(HTTPINSPECT_GLOBAL_CONF *, char *, int);
 HttpSessionData * SetNewHttpSessionData(Packet *, void *);
 void FreeHttpSessionData(void *data);
@@ -215,7 +210,7 @@ static inline HttpSessionData * GetHttpSessionData(Packet *p)
 {
     if (p->ssnptr == NULL)
         return NULL;
-    return (HttpSessionData *)stream_api->get_application_data(p->ssnptr, PP_HTTPINSPECT);
+    return (HttpSessionData *)session_api->get_application_data(p->ssnptr, PP_HTTPINSPECT);
 }
 
 static inline sfip_t *GetTrueIPForSession(void *data)
@@ -224,7 +219,7 @@ static inline sfip_t *GetTrueIPForSession(void *data)
 
     if (data == NULL)
         return NULL;
-    hsd = (HttpSessionData *)stream_api->get_application_data(data, PP_HTTPINSPECT);
+    hsd = (HttpSessionData *)session_api->get_application_data(data, PP_HTTPINSPECT);
 
     if(hsd == NULL)
         return NULL;
@@ -233,7 +228,6 @@ static inline sfip_t *GetTrueIPForSession(void *data)
 
 }
 
-#ifdef ZLIB
 static inline void ResetGzipState(DECOMPRESS_STATE *ds)
 {
     if (ds == NULL)
@@ -247,7 +241,6 @@ static inline void ResetGzipState(DECOMPRESS_STATE *ds)
     ds->compress_fmt = 0;
     ds->decompress_data = 0;
 }
-#endif  /* ZLIB */
 
 static inline void ResetRespState(HTTP_RESP_STATE *ds)
 {

@@ -65,6 +65,7 @@
 #include "hi_util_xmalloc.h"
 #include "hi_cmd_lookup.h"
 #include "hi_paf.h"
+#include "file_decomp.h"
 
 #include "snort.h"
 #include "profiler.h"
@@ -73,10 +74,11 @@
 #include "detection_util.h"
 
 #ifdef TARGET_BASED
+#include "session_api.h"
 #include "stream_api.h"
 #include "sftarget_protocol_reference.h"
 #endif
-#include "snort_stream5_session.h"
+
 #include "sfPolicy.h"
 #include "mempool.h"
 #include "file_api.h"
@@ -126,10 +128,9 @@ int hiDetectCalled = 0;
 
 static tSfPolicyId httpCurrentPolicy = 0;
 
-#ifdef ZLIB
 MemPool *hi_gzip_mempool = NULL;
+fd_config_t hi_fd_conf;
 uint8_t decompression_buffer[65535];
-#endif
 
 uint8_t dechunk_buffer[65535];
 
@@ -147,7 +148,7 @@ static void HttpInspectCleanExit(int, void *);
 static void HttpInspectReset(int, void *);
 static void HttpInspectResetStats(int, void *);
 static void HttpInspectInit(struct _SnortConfig *, char *);
-static void addServerConfPortsToStream5(struct _SnortConfig *sc, void *);
+static void addServerConfPortsToStream(struct _SnortConfig *sc, void *);
 static void HttpInspectFreeConfigs(tSfPolicyUserContextId);
 static void HttpInspectFreeConfig(HTTPINSPECT_GLOBAL_CONF *);
 static int HttpInspectCheckConfig(struct _SnortConfig *);
@@ -190,7 +191,7 @@ static void HttpInspectReloadSwapFree(void *);
 */
 static void HttpInspect(Packet *p, void *context)
 {
-    tSfPolicyId policy_id = getRuntimePolicy();
+    tSfPolicyId policy_id = getNapRuntimePolicy();
     HTTPINSPECT_GLOBAL_CONF *pPolicyConfig = NULL ;
     PROFILE_VARS;
     sfPolicyUserPolicySet (hi_config, policy_id);
@@ -279,7 +280,6 @@ static void HttpInspectDropStats(int exiting)
     LogMessage("    Directory traversals:                 %-10I64u\n", hi_stats.dir_trav);
     LogMessage("    Extra slashes (\"//\"):                 %-10I64u\n", hi_stats.slashes);
     LogMessage("    Self-referencing paths (\"./\"):        %-10I64u\n", hi_stats.self_ref);
-#ifdef ZLIB
     LogMessage("    HTTP Response Gzip packets extracted: %-10I64u\n", hi_stats.gzip_pkts);
     if (hi_stats.gzip_pkts == 0)
     {
@@ -291,7 +291,6 @@ static void HttpInspectDropStats(int exiting)
     LogMessage("    Gzip Compressed Data Processed:       %-10.2f\n", (double)hi_stats.compr_bytes_read);
     LogMessage("    Gzip Decompressed Data Processed:     %-10.2f\n", (double)hi_stats.decompr_bytes_read);
     }
-#endif
     LogMessage("    Total packets processed:              %-10I64u\n", hi_stats.total);
 #else
     LogMessage("    POST methods:                         "FMTu64("-10")"\n", hi_stats.post);
@@ -331,7 +330,6 @@ static void HttpInspectDropStats(int exiting)
     LogMessage("    Directory traversals:                 "FMTu64("-10")"\n", hi_stats.dir_trav);
     LogMessage("    Extra slashes (\"//\"):                 "FMTu64("-10")"\n", hi_stats.slashes);
     LogMessage("    Self-referencing paths (\"./\"):        "FMTu64("-10")"\n", hi_stats.self_ref);
-#ifdef ZLIB
     LogMessage("    HTTP Response Gzip packets extracted: "FMTu64("-10")"\n", hi_stats.gzip_pkts);
     if (hi_stats.gzip_pkts == 0)
     {
@@ -343,26 +341,25 @@ static void HttpInspectDropStats(int exiting)
     LogMessage("    Gzip Compressed Data Processed:       %-10.2f\n", (double)hi_stats.compr_bytes_read);
     LogMessage("    Gzip Decompressed Data Processed:     %-10.2f\n", (double)hi_stats.decompr_bytes_read);
     }
-#endif
     LogMessage("    Total packets processed:              "FMTu64("-10")"\n", hi_stats.total);
 #endif
 }
 
 static void HttpInspectCleanExit(int signal, void *data)
 {
+    (void)File_Decomp_CleanExit();
+
     hi_paf_term();
 
     HI_SearchFree();
 
     HttpInspectFreeConfigs(hi_config);
 
-#ifdef ZLIB
     if (mempool_destroy(hi_gzip_mempool) == 0)
     {
         free(hi_gzip_mempool);
         hi_gzip_mempool = NULL;
     }
-#endif
 
     if (mempool_destroy(http_mempool) == 0)
     {
@@ -379,7 +376,6 @@ static void HttpInspectCleanExit(int signal, void *data)
         free(mime_log_mempool);
         mime_log_mempool = NULL;
     }
-
 }
 
 static void HttpInspectReset(int signal, void *data)
@@ -390,13 +386,6 @@ static void HttpInspectReset(int signal, void *data)
 static void HttpInspectResetStats(int signal, void *data)
 {
     memset(&hi_stats, 0, sizeof(hi_stats));
-}
-
-#ifdef ZLIB
-static void SetMaxGzipSession(HTTPINSPECT_GLOBAL_CONF *pPolicyConfig)
-{
-    pPolicyConfig->max_gzip_sessions =
-        pPolicyConfig->max_gzip_mem / sizeof(DECOMPRESS_STATE);
 }
 
 static void CheckGzipConfig(HTTPINSPECT_GLOBAL_CONF *pPolicyConfig,
@@ -416,7 +405,10 @@ static void CheckGzipConfig(HTTPINSPECT_GLOBAL_CONF *pPolicyConfig,
         if (!pPolicyConfig->decompr_depth)
             pPolicyConfig->decompr_depth = DEFAULT_DECOMP_DEPTH;
 
-        SetMaxGzipSession(pPolicyConfig);
+        /* Until we determine exact usage of extract_gzip and file_decomp options
+           we will set the max_gzip_sessions to the minimal/conservative value. */
+        pPolicyConfig->max_gzip_sessions = pPolicyConfig->max_gzip_mem /
+                              (sizeof(DECOMPRESS_STATE) + sizeof(fd_session_t));
     }
     else if (defaultConfig == NULL)
     {
@@ -446,7 +438,6 @@ static void CheckGzipConfig(HTTPINSPECT_GLOBAL_CONF *pPolicyConfig,
         pPolicyConfig->max_gzip_sessions = defaultConfig->max_gzip_sessions;
     }
 }
-#endif
 
 
 static void CheckMemcap(HTTPINSPECT_GLOBAL_CONF *pPolicyConfig,
@@ -544,6 +535,10 @@ static void HttpInspectInit(struct _SnortConfig *sc, char *args)
 #ifdef TARGET_BASED
         /* Find and cache protocol ID for packet comparison */
         hi_app_protocol_id = AddProtocolReference("http");
+
+        // register with session to handle applications
+        session_api->register_service_handler( PP_HTTPINSPECT, hi_app_protocol_id );
+
 #endif
         hi_paf_init(0);  // FIXTHIS is cap needed?
         HI_SearchInit();
@@ -585,9 +580,7 @@ static void HttpInspectInit(struct _SnortConfig *sc, char *args)
 
             if (iRet == 0)
             {
-#ifdef ZLIB
                 CheckGzipConfig(pPolicyConfig, hi_config);
-#endif
                 CheckMemcap(pPolicyConfig, hi_config);
                 PrintGlobalConf(pPolicyConfig);
 
@@ -608,8 +601,7 @@ static void HttpInspectInit(struct _SnortConfig *sc, char *args)
                 ParseError("Invalid http inspect token: %s.", pcToken);
         }
 
-        iRet = ProcessUniqueServerConf(pPolicyConfig,
-                                       ErrorString, iErrStrLen);
+        iRet = ProcessUniqueServerConf(sc, pPolicyConfig, ErrorString, iErrStrLen);
     }
 
 
@@ -690,6 +682,7 @@ void SetupHttpInspect(void)
 #endif
     InitLookupTables();
     InitJSNormLookupTable();
+    (void)File_Decomp_OneTimeInit();
 
     DEBUG_WRAP(DebugMessage(DEBUG_HTTPINSPECT, "Preprocessor: HttpInspect is "
                 "setup . . .\n"););
@@ -710,9 +703,7 @@ static void HttpInspectRegisterXtraDataFuncs(HTTPINSPECT_GLOBAL_CONF *pPolicyCon
     pPolicyConfig->xtra_uri_id = stream_api->reg_xtra_data_cb(GetHttpUriData);
     pPolicyConfig->xtra_hname_id = stream_api->reg_xtra_data_cb(GetHttpHostnameData);
 #ifndef SOURCEFIRE
-#ifdef ZLIB
     pPolicyConfig->xtra_gzip_id = stream_api->reg_xtra_data_cb(GetHttpGzipData);
-#endif
     pPolicyConfig->xtra_jsnorm_id = stream_api->reg_xtra_data_cb(GetHttpJSNormData);
 #endif
 
@@ -780,6 +771,12 @@ static int HttpInspectVerifyPolicy(struct _SnortConfig *sc, tSfPolicyUserContext
 #endif
     updateConfigFromFileProcessing(pPolicyConfig);
     HttpInspectAddPortsOfInterest(sc, pPolicyConfig, policyId);
+#if defined(FEAT_OPEN_APPID)
+    if (IsPreprocEnabled(sc, PP_APP_ID))
+    {
+        pPolicyConfig->global_server->appid_enabled = 1;
+    }
+#endif /* defined(FEAT_OPEN_APPID) */
     return 0;
 }
 
@@ -797,14 +794,14 @@ static void HttpInspectAddPortsOfInterest(struct _SnortConfig *sc, HTTPINSPECT_G
 
     httpCurrentPolicy = policy_id;
 
-    addServerConfPortsToStream5(sc, (void *)config->global_server);
-    hi_ui_server_iterate(sc, config->server_lookup, addServerConfPortsToStream5);
+    addServerConfPortsToStream(sc, (void *)config->global_server);
+    hi_ui_server_iterate(sc, config->server_lookup, addServerConfPortsToStream);
 }
 
 /**Add server ports from http_inspect preprocessor from snort.comf file to pass through
  * port filtering.
  */
-static void addServerConfPortsToStream5(struct _SnortConfig *sc, void *pData)
+static void addServerConfPortsToStream(struct _SnortConfig *sc, void *pData)
 {
     unsigned int i;
 
@@ -813,15 +810,18 @@ static void addServerConfPortsToStream5(struct _SnortConfig *sc, void *pData)
     {
         for (i = 0; i < MAXPORTS; i++)
         {
-            if (pConf->ports[i/8] & (1 << (i % 8) ))
+            if( isPortEnabled( pConf->ports, i ) )
             {
                 bool client = (pConf->client_flow_depth > -1);
                 bool server = (pConf->server_extract_size > -1);
                 int64_t fileDepth = file_api->get_max_file_depth();
 
                 //Add port the port
-                stream_api->set_port_filter_status
-                    (sc, IPPROTO_TCP, (uint16_t)i, PORT_MONITOR_SESSION, httpCurrentPolicy, 1);
+                stream_api->set_port_filter_status(sc, IPPROTO_TCP,
+                                                   (uint16_t) i, 
+                                                   PORT_MONITOR_SESSION,
+                                                   httpCurrentPolicy, 
+                                                   1);
 
                 // there is a fundamental issue here in that both hi and s5
                 // can configure ports per ip independently of each other.
@@ -849,9 +849,9 @@ static void HttpInspectAddServicesOfInterest(struct _SnortConfig *sc, tSfPolicyI
         stream_api->set_service_filter_status(sc, hi_app_protocol_id, PORT_MONITOR_SESSION, policy_id, 1);
 
         if (file_api->get_max_file_depth() > 0)
-            hi_paf_register_service(sc, hi_app_protocol_id, true, true, httpCurrentPolicy, true);
+            hi_paf_register_service(sc, hi_app_protocol_id, true, true, policy_id, true);
         else
-            hi_paf_register_service(sc, hi_app_protocol_id, true, true, httpCurrentPolicy, false);
+            hi_paf_register_service(sc, hi_app_protocol_id, true, true, policy_id, false);
     }
 }
 #endif
@@ -1055,8 +1055,44 @@ static void HttpEncodeCleanup(void *dataPtr)
     }
 }
 
+static int HttpInspectFileDecompIterate(void *data)
+{
+    HTTPINSPECT_CONF *server = (HTTPINSPECT_CONF *)data;
 
-#ifdef ZLIB
+    if (server == NULL)
+        return 0;
+
+    if (server->file_decomp_modes != 0)
+        return 1;
+
+    return 0;
+}
+
+static int HttpInspectFileDecomp(struct _SnortConfig *sc,
+        tSfPolicyUserContextId config,
+        tSfPolicyId policyId, void *pData)
+{
+    HTTPINSPECT_GLOBAL_CONF *context = (HTTPINSPECT_GLOBAL_CONF *)pData;
+
+    if (pData == NULL)
+        return 0;
+
+    if(context->disabled)
+        return 0;
+
+    if ((context->global_server != NULL) && (context->global_server->file_decomp_modes != 0))
+        return 1;
+
+    if (context->server_lookup != NULL)
+    {
+        if (sfrt_iterate2(context->server_lookup, HttpInspectFileDecompIterate) != 0)
+            return 1;
+    }
+
+    return 0;
+}
+
+
 static int HttpInspectExtractGzipIterate(void *data)
 {
     HTTPINSPECT_CONF *server = (HTTPINSPECT_CONF *)data;
@@ -1093,7 +1129,6 @@ static int HttpInspectExtractGzip(struct _SnortConfig *sc,
 
     return 0;
 }
-#endif
 
 static int HttpInspectExtractUriHostIterate(void *data)
 {
@@ -1102,7 +1137,11 @@ static int HttpInspectExtractUriHostIterate(void *data)
     if (server == NULL)
         return 0;
 
+#if defined(FEAT_OPEN_APPID)
+    if (server->log_uri || server->log_hostname || server->appid_enabled)
+#else
     if (server->log_uri || server->log_hostname)
+#endif /* defined(FEAT_OPEN_APPID) */
         return 1;
 
     return 0;
@@ -1120,7 +1159,11 @@ static int HttpInspectExtractUriHost(struct _SnortConfig *sc,
     if(context->disabled)
         return 0;
 
+#if defined(FEAT_OPEN_APPID)
+    if ((context->global_server != NULL) && (context->global_server->log_uri || context->global_server->log_hostname || context->global_server->appid_enabled))
+#else
     if ((context->global_server != NULL) && (context->global_server->log_uri || context->global_server->log_hostname))
+#endif /* defined(FEAT_OPEN_APPID) */
         return 1;
 
     if (context->server_lookup != NULL)
@@ -1170,6 +1213,62 @@ static int HttpEnableMimeLog(struct _SnortConfig *sc,
     return 0;
 }
 
+static int ProcessGzipAndFDMemPools( struct _SnortConfig *sc,
+                                      tSfPolicyUserContextId my_hi_config,
+                                      HTTPINSPECT_GLOBAL_CONF *my_defaultConfig )
+{
+    bool have_gzip, have_fd;
+    uint32_t max_sessions = 0;
+    uint32_t block_size = 0;
+
+    have_fd = (sfPolicyUserDataIterate(sc, my_hi_config, HttpInspectFileDecomp) != 0);
+    have_gzip = (sfPolicyUserDataIterate(sc, my_hi_config, HttpInspectExtractGzip) != 0);
+
+    if( have_fd || have_gzip )
+    {
+        if (my_defaultConfig == NULL)
+        {
+            WarningMessage("http_inspect: Must configure a default global "
+                           "configuration if you want to enable gzip or file decomp in any "
+                           "server configuration.\n");
+            return( -1 );
+        }
+
+        if( have_fd )
+            block_size += sizeof( fd_session_t );
+        if( have_gzip )
+            block_size += sizeof( DECOMPRESS_STATE );
+
+        if( block_size > my_defaultConfig->max_gzip_mem )
+            FatalError("http_inspect: Error setting the \"max_gzip_mem\" \n");
+
+        max_sessions = my_defaultConfig->max_gzip_mem / block_size;
+        my_defaultConfig->max_gzip_sessions = max_sessions;
+
+        if( have_fd )
+        {
+            hi_fd_conf.Max_Memory = (max_sessions * sizeof( fd_session_t ));
+            if( File_Decomp_Config(&(hi_fd_conf)) != File_Decomp_OK )
+                FatalError("http_inspect: Could not allocate file decomp mempool.\n");
+        }
+        else
+            hi_fd_conf.fd_MemPool = NULL;
+
+        if( have_gzip )
+        {
+            hi_gzip_mempool = (MemPool *)SnortAlloc(sizeof(MemPool));
+
+            if( (hi_gzip_mempool == 0) ||
+                (mempool_init(hi_gzip_mempool, max_sessions,
+                              sizeof(DECOMPRESS_STATE)) != 0) )
+                FatalError("http_inspect: Could not allocate gzip mempool.\n");
+        }
+        else
+            hi_gzip_mempool = NULL;
+    }
+    return( 0 );
+ }
+
 /*
 **  NAME
 **    HttpInspectCheckConfig::
@@ -1191,32 +1290,9 @@ static int HttpInspectCheckConfig(struct _SnortConfig *sc)
 
     defaultConfig = (HTTPINSPECT_GLOBAL_CONF *)sfPolicyUserDataGetDefault(hi_config);
 
+    if( ProcessGzipAndFDMemPools( sc, hi_config, defaultConfig ) != 0 )
+        return( -1 );
 
-#ifdef ZLIB
-    {
-        if (sfPolicyUserDataIterate(sc, hi_config, HttpInspectExtractGzip) != 0)
-        {
-            if (defaultConfig == NULL)
-            {
-                WarningMessage("http_inspect:  Must configure a default global "
-                        "configuration if you want to enable gzip in any "
-                        "server configuration.\n");
-                return -1;
-            }
-
-            hi_gzip_mempool = (MemPool *)SnortAlloc(sizeof(MemPool));
-
-            if (mempool_init(hi_gzip_mempool, defaultConfig->max_gzip_sessions,
-                        sizeof(DECOMPRESS_STATE)) != 0)
-            {
-                if(defaultConfig->max_gzip_sessions)
-                    FatalError("http_inspect: Error setting the \"max_gzip_mem\" \n");
-                else
-                    FatalError("http_inspect:  Could not allocate gzip mempool.\n");
-            }
-        }
-    }
-#endif
     if (sfPolicyUserDataIterate(sc, hi_config, HttpInspectExtractUriHost) != 0)
     {
         uint32_t max_sessions_logged;
@@ -1366,9 +1442,7 @@ static void _HttpInspectReload(struct _SnortConfig *sc, tSfPolicyUserContextId h
 
             if (iRet == 0)
             {
-#ifdef ZLIB
                 CheckGzipConfig(pPolicyConfig, hi_swap_config);
-#endif
                 CheckMemcap(pPolicyConfig, hi_swap_config);
                 PrintGlobalConf(pPolicyConfig);
 
@@ -1390,8 +1464,7 @@ static void _HttpInspectReload(struct _SnortConfig *sc, tSfPolicyUserContextId h
                 ParseError("Invalid http inspect token: %s.", pcToken);
         }
 
-        iRet = ProcessUniqueServerConf(pPolicyConfig,
-                                       ErrorString, iErrStrLen);
+        iRet = ProcessUniqueServerConf(sc, pPolicyConfig, ErrorString, iErrStrLen);
     }
 
     if (iRet)
@@ -1462,6 +1535,7 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
     tSfPolicyUserContextId hi_swap_config = (tSfPolicyUserContextId)swap_config;
     HTTPINSPECT_GLOBAL_CONF *defaultConfig;
     HTTPINSPECT_GLOBAL_CONF *defaultSwapConfig;
+    bool swap_gzip, swap_fd, curr_gzip, curr_fd;
 
     if (hi_swap_config == NULL)
         return 0;
@@ -1475,65 +1549,58 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
     if (!defaultConfig)
         return 0;
 
-#ifdef ZLIB
+    curr_gzip = (hi_gzip_mempool != NULL);
+    curr_fd = (hi_fd_conf.fd_MemPool != NULL);
+
+    if( curr_gzip || curr_fd )
     {
-        if (hi_gzip_mempool != NULL)
+        if (defaultSwapConfig == NULL)
         {
-            if (defaultSwapConfig == NULL)
-            {
-                WarningMessage("http_inspect:  Changing gzip parameters requires "
-                        "a restart.\n");
-                return -1;
-            }
-
-            if (defaultSwapConfig->max_gzip_mem != defaultConfig->max_gzip_mem)
-            {
-                WarningMessage("http_inspect:  Changing max_gzip_mem requires "
-                        "a restart.\n");
-                return -1;
-            }
-
-            if (defaultSwapConfig->compr_depth != defaultConfig->compr_depth)
-            {
-                WarningMessage("http_inspect:  Changing compress_depth requires "
-                        "a restart.\n");
-                return -1;
-            }
-
-            if (defaultSwapConfig->decompr_depth != defaultConfig->decompr_depth)
-            {
-                WarningMessage("http_inspect:  Changing decompress_depth requires "
-                        "a restart.\n");
-                return -1;
-            }
-
+            WarningMessage("http_inspect:  Changing gzip parameters requires "
+                    "a restart.\n");
+            return -1;
         }
-        else if (defaultSwapConfig != NULL)
+
+        if (defaultSwapConfig->max_gzip_mem != defaultConfig->max_gzip_mem)
         {
-            if (sfPolicyUserDataIterate(sc, hi_swap_config, HttpInspectExtractGzip) != 0)
-            {
-                if (defaultSwapConfig == NULL)
-                {
-                    ErrorMessage("http_inspect:  Must configure a default global "
-                            "configuration if you want to enable gzip in any "
-                            "server configuration.\n");
-                    return -1;
-                }
+            WarningMessage("http_inspect:  Changing max_gzip_mem requires "
+                    "a restart.\n");
+            return -1;
+        }
 
-                hi_gzip_mempool = (MemPool *)SnortAlloc(sizeof(MemPool));
+        if (defaultSwapConfig->compr_depth != defaultConfig->compr_depth)
+        {
+            WarningMessage("http_inspect:  Changing compress_depth requires "
+                    "a restart.\n");
+            return -1;
+        }
 
-                if (mempool_init(hi_gzip_mempool, defaultSwapConfig->max_gzip_sessions,
-                            sizeof(DECOMPRESS_STATE)) != 0)
-                {
-                    if (defaultSwapConfig->max_gzip_sessions)
-                        FatalError("http_inspect: Error setting the \"max_gzip_mem\" \n");
-                    else
-                        FatalError("http_inspect:  Could not allocate gzip mempool.\n");
-                }
-            }
+        if (defaultSwapConfig->decompr_depth != defaultConfig->decompr_depth)
+        {
+            WarningMessage("http_inspect:  Changing decompress_depth requires "
+                    "a restart.\n");
+            return -1;
+        }
+
+        /* Look for the case where the current and swap configs have differing gzip & fd options. */
+        swap_fd = (sfPolicyUserDataIterate(sc, hi_swap_config, HttpInspectFileDecomp) != 0);
+        swap_gzip = (sfPolicyUserDataIterate(sc, hi_swap_config, HttpInspectExtractGzip) != 0);
+
+        if( (curr_gzip && !curr_fd && swap_fd) ||
+            (curr_fd && !curr_gzip && swap_gzip) ||
+            (curr_gzip && curr_fd && (swap_fd != swap_gzip)) )
+        {
+            WarningMessage("http_inspect:  Changing decompression options requires "
+                    "a restart.\n");
+            return -1;
         }
     }
-#endif
+    else if (defaultSwapConfig != NULL)
+    {
+        if( ProcessGzipAndFDMemPools( sc, hi_swap_config, defaultSwapConfig ) != 0 )
+            return( -1 );
+    }
+
     if (http_mempool != NULL)
     {
         if (defaultSwapConfig == NULL)

@@ -29,7 +29,9 @@
 #include "file_lib.h"
 #include "file_identifier.h"
 
-#define FILE_ID_MAX          1024
+#define FILE_ID_MAX 1024
+
+#define IS_RULE_TYPE_IDENT(c) (isalnum(c) || (c) == '.' || (c) == '_')
 
 typedef struct _IdentifierMemoryBlock
 {
@@ -57,18 +59,15 @@ typedef struct _fileConfig
     int64_t file_depth;
 } FileConfig;
 
-
-#if defined(FEAT_FILE_INSPECT)
 /* Return all rule id's that match a a given "type" string.  */
-bool get_ids_from_type( const void * conf, const char * type, uint32_t ** ids, int * count );
+bool get_ids_from_type( const void * conf, const char * type, uint32_t ** ids, uint32_t * count );
 
 /* Return all rule id's that match a a given "type" and "version" strings.  */
 bool get_ids_from_type_version( const void * conf, const char * type, const char * version,
-        uint32_t ** ids, int * count );
+        uint32_t ** ids, uint32_t * count );
 
 /* Return all rule id's in a given file rule group. */
-bool get_ids_from_group( const void * conf, const char * group, uint32_t ** ids, int * count );
-#endif /* FEAT_FILE_INSPECT */
+bool get_ids_from_group( const void * conf, const char * group, uint32_t ** ids, uint32_t * count );
 
 /*
  * Parse file magic rule

@@ -38,6 +38,7 @@
 
 #include "sf_types.h"
 
+
 #ifndef MODULUS_HASH
 # include "snort.h"
 #endif
@@ -65,11 +66,13 @@ SFHASHFCN * sfhashfcn_new( int m )
         return 0;
 
 #ifndef MODULUS_HASH
+#ifndef DYNAMIC_PREPROC_CONTEXT
     if (ScStaticHash())
     {
         sfhashfcn_static(p);
     }
     else
+#endif
 #endif
     {
         p->seed     = sf_nearest_prime( (rand()%m)+3191 );

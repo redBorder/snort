@@ -90,8 +90,9 @@ int FTPTelnetCheckFTPServerConfigs(struct _SnortConfig *, FTPTELNET_GLOBAL_CONF 
 
 int ProcessFTPGlobalConf(FTPTELNET_GLOBAL_CONF *, char *, int);
 int ProcessTelnetConf(FTPTELNET_GLOBAL_CONF *, char *, int);
-int ProcessFTPClientConf(FTPTELNET_GLOBAL_CONF *, char *, int);
-int ProcessFTPServerConf(FTPTELNET_GLOBAL_CONF *, char *, int);
+int ProcessFTPClientConf(struct _SnortConfig *sc, FTPTELNET_GLOBAL_CONF *, char *, int);
+int ProcessFTPServerConf(struct _SnortConfig *sc, FTPTELNET_GLOBAL_CONF *, char *, int);
 int PrintFTPGlobalConf(FTPTELNET_GLOBAL_CONF *);
 int FTPTelnetCheckConfigs(struct _SnortConfig *, void* , tSfPolicyId );
+void enableFtpTelnetPortStreamServices( struct _SnortConfig *sc, PROTO_CONF *pc, char *network, int direction );
 #endif

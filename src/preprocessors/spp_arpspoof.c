@@ -101,7 +101,7 @@
 #include "snort.h"
 #include "profiler.h"
 #include "sfPolicy.h"
-
+#include "session_api.h"
 
 /*  D E F I N E S  **************************************************/
 #define MODNAME "spp_arpspoof"
@@ -235,6 +235,7 @@ static void ARPspoofInit(struct _SnortConfig *sc, char *args)
     sfPolicyUserDataSetCurrent(arp_spoof_config, pCurrentPolicyConfig);
     /* Add arpspoof to the preprocessor function list */
     AddFuncToPreprocList(sc, DetectARPattacks, PRIORITY_NETWORK, PP_ARPSPOOF, PROTO_BIT__ARP);
+    session_api->enable_preproc_all_ports( sc, PP_ARPSPOOF, PROTO_BIT__ARP );
 
     //policy independent configuration. First policy defines actual values.
     if (policy_id != 0)
@@ -376,7 +377,7 @@ static void DetectARPattacks(Packet *p, void *context)
     IPMacEntry *ipme;
     ArpSpoofConfig *aconfig = NULL;
     PROFILE_VARS;
-    sfPolicyUserPolicySet (arp_spoof_config, getRuntimePolicy());
+    sfPolicyUserPolicySet (arp_spoof_config, getNapRuntimePolicy());
     aconfig = (ArpSpoofConfig *)sfPolicyUserDataGetCurrent(arp_spoof_config);
 
     /* is the packet valid? */

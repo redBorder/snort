@@ -46,6 +46,9 @@
 #include "snort_debug.h"
 
 #include "preprocids.h"
+#ifdef FEAT_OPEN_APPID
+#include "appId.h"
+#endif
 #include "spp_ssh.h"
 #include "sf_preproc_info.h"
 
@@ -98,9 +101,9 @@ static unsigned int ProcessSSHProtocolVersionExchange( SSHData*, SFSnortPacket*,
         uint8_t, uint8_t );
 static unsigned int ProcessSSHKeyExchange( SSHData*, SFSnortPacket*, uint8_t, unsigned int );
 static unsigned int ProcessSSHKeyInitExchange( SSHData*, SFSnortPacket*, uint8_t, unsigned int);
-static void _addPortsToStream5Filter(struct _SnortConfig *, SSHConfig *, tSfPolicyId);
+static void enablePortStreamServices(struct _SnortConfig *, SSHConfig *, tSfPolicyId);
 #ifdef TARGET_BASED
-static void _addServicesToStream5Filter(struct _SnortConfig *, tSfPolicyId);
+static void _addServicesToStreamFilter(struct _SnortConfig *, tSfPolicyId);
 #endif
 static void SSHFreeConfig(tSfPolicyUserContextId config);
 static int SSHCheckConfig(struct _SnortConfig *);
@@ -190,6 +193,9 @@ static void SSHInit(struct _SnortConfig *sc, char *argp)
         if (ssh_app_id == SFTARGET_UNKNOWN_PROTOCOL)
             ssh_app_id = _dpd.addProtocolReference("ssh");
 
+        // register with session to handle applications
+        _dpd.sessionAPI->register_service_handler( PP_SSH, ssh_app_id );
+
 #endif
     }
 
@@ -214,10 +220,10 @@ static void SSHInit(struct _SnortConfig *sc, char *argp)
 
     _dpd.addPreproc( sc, ProcessSSH, PRIORITY_APPLICATION, PP_SSH, PROTO_BIT__TCP );
 
-    _addPortsToStream5Filter(sc, pPolicyConfig, policy_id);
+    enablePortStreamServices(sc, pPolicyConfig, policy_id);
 
 #ifdef TARGET_BASED
-    _addServicesToStream5Filter(sc, policy_id);
+    _addServicesToStreamFilter(sc, policy_id);
 #endif
 }
 
@@ -556,7 +562,7 @@ ProcessSSH( void* ipacketp, void* contextp )
 #endif
     uint32_t search_dir_ver, search_dir_keyinit;
     char flags = STREAM_FLPOLICY_SET_ABSOLUTE;
-    tSfPolicyId policy_id = _dpd.getRuntimePolicy();
+    tSfPolicyId policy_id = _dpd.getNapRuntimePolicy();
     PROFILE_VARS;
 
     packetp = (SFSnortPacket*) ipacketp;
@@ -571,8 +577,7 @@ ProcessSSH( void* ipacketp, void* contextp )
     ssh_eval_config = sfPolicyUserDataGetCurrent(ssh_config);
 
     /* Attempt to get a previously allocated SSH block. */
-    sessp = _dpd.streamAPI->get_application_data(packetp->stream_session_ptr, PP_SSH);
-
+	sessp = _dpd.sessionAPI->get_application_data(packetp->stream_session, PP_SSH);
     if (sessp != NULL)
     {
         ssh_eval_config = sfPolicyUserDataGet(sessp->config, sessp->policy_id);
@@ -584,7 +589,7 @@ ProcessSSH( void* ipacketp, void* contextp )
          * running on an SSH port, otherwise no need to examine the traffic.
          */
 #ifdef TARGET_BASED
-        app_id = _dpd.streamAPI->get_application_protocol_id(packetp->stream_session_ptr);
+        app_id = _dpd.sessionAPI->get_application_protocol_id(packetp->stream_session);
         if (app_id == SFTARGET_UNKNOWN_PROTOCOL)
         {
             PREPROC_PROFILE_END(sshPerfStats);
@@ -653,7 +658,7 @@ ProcessSSH( void* ipacketp, void* contextp )
     /* We're interested in this session. Turn on stream reassembly. */
     if ( !(sessp->state_flags & SSH_FLG_REASSEMBLY_SET ))
     {
-        _dpd.streamAPI->set_reassembly(packetp->stream_session_ptr,
+        _dpd.streamAPI->set_reassembly(packetp->stream_session,
                         STREAM_FLPOLICY_FOOTPRINT, SSN_DIR_BOTH, flags);
         sessp->state_flags |= SSH_FLG_REASSEMBLY_SET;
     }
@@ -669,8 +674,8 @@ ProcessSSH( void* ipacketp, void* contextp )
     /* If we picked up mid-stream or missed any packets (midstream pick up
      * means we've already missed packets) set missed packets flag and make
      * sure we don't do any more reassembly on this session */
-    if ((_dpd.streamAPI->get_session_flags(packetp->stream_session_ptr) & SSNFLAG_MIDSTREAM)
-            || _dpd.streamAPI->missed_packets(packetp->stream_session_ptr, SSN_DIR_BOTH))
+    if ((_dpd.sessionAPI->get_session_flags(packetp->stream_session) & SSNFLAG_MIDSTREAM)
+            || _dpd.streamAPI->missed_packets(packetp->stream_session, SSN_DIR_BOTH))
     {
         /* Order only matters if the packets are not encrypted */
         if ( !(sessp->state_flags & SSH_FLG_SESS_ENCRYPTED ))
@@ -680,7 +685,7 @@ ProcessSSH( void* ipacketp, void* contextp )
              * autodetect of this session may be wrong. */
             if (!(sessp->state_flags & SSH_FLG_AUTODETECTED))
             {
-                _dpd.streamAPI->set_reassembly(packetp->stream_session_ptr,
+                _dpd.streamAPI->set_reassembly(packetp->stream_session,
                         STREAM_FLPOLICY_IGNORE, SSN_DIR_BOTH,
                         STREAM_FLPOLICY_SET_APPEND);
             }
@@ -754,6 +759,7 @@ ProcessSSH( void* ipacketp, void* contextp )
             return;
         }
     }
+    if ( (sessp->state_flags & SSH_FLG_SESS_ENCRYPTED ))
     {
         /* Traffic on this session is currently encrypted.
          * Two of the major SSH exploits, SSH1 CRC-32 and
@@ -777,8 +783,10 @@ ProcessSSH( void* ipacketp, void* contextp )
                     sessp->num_client_bytes += (packetp->payload_size - offset);
                 }
 
-                if ( sessp->num_client_bytes >=
-                     ssh_eval_config->MaxClientBytes )
+                if ( sessp->num_client_bytes >= ssh_eval_config->MaxClientBytes )
+#ifdef FEAT_OPEN_APPID
+                if ((_dpd.getAppId(packetp->stream_session) != APP_ID_SFTP))
+#endif
                 {
                     /* Probable exploit in progress.*/
                     if (sessp->version == SSH_VERSION_1)
@@ -787,8 +795,8 @@ ProcessSSH( void* ipacketp, void* contextp )
                         {
                             ALERT(SSH_EVENT_CRC32, SSH_EVENT_CRC32_STR);
 
-                            _dpd.streamAPI->stop_inspection(
-                                                            packetp->stream_session_ptr,
+                            _dpd.sessionAPI->stop_inspection(
+                                                            packetp->stream_session,
                                                             packetp,
                                                             SSN_DIR_BOTH, -1, 0 );
                         }
@@ -799,8 +807,8 @@ ProcessSSH( void* ipacketp, void* contextp )
                         {
                             ALERT(SSH_EVENT_RESPOVERFLOW, SSH_EVENT_RESPOVERFLOW_STR);
 
-                            _dpd.streamAPI->stop_inspection(
-                                                            packetp->stream_session_ptr,
+                            _dpd.sessionAPI->stop_inspection(
+                                                            packetp->stream_session,
                                                             packetp,
                                                             SSN_DIR_BOTH, -1, 0 );
                         }
@@ -826,8 +834,8 @@ ProcessSSH( void* ipacketp, void* contextp )
              * encrypted session. For performance purposes,
              * stop examining this session.
              */
-            _dpd.streamAPI->stop_inspection(
-                packetp->stream_session_ptr,
+			_dpd.sessionAPI->stop_inspection(
+				packetp->stream_session,
                 packetp,
                 SSN_DIR_BOTH, -1, 0 );
 
@@ -854,7 +862,7 @@ SSHData * SSHGetNewSession(SFSnortPacket *packetp, tSfPolicyId policy_id)
     SSHData* datap = NULL;
 
     /* Sanity check(s) */
-    if (( !packetp ) || ( !packetp->stream_session_ptr ))
+	if (( !packetp ) || ( !packetp->stream_session ))
     {
         return NULL;
     }
@@ -865,9 +873,7 @@ SSHData * SSHGetNewSession(SFSnortPacket *packetp, tSfPolicyId policy_id)
         return NULL;
 
     /*Register the new SSH data block in the stream session. */
-    _dpd.streamAPI->set_application_data(
-            packetp->stream_session_ptr,
-            PP_SSH, datap, FreeSSHData );
+    _dpd.sessionAPI->set_application_data( packetp->stream_session, PP_SSH, datap, FreeSSHData );
 
     datap->policy_id = policy_id;
     datap->config = ssh_config;
@@ -1091,8 +1097,8 @@ ProcessSSHKeyInitExchange( SSHData* sessionp, SFSnortPacket* packetp,
     uint8_t direction, unsigned int offset )
 {
     SSH2Packet* ssh2packetp = NULL;
-    unsigned int payload_size = packetp->payload_size;
-    const char *payload = packetp->payload;
+    uint16_t payload_size = packetp->payload_size;
+    const unsigned char *payload = packetp->payload;
     unsigned int ssh_length = 0;
 
     if (payload_size < sizeof(SSH2Packet) || (payload_size < (offset + sizeof(SSH2Packet)))
@@ -1275,8 +1281,8 @@ ProcessSSHKeyExchange( SSHData* sessionp, SFSnortPacket* packetp,
     uint8_t direction, unsigned int offset)
 {
     SSH2Packet* ssh2packetp = NULL;
-    unsigned int payload_size = packetp->payload_size;
-    const char *payload = packetp->payload;
+    uint16_t payload_size = packetp->payload_size;
+    const unsigned char *payload = packetp->payload;
     unsigned int ssh_length;
     bool next_packet = true;
     unsigned int npacket_offset = 0;
@@ -1297,6 +1303,10 @@ ProcessSSHKeyExchange( SSHData* sessionp, SFSnortPacket* packetp,
 
         if (ssh_length == 0)
         {
+            if( sessionp->state_flags & SSH_FLG_SESS_ENCRYPTED )
+            {
+                return ( npacket_offset + offset );
+            }
             if(ssh_eval_config->EnabledAlerts & SSH_ALERT_PAYSIZE)
             {
                 /* Invalid packet length. */
@@ -1394,7 +1404,7 @@ ProcessSSHKeyExchange( SSHData* sessionp, SFSnortPacket* packetp,
             default:
                 /* Unrecognized message type. Possibly encrypted */
                 sessionp->state_flags |= SSH_FLG_SESS_ENCRYPTED;
-                return offset;
+                return ( npacket_offset + offset);
         }
 
         /* If either an old-style or new-style Diffie Helman exchange
@@ -1405,10 +1415,17 @@ ProcessSSHKeyExchange( SSHData* sessionp, SFSnortPacket* packetp,
             || ( (sessionp->state_flags &
                 SSH_FLG_V2_DHNEW_DONE) == SSH_FLG_V2_DHNEW_DONE ))
         {
-            sessionp->state_flags |=
-                SSH_FLG_SESS_ENCRYPTED;
+            sessionp->state_flags |= SSH_FLG_SESS_ENCRYPTED;
             if(ssh_length < payload_size)
-                return (npacket_offset+ ssh_length);
+            {
+                if( ssh_length >= 4 )
+                {
+                    npacket_offset += ssh_length;
+                    payload_size -= ssh_length;
+                    continue;
+                }
+                return ( npacket_offset + offset );
+            }
             else
                 return 0;
         }
@@ -1430,31 +1447,35 @@ ProcessSSHKeyExchange( SSHData* sessionp, SFSnortPacket* packetp,
         }
     }
 
-    return npacket_offset;
+    return (npacket_offset + offset);
 }
 
-static void _addPortsToStream5Filter(struct _SnortConfig *sc, SSHConfig *config, tSfPolicyId policy_id)
+static void enablePortStreamServices(struct _SnortConfig *sc, SSHConfig *config, tSfPolicyId policy_id)
 {
     if (config == NULL)
         return;
 
     if (_dpd.streamAPI)
     {
-        int portNum;
+        uint32_t portNum;
 
         for (portNum = 0; portNum < MAXPORTS; portNum++)
         {
             if(config->ports[(portNum/8)] & (1<<(portNum%8)))
             {
                 //Add port the port
-                _dpd.streamAPI->set_port_filter_status(
-                    sc, IPPROTO_TCP, (uint16_t)portNum, PORT_MONITOR_SESSION, policy_id, 1);
+                _dpd.streamAPI->set_port_filter_status( sc, IPPROTO_TCP, (uint16_t)portNum,
+                                                        PORT_MONITOR_SESSION, policy_id, 1 );
+                _dpd.streamAPI->register_reassembly_port( NULL, 
+                                                          (uint16_t) portNum, 
+                                                          SSN_DIR_FROM_SERVER | SSN_DIR_FROM_CLIENT );
+                _dpd.sessionAPI->enable_preproc_for_port( sc, PP_SSH, PROTO_BIT__TCP, (uint16_t) portNum ); 
             }
         }
     }
 }
 #ifdef TARGET_BASED
-static void _addServicesToStream5Filter(struct _SnortConfig *sc, tSfPolicyId policy_id)
+static void _addServicesToStreamFilter(struct _SnortConfig *sc, tSfPolicyId policy_id)
 {
     _dpd.streamAPI->set_service_filter_status(sc, ssh_app_id, PORT_MONITOR_SESSION, policy_id, 1);
 }
@@ -1469,7 +1490,7 @@ static int SSHCheckPolicyConfig(
 {
     _dpd.setParserPolicy(sc, policyId);
 
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
+    if (_dpd.streamAPI == NULL)
     {
         _dpd.errMsg("SSHCheckPolicyConfig(): The Stream preprocessor must be enabled.\n");
         return -1;
@@ -1539,16 +1560,16 @@ static void SSHReload(struct _SnortConfig *sc, char *args, void **new_config)
 
     _dpd.addPreproc( sc, ProcessSSH, PRIORITY_APPLICATION, PP_SSH, PROTO_BIT__TCP );
 
-    _addPortsToStream5Filter(sc, pPolicyConfig, policy_id);
+    enablePortStreamServices(sc, pPolicyConfig, policy_id);
 
 #ifdef TARGET_BASED
-    _addServicesToStream5Filter(sc, policy_id);
+    _addServicesToStreamFilter(sc, policy_id);
 #endif
 }
 
 static int SSHReloadVerify(struct _SnortConfig *sc, void *swap_config)
 {
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
+    if (_dpd.streamAPI == NULL)
     {
         _dpd.errMsg("SetupSSH(): The Stream preprocessor must be enabled.\n");
         return -1;

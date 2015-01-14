@@ -1,11 +1,11 @@
 ## $Id
 AUTOMAKE_OPTIONS=foreign no-dependencies
 
-INCLUDES = -I../include -I${srcdir}/../libs
+INCLUDES = -I../include -I${srcdir}/../ssl_common -I${srcdir}/../libs
 
-libdir = ${exec_prefix}/lib/snort_dynamicpreprocessor
+dynamicpreprocessordir = ${libdir}/snort_dynamicpreprocessor
 
-lib_LTLIBRARIES = libsf_pop_preproc.la
+dynamicpreprocessor_LTLIBRARIES = libsf_pop_preproc.la
 
 libsf_pop_preproc_la_LDFLAGS = -export-dynamic -module @XCCFLAGS@
 if SO_WITH_STATIC_LIB
@@ -18,7 +18,11 @@ nodist_libsf_pop_preproc_la_SOURCES = \
 ../include/util_unfold.c \
 ../include/sf_base64decode.c \
 ../include/sf_email_attach_decode.c \
-../include/sfPolicyUserData.c
+../include/sfPolicyUserData.c \
+../ssl_common/ssl.c \
+../ssl_common/ssl_config.c \
+../ssl_common/ssl_inspect.c \
+../libs/sfparser.c
 endif
 
 libsf_pop_preproc_la_SOURCES = \
@@ -26,6 +30,8 @@ pop_config.c \
 pop_config.h \
 pop_log.c \
 pop_log.h \
+pop_paf.c \
+pop_paf.h \
 pop_util.c \
 pop_util.h \
 snort_pop.c \
@@ -37,5 +43,5 @@ EXTRA_DIST = \
 sf_pop.dsp
 
 all-local: $(LTLIBRARIES)
-	$(MAKE) DESTDIR=`pwd`/../build install-libLTLIBRARIES
+	$(MAKE) DESTDIR=`pwd`/../build install-dynamicpreprocessorLTLIBRARIES
 

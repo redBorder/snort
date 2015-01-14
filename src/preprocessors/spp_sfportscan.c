@@ -68,6 +68,7 @@
 #include "sfthreshold.h"
 #include "sfsnprintfappend.h"
 #include "sf_iph.h"
+#include "session_api.h"
 
 #include "portscan.h"
 
@@ -333,7 +334,11 @@ static int GenerateOpenPortEvent(Packet *p, uint32_t gen_id, uint32_t sig_id,
     /* reset the thresholding subsystem checks for this packet */
     sfthreshold_reset();
 
+#if !defined(FEAT_OPEN_APPID)
     SetEvent(&event, gen_id, sig_id, sig_rev, class, pri, event_ref);
+#else /* defined(FEAT_OPEN_APPID) */
+    SetEvent(&event, gen_id, sig_id, sig_rev, class, pri, event_ref, NULL);
+#endif /* defined(FEAT_OPEN_APPID) */
     //CallAlertFuncs(p,msg,NULL,&event);
 
     event.ref_time.tv_sec  = event_time->tv_sec;
@@ -786,7 +791,7 @@ static int PortscanAlert(PS_PKT *ps_pkt, PS_PROTO *proto, int proto_type)
 static void PortscanDetect(Packet *p, void *context)
 {
     PS_PKT ps_pkt;
-    tSfPolicyId policy_id = getRuntimePolicy();
+    tSfPolicyId policy_id = getNapRuntimePolicy();
     PortscanConfig *pPolicyConfig = NULL;
     PROFILE_VARS;
 
@@ -1224,8 +1229,13 @@ static void PortscanInit(struct _SnortConfig *sc, char *args)
     }
 
     if ( !pPolicyConfig->disabled )
+    {
         AddFuncToPreprocList(sc, PortscanDetect, PRIORITY_SCANNER, PP_SFPORTSCAN,
-            PortscanGetProtoBits(pPolicyConfig->detect_scans));
+                             PortscanGetProtoBits(pPolicyConfig->detect_scans));
+        session_api->enable_preproc_all_ports( sc,
+                                               PP_SFPORTSCAN, 
+                                               PortscanGetProtoBits(pPolicyConfig->detect_scans) );
+    }
 }
 
 void SetupSfPortscan(void)
@@ -1505,8 +1515,13 @@ static void PortscanReload(struct _SnortConfig *sc, char *args, void **new_confi
     }
 
     if ( !pPolicyConfig->disabled )
+    {
         AddFuncToPreprocList(sc, PortscanDetect, PRIORITY_SCANNER, PP_SFPORTSCAN,
-            PortscanGetProtoBits(pPolicyConfig->detect_scans));
+                             PortscanGetProtoBits(pPolicyConfig->detect_scans));
+        session_api->enable_preproc_all_ports( sc,
+                                              PP_SFPORTSCAN, 
+                                              PortscanGetProtoBits(pPolicyConfig->detect_scans) );
+    }
 }
 
 static int PortscanReloadVerify(struct _SnortConfig *sc, void *swap_config)

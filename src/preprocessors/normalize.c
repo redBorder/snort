@@ -50,14 +50,16 @@ typedef enum {
     PC_IP6_OPTS,
     PC_ICMP6_ECHO,
     PC_TCP_SYN_OPT,
-    PC_TCP_TS_ECR,
     PC_TCP_OPT,
     PC_TCP_PAD,
     PC_TCP_RSV,
-    PC_TCP_ECN_PKT,
     PC_TCP_NS,
-    PC_TCP_URG,
     PC_TCP_URP,
+    PC_TCP_ECN_PKT,
+    PC_TCP_TS_ECR,
+    PC_TCP_REQ_URG,
+    PC_TCP_REQ_PAY,
+    PC_TCP_REQ_URP,
     PC_MAX
 } PegCounts;
 
@@ -73,17 +75,19 @@ static const char* pegName[PC_MAX] = {
     "ip6::opts",
     "icmp6::echo",
     "tcp::syn_opt",
-    "tcp::ts_ecr",
     "tcp::opt",
     "tcp::pad",
     "tcp::rsv",
-    "tcp::ecn_pkt",
     "tcp::ns",
-    "tcp::urg",
-    "tcp::urp"
+    "tcp::urp",
+    "tcp::ecn_pkt",
+    "tcp::ts_ecr",
+    "tcp::req_urg",
+    "tcp::req_pay",
+    "tcp::req_urp",
 };
 
-static PegCount normStats[PC_MAX];
+static PegCount normStats[PC_MAX][NORM_MODE_MAX];
 
 //static int Norm_Eth(Packet*, uint8_t layer, int changes);
 static int Norm_IP4(NormalizerContext*, Packet*, uint8_t layer, int changes);
@@ -152,12 +156,17 @@ static int Norm_Eth (Packet * p, uint8_t layer, int changes)
 // ether header + min payload (excludes FCS, which makes it 64 total)
 #define ETH_MIN_LEN 60
 
-static int Norm_IP4 (
-    NormalizerContext* c, Packet * p, uint8_t layer, int changes)
+static inline int getNormMode (NormalizerContext* c)
+{
+    return c->normMode;
+}
+
+static int Norm_IP4 (NormalizerContext* c, Packet * p, uint8_t layer, int changes)
 {
     IPHdr* h = (IPHdr*)(p->layers[layer].start);
     uint16_t fragbits = ntohs(h->ip_off);
     uint16_t origbits = fragbits;
+    NormMode mode = getNormMode(c);
 
     if ( Norm_IsEnabled(c, NORM_IP4_TRIM) && (layer == 1) )
     {
@@ -166,20 +175,27 @@ static int Norm_IP4 (
         if ( (len < p->pkth->pktlen) && 
            ( (len >= ETH_MIN_LEN) || (p->pkth->pktlen > ETH_MIN_LEN) )
         ) {
-            ((DAQ_PktHdr_t*)p->pkth)->pktlen = (len < ETH_MIN_LEN) ? ETH_MIN_LEN : len;
-            p->packet_flags |= PKT_RESIZED;
-            normStats[PC_IP4_TRIM]++;
-            sfBase.iPegs[PERF_COUNT_IP4_TRIM]++;
+            if ( mode == NORM_MODE_ON )
+            {
+                ((DAQ_PktHdr_t*)p->pkth)->pktlen = (len < ETH_MIN_LEN) ? ETH_MIN_LEN : len;
+                p->packet_flags |= PKT_RESIZED;
+                changes++;
+            }
+            normStats[PC_IP4_TRIM][mode]++;
+            sfBase.iPegs[PERF_COUNT_IP4_TRIM][mode]++;
         }
     }
     if ( Norm_IsEnabled(c, NORM_IP4_TOS) )
     {
         if ( h->ip_tos )
         {
-            h->ip_tos = 0;
-            normStats[PC_IP4_TOS]++;
-            sfBase.iPegs[PERF_COUNT_IP4_TOS]++;
-            changes++;
+            if ( mode == NORM_MODE_ON )
+            {
+                h->ip_tos = 0;
+                changes++;
+            }
+            normStats[PC_IP4_TOS][mode]++;
+            sfBase.iPegs[PERF_COUNT_IP4_TOS][mode]++;
         }
     }
 #if 0
@@ -192,20 +208,26 @@ static int Norm_IP4 (
     {
         if ( fragbits & IP4_FLAG_DF )
         {
-            fragbits &= ~IP4_FLAG_DF;
-            normStats[PC_IP4_DF]++;
-            sfBase.iPegs[PERF_COUNT_IP4_DF]++;
-            changes++;
+            if ( mode == NORM_MODE_ON )
+            {
+                fragbits &= ~IP4_FLAG_DF;
+                changes++;
+            }
+            normStats[PC_IP4_DF][mode]++;
+            sfBase.iPegs[PERF_COUNT_IP4_DF][mode]++;
         }
     }
     if ( Norm_IsEnabled(c, NORM_IP4_RF) )
     {
         if ( fragbits & IP4_FLAG_RF )
         {
-            fragbits &= ~IP4_FLAG_RF;
-            normStats[PC_IP4_RF]++;
-            sfBase.iPegs[PERF_COUNT_IP4_RF]++;
-            changes++;
+            if ( mode == NORM_MODE_ON )
+            {
+                fragbits &= ~IP4_FLAG_RF;
+                changes++;
+            }
+            normStats[PC_IP4_RF][mode]++;
+            sfBase.iPegs[PERF_COUNT_IP4_RF][mode]++;
         }
     }
     if ( fragbits != origbits )
@@ -216,60 +238,72 @@ static int Norm_IP4 (
     {
         if ( h->ip_ttl < ScMinTTL() )
         {
-            h->ip_ttl = ScNewTTL();
-            p->error_flags &= ~PKT_ERR_BAD_TTL;
-            normStats[PC_IP4_TTL]++;
-            sfBase.iPegs[PERF_COUNT_IP4_TTL]++;
-            changes++;
+            if ( mode == NORM_MODE_ON )
+            {
+                h->ip_ttl = ScNewTTL();
+                p->error_flags &= ~PKT_ERR_BAD_TTL;
+                changes++;
+            }
+            normStats[PC_IP4_TTL][mode]++;
+            sfBase.iPegs[PERF_COUNT_IP4_TTL][mode]++;
         }
     }
     if ( p->layers[layer].length > IP_HEADER_LEN )
     {
-        uint8_t* opts = p->layers[layer].start + IP_HEADER_LEN;
-        uint8_t len = p->layers[layer].length - IP_HEADER_LEN;
-        // expect len > 0 because IHL yields a multiple of 4
-        memset(opts, IPOPT_NOP, len);
-        normStats[PC_IP4_OPTS]++;
-        sfBase.iPegs[PERF_COUNT_IP4_OPTS]++;
-        changes++;
+        if ( mode == NORM_MODE_ON )
+        {
+            uint8_t* opts = p->layers[layer].start + IP_HEADER_LEN;
+            uint8_t len = p->layers[layer].length - IP_HEADER_LEN;
+            // expect len > 0 because IHL yields a multiple of 4
+            memset(opts, IPOPT_NOP, len);
+            changes++;
+        }
+        normStats[PC_IP4_OPTS][mode]++;
+        sfBase.iPegs[PERF_COUNT_IP4_OPTS][mode]++;
     }
     return changes;
 }
 
 //-----------------------------------------------------------------------
 
-static int Norm_ICMP4 (
-    NormalizerContext* c, Packet * p, uint8_t layer, int changes)
+static int Norm_ICMP4 (NormalizerContext* c, Packet * p, uint8_t layer, int changes)
 {
     ICMPHdr* h = (ICMPHdr*)(p->layers[layer].start);
+    NormMode mode = getNormMode(c);
 
     if ( (h->type == ICMP_ECHO || h->type == ICMP_ECHOREPLY) &&
          (h->code != 0) )
     {
-        h->code = 0;
-        normStats[PC_ICMP4_ECHO]++;
-        sfBase.iPegs[PERF_COUNT_ICMP4_ECHO]++;
-        changes++;
+        if ( mode == NORM_MODE_ON )
+        {
+            h->code = 0;
+            changes++;
+        }
+        normStats[PC_ICMP4_ECHO][mode]++;
+        sfBase.iPegs[PERF_COUNT_ICMP4_ECHO][mode]++;
     }
     return changes;
 }
 
 //-----------------------------------------------------------------------
 
-static int Norm_IP6 (
-    NormalizerContext* c, Packet * p, uint8_t layer, int changes)
+static int Norm_IP6 (NormalizerContext* c, Packet * p, uint8_t layer, int changes)
 {
     IP6RawHdr* h = (IP6RawHdr*)(p->layers[layer].start);
+    NormMode mode = getNormMode(c);
 
     if ( Norm_IsEnabled(c, NORM_IP6_TTL) )
     {
         if ( h->ip6hops < ScMinTTL() )
         {
-            h->ip6hops = ScNewTTL();
-            p->error_flags &= ~PKT_ERR_BAD_TTL;
-            normStats[PC_IP6_TTL]++;
-            sfBase.iPegs[PERF_COUNT_IP6_TTL]++;
-            changes++;
+            if ( mode == NORM_MODE_ON )
+            {
+                h->ip6hops = ScNewTTL();
+                p->error_flags &= ~PKT_ERR_BAD_TTL;
+                changes++;
+            }
+            normStats[PC_IP6_TTL][mode]++;
+            sfBase.iPegs[PERF_COUNT_IP6_TTL][mode]++;
         }
     }
     return changes;
@@ -277,18 +311,21 @@ static int Norm_IP6 (
 
 //-----------------------------------------------------------------------
 
-static int Norm_ICMP6 (
-    NormalizerContext* c, Packet * p, uint8_t layer, int changes)
+static int Norm_ICMP6 (NormalizerContext* c, Packet * p, uint8_t layer, int changes)
 {
     ICMPHdr* h = (ICMPHdr*)(p->layers[layer].start);
+    NormMode mode = getNormMode(c);
 
     if ( (h->type == ICMP6_ECHO || h->type == ICMP6_REPLY) &&
          (h->code != 0) )
     {
-        h->code = 0;
-        normStats[PC_ICMP6_ECHO]++;
-        sfBase.iPegs[PERF_COUNT_ICMP6_ECHO]++;
-        changes++;
+        if ( mode == NORM_MODE_ON )
+        {
+            h->code = 0;
+            changes++;
+        }
+        normStats[PC_ICMP6_ECHO][mode]++;
+        sfBase.iPegs[PERF_COUNT_ICMP6_ECHO][mode]++;
     }
     return changes;
 }
@@ -307,20 +344,24 @@ typedef struct
 
 #define IP6_OPT_PAD_N 1
 
-static int Norm_IP6_Opts (
-    NormalizerContext* c, Packet * p, uint8_t layer, int changes)
+static int Norm_IP6_Opts (NormalizerContext* c, Packet * p, uint8_t layer, int changes)
 {
-    uint8_t* b = p->layers[layer].start;
-    ExtOpt* x = (ExtOpt*)b;
+    NormMode mode = getNormMode(c);
 
-    // whatever was here, turn it into one PADN option
-    x->type = IP6_OPT_PAD_N;
-    x->olen = (x->xlen * 8) + 8 - sizeof(*x);
-    memset(b+sizeof(*x), 0, x->olen);
-
-    normStats[PC_IP6_OPTS]++;
-    sfBase.iPegs[PERF_COUNT_IP6_OPTS]++;
-    changes++;
+    if ( mode == NORM_MODE_ON )
+    {
+        uint8_t* b = p->layers[layer].start;
+        ExtOpt* x = (ExtOpt*)b;
+    
+        // whatever was here, turn it into one PADN option
+        x->type = IP6_OPT_PAD_N;
+        x->olen = (x->xlen * 8) + 8 - sizeof(*x);
+        memset(b+sizeof(*x), 0, x->olen);
+    
+        changes++;
+    }
+    normStats[PC_IP6_OPTS][mode]++;
+    sfBase.iPegs[PERF_COUNT_IP6_OPTS][mode]++;
 
     return changes;
 }
@@ -344,12 +385,11 @@ static inline void NopDaOpt (uint8_t* opt, uint8_t len)
 #define TS_ECR_OFFSET 6
 #define TS_ECR_LENGTH 4
 
-static inline int Norm_TCPOptions (
-    NormalizerContext* context,
-    uint8_t* opts, size_t len, const TCPHdr* h, uint8_t numOpts, int changes)
+static inline int Norm_TCPOptions (NormalizerContext* context, uint8_t* opts, size_t len, const TCPHdr* h, uint8_t numOpts, int changes)
 {
     size_t i = 0;
     uint8_t c = 0;
+    NormMode mode = getNormMode(context);
 
     while ( (i < len) && (opts[i] != TCPOPT_EOL) &&
         (c++ < numOpts) )
@@ -371,10 +411,13 @@ static inline int Norm_TCPOptions (
         case TCPOPT_WSCALE:
             if ( !(h->th_flags & TH_SYN) )
             {
-                NopDaOpt(opts+i, olen);
-                normStats[PC_TCP_SYN_OPT]++;
-                sfBase.iPegs[PERF_COUNT_TCP_SYN_OPT]++;
-                changes++;
+                if ( mode == NORM_MODE_ON )
+                {
+                    NopDaOpt(opts+i, olen);
+                    changes++;
+                }
+                normStats[PC_TCP_SYN_OPT][mode]++;
+                sfBase.iPegs[PERF_COUNT_TCP_SYN_OPT][mode]++;
             }
             break;
 
@@ -383,40 +426,49 @@ static inline int Norm_TCPOptions (
                 // use memcmp because opts have arbitrary alignment
                 memcmp(opts+i+TS_ECR_OFFSET, MAX_EOL_PAD, TS_ECR_LENGTH) )
             {
-                // TSecr should be zero unless ACK is set
-                memset(opts+i+TS_ECR_OFFSET, 0, TS_ECR_LENGTH);
-                normStats[PC_TCP_TS_ECR]++;
-                sfBase.iPegs[PERF_COUNT_TCP_TS_ECR]++;
-                changes++;
+                if ( mode == NORM_MODE_ON )
+                {
+                    // TSecr should be zero unless ACK is set
+                    memset(opts+i+TS_ECR_OFFSET, 0, TS_ECR_LENGTH);
+                    changes++;
+                }
+                normStats[PC_TCP_TS_ECR][mode]++;
+                sfBase.iPegs[PERF_COUNT_TCP_TS_ECR][mode]++;
             }
             break;
 
         default:
             if ( !Norm_TcpIsOptional(context, opts[i]) )
             {
-                NopDaOpt(opts+i, olen);
-                normStats[PC_TCP_OPT]++;
-                sfBase.iPegs[PERF_COUNT_TCP_OPT]++;
-                changes++;
+                if ( mode == NORM_MODE_ON )
+                {
+                    NopDaOpt(opts+i, olen);
+                    changes++;
+                }
+                normStats[PC_TCP_OPT][mode]++;
+                sfBase.iPegs[PERF_COUNT_TCP_OPT][mode]++;
             }
         }
         i += olen;
     }
     if ( ++i < len && memcmp(opts+i, MAX_EOL_PAD, len-i) )
     {
-        memset(opts+i, 0, len-i);
-        normStats[PC_TCP_PAD]++;
-        sfBase.iPegs[PERF_COUNT_TCP_PAD]++;
-        changes++;
+        if ( mode == NORM_MODE_ON )
+        {
+            memset(opts+i, 0, len-i);
+            changes++;
+        }
+        normStats[PC_TCP_PAD][mode]++;
+        sfBase.iPegs[PERF_COUNT_TCP_PAD][mode]++;
     }
     return changes;
 }
 
-static inline int Norm_TCPPadding (
-    uint8_t* opts, size_t len, uint8_t numOpts, int changes)
+static inline int Norm_TCPPadding (NormalizerContext* context, uint8_t* opts, size_t len, uint8_t numOpts, int changes)
 {
     size_t i = 0;
     uint8_t c = 0;
+    NormMode mode = getNormMode(context);
 
     while ( (i < len) && (opts[i] != TCPOPT_EOL) && (c++ < numOpts) )
     {
@@ -424,77 +476,111 @@ static inline int Norm_TCPPadding (
     }
     if ( ++i < len && memcmp(opts+i, MAX_EOL_PAD, len-i) )
     {
-        memset(opts+i, 0, len-i);
-        normStats[PC_TCP_PAD]++;
-        sfBase.iPegs[PERF_COUNT_TCP_PAD]++;
-        changes++;
+        if ( mode == NORM_MODE_ON )
+        {
+            memset(opts+i, 0, len-i);
+            changes++;
+        }
+        normStats[PC_TCP_PAD][mode]++;
+        sfBase.iPegs[PERF_COUNT_TCP_PAD][mode]++;
     }
     return changes;
 }
 
-static int Norm_TCP (
-    NormalizerContext* c, Packet * p, uint8_t layer, int changes)
+static int Norm_TCP (NormalizerContext* c, Packet * p, uint8_t layer, int changes)
 {
+    NormMode mode = getNormMode(c);
     TCPHdr* h = (TCPHdr*)(p->layers[layer].start);
 
-    if ( h->th_offx2 & TH_RSV )
+    if ( Norm_IsEnabled(c, NORM_TCP_RSV) )
     {
-        h->th_offx2 &= ~TH_RSV;
-        normStats[PC_TCP_RSV]++;
-        sfBase.iPegs[PERF_COUNT_TCP_RSV]++;
-        changes++;
+        if ( h->th_offx2 & TH_RSV )
+        {
+            if ( mode == NORM_MODE_ON )
+            {
+                h->th_offx2 &= ~TH_RSV;
+                changes++;
+            }
+            normStats[PC_TCP_RSV][mode]++;
+            sfBase.iPegs[PERF_COUNT_TCP_RSV][mode]++;
+        }
     }
     if ( Norm_IsEnabled(c, NORM_TCP_ECN_PKT) )
     {
         if ( h->th_flags & (TH_CWR|TH_ECE) )
         {
-            h->th_flags &= ~(TH_CWR|TH_ECE);
-            normStats[PC_TCP_ECN_PKT]++;
-            sfBase.iPegs[PERF_COUNT_TCP_ECN_PKT]++;
-            changes++;
+            if ( mode == NORM_MODE_ON )
+            {
+                h->th_flags &= ~(TH_CWR|TH_ECE);
+                changes++;
+            }
+            normStats[PC_TCP_ECN_PKT][mode]++;
+            sfBase.iPegs[PERF_COUNT_TCP_ECN_PKT][mode]++;
         }
         if ( h->th_offx2 & TH_NS )
         {
-            h->th_offx2 &= ~TH_NS;
-            normStats[PC_TCP_NS]++;
-            sfBase.iPegs[PERF_COUNT_TCP_NS]++;
-            changes++;
+            if ( mode == NORM_MODE_ON )
+            {
+                h->th_offx2 &= ~TH_NS;
+                changes++;
+            }
+            normStats[PC_TCP_NS][mode]++;
+            sfBase.iPegs[PERF_COUNT_TCP_NS][mode]++;
         }
     }
     if ( h->th_urp )
     {
         if ( !(h->th_flags & TH_URG) )
         {
-            h->th_urp = 0;
-            normStats[PC_TCP_URG]++;
-            sfBase.iPegs[PERF_COUNT_TCP_URG]++;
-            changes++;
+            if ( Norm_IsEnabled(c, NORM_TCP_REQ_URG) )
+            {
+                if ( mode == NORM_MODE_ON )
+                {
+                    h->th_urp = 0;
+                    changes++;
+                }
+                normStats[PC_TCP_REQ_URG][mode]++;
+                sfBase.iPegs[PERF_COUNT_TCP_REQ_URG][mode]++;
+            }
         }
         else if ( !p->dsize )
         {
-            h->th_flags &= ~TH_URG;
-            h->th_urp = 0;
-            normStats[PC_TCP_URG]++;
-            normStats[PC_TCP_URP]++;
-            sfBase.iPegs[PERF_COUNT_TCP_URG]++;
-            sfBase.iPegs[PERF_COUNT_TCP_URP]++;
-            changes++;
+            if ( Norm_IsEnabled(c, NORM_TCP_REQ_PAY) )
+            {
+                if ( mode == NORM_MODE_ON )
+                {
+                    h->th_flags &= ~TH_URG;
+                    h->th_urp = 0;
+                    changes++;
+                }
+                normStats[PC_TCP_REQ_PAY][mode]++;
+                sfBase.iPegs[PERF_COUNT_TCP_REQ_PAY][mode]++;
+            }
         }
-        else if ( Norm_IsEnabled(c, NORM_TCP_URP) &&
-            (ntohs(h->th_urp) > p->dsize) )
+        else if ( (ntohs(h->th_urp) > p->dsize) )
         {
-            h->th_urp = ntohs(p->dsize);
-            normStats[PC_TCP_URP]++;
-            sfBase.iPegs[PERF_COUNT_TCP_URP]++;
-            changes++;
+            if ( Norm_IsEnabled(c, NORM_TCP_URP) )
+            {
+                if ( mode == NORM_MODE_ON )
+                {
+                    h->th_urp = ntohs(p->dsize);
+                    changes++;
+                }
+                normStats[PC_TCP_URP][mode]++;
+                sfBase.iPegs[PERF_COUNT_TCP_URP][mode]++;
+            }
         }
     }
-    else if ( h->th_flags & TH_URG )
+    else if ( Norm_IsEnabled(c, NORM_TCP_REQ_URP) &&
+        h->th_flags & TH_URG )
     {
-        h->th_flags &= ~TH_URG;
-        normStats[PC_TCP_URG]++;
-        sfBase.iPegs[PERF_COUNT_TCP_URG]++;
-        changes++;
+        if ( mode == NORM_MODE_ON )
+        {
+            h->th_flags &= ~TH_URG;
+            changes++;
+        }
+        normStats[PC_TCP_REQ_URP][mode]++;
+        sfBase.iPegs[PERF_COUNT_TCP_REQ_URP][mode]++;
     }
     if ( p->tcp_options_len > 0 )
     {
@@ -505,9 +591,9 @@ static int Norm_TCP (
             changes = Norm_TCPOptions(c, opts, p->tcp_options_len,
                 h, p->tcp_option_count, changes);
         }
-        else
+        else if ( Norm_IsEnabled(c, NORM_TCP_PAD) )
         {
-            changes = Norm_TCPPadding(opts, p->tcp_options_len,
+            changes = Norm_TCPPadding(c, opts, p->tcp_options_len,
                 p->tcp_option_count, changes);
         }
     }
@@ -524,7 +610,8 @@ void Norm_PrintStats (void)
     for ( i = 0; i < PC_MAX; i++ )
     {
         // for now, 23 aligns with frag3
-        LogMessage("%23s: " STDu64 "\n", pegName[i], normStats[i]);
+        LogMessage("%23s: " STDu64 "\n", pegName[i], normStats[i][NORM_MODE_ON]);
+        LogMessage("Would %17s: " STDu64 "\n", pegName[i], normStats[i][NORM_MODE_WOULDA]);
     }
 }
 

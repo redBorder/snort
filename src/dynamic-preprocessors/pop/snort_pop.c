@@ -23,7 +23,7 @@
 /**************************************************************************
  * snort_pop.c
  *
- * Author: Bhagyashree Bantwal <bbantwal@sourcefire.com>
+ * Author: Bhagyashree Bantwal <bbantwal@cisco.com>
  *
  * Description:
  *
@@ -48,7 +48,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <pcre.h>
 
 #include "sf_types.h"
 #include "snort_pop.h"
@@ -63,12 +62,14 @@
 #include "snort_bounds.h"
 #include "sf_dynamic_preprocessor.h"
 #include "ssl.h"
+#include "ssl_include.h"
 #include "sfPolicy.h"
 #include "sfPolicyUserData.h"
 #include "file_api.h"
 #ifdef DEBUG_MSGS
 #include "sf_types.h"
 #endif
+#include "pop_paf.h"
 
 /**************************************************************************/
 
@@ -121,27 +122,8 @@ const POPToken pop_resps[] =
 	{NULL,   0,  0}
 };
 
-const POPToken pop_hdrs[] =
-{
-    {"Content-type:", 13, HDR_CONTENT_TYPE},
-    {"Content-Transfer-Encoding:", 26, HDR_CONT_TRANS_ENC},
-    {"Content-Disposition:", 20, HDR_CONT_DISP},
-    {NULL,             0, 0}
-};
-
-const POPToken pop_data_end[] =
-{
-	{"\r\n.\r\n",  5,  DATA_END_1},
-	{"\n.\r\n",    4,  DATA_END_2},
-	{"\r\n.\n",    4,  DATA_END_3},
-	{"\n.\n",      3,  DATA_END_4},
-	{NULL,         0,  0}
-};
-
 POP *pop_ssn = NULL;
 POP pop_no_session;
-POPPcre mime_boundary_pcre;
-char pop_normalizing;
 POPSearchInfo pop_search_info;
 
 #ifdef DEBUG_MSGS
@@ -155,12 +137,6 @@ int16_t pop_proto_id;
 void *pop_resp_search_mpse = NULL;
 POPSearch pop_resp_search[RESP_LAST];
 
-void *pop_hdr_search_mpse = NULL;
-POPSearch pop_hdr_search[HDR_LAST];
-
-void *pop_data_search_mpse = NULL;
-POPSearch pop_data_end_search[DATA_END_LAST];
-
 POPSearch *pop_current_search = NULL;
 
 
@@ -172,54 +148,18 @@ POPSearch *pop_current_search = NULL;
 static int POP_Setup(SFSnortPacket *p, POP *ssn);
 static void POP_ResetState(void);
 static void POP_SessionFree(void *);
-static void POP_NoSessionFree(void);
 static int POP_GetPacketDirection(SFSnortPacket *, int);
 static void POP_ProcessClientPacket(SFSnortPacket *);
 static void POP_ProcessServerPacket(SFSnortPacket *);
 static void POP_DisableDetect(SFSnortPacket *);
 static const uint8_t * POP_HandleCommand(SFSnortPacket *, const uint8_t *, const uint8_t *);
-static const uint8_t * POP_HandleData(SFSnortPacket *, const uint8_t *, const uint8_t *);
-static const uint8_t * POP_HandleHeader(SFSnortPacket *, const uint8_t *, const uint8_t *);
-static const uint8_t * POP_HandleDataBody(SFSnortPacket *, const uint8_t *, const uint8_t *);
 static int POP_SearchStrFound(void *, void *, int, void *, void *);
 
-static int POP_BoundaryStrFound(void *, void *, int , void *, void *);
-static int POP_GetBoundary(const char *, int);
-
 static int POP_Inspect(SFSnortPacket *);
+void POP_Set_flow_id( void *app_data, uint32_t fid );
+MimeMethods mime_methods = {NULL, NULL, POP_DecodeAlert, POP_ResetState, is_data_end};
 
 /**************************************************************************/
-
-static void SetPopBuffers(POP *ssn)
-{
-    if ((ssn != NULL) && (ssn->decode_state == NULL))
-    {
-        MemBucket *bkt = mempool_alloc(pop_mime_mempool);
-
-        if (bkt != NULL)
-        {
-            ssn->decode_state = (Email_DecodeState *)calloc(1, sizeof(Email_DecodeState));
-            if( ssn->decode_state != NULL )
-            {
-                ssn->decode_bkt = bkt;
-                SetEmailDecodeState(ssn->decode_state, bkt->data, pop_eval_config->max_depth,
-                        pop_eval_config->b64_depth, pop_eval_config->qp_depth,
-                        pop_eval_config->uu_depth, pop_eval_config->bitenc_depth,
-                        pop_eval_config->file_depth);
-            }
-            else
-            {
-                /*free mempool if calloc fails*/
-                mempool_free(pop_mime_mempool, bkt);
-            }
-        }
-        else
-        {
-            POP_GenerateAlert(POP_MEMCAP_EXCEEDED, "%s", POP_MEMCAP_EXCEEDED_STR);
-            DEBUG_WRAP(DebugMessage(DEBUG_POP, "No memory available for decoding. Memcap exceeded \n"););
-        }
-    }
-}
 
 void POP_InitCmds(POPConfig *config)
 {
@@ -273,8 +213,6 @@ void POP_InitCmds(POPConfig *config)
  */
 void POP_SearchInit(void)
 {
-    const char *error;
-    int erroffset;
     const POPToken *tmp;
 
     /* Response search */
@@ -296,92 +234,7 @@ void POP_SearchInit(void)
 
     _dpd.searchAPI->search_instance_prep(pop_resp_search_mpse);
 
-    /* Header search */
-    pop_hdr_search_mpse = _dpd.searchAPI->search_instance_new();
-    if (pop_hdr_search_mpse == NULL)
-    {
-        DynamicPreprocessorFatalMessage("Could not allocate POP "
-                                        "header search.\n");
-    }
-
-    for (tmp = &pop_hdrs[0]; tmp->name != NULL; tmp++)
-    {
-        pop_hdr_search[tmp->search_id].name = tmp->name;
-        pop_hdr_search[tmp->search_id].name_len = tmp->name_len;
-
-        _dpd.searchAPI->search_instance_add(pop_hdr_search_mpse, tmp->name,
-                                            tmp->name_len, tmp->search_id);
-    }
-
-    _dpd.searchAPI->search_instance_prep(pop_hdr_search_mpse);
-
-    /* Data end search */
-    pop_data_search_mpse = _dpd.searchAPI->search_instance_new();
-    if (pop_data_search_mpse == NULL)
-    {
-        DynamicPreprocessorFatalMessage("Could not allocate POP "
-                                        "data search.\n");
-    }
-
-    for (tmp = &pop_data_end[0]; tmp->name != NULL; tmp++)
-    {
-        pop_data_end_search[tmp->search_id].name = tmp->name;
-        pop_data_end_search[tmp->search_id].name_len = tmp->name_len;
-
-        _dpd.searchAPI->search_instance_add(pop_data_search_mpse, tmp->name,
-                                            tmp->name_len, tmp->search_id);
-    }
-
-    _dpd.searchAPI->search_instance_prep(pop_data_search_mpse);
-
-
-    /* create regex for finding boundary string - since it can be cut across multiple
-     * lines, a straight search won't do. Shouldn't be too slow since it will most
-     * likely only be acting on a small portion of data */
-    //"^content-type:\\s*multipart.*boundary\\s*=\\s*\"?([^\\s]+)\"?"
-    //"^\\s*multipart.*boundary\\s*=\\s*\"?([^\\s]+)\"?"
-    //mime_boundary_pcre.re = pcre_compile("^.*boundary\\s*=\\s*\"?([^\\s\"]+)\"?",
-    //mime_boundary_pcre.re = pcre_compile("boundary(?:\n|\r\n)?=(?:\n|\r\n)?\"?([^\\s\"]+)\"?",
-    mime_boundary_pcre.re = pcre_compile("boundary\\s*=\\s*\"?([^\\s\"]+)\"?",
-                                          PCRE_CASELESS | PCRE_DOTALL,
-                                          &error, &erroffset, NULL);
-    if (mime_boundary_pcre.re == NULL)
-    {
-        DynamicPreprocessorFatalMessage("Failed to compile pcre regex for getting boundary "
-                                        "in a multipart POP message: %s\n", error);
-    }
-
-    mime_boundary_pcre.pe = pcre_study(mime_boundary_pcre.re, 0, &error);
-
-    if (error != NULL)
-    {
-        DynamicPreprocessorFatalMessage("Failed to study pcre regex for getting boundary "
-                                        "in a multipart POP message: %s\n", error);
-    }
 }
-
-/*
- * Initialize run-time boundary search
- */
-static int POP_BoundarySearchInit(void)
-{
-    if (pop_ssn->mime_boundary.boundary_search != NULL)
-        _dpd.searchAPI->search_instance_free(pop_ssn->mime_boundary.boundary_search);
-
-    pop_ssn->mime_boundary.boundary_search = _dpd.searchAPI->search_instance_new();
-
-    if (pop_ssn->mime_boundary.boundary_search == NULL)
-        return -1;
-
-    _dpd.searchAPI->search_instance_add(pop_ssn->mime_boundary.boundary_search,
-                                        pop_ssn->mime_boundary.boundary,
-                                        pop_ssn->mime_boundary.boundary_len, BOUNDARY);
-
-    _dpd.searchAPI->search_instance_prep(pop_ssn->mime_boundary.boundary_search);
-
-    return 0;
-}
-
 
 
 /*
@@ -393,18 +246,9 @@ static int POP_BoundarySearchInit(void)
  */
 static void POP_ResetState(void)
 {
-    if (pop_ssn->mime_boundary.boundary_search != NULL)
-    {
-        _dpd.searchAPI->search_instance_free(pop_ssn->mime_boundary.boundary_search);
-        pop_ssn->mime_boundary.boundary_search = NULL;
-    }
-
-    pop_ssn->state = STATE_UNKNOWN;
-    pop_ssn->data_state = STATE_DATA_INIT;
+    pop_ssn->state = STATE_COMMAND;
     pop_ssn->prev_response = 0;
     pop_ssn->state_flags = 0;
-    ClearEmailDecodeState(pop_ssn->decode_state);
-    memset(&pop_ssn->mime_boundary, 0, sizeof(POPMimeBoundary));
 }
 
 
@@ -420,7 +264,7 @@ static void POP_ResetState(void)
  */
 int POP_IsServer(uint16_t port)
 {
-    if (pop_eval_config->ports[port / 8] & (1 << (port % 8)))
+    if( isPortEnabled( pop_eval_config->ports, port ) )
         return 1;
 
     return 0;
@@ -443,14 +287,22 @@ static POP * POP_GetNewSession(SFSnortPacket *p, tSfPolicyId policy_id)
 
     pop_ssn = ssn;
     ssn->prev_response = 0;
+    ssn->session_flags |= POP_FLAG_CHECK_SSL;
 
-    if (_dpd.fileAPI->set_log_buffers(&(pop_ssn->log_state), &(pPolicyConfig->log_config), pop_mempool) < 0)
+    pop_ssn->mime_ssn.log_config = &(pop_eval_config->log_config);
+    pop_ssn->mime_ssn.decode_conf = &(pop_eval_config->decode_conf);
+    pop_ssn->mime_ssn.mime_mempool = pop_mime_mempool;
+    pop_ssn->mime_ssn.log_mempool = pop_mempool;
+    //smtp_ssn->mime_ssn.mime_stats = &(smtp_stats.mime_stats);
+    pop_ssn->mime_ssn.methods = &(mime_methods);
+
+    if (_dpd.fileAPI->set_log_buffers(&(pop_ssn->mime_ssn.log_state), &(pPolicyConfig->log_config), pop_mempool) < 0)
     {
         free(ssn);
         return NULL;
     }
 
-    _dpd.streamAPI->set_application_data(p->stream_session_ptr, PP_POP,
+    _dpd.sessionAPI->set_application_data(p->stream_session, PP_POP,
                                          ssn, &POP_SessionFree);
 
     if (p->flags & SSNFLAG_MIDSTREAM)
@@ -465,22 +317,23 @@ static POP * POP_GetNewSession(SFSnortPacket *p, tSfPolicyId policy_id)
     ssn->session_number = pop_session_counter;
 #endif
 
-    if (p->stream_session_ptr != NULL)
+    if (p->stream_session != NULL)
     {
         /* check to see if we're doing client reassembly in stream */
-        if (_dpd.streamAPI->get_reassembly_direction(p->stream_session_ptr) & SSN_DIR_FROM_CLIENT)
+        if (_dpd.streamAPI->get_reassembly_direction(p->stream_session) & SSN_DIR_TO_CLIENT)
             ssn->reassembling = 1;
 
         if(!ssn->reassembling)
         {
-            _dpd.streamAPI->set_reassembly(p->stream_session_ptr,
-                    STREAM_FLPOLICY_FOOTPRINT, SSN_DIR_FROM_CLIENT, STREAM_FLPOLICY_SET_ABSOLUTE);
+            _dpd.streamAPI->set_reassembly(p->stream_session,
+                    STREAM_FLPOLICY_FOOTPRINT, SSN_DIR_TO_CLIENT, STREAM_FLPOLICY_SET_ABSOLUTE);
             ssn->reassembling = 1;
         }
     }
 
     ssn->policy_id = policy_id;
     ssn->config = pop_config;
+    ssn->flow_id = 0;
     pPolicyConfig->ref_count++;
 
     return ssn;
@@ -499,10 +352,10 @@ static int POP_Setup(SFSnortPacket *p, POP *ssn)
     int flags = 0;
     int pkt_dir;
 
-    if (p->stream_session_ptr != NULL)
+    if (p->stream_session != NULL)
     {
         /* set flags to session flags */
-        flags = _dpd.streamAPI->get_session_flags(p->stream_session_ptr);
+        flags = _dpd.sessionAPI->get_session_flags(p->stream_session);
     }
 
     /* Figure out direction of packet */
@@ -510,13 +363,15 @@ static int POP_Setup(SFSnortPacket *p, POP *ssn)
 
     DEBUG_WRAP(DebugMessage(DEBUG_POP, "Session number: "STDu64"\n", ssn->session_number););
 
+    if (!(ssn->session_flags & POP_FLAG_CHECK_SSL))
+            ssn->session_flags |= POP_FLAG_CHECK_SSL;
     /* Check to see if there is a reassembly gap.  If so, we won't know
      * what state we're in when we get the _next_ reassembled packet */
     if ((pkt_dir != POP_PKT_FROM_SERVER) &&
         (p->flags & FLAG_REBUILT_STREAM))
     {
         int missing_in_rebuilt =
-            _dpd.streamAPI->missing_in_reassembled(p->stream_session_ptr, SSN_DIR_FROM_CLIENT);
+            _dpd.streamAPI->missing_in_reassembled(p->stream_session, SSN_DIR_TO_CLIENT);
 
         if (ssn->session_flags & POP_FLAG_NEXT_STATE_UNKNOWN)
         {
@@ -606,6 +461,7 @@ static void POP_SessionFree(void *session_data)
 #ifdef SNORT_RELOAD
     POPConfig *pPolicyConfig = NULL;
 #endif
+    ssl_callback_interface_t *ssl_cb = (ssl_callback_interface_t *)_dpd.getSSLCallback();
 
     if (pop == NULL)
         return;
@@ -629,33 +485,22 @@ static void POP_SessionFree(void *session_data)
     }
 #endif
 
-    if (pop->mime_boundary.boundary_search != NULL)
+    if(pop->mime_ssn.decode_state != NULL)
     {
-        _dpd.searchAPI->search_instance_free(pop->mime_boundary.boundary_search);
-        pop->mime_boundary.boundary_search = NULL;
+        mempool_free(pop_mime_mempool, pop->mime_ssn.decode_bkt);
+        free(pop->mime_ssn.decode_state);
     }
 
-    if(pop->decode_state != NULL)
+    if(pop->mime_ssn.log_state != NULL)
     {
-        mempool_free(pop_mime_mempool, pop->decode_bkt);
-        free(pop->decode_state);
+        mempool_free(pop_mempool, pop->mime_ssn.log_state->log_hdrs_bkt);
+        free(pop->mime_ssn.log_state);
     }
-    if(pop->log_state != NULL)
-    {
-        mempool_free(pop_mempool, pop->log_state->log_hdrs_bkt);
-        free(pop->log_state);
-    }
+
+    if ( ssl_cb )
+        ssl_cb->session_free(pop->flow_id);
+
     free(pop);
-}
-
-
-static void POP_NoSessionFree(void)
-{
-    if (pop_no_session.mime_boundary.boundary_search != NULL)
-    {
-        _dpd.searchAPI->search_instance_free(pop_no_session.mime_boundary.boundary_search);
-        pop_no_session.mime_boundary.boundary_search = NULL;
-    }
 }
 
 static int POP_FreeConfigsPolicy(
@@ -716,25 +561,11 @@ void POP_FreeConfig(POPConfig *config)
  */
 void POP_Free(void)
 {
-    POP_NoSessionFree();
-
     POP_FreeConfigs(pop_config);
     pop_config = NULL;
 
     if (pop_resp_search_mpse != NULL)
         _dpd.searchAPI->search_instance_free(pop_resp_search_mpse);
-
-    if (pop_hdr_search_mpse != NULL)
-        _dpd.searchAPI->search_instance_free(pop_hdr_search_mpse);
-
-    if (pop_data_search_mpse != NULL)
-        _dpd.searchAPI->search_instance_free(pop_data_search_mpse);
-
-    if (mime_boundary_pcre.re )
-        pcre_free(mime_boundary_pcre.re);
-
-    if (mime_boundary_pcre.pe )
-        pcre_free(mime_boundary_pcre.pe);
 }
 
 
@@ -759,82 +590,6 @@ static int POP_SearchStrFound(void *id, void *unused, int index, void *data, voi
     /* Returning non-zero stops search, which is okay since we only look for one at a time */
     return 1;
 }
-
-
-/*
- * Callback function for boundary search
- *
- * @param   id      id in array of search strings
- * @param   index   index in array of search strings
- * @param   data    buffer passed in to search function
- *
- * @return response
- * @retval 1        commands caller to stop searching
- */
-static int POP_BoundaryStrFound(void *id, void *unused, int index, void *data, void *unused2)
-{
-    int boundary_id = (int)(uintptr_t)id;
-
-    pop_search_info.id = boundary_id;
-    pop_search_info.index = index;
-    pop_search_info.length = pop_ssn->mime_boundary.boundary_len;
-
-    return 1;
-}
-
-static int POP_GetBoundary(const char *data, int data_len)
-{
-    int result;
-    int ovector[9];
-    int ovecsize = 9;
-    const char *boundary;
-    int boundary_len;
-    int ret;
-    char *mime_boundary;
-    int  *mime_boundary_len;
-    int  *mime_boundary_state;
-
-
-    mime_boundary = &pop_ssn->mime_boundary.boundary[0];
-    mime_boundary_len = &pop_ssn->mime_boundary.boundary_len;
-    mime_boundary_state = &pop_ssn->mime_boundary.state;
-
-    /* result will be the number of matches (including submatches) */
-    result = pcre_exec(mime_boundary_pcre.re, mime_boundary_pcre.pe,
-                       data, data_len, 0, 0, ovector, ovecsize);
-    if (result < 0)
-        return -1;
-
-    result = pcre_get_substring(data, ovector, result, 1, &boundary);
-    if (result < 0)
-        return -1;
-
-    boundary_len = strlen(boundary);
-    if (boundary_len > MAX_BOUNDARY_LEN)
-    {
-        /* XXX should we alert? breaking the law of RFC */
-        boundary_len = MAX_BOUNDARY_LEN;
-    }
-
-    mime_boundary[0] = '-';
-    mime_boundary[1] = '-';
-    ret = SafeMemcpy(mime_boundary + 2, boundary, boundary_len,
-                     mime_boundary + 2, mime_boundary + 2 + MAX_BOUNDARY_LEN);
-
-    pcre_free_substring(boundary);
-
-    if (ret != SAFEMEM_SUCCESS)
-    {
-        return -1;
-    }
-
-    *mime_boundary_len = 2 + boundary_len;
-    *mime_boundary_state = 0;
-    mime_boundary[*mime_boundary_len] = '\0';
-
-    return 0;
-}
-
 
 /*
  * Handle COMMAND state
@@ -895,15 +650,61 @@ static const uint8_t * POP_HandleCommand(SFSnortPacket *p, const uint8_t *ptr, c
     /* if command not found, alert and move on */
     if (!cmd_found)
     {
-        POP_GenerateAlert(POP_UNKNOWN_CMD, "%s", POP_UNKNOWN_CMD_STR);
-        DEBUG_WRAP(DebugMessage(DEBUG_POP, "No known command found\n"););
+        if (pop_ssn->state == STATE_UNKNOWN)
+        {
+            DEBUG_WRAP(DebugMessage(DEBUG_POP, "Command not found, but state is "
+                                                "unknown - checking for SSL\n"););
 
-        return eol;
+            /* check for encrypted */
+
+            if ((pop_ssn->session_flags & POP_FLAG_CHECK_SSL) &&
+                        (IsSSL(ptr, end - ptr, p->flags)))
+            {
+                DEBUG_WRAP(DebugMessage(DEBUG_POP, "Packet is SSL encrypted\n"););
+
+                pop_ssn->state = STATE_TLS_DATA;
+
+                /* Ignore data */
+                return end;
+            }
+            else
+            {
+                DEBUG_WRAP(DebugMessage(DEBUG_POP, "Not SSL - try data state\n"););
+                /* don't check for ssl again in this packet */
+                if (pop_ssn->session_flags & POP_FLAG_CHECK_SSL)
+                    pop_ssn->session_flags &= ~POP_FLAG_CHECK_SSL;
+
+                pop_ssn->state = STATE_DATA;
+                //pop_ssn->data_state = STATE_DATA_UNKNOWN;
+
+                return ptr;
+            }
+        }
+        else
+        {
+            POP_GenerateAlert(POP_UNKNOWN_CMD, "%s", POP_UNKNOWN_CMD_STR);
+            DEBUG_WRAP(DebugMessage(DEBUG_POP, "No known command found\n"););
+            return eol;
+        }
     }
 
-    /* At this point we have definitely found a legitimate command */
+    else if (pop_search_info.id == CMD_TOP)
+    {
+        pop_ssn->state = STATE_DATA;
+    }
+    else
+    {
+        if (pop_ssn->state == STATE_UNKNOWN)
+            pop_ssn->state = STATE_COMMAND;
+    }
 
     DEBUG_WRAP(DebugMessage(DEBUG_POP, "%s\n", pop_eval_config->cmds[pop_search_info.id].name););
+
+    if(pop_search_info.id == CMD_STLS)
+    {
+        if (eol == end)
+            pop_ssn->state = STATE_TLS_CLIENT_PEND;
+    }
 
 /*    switch (pop_search_info.id)
     {
@@ -921,544 +722,6 @@ static const uint8_t * POP_HandleCommand(SFSnortPacket *p, const uint8_t *ptr, c
     return eol;
 }
 
-static const uint8_t * POP_HandleData(SFSnortPacket *p, const uint8_t *ptr, const uint8_t *end)
-{
-    const uint8_t *data_end_marker = NULL;
-    const uint8_t *data_end = NULL;
-    int data_end_found;
-    FilePosition position = SNORT_FILE_START;
-
-    /* if we've just entered the data state, check for a dot + end of line
-     * if found, no data */
-    if ((pop_ssn->data_state == STATE_DATA_INIT) ||
-        (pop_ssn->data_state == STATE_DATA_UNKNOWN))
-    {
-        if ((ptr < end) && (*ptr == '.'))
-        {
-            const uint8_t *eol = NULL;
-            const uint8_t *eolm = NULL;
-
-            POP_GetEOL(ptr, end, &eol, &eolm);
-
-            /* this means we got a real end of line and not just end of payload
-             * and that the dot is only char on line */
-            if ((eolm != end) && (eolm == (ptr + 1)))
-            {
-                /* if we're normalizing and not ignoring data copy data end marker
-                 * and dot to alt buffer */
-
-                POP_ResetState();
-
-                return eol;
-            }
-        }
-
-        if (pop_ssn->data_state == STATE_DATA_INIT)
-            pop_ssn->data_state = STATE_DATA_HEADER;
-
-        /* XXX A line starting with a '.' that isn't followed by a '.' is
-         * deleted (RFC 821 - 4.5.2.  TRANSPARENCY).  If data starts with
-         * '. text', i.e a dot followed by white space then text, some
-         * servers consider it data header and some data body.
-         * Postfix and Qmail will consider the start of data:
-         * . text\r\n
-         * .  text\r\n
-         * to be part of the header and the effect will be that of a
-         * folded line with the '.' deleted.  Exchange will put the same
-         * in the body which seems more reasonable. */
-    }
-
-    /* get end of data body
-     * TODO check last bytes of previous packet to see if we had a partial
-     * end of data */
-    pop_current_search = &pop_data_end_search[0];
-    data_end_found = _dpd.searchAPI->search_instance_find
-        (pop_data_search_mpse, (const char *)ptr, end - ptr,
-         0, POP_SearchStrFound);
-
-    if (data_end_found > 0)
-    {
-        data_end_marker = ptr + pop_search_info.index;
-        data_end = data_end_marker + pop_search_info.length;
-    }
-    else
-    {
-        data_end_marker = data_end = end;
-    }
-
-    _dpd.setFileDataPtr((uint8_t*)ptr, (uint16_t)(data_end - ptr));
-
-    if ((pop_ssn->data_state == STATE_DATA_HEADER) ||
-        (pop_ssn->data_state == STATE_DATA_UNKNOWN))
-    {
-#ifdef DEBUG_MSGS
-        if (pop_ssn->data_state == STATE_DATA_HEADER)
-        {
-            DEBUG_WRAP(DebugMessage(DEBUG_POP, "DATA HEADER STATE ~~~~~~~~~~~~~~~~~~~~~~\n"););
-        }
-        else
-        {
-            DEBUG_WRAP(DebugMessage(DEBUG_POP, "DATA UNKNOWN STATE ~~~~~~~~~~~~~~~~~~~~~\n"););
-        }
-#endif
-
-        ptr = POP_HandleHeader(p, ptr, data_end_marker);
-        if (ptr == NULL)
-            return NULL;
-
-    }
-
-    /* now we shouldn't have to worry about copying any data to the alt buffer
-     * only mime headers if we find them and only if we're ignoring data */
-    initFilePosition(&position, _dpd.fileAPI->get_file_processed_size(p->stream_session_ptr));
-
-    while ((ptr != NULL) && (ptr < data_end_marker))
-    {
-        /* multiple MIME attachments in one single packet.
-         * Pipeline the MIME decoded data.*/
-        if ( pop_ssn->state_flags & POP_FLAG_MULTIPLE_EMAIL_ATTACH)
-        {
-            int detection_size = getDetectionSize(pop_eval_config->b64_depth, pop_eval_config->qp_depth,
-                    pop_eval_config->uu_depth, pop_eval_config->bitenc_depth,pop_ssn->decode_state );
-            _dpd.setFileDataPtr(pop_ssn->decode_state->decodePtr, (uint16_t)detection_size);
-            /*Download*/
-            if (_dpd.fileAPI->file_process(p,(uint8_t *)pop_ssn->decode_state->decodePtr,
-                    (uint16_t)pop_ssn->decode_state->decoded_bytes, position, false, false)
-                    && (isFileStart(position)) && pop_ssn->log_state)
-            {
-                _dpd.fileAPI->set_file_name_from_log(&(pop_ssn->log_state->file_log), p->stream_session_ptr);
-            }
-            updateFilePosition(&position, _dpd.fileAPI->get_file_processed_size(p->stream_session_ptr));
-            _dpd.detect(p);
-            pop_ssn->state_flags &= ~POP_FLAG_MULTIPLE_EMAIL_ATTACH;
-            ResetEmailDecodeState(pop_ssn->decode_state);
-            p->flags |=FLAG_ALLOW_MULTIPLE_DETECT;
-            /* Reset the log count when a packet goes through detection multiple times */
-            _dpd.DetectReset((uint8_t *)p->payload, p->payload_size);
-        }
-        switch (pop_ssn->data_state)
-        {
-            case STATE_MIME_HEADER:
-                DEBUG_WRAP(DebugMessage(DEBUG_POP, "MIME HEADER STATE ~~~~~~~~~~~~~~~~~~~~~~\n"););
-                ptr = POP_HandleHeader(p, ptr, data_end_marker);
-                _dpd.fileAPI->finalize_mime_position(p->stream_session_ptr,
-                        pop_ssn->decode_state, &position);
-                break;
-            case STATE_DATA_BODY:
-                DEBUG_WRAP(DebugMessage(DEBUG_POP, "DATA BODY STATE ~~~~~~~~~~~~~~~~~~~~~~~~\n"););
-                ptr = POP_HandleDataBody(p, ptr, data_end_marker);
-                _dpd.fileAPI->update_file_name(pop_ssn->log_state);
-                break;
-        }
-    }
-
-    /* We have either reached the end of MIME header or end of MIME encoded data*/
-
-    if(pop_ssn->decode_state != NULL)
-    {
-
-        int detection_size = getDetectionSize(pop_eval_config->b64_depth, pop_eval_config->qp_depth,
-                pop_eval_config->uu_depth, pop_eval_config->bitenc_depth,pop_ssn->decode_state );
-        _dpd.setFileDataPtr(pop_ssn->decode_state->decodePtr, (uint16_t)detection_size);
-
-        if ((data_end_marker != end) || (pop_ssn->state_flags & POP_FLAG_MIME_END))
-        {
-           finalFilePosition(&position);
-        }
-        /*Download*/
-        if (_dpd.fileAPI->file_process(p,(uint8_t *)pop_ssn->decode_state->decodePtr,
-                (uint16_t)pop_ssn->decode_state->decoded_bytes, position, false, false)
-                && (isFileStart(position)) && pop_ssn->log_state)
-        {
-            _dpd.fileAPI->set_file_name_from_log(&(pop_ssn->log_state->file_log), p->stream_session_ptr);
-        }
-        ResetDecodedBytes(pop_ssn->decode_state);
-    }
-
-    /* if we got the data end reset state, otherwise we're probably still in the data
-     * to expect more data in next packet */
-    if (data_end_marker != end)
-    {
-        POP_ResetState();
-    }
-
-    return data_end;
-}
-
-
-/*
- * Handle Headers - Data or Mime
- *
- * @param   packet  standard Packet structure
- *
- * @param   i       index into p->payload buffer to start looking at data
- *
- * @return  i       index into p->payload where we stopped looking at data
- */
-static const uint8_t * POP_HandleHeader(SFSnortPacket *p, const uint8_t *ptr,
-                                          const uint8_t *data_end_marker)
-{
-    const uint8_t *eol;
-    const uint8_t *eolm;
-    const uint8_t *colon;
-    const uint8_t *content_type_ptr = NULL;
-    const uint8_t *cont_trans_enc = NULL;
-    const uint8_t *cont_disp = NULL;
-    int header_found;
-    int ret;
-    const uint8_t *start_hdr;
-
-    start_hdr = ptr;
-
-    /* if we got a content-type in a previous packet and are
-     * folding, the boundary still needs to be checked for */
-    if (pop_ssn->state_flags & POP_FLAG_IN_CONTENT_TYPE)
-        content_type_ptr = ptr;
-
-    if (pop_ssn->state_flags & POP_FLAG_IN_CONT_TRANS_ENC)
-        cont_trans_enc = ptr;
-
-    if (pop_ssn->state_flags & POP_FLAG_IN_CONT_DISP)
-        cont_disp = ptr;
-
-    while (ptr < data_end_marker)
-    {
-        POP_GetEOL(ptr, data_end_marker, &eol, &eolm);
-
-        /* got a line with only end of line marker should signify end of header */
-        if (eolm == ptr)
-        {
-            /* reset global header state values */
-            pop_ssn->state_flags &=
-                ~(POP_FLAG_FOLDING | POP_FLAG_IN_CONTENT_TYPE | POP_FLAG_DATA_HEADER_CONT
-                        | POP_FLAG_IN_CONT_TRANS_ENC );
-
-            pop_ssn->data_state = STATE_DATA_BODY;
-
-            /* if no headers, treat as data */
-            if (ptr == start_hdr)
-                return eolm;
-            else
-                return eol;
-        }
-
-        /* if we're not folding, see if we should interpret line as a data line
-         * instead of a header line */
-        if (!(pop_ssn->state_flags & (POP_FLAG_FOLDING | POP_FLAG_DATA_HEADER_CONT)))
-        {
-            char got_non_printable_in_header_name = 0;
-
-            /* if we're not folding and the first char is a space or
-             * colon, it's not a header */
-            if (isspace((int)*ptr) || *ptr == ':')
-            {
-                pop_ssn->data_state = STATE_DATA_BODY;
-                return ptr;
-            }
-
-            /* look for header field colon - if we're not folding then we need
-             * to find a header which will be all printables (except colon)
-             * followed by a colon */
-            colon = ptr;
-            while ((colon < eolm) && (*colon != ':'))
-            {
-                if (((int)*colon < 33) || ((int)*colon > 126))
-                    got_non_printable_in_header_name = 1;
-
-                colon++;
-            }
-
-            /* If the end on line marker and end of line are the same, assume
-             * header was truncated, so stay in data header state */
-            if ((eolm != eol) &&
-                ((colon == eolm) || got_non_printable_in_header_name))
-            {
-                /* no colon or got spaces in header name (won't be interpreted as a header)
-                 * assume we're in the body */
-                pop_ssn->state_flags &=
-                    ~(POP_FLAG_FOLDING | POP_FLAG_IN_CONTENT_TYPE | POP_FLAG_DATA_HEADER_CONT
-                            |POP_FLAG_IN_CONT_TRANS_ENC);
-
-                pop_ssn->data_state = STATE_DATA_BODY;
-
-                return ptr;
-            }
-
-            if(tolower((int)*ptr) == 'c')
-            {
-                pop_current_search = &pop_hdr_search[0];
-                header_found = _dpd.searchAPI->search_instance_find
-                    (pop_hdr_search_mpse, (const char *)ptr,
-                     eolm - ptr, 1, POP_SearchStrFound);
-
-                /* Headers must start at beginning of line */
-                if ((header_found > 0) && (pop_search_info.index == 0))
-                {
-                    switch (pop_search_info.id)
-                    {
-                        case HDR_CONTENT_TYPE:
-                            content_type_ptr = ptr + pop_search_info.length;
-                            pop_ssn->state_flags |= POP_FLAG_IN_CONTENT_TYPE;
-                            break;
-                        case HDR_CONT_TRANS_ENC:
-                            cont_trans_enc = ptr + pop_search_info.length;
-                            pop_ssn->state_flags |= POP_FLAG_IN_CONT_TRANS_ENC;
-                            break;
-                        case HDR_CONT_DISP:
-                            cont_disp = ptr + pop_search_info.length;
-                            pop_ssn->state_flags |= POP_FLAG_IN_CONT_DISP;
-                            break;
-                        default:
-                            break;
-                    }
-                }
-            }
-            else if(tolower((int)*ptr) == 'e')
-            {
-                if((eolm - ptr) >= 9)
-                {
-                    if(strncasecmp((const char *)ptr, "Encoding:", 9) == 0)
-                    {
-                        cont_trans_enc = ptr + 9;
-                        pop_ssn->state_flags |= POP_FLAG_IN_CONT_TRANS_ENC;
-                    }
-                }
-            }
-        }
-        else
-        {
-            pop_ssn->state_flags &= ~POP_FLAG_DATA_HEADER_CONT;
-        }
-
-
-        /* check for folding
-         * if char on next line is a space and not \n or \r\n, we are folding */
-        if ((eol < data_end_marker) && isspace((int)eol[0]) && (eol[0] != '\n'))
-        {
-            if ((eol < (data_end_marker - 1)) && (eol[0] != '\r') && (eol[1] != '\n'))
-            {
-                pop_ssn->state_flags |= POP_FLAG_FOLDING;
-            }
-            else
-            {
-                pop_ssn->state_flags &= ~POP_FLAG_FOLDING;
-            }
-        }
-        else if (eol != eolm)
-        {
-            pop_ssn->state_flags &= ~POP_FLAG_FOLDING;
-        }
-
-        /* check if we're in a content-type header and not folding. if so we have the whole
-         * header line/lines for content-type - see if we got a multipart with boundary
-         * we don't check each folded line, but wait until we have the complete header
-         * because boundary=BOUNDARY can be split across mulitple folded lines before
-         * or after the '=' */
-        if ((pop_ssn->state_flags &
-             (POP_FLAG_IN_CONTENT_TYPE | POP_FLAG_FOLDING)) == POP_FLAG_IN_CONTENT_TYPE)
-        {
-            if (pop_ssn->data_state != STATE_MIME_HEADER)
-            {
-                /* we got the full content-type header - look for boundary string */
-                ret = POP_GetBoundary((const char *)content_type_ptr, eolm - content_type_ptr);
-                if (ret != -1)
-                {
-                    ret = POP_BoundarySearchInit();
-                    if (ret != -1)
-                    {
-                        DEBUG_WRAP(DebugMessage(DEBUG_POP, "Got mime boundary: %s\n",
-                                                             pop_ssn->mime_boundary.boundary););
-
-                        pop_ssn->state_flags |= POP_FLAG_GOT_BOUNDARY;
-                    }
-                }
-            }
-            else if (!(pop_ssn->state_flags & POP_FLAG_EMAIL_ATTACH))
-            {
-                if( !POP_IsDecodingEnabled(pop_eval_config))
-                {
-                    SetPopBuffers(pop_ssn);
-                    if(pop_ssn->decode_state != NULL)
-                    {
-                        ResetBytesRead(pop_ssn->decode_state);
-                        POP_DecodeType((const char *)content_type_ptr, (eolm - content_type_ptr), false );
-                        pop_ssn->state_flags |= POP_FLAG_EMAIL_ATTACH;
-                        /* check to see if there are other attachments in this packet */
-                        if( pop_ssn->decode_state->decoded_bytes )
-                            pop_ssn->state_flags |= POP_FLAG_MULTIPLE_EMAIL_ATTACH;
-                    }
-                }
-            }
-            pop_ssn->state_flags &= ~POP_FLAG_IN_CONTENT_TYPE;
-            content_type_ptr = NULL;
-        }
-        else if ((pop_ssn->state_flags &
-                (POP_FLAG_IN_CONT_TRANS_ENC | POP_FLAG_FOLDING)) == POP_FLAG_IN_CONT_TRANS_ENC)
-        {
-            /* Check for Content-Transfer-Encoding : */
-            if( !POP_IsDecodingEnabled(pop_eval_config))
-            {
-                SetPopBuffers(pop_ssn);
-                if(pop_ssn->decode_state != NULL)
-                {
-                    ResetBytesRead(pop_ssn->decode_state);
-                    POP_DecodeType((const char *)cont_trans_enc, (eolm - cont_trans_enc), true );
-                    pop_ssn->state_flags |= POP_FLAG_EMAIL_ATTACH;
-                    /* check to see if there are other attachments in this packet */
-                    if( pop_ssn->decode_state->decoded_bytes )
-                        pop_ssn->state_flags |= POP_FLAG_MULTIPLE_EMAIL_ATTACH;
-                }
-            }
-            pop_ssn->state_flags &= ~POP_FLAG_IN_CONT_TRANS_ENC;
-
-            cont_trans_enc = NULL;
-        }
-        else if (((pop_ssn->state_flags &
-                (POP_FLAG_IN_CONT_DISP | POP_FLAG_FOLDING)) == POP_FLAG_IN_CONT_DISP) && cont_disp)
-        {
-            bool disp_cont = (pop_ssn->state_flags & POP_FLAG_IN_CONT_DISP_CONT)? true: false;
-            if( pop_eval_config->log_config.log_filename && pop_ssn->log_state)
-            {
-                if(! _dpd.fileAPI->log_file_name(cont_disp, eolm - cont_disp,
-                        &(pop_ssn->log_state->file_log), &disp_cont) )
-                    pop_ssn->log_flags |= POP_FLAG_FILENAME_PRESENT;
-            }
-            if (disp_cont)
-            {
-                pop_ssn->state_flags |= POP_FLAG_IN_CONT_DISP_CONT;
-            }
-            else
-            {
-                pop_ssn->state_flags &= ~POP_FLAG_IN_CONT_DISP;
-                pop_ssn->state_flags &= ~POP_FLAG_IN_CONT_DISP_CONT;
-            }
-
-            cont_disp = NULL;
-        }
-
-        /* if state was unknown, at this point assume we know */
-        if (pop_ssn->data_state == STATE_DATA_UNKNOWN)
-            pop_ssn->data_state = STATE_DATA_HEADER;
-
-        ptr = eol;
-
-        if (ptr == data_end_marker)
-            pop_ssn->state_flags |= POP_FLAG_DATA_HEADER_CONT;
-    }
-
-    return ptr;
-}
-
-
-/*
- * Handle DATA_BODY statepop_ssn->log_state
- *
- * @param   packet  standard Packet structure
- *
- * @param   i       index into p->payload buffer to start looking at data
- *
- * @return  i       index into p->payload where we stopped looking at data
- */
-static const uint8_t * POP_HandleDataBody(SFSnortPacket *p, const uint8_t *ptr,
-                                            const uint8_t *data_end_marker)
-{
-    int boundary_found = 0;
-    const uint8_t *boundary_ptr = NULL;
-    const uint8_t *attach_start = NULL;
-    const uint8_t *attach_end = NULL;
-
-    if ( pop_ssn->state_flags & POP_FLAG_EMAIL_ATTACH )
-        attach_start = ptr;
-    /* look for boundary */
-    if (pop_ssn->state_flags & POP_FLAG_GOT_BOUNDARY)
-    {
-        boundary_found = _dpd.searchAPI->stateful_search_instance_find
-            (pop_ssn->mime_boundary.boundary_search, (const char *)ptr,
-             data_end_marker - ptr, 0, POP_BoundaryStrFound, &(pop_ssn->mime_boundary.state));
-
-        if (boundary_found > 0)
-        {
-            pop_ssn->mime_boundary.state = 0;
-            boundary_ptr = ptr + pop_search_info.index;
-
-            /* should start at beginning of line */
-            if ((boundary_ptr == ptr) || (*(boundary_ptr - 1) == '\n'))
-            {
-                const uint8_t *eol;
-                const uint8_t *eolm;
-                const uint8_t *tmp;
-
-                if (pop_ssn->state_flags & POP_FLAG_EMAIL_ATTACH )
-                {
-                    attach_end = boundary_ptr-1;
-                    pop_ssn->state_flags &= ~POP_FLAG_EMAIL_ATTACH;
-                    if(attach_start < attach_end)
-                    {
-                        if (*(attach_end - 1) == '\r')
-                            attach_end--;
-
-                        if(EmailDecode( attach_start, attach_end, pop_ssn->decode_state) < DECODE_SUCCESS )
-                        {
-                            POP_DecodeAlert();
-                        }
-                    }
-                }
-
-
-                if(boundary_ptr > ptr)
-                    tmp = boundary_ptr + pop_search_info.length;
-                else
-                {
-                    tmp = (const uint8_t *)_dpd.searchAPI->search_instance_find_end((char *)boundary_ptr, 
-                            (data_end_marker - boundary_ptr), pop_ssn->mime_boundary.boundary, pop_search_info.length);
-                }
-
-                /* Check for end boundary */
-                if (((tmp + 1) < data_end_marker) && (tmp[0] == '-') && (tmp[1] == '-'))
-                {
-                    DEBUG_WRAP(DebugMessage(DEBUG_POP, "Mime boundary end found: %s--\n",
-                                            (char *)pop_ssn->mime_boundary.boundary););
-
-                    /* no more MIME */
-                    pop_ssn->state_flags &= ~POP_FLAG_GOT_BOUNDARY;
-                    pop_ssn->state_flags |= POP_FLAG_MIME_END;
-
-                    /* free boundary search */
-                    _dpd.searchAPI->search_instance_free(pop_ssn->mime_boundary.boundary_search);
-                    pop_ssn->mime_boundary.boundary_search = NULL;
-                }
-                else
-                {
-                    DEBUG_WRAP(DebugMessage(DEBUG_POP, "Mime boundary found: %s\n",
-                                            (char *)pop_ssn->mime_boundary.boundary););
-
-                    pop_ssn->data_state = STATE_MIME_HEADER;
-                }
-
-                /* get end of line - there could be spaces after boundary before eol */
-                POP_GetEOL(boundary_ptr + pop_search_info.length, data_end_marker, &eol, &eolm);
-
-                return eol;
-            }
-        }
-    }
-
-    if ( pop_ssn->state_flags & POP_FLAG_EMAIL_ATTACH )
-    {
-        attach_end = data_end_marker;
-        if(attach_start < attach_end)
-        {
-            if(EmailDecode( attach_start, attach_end, pop_ssn->decode_state) < DECODE_SUCCESS )
-            {
-                POP_DecodeAlert();
-            }
-        }
-    }
-
-    return data_end_marker;
-}
-
-
 /*
  * Process client packet
  *
@@ -1475,8 +738,6 @@ static void POP_ProcessClientPacket(SFSnortPacket *p)
 
 
 }
-
-
 
 /*
  * Process server packet
@@ -1502,7 +763,8 @@ static void POP_ProcessServerPacket(SFSnortPacket *p)
         if(pop_ssn->state == STATE_DATA)
         {
             DEBUG_WRAP(DebugMessage(DEBUG_POP, "DATA STATE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"););
-            ptr = POP_HandleData(p, ptr, end);
+            //ptr = POP_HandleData(p, ptr, end);
+            ptr = _dpd.fileAPI->process_mime_data(p, ptr, end, &(pop_ssn->mime_ssn), 0, true);
             continue;
         }
         POP_GetEOL(ptr, end, &eol, &eolm);
@@ -1538,6 +800,21 @@ static void POP_ProcessServerPacket(SFSnortPacket *p)
         }
         else
         {
+            DEBUG_WRAP(DebugMessage(DEBUG_POP, "Server response not found - see if it's SSL data\n"););
+
+            if ((pop_ssn->session_flags & POP_FLAG_CHECK_SSL) &&
+                    (IsSSL(ptr, end - ptr, p->flags)))
+            {
+                DEBUG_WRAP(DebugMessage(DEBUG_POP, "Server response is an SSL packet\n"););
+
+                pop_ssn->state = STATE_TLS_DATA;
+
+                return;
+            }
+            else if (pop_ssn->session_flags & POP_FLAG_CHECK_SSL)
+            {
+                pop_ssn->session_flags &= ~POP_FLAG_CHECK_SSL;
+            }
             if(pop_ssn->prev_response == RESP_OK)
             {
                 {
@@ -1575,7 +852,7 @@ static int POP_Inspect(SFSnortPacket *p)
 #ifdef TARGET_BASED
     /* POP could be configured to be stateless.  If stream isn't configured, assume app id
      * will never be set and just base inspection on configuration */
-    if (p->stream_session_ptr == NULL)
+    if (p->stream_session == NULL)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_POP, "POP: Target-based: No stream session.\n"););
 
@@ -1589,7 +866,7 @@ static int POP_Inspect(SFSnortPacket *p)
     }
     else
     {
-        int16_t app_id = _dpd.streamAPI->get_application_protocol_id(p->stream_session_ptr);
+        int16_t app_id = _dpd.sessionAPI->get_application_protocol_id(p->stream_session);
 
         if (app_id != 0)
         {
@@ -1640,12 +917,13 @@ void SnortPOP(SFSnortPacket *p)
 {
     int detected = 0;
     int pkt_dir;
-    tSfPolicyId policy_id = _dpd.getRuntimePolicy();
+    tSfPolicyId policy_id = _dpd.getNapRuntimePolicy();
+    ssl_callback_interface_t *ssl_cb = (ssl_callback_interface_t *)_dpd.getSSLCallback();
 
     PROFILE_VARS;
 
 
-    pop_ssn = (POP *)_dpd.streamAPI->get_application_data(p->stream_session_ptr, PP_POP);
+    pop_ssn = (POP *)_dpd.sessionAPI->get_application_data(p->stream_session, PP_POP);
     if (pop_ssn != NULL)
         pop_eval_config = (POPConfig *)sfPolicyUserDataGet(pop_ssn->config, pop_ssn->policy_id);
     else
@@ -1668,6 +946,37 @@ void SnortPOP(SFSnortPacket *p)
 
     if (pkt_dir == POP_PKT_FROM_CLIENT)
     {
+        /* This packet should be a tls client hello */
+        if (pop_ssn->state == STATE_TLS_CLIENT_PEND)
+        {
+            if (IsTlsClientHello(p->payload, p->payload + p->payload_size))
+            {
+                DEBUG_WRAP(DebugMessage(DEBUG_POP,
+                                        "TLS DATA STATE ~~~~~~~~~~~~~~~~~~~~~~~~~\n"););
+
+                pop_ssn->state = STATE_TLS_SERVER_PEND;
+                if(ssl_cb)
+                    ssl_cb->session_initialize(p, pop_ssn, POP_Set_flow_id);
+                return;
+            }
+            else
+            {
+                /* reset state - server may have rejected STARTTLS command */
+                pop_ssn->state = STATE_UNKNOWN;
+            }
+        }
+        if ((pop_ssn->state == STATE_TLS_DATA)
+                || (pop_ssn->state == STATE_TLS_SERVER_PEND))
+        {
+            if( _dpd.streamAPI->is_session_decrypted(p->stream_session))
+            {
+                pop_ssn->state = STATE_COMMAND;
+            }
+            else
+            {
+                return;
+            }
+        }
         POP_ProcessClientPacket(p);
         DEBUG_WRAP(DebugMessage(DEBUG_POP, "POP client packet\n"););
     }
@@ -1684,38 +993,69 @@ void SnortPOP(SFSnortPacket *p)
                         "Processing as a server packet\n"););
         }
 #endif
+        if (pop_ssn->state == STATE_TLS_SERVER_PEND)
+        {
+            if( _dpd.streamAPI->is_session_decrypted(p->stream_session))
+            {
+                pop_ssn->state = STATE_COMMAND;
+            }
+            else if (IsTlsServerHello(p->payload, p->payload + p->payload_size))
+            {
+                pop_ssn->state = STATE_TLS_DATA;
+            }
+            else if (!(_dpd.sessionAPI->get_session_flags(p->stream_session) & SSNFLAG_MIDSTREAM)
+                        && !_dpd.streamAPI->missed_packets(p->stream_session, SSN_DIR_BOTH))
+            {
+                /* revert back to command state - assume server didn't accept STARTTLS */
+                pop_ssn->state = STATE_UNKNOWN;
+            }
+            else
+                return;
+        }
 
-        if (!_dpd.readyForProcess(p))
+        if (pop_ssn->state == STATE_TLS_DATA)
         {
-            /* Packet will be rebuilt, so wait for it */
-            DEBUG_WRAP(DebugMessage(DEBUG_POP, "Client packet will be reassembled\n"));
-            return;
+            if( _dpd.streamAPI->is_session_decrypted(p->stream_session))
+            {
+                pop_ssn->state = STATE_COMMAND;
+            }
+            else
+                return;
         }
-        else if (pop_ssn->reassembling && !(p->flags & FLAG_REBUILT_STREAM))
-        {
-            /* If this isn't a reassembled packet and didn't get
-             * inserted into reassembly buffer, there could be a
-             * problem.  If we miss syn or syn-ack that had window
-             * scaling this packet might not have gotten inserted
-             * into reassembly buffer because it fell outside of
-             * window, because we aren't scaling it */
-            pop_ssn->session_flags |= POP_FLAG_GOT_NON_REBUILT;
-            pop_ssn->state = STATE_UNKNOWN;
-        }
-        else if (pop_ssn->reassembling && (pop_ssn->session_flags & POP_FLAG_GOT_NON_REBUILT))
-        {
-            /* This is a rebuilt packet.  If we got previous packets
-             * that were not rebuilt, state is going to be messed up
-             * so set state to unknown. It's likely this was the
-             * beginning of the conversation so reset state */
-            DEBUG_WRAP(DebugMessage(DEBUG_POP, "Got non-rebuilt packets before "
-                "this rebuilt packet\n"););
 
-            pop_ssn->state = STATE_UNKNOWN;
-            pop_ssn->session_flags &= ~POP_FLAG_GOT_NON_REBUILT;
+        {
+            if (!_dpd.readyForProcess(p))
+            {
+                /* Packet will be rebuilt, so wait for it */
+                DEBUG_WRAP(DebugMessage(DEBUG_POP, "Client packet will be reassembled\n"));
+                return;
+            }
+            else if (pop_ssn->reassembling && !(p->flags & FLAG_REBUILT_STREAM))
+            {
+                /* If this isn't a reassembled packet and didn't get
+                 * inserted into reassembly buffer, there could be a
+                 * problem.  If we miss syn or syn-ack that had window
+                 * scaling this packet might not have gotten inserted
+                 * into reassembly buffer because it fell outside of
+                 * window, because we aren't scaling it */
+                pop_ssn->session_flags |= POP_FLAG_GOT_NON_REBUILT;
+                pop_ssn->state = STATE_UNKNOWN;
+            }
+            else if (pop_ssn->reassembling && (pop_ssn->session_flags & POP_FLAG_GOT_NON_REBUILT))
+            {
+                /* This is a rebuilt packet.  If we got previous packets
+                 * that were not rebuilt, state is going to be messed up
+                 * so set state to unknown. It's likely this was the
+                 * beginning of the conversation so reset state */
+                DEBUG_WRAP(DebugMessage(DEBUG_POP, "Got non-rebuilt packets before "
+                    "this rebuilt packet\n"););
+
+                pop_ssn->state = STATE_UNKNOWN;
+                pop_ssn->session_flags &= ~POP_FLAG_GOT_NON_REBUILT;
+            }
+            /* Process as a server packet */
+            POP_ProcessServerPacket(p);
         }
-        /* Process as a server packet */
-        POP_ProcessServerPacket(p);
     }
 
 
@@ -1742,16 +1082,13 @@ static void POP_DisableDetect(SFSnortPacket *p)
 {
     _dpd.disableAllDetect(p);
 
-    _dpd.setPreprocBit(p, PP_SFPORTSCAN);
-    _dpd.setPreprocBit(p, PP_PERFMONITOR);
-    _dpd.setPreprocBit(p, PP_STREAM5);
-    _dpd.setPreprocBit(p, PP_SDF);
+    _dpd.enablePreprocessor(p, PP_SDF);
 }
 
 static inline POP *POP_GetSession(void *data)
 {
     if(data)
-        return (POP *)_dpd.streamAPI->get_application_data(data, PP_POP);
+        return (POP *)_dpd.sessionAPI->get_application_data(data, PP_POP);
 
     return NULL;
 }
@@ -1764,8 +1101,14 @@ int POP_GetFilename(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
     if(ssn == NULL)
         return 0;
 
-    *buf = ssn->log_state->file_log.filenames;
-    *len = ssn->log_state->file_log.file_logged;
+    *buf = ssn->mime_ssn.log_state->file_log.filenames;
+    *len = ssn->mime_ssn.log_state->file_log.file_logged;
 
     return 1;
+}
+void POP_Set_flow_id( void *app_data, uint32_t fid )
+{
+    POP *ssn = (POP *)app_data;
+    if( ssn )
+        ssn->flow_id = fid;
 }

@@ -408,7 +408,7 @@ static int ServiceMapAddOtn(srmm_table_t *srmm, int proto, char *servicename, Op
     }
     else if( proto ==  ETHERNET_TYPE_IP )
     {
-        to_srv = srmm->tcp_to_srv;
+        to_srv = srmm->ip_to_srv;
         to_cli = srmm->ip_to_cli;
     }
     else
@@ -1226,7 +1226,7 @@ static inline int IsPmdFpEligible(PatternMatchData *content)
     if (content == NULL)
         return 0;
 
-    if ((content->pattern_buf != NULL) && (content->pattern_size != 0))
+    if ((content->pattern_buf != NULL) && (content->pattern_size != 0) && (!content->protected_pattern))
     {
         /* We don't add cookie and some other contents to fast pattern matcher */
         if(content->http_buffer && !IsHttpBufFpEligible(content->http_buffer))
@@ -3135,8 +3135,7 @@ int fpCreateFastPacketDetection(SnortConfig *sc)
                 fp->num_patterns_trimmed);
     }
 #else
-    if (IsAdaptiveConfiguredForSnortConfig(sc, getParserPolicy(sc))
-            || fpDetectGetDebugPrintFastPatterns(fp))
+    if (IsAdaptiveConfiguredForSnortConfig(sc) || fpDetectGetDebugPrintFastPatterns(fp))
     {
         if (fpDetectGetDebugPrintRuleGroupBuildDetails(fp))
             LogMessage("Creating Service Based Rule Maps....\n");

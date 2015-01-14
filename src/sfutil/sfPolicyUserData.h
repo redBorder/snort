@@ -53,53 +53,37 @@ typedef struct
 typedef tSfPolicyUserContext * tSfPolicyUserContextId;
 
 //SharedObjectDeleteBegins
+// index for default nap & ips polices is 0
+// so single function to return the default idx
 static inline tSfPolicyId getDefaultPolicy(void)
 {
-    return 0;
+    return SF_DEFAULT_POLICY_ID;
 }
 //SharedObjectDeleteEnds
 
-tSfPolicyUserContextId sfPolicyConfigCreate(
-        void
-        );
-
-void sfPolicyConfigDelete(
-        tSfPolicyUserContextId pContext
-        );
+tSfPolicyUserContextId sfPolicyConfigCreate( void );
+void sfPolicyConfigDelete( tSfPolicyUserContextId pContext );
 
 //Functions for setting, getting and clearing policy ids
-static inline void sfPolicyUserPolicySet (
-        tSfPolicyUserContextId pContext,
-        tSfPolicyId policyId
-        )
+static inline void sfPolicyUserPolicySet ( tSfPolicyUserContextId pContext, tSfPolicyId policyId )
 {
     pContext->currentPolicyId = policyId;
 }
 
-static inline tSfPolicyId sfPolicyUserPolicyGet (
-        tSfPolicyUserContextId pContext
-        )
+static inline tSfPolicyId sfPolicyUserPolicyGet ( tSfPolicyUserContextId pContext )
 {
     return pContext->currentPolicyId;
 }
 
-static inline unsigned int sfPolicyUserPolicyGetActive (
-        tSfPolicyUserContextId pContext
-        )
+static inline unsigned int sfPolicyUserPolicyGetActive ( tSfPolicyUserContextId pContext )
 {
     return (pContext->numActivePolicies);
 }
 
 //Functions for setting, getting and clearing user data specific to policies.
-int sfPolicyUserDataSet (
-        tSfPolicyUserContextId pContext,
-        tSfPolicyId policyId,
-        void *config
-        );
-static inline void * sfPolicyUserDataGet (
-        tSfPolicyUserContextId pContext,
-        tSfPolicyId policyId
-        )
+int sfPolicyUserDataSet ( tSfPolicyUserContextId pContext, tSfPolicyId policyId, void *config );
+
+static inline void * sfPolicyUserDataGet ( tSfPolicyUserContextId pContext, tSfPolicyId policyId )
 {
     if ((pContext != NULL) && (policyId < pContext->numAllocatedPolicies))
     {
@@ -109,50 +93,38 @@ static inline void * sfPolicyUserDataGet (
     return NULL;
 }
 
-static inline int sfPolicyUserDataSetDefault (
-        tSfPolicyUserContextId pContext,
-        void *config
-        )
+static inline int sfPolicyUserDataSetDefault ( tSfPolicyUserContextId pContext, void *config )
 {
     return sfPolicyUserDataSet (pContext, getDefaultPolicy(), config);
 }
 
-static inline void * sfPolicyUserDataGetDefault (
-        tSfPolicyUserContextId pContext
-        )
+static inline void * sfPolicyUserDataGetDefault ( tSfPolicyUserContextId pContext )
 {
     return sfPolicyUserDataGet (pContext, getDefaultPolicy());
 }
 
-static inline int sfPolicyUserDataSetCurrent (
-        tSfPolicyUserContextId pContext,
-        void *config
-        )
+static inline int sfPolicyUserDataSetCurrent ( tSfPolicyUserContextId pContext, void *config )
 {
     return sfPolicyUserDataSet (pContext, pContext->currentPolicyId, config);
 }
-static inline void * sfPolicyUserDataGetCurrent (
-        tSfPolicyUserContextId pContext
-        )
+
+static inline void * sfPolicyUserDataGetCurrent ( tSfPolicyUserContextId pContext )
 {
     return sfPolicyUserDataGet (pContext, pContext->currentPolicyId);
 }
 
-void * sfPolicyUserDataClear (
-        tSfPolicyUserContextId pContext,
-        tSfPolicyId policyId
-        );
+void *sfPolicyUserDataClear( tSfPolicyUserContextId pContext, tSfPolicyId policyId );
 
-int sfPolicyUserDataIterate (
-        struct _SnortConfig *sc,
-        tSfPolicyUserContextId pContext,
-        int (*callback)(struct _SnortConfig *sc, tSfPolicyUserContextId pContext, tSfPolicyId policyId, void* config)
-        );
+int sfPolicyUserDataIterate( struct _SnortConfig *sc, tSfPolicyUserContextId pContext,
+                             int ( *callback )( struct _SnortConfig *sc, 
+                                                tSfPolicyUserContextId pContext, 
+                                                tSfPolicyId policyId,
+                                                void *config ) );
 
-int sfPolicyUserDataFreeIterate (
-        tSfPolicyUserContextId pContext,
-        int (*callback)(tSfPolicyUserContextId pContext, tSfPolicyId policyId, void* config)
-        );
+int sfPolicyUserDataFreeIterate( tSfPolicyUserContextId pContext,
+                                 int ( *callback )( tSfPolicyUserContextId pContext, 
+                                                    tSfPolicyId policyId, 
+                                                    void *config ) );
 
 
 #endif

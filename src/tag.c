@@ -649,7 +649,11 @@ int CheckTagList(Packet *p, Event *event, void** log_list)
         {
             /* set the event info */
             SetEvent(event, GENERATOR_TAG, TAG_LOG_PKT, 1, 1, 1,
+#if !defined(FEAT_OPEN_APPID)
                     returned->event_id);
+#else /* defined(FEAT_OPEN_APPID) */
+                    returned->event_id, NULL);
+#endif /* defined(FEAT_OPEN_APPID) */
             /* set event reference details */
             event->ref_time.tv_sec = returned->event_time.tv_sec;
             event->ref_time.tv_usec = returned->event_time.tv_usec;

@@ -36,7 +36,7 @@
 #include "util.h"
 #include "decode.h"
 #include "active.h"
-#include "file_sha256.h"
+#include "sf_sechash.h"
 
 /* The hash table of expected files */
 static SFXHASH *fileHash = NULL;
@@ -210,7 +210,9 @@ static inline File_Verdict checkVerdict(Packet *p, FileNode *node, SFXHASH_NODE 
     {
         Active_ForceDropPacket();
         Active_DropSession(p);
+#ifdef ACTIVE_RESPONSE
         Active_QueueReject();
+#endif
         if (log_file_action)
         {
             log_file_action(p->ssnptr, FILE_RESUME_BLOCK);
@@ -222,8 +224,10 @@ static inline File_Verdict checkVerdict(Packet *p, FileNode *node, SFXHASH_NODE 
         /*Take the cached verdict*/
         Active_ForceDropPacket();
         Active_DropSession(p);
+#ifdef ACTIVE_RESPONSE
         if (FILE_VERDICT_REJECT == node->verdict)
             Active_QueueReject();
+#endif
         if (log_file_action)
         {
             log_file_action(p->ssnptr, FILE_RESUME_BLOCK);

@@ -112,74 +112,11 @@ typedef struct _FileState
     FileSigState     sig_state;
 } FileState;
 
-typedef struct s_FILE_LogState
-{
-    uint8_t *filenames;
-    uint16_t file_logged;
-    uint16_t file_current;
-    uint16_t file_name;
-} FILE_LogState;
-
-typedef struct s_MAIL_LogState
-{
-    void *log_hdrs_bkt;
-    unsigned char *emailHdrs;
-    uint32_t log_depth;
-    uint32_t hdrs_logged;
-    uint8_t *recipients;
-    uint16_t rcpts_logged;
-    uint8_t *senders;
-    uint16_t snds_logged;
-    FILE_LogState file_log;
-}MAIL_LogState;
-
-typedef struct s_MAIL_LogConfig
-{
-    uint32_t  memcap;
-    char  log_mailfrom;
-    char  log_rcptto;
-    char  log_filename;
-    char  log_email_hdrs;
-    uint32_t   email_hdrs_log_depth;
-}MAIL_LogConfig;
-
-/* Max length of boundary string, defined in RFC 2046 */
-#define MAX_MIME_BOUNDARY_LEN  70
-
-typedef struct _MimeBoundary
-{
-    int    state;
-    char   boundary[2 + MAX_MIME_BOUNDARY_LEN + 1];  /* '--' + MIME boundary string + '\0' */
-    int    boundary_len;
-    void  *boundary_search;
-
-} MimeBoundary;
-
-typedef struct _DecodeConfig
-{
-    int  max_mime_mem;
-    int max_depth;
-    int b64_depth;
-    int qp_depth;
-    int bitenc_depth;
-    int uu_depth;
-    int64_t file_depth;
-} DecodeConfig;
-
-typedef struct _MimeState
-{
-    int data_state;
-    int state_flags;
-    int log_flags;
-    void *decode_state;
-    MimeBoundary  mime_boundary;
-    DecodeConfig *decode_conf;
-    MAIL_LogConfig *log_config;
-    MAIL_LogState *log_state;
-    void *decode_bkt;
-    void *mime_mempool;
-    void *log_mempool;
-} MimeState;
+struct s_MAIL_LogState;
+struct _DecodeConfig;
+struct s_MAIL_LogConfig;
+struct _MimeDataPafInfo;
+struct _MimeState;
 
 struct _FileCaptureInfo;
 typedef struct _FileCaptureInfo FileCaptureInfo;
@@ -216,9 +153,7 @@ typedef void (*Enable_file_signature_func)(File_signature_callback_func);
 typedef void (*Enable_file_capture_func)(File_signature_callback_func);
 typedef void (*Set_file_action_log_func)(Log_file_action_func);
 
-typedef int  (*Log_file_name_func)(const uint8_t *start, int length, FILE_LogState *log_state, bool *disp_cont);
-typedef void (*Set_file_name_from_log_func)(FILE_LogState *log_state, void *ssn);
-typedef int (*Set_log_buffers_func)(MAIL_LogState **log_state, MAIL_LogConfig *conf, void *mempool);
+typedef int (*Set_log_buffers_func)(struct s_MAIL_LogState **log_state, struct s_MAIL_LogConfig *conf, void *mempool);
 typedef void* (*Init_mime_mempool_func)(int max_mime_mem, int max_depth, void *mempool, const char *preproc_name);
 typedef void* (*Init_log_mempool_func)(uint32_t email_hdrs_log_depth, uint32_t memcap,  void *mempool, const char *preproc_name);
 
@@ -227,15 +162,16 @@ typedef int (*File_resume_block_add_file_func)(void *pkt, uint32_t file_sig,
 typedef File_Verdict (*File_resume_block_check_func)(void *pkt, uint32_t file_sig);
 typedef uint32_t (*Str_to_hash_func)(uint8_t *str, int length );
 typedef void (*File_signature_lookup_func)(void* p, bool is_retransmit);
-typedef void (*Set_mime_decode_config_defaults_func)(DecodeConfig *decode_conf);
-typedef void (*Set_mime_log_config_defaults_func)(MAIL_LogConfig *log_config);
-typedef int (*Parse_mime_decode_args_func)(DecodeConfig *decode_conf, char *arg, const char *preproc_name);
+typedef void (*Set_mime_decode_config_defaults_func)(struct _DecodeConfig *decode_conf);
+typedef void (*Set_mime_log_config_defaults_func)(struct s_MAIL_LogConfig *log_config);
+typedef int (*Parse_mime_decode_args_func)(struct _DecodeConfig *decode_conf, char *arg, const char *preproc_name);
 typedef const uint8_t * (*Process_mime_data_func)(void *packet, const uint8_t *start, const uint8_t *end,
-        const uint8_t *data_end_marker, uint8_t *data_end, MimeState *mime_ssn, bool upload);
-typedef void (*Free_mime_session_func)(MimeState *mime_ssn);
-typedef bool (*Is_decoding_enabled_func)(DecodeConfig *decode_conf);
-typedef bool (*Is_decoding_conf_changed_func)(DecodeConfig *configNext, DecodeConfig *config, const char *preproc_name);
-typedef bool (*Is_mime_log_enabled_func)(MAIL_LogConfig *log_config);
+        struct _MimeState *mime_ssn, bool upload, bool paf_enabled);
+typedef void (*Free_mime_session_func)(struct _MimeState *mime_ssn);
+typedef bool (*Is_decoding_enabled_func)(struct _DecodeConfig *decode_conf);
+typedef bool (*Is_decoding_conf_changed_func)(struct _DecodeConfig *configNext, struct _DecodeConfig *config, const char *preproc_name);
+typedef bool (*Check_decoding_conf_func)(struct _DecodeConfig *configNext, struct _DecodeConfig *config, const char *preproc_name);
+typedef bool (*Is_mime_log_enabled_func)(struct s_MAIL_LogConfig *log_config);
 typedef void (*Finalize_mime_position_func)(void *ssnptr, void *decode_state, FilePosition *position);
 typedef File_Verdict (*Get_file_verdict_func)(void *ssnptr);
 typedef void (*Render_block_verdict_func)(void *ctx, void *p);
@@ -245,12 +181,15 @@ typedef void (*Release_file_func)(FileCaptureInfo *data);
 typedef size_t (*File_capture_size_func)(FileCaptureInfo *file_mem);
 
 typedef bool (*Is_file_service_enabled)(void);
-typedef void (*Register_mime_paf_service) (struct _SnortConfig *sc, int16_t app, tSfPolicyId policy);
-typedef void (*Register_mime_paf_port) (struct _SnortConfig *sc, unsigned int i, tSfPolicyId policy);
-typedef void (*Update_file_name_func) (MAIL_LogState *log_state);
-#if defined(FEAT_FILE_INSPECT)
+typedef bool (*Check_paf_abort_func)(void* ssn);
+typedef void (*Update_file_name_func) (struct s_MAIL_LogState *log_state);
+typedef FilePosition (*GetFilePosition)(void *pkt);
+typedef void (*Reset_mime_paf_state_func)(struct _MimeDataPafInfo *data_info);
+/*  Process data boundary and flush each file based on boundary*/
+typedef bool (*Process_mime_paf_data_func)(struct _MimeDataPafInfo *data_info,  uint8_t data);
+typedef bool (*Check_data_end_func)(void *end_state,  uint8_t data);
 typedef uint32_t (*Get_file_type_id)(void *);
-#endif /* FEAT_FILE_INSPECT */
+typedef uint32_t (*Get_new_file_instance)(void *);
 
 /*Context based file process functions*/
 typedef struct _FileContext* (*Create_file_context_func)(void *ssnptr);
@@ -259,6 +198,7 @@ typedef bool (*Set_file_context_func)(void *ssnptr, struct _FileContext *ctx);
 typedef int (*Process_file_func)( struct _FileContext *ctx, void *p,
         uint8_t *file_data, int data_size, FilePosition position,
         bool suspend_block_verdict);
+typedef int64_t (*Get_max_file_capture_size)(void *ssn);
 
 typedef struct _file_api
 {
@@ -451,9 +391,6 @@ typedef struct _file_api
     Get_file_depth_func get_max_file_depth;
 
     /*--------------Common functions used for MIME processing-------------*/
-    Log_file_name_func log_file_name;
-    Update_file_name_func update_file_name;
-    Set_file_name_from_log_func set_file_name_from_log;
     Set_log_buffers_func set_log_buffers;
     Init_mime_mempool_func init_mime_mempool;
     Init_log_mempool_func init_log_mempool;
@@ -464,8 +401,13 @@ typedef struct _file_api
     Free_mime_session_func free_mime_session;
     Is_decoding_enabled_func is_decoding_enabled;
     Is_decoding_conf_changed_func is_decoding_conf_changed;
+    Check_decoding_conf_func check_decoding_conf;
     Is_mime_log_enabled_func is_mime_log_enabled;
     Finalize_mime_position_func finalize_mime_position;
+    Reset_mime_paf_state_func reset_mime_paf_state;
+    Process_mime_paf_data_func process_mime_paf_data;
+    Check_data_end_func check_data_end;
+    Check_paf_abort_func check_paf_abort;
 
     /*--------------Other helper functions-------------*/
     File_resume_block_add_file_func file_resume_block_add_file;
@@ -534,7 +476,6 @@ typedef struct _file_api
      */
     Release_file_func release_file;
 
-#if defined(FEAT_FILE_INSPECT)
     /* Return the file rule id associated with a session.
      *
      * Arguments:
@@ -544,12 +485,6 @@ typedef struct _file_api
      *   (u32) file-rule id on session; FILE_TYPE_UNKNOWN otherwise.
      */
     Get_file_type_id get_file_type_id;
-#endif /* FEAT_FILE_INSPECT */
-#ifdef TARGET_BASED
-    Register_mime_paf_service register_mime_paf_service;
-#endif
-    Register_mime_paf_port register_mime_paf_port;
-
 
     /* Create a file context to use
      *
@@ -604,9 +539,22 @@ typedef struct _file_api
      */
     Process_file_func process_file;
 
+    /* Return a unique file instance number
+     *
+     * Arguments:
+     *   void *ssnptr: session pointer
+     * Returns:
+     *   (u32) a unique file instance id.
+     */
+    Get_new_file_instance get_new_file_instance;
+
+    GetFilePosition get_file_position;
+
+    Get_max_file_capture_size get_max_file_capture_size;
+
 } FileAPI;
 
-/* To be set by Stream5 */
+/* To be set by Stream */
 extern FileAPI *file_api;
 
 static inline void initFilePosition(FilePosition *position,

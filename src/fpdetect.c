@@ -59,6 +59,7 @@
 #include "event_queue.h"
 #include "event_wrapper.h"
 #include "active.h"
+#include "encode.h"
 
 #include "sp_pattern_match.h"
 #include "spp_frag3.h"
@@ -359,7 +360,9 @@ int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
 
         case RULE_TYPE__REJECT:
             DropAction(p, otn, &otn->event_data);
+#ifdef ACTIVE_RESPONSE
             Active_QueueReject();
+#endif
             SetTags(p, otn, event_id);
             break;
 
@@ -879,7 +882,7 @@ static inline int fpFinalSelectEvent(OTNX_MATCH_DATA *o, Packet *p)
             for(j=0; j < o->matchInfo[i].iMatchCount; j++)
             {
                 otn = o->matchInfo[i].MatchArray[j];
-                rtn = getRtnFromOtn(otn, getRuntimePolicy());
+                rtn = getRtnFromOtn(otn, getIpsRuntimePolicy());
 
                 if ((otn != NULL) && (rtn != NULL) && (rtn->type == RULE_TYPE__PASS))
                 {
@@ -1146,7 +1149,7 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
          **  that are between a preprocessor and rules.
          */
         {
-            tSfPolicyId policy_id = getRuntimePolicy();
+            tSfPolicyId policy_id = getIpsRuntimePolicy();
             SnortPolicy *policy = snort_conf->targeted_policies[policy_id];
             /* safe to assume policy is non NULL here because of check in
              * Preprocess() */
@@ -1398,7 +1401,7 @@ static inline int fpEvalHeaderUdp(Packet *p, OTNX_MATCH_DATA *omd)
     PORT_GROUP *src = NULL, *dst = NULL, *gen = NULL;
 
 #ifdef TARGET_BASED
-    if (IsAdaptiveConfigured(getRuntimePolicy()))
+    if (IsAdaptiveConfigured())
     {
         /* Check for a service/protocol ordinal for this packet */
         int16_t proto_ordinal = GetProtocolReference(p);
@@ -1408,7 +1411,7 @@ static inline int fpEvalHeaderUdp(Packet *p, OTNX_MATCH_DATA *omd)
         if (proto_ordinal > 0)
         {
             /* Grab the generic group -- the any-any rules */
-            prmFindGenericRuleGroup(snort_conf->prmTcpRTNX, &gen);
+            prmFindGenericRuleGroup(snort_conf->prmUdpRTNX, &gen);
 
             /* TODO:  To From Server ?, else we apply  */
             dst = fpGetServicePortGroupByOrdinal(snort_conf->sopgTable, IPPROTO_UDP,
@@ -1476,7 +1479,7 @@ static inline int fpEvalHeaderTcp(Packet *p, OTNX_MATCH_DATA *omd)
     PORT_GROUP *src = NULL, *dst = NULL, *gen = NULL;
 
 #ifdef TARGET_BASED
-    if (IsAdaptiveConfigured(getRuntimePolicy()))
+    if (IsAdaptiveConfigured())
     {
         int16_t proto_ordinal = GetProtocolReference(p);
 
@@ -1779,14 +1782,14 @@ OptTreeNode * GetOTN(uint32_t gid, uint32_t sid,
         }
         else
         {
-            tSfPolicyId policy_id = getRuntimePolicy();
+            tSfPolicyId policy_id = getIpsRuntimePolicy();
 
             if ((getRtnFromOtn(otn, policy_id) == NULL)
                     && (GenerateSnortEventRtn(otn, policy_id) == NULL))
                 return NULL;
         }
     }
-    else if ((otn != NULL) && (getRtnFromOtn(otn, getRuntimePolicy()) == NULL))
+    else if ((otn != NULL) && (getRtnFromOtn(otn, getIpsRuntimePolicy()) == NULL))
     {
         // If not configured to autogenerate and there isn't an RTN, meaning
         // this rule isn't in the current policy, return NULL.

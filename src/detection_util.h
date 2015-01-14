@@ -108,6 +108,8 @@ extern uint8_t mime_present;
 extern uint8_t doe_buf_flags;
 extern const uint8_t *doe_ptr;
 
+extern void *global_ssl_callback;
+
 extern uint16_t detect_flags;
 
 extern uint32_t http_mask;
@@ -279,6 +281,16 @@ static inline uint16_t Get_DetectFlags(void)
 static inline void Reset_DetectFlags(uint16_t dflags)
 {
     detect_flags = dflags;
+}
+
+static inline void SetSSLCallback(void *p)
+{
+    global_ssl_callback = p;
+}
+
+static inline void *GetSSLCallback(void)
+{
+    return global_ssl_callback;
 }
 
 static inline int GetAltDetect(uint8_t **bufPtr, uint16_t *altLenPtr)

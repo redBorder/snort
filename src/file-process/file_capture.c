@@ -32,7 +32,7 @@
 #include "file_mempool.h"
 #include "util.h"
 #include <sys/stat.h>
-#include "file_sha256.h"
+#include "sf_sechash.h"
 #include "snort.h"
 #include "stream_api.h"
 #include "file_config.h"
@@ -53,7 +53,6 @@ File_Capture_Stats file_capture_stats;
  */
 
 #ifdef DEBUG
-#include "file_sha256.h"
 static void verify_file_capture_info(FileContext* context,
         FileCaptureInfo *fileInfo)
 {

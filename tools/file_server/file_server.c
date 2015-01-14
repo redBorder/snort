@@ -615,7 +615,12 @@ int main(int argc, char *argv[])
     //listen marks the socket as passive socket listening to incoming connections,
     //it allows max 5 backlog connections: backlog connections are pending in queue
     //if pending connections are more than 5, later request may be ignored
-    listen(sockfd,5);
+
+    if (listen(sockfd,5))
+    {
+        ErrorMessage("ERROR on listen.\n");
+        exit(1);
+    }
 
     while (!stop_processing)
     {

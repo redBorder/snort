@@ -253,6 +253,8 @@ LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
+LUA_CFLAGS = @LUA_CFLAGS@
+LUA_LIBS = @LUA_LIBS@
 MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
@@ -275,8 +277,6 @@ PKG_CONFIG = @PKG_CONFIG@
 PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
 PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
-RAZORBACK_CFLAGS = @RAZORBACK_CFLAGS@
-RAZORBACK_LIBS = @RAZORBACK_LIBS@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
@@ -326,6 +326,8 @@ libdir = @libdir@
 libexecdir = @libexecdir@
 localedir = @localedir@
 localstatedir = @localstatedir@
+luajit_CFLAGS = @luajit_CFLAGS@
+luajit_LIBS = @luajit_LIBS@
 mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
@@ -364,7 +366,8 @@ libfileAPI_a_SOURCES = \
 	file_mempool.c \
 	file_mempool.h \
 	../sfutil/sf_email_attach_decode.c \
-	../sfutil/sf_email_attach_decode.h
+	../sfutil/sf_email_attach_decode.h \
+	file_mail_common.h 
 
 SUBDIRS = libs
 all: all-recursive

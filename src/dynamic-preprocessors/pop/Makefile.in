@@ -115,18 +115,20 @@ am__uninstall_files_from_dir = { \
     || { echo " ( cd '$$dir' && rm -f" $$files ")"; \
          $(am__cd) "$$dir" && rm -f $$files; }; \
   }
-am__installdirs = "$(DESTDIR)$(libdir)"
-LTLIBRARIES = $(lib_LTLIBRARIES)
+am__installdirs = "$(DESTDIR)$(dynamicpreprocessordir)"
+LTLIBRARIES = $(dynamicpreprocessor_LTLIBRARIES)
 @SO_WITH_STATIC_LIB_TRUE@libsf_pop_preproc_la_DEPENDENCIES =  \
 @SO_WITH_STATIC_LIB_TRUE@	../libsf_dynamic_preproc.la
-am_libsf_pop_preproc_la_OBJECTS = pop_config.lo pop_log.lo pop_util.lo \
-	snort_pop.lo spp_pop.lo
+am_libsf_pop_preproc_la_OBJECTS = pop_config.lo pop_log.lo pop_paf.lo \
+	pop_util.lo snort_pop.lo spp_pop.lo
 @SO_WITH_STATIC_LIB_FALSE@nodist_libsf_pop_preproc_la_OBJECTS =  \
 @SO_WITH_STATIC_LIB_FALSE@	sf_dynamic_preproc_lib.lo mempool.lo \
 @SO_WITH_STATIC_LIB_FALSE@	sf_sdlist.lo util_unfold.lo \
 @SO_WITH_STATIC_LIB_FALSE@	sf_base64decode.lo \
 @SO_WITH_STATIC_LIB_FALSE@	sf_email_attach_decode.lo \
-@SO_WITH_STATIC_LIB_FALSE@	sfPolicyUserData.lo
+@SO_WITH_STATIC_LIB_FALSE@	sfPolicyUserData.lo ssl.lo \
+@SO_WITH_STATIC_LIB_FALSE@	ssl_config.lo ssl_inspect.lo \
+@SO_WITH_STATIC_LIB_FALSE@	sfparser.lo
 libsf_pop_preproc_la_OBJECTS = $(am_libsf_pop_preproc_la_OBJECTS) \
 	$(nodist_libsf_pop_preproc_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -227,7 +229,7 @@ EXEEXT = @EXEEXT@
 FGREP = @FGREP@
 GREP = @GREP@
 ICONFIGFLAGS = @ICONFIGFLAGS@
-INCLUDES = -I../include -I${srcdir}/../libs
+INCLUDES = -I../include -I${srcdir}/../ssl_common -I${srcdir}/../libs
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -242,6 +244,8 @@ LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
+LUA_CFLAGS = @LUA_CFLAGS@
+LUA_LIBS = @LUA_LIBS@
 MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
@@ -264,8 +268,6 @@ PKG_CONFIG = @PKG_CONFIG@
 PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
 PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
-RAZORBACK_CFLAGS = @RAZORBACK_CFLAGS@
-RAZORBACK_LIBS = @RAZORBACK_LIBS@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
@@ -311,10 +313,12 @@ htmldir = @htmldir@
 includedir = @includedir@
 infodir = @infodir@
 install_sh = @install_sh@
-libdir = ${exec_prefix}/lib/snort_dynamicpreprocessor
+libdir = @libdir@
 libexecdir = @libexecdir@
 localedir = @localedir@
 localstatedir = @localstatedir@
+luajit_CFLAGS = @luajit_CFLAGS@
+luajit_LIBS = @luajit_LIBS@
 mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
@@ -331,7 +335,8 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign no-dependencies
-lib_LTLIBRARIES = libsf_pop_preproc.la
+dynamicpreprocessordir = ${libdir}/snort_dynamicpreprocessor
+dynamicpreprocessor_LTLIBRARIES = libsf_pop_preproc.la
 libsf_pop_preproc_la_LDFLAGS = -export-dynamic -module @XCCFLAGS@
 @SO_WITH_STATIC_LIB_TRUE@libsf_pop_preproc_la_LIBADD = ../libsf_dynamic_preproc.la
 @SO_WITH_STATIC_LIB_FALSE@nodist_libsf_pop_preproc_la_SOURCES = \
@@ -341,13 +346,19 @@ libsf_pop_preproc_la_LDFLAGS = -export-dynamic -module @XCCFLAGS@
 @SO_WITH_STATIC_LIB_FALSE@../include/util_unfold.c \
 @SO_WITH_STATIC_LIB_FALSE@../include/sf_base64decode.c \
 @SO_WITH_STATIC_LIB_FALSE@../include/sf_email_attach_decode.c \
-@SO_WITH_STATIC_LIB_FALSE@../include/sfPolicyUserData.c
+@SO_WITH_STATIC_LIB_FALSE@../include/sfPolicyUserData.c \
+@SO_WITH_STATIC_LIB_FALSE@../ssl_common/ssl.c \
+@SO_WITH_STATIC_LIB_FALSE@../ssl_common/ssl_config.c \
+@SO_WITH_STATIC_LIB_FALSE@../ssl_common/ssl_inspect.c \
+@SO_WITH_STATIC_LIB_FALSE@../libs/sfparser.c
 
 libsf_pop_preproc_la_SOURCES = \
 pop_config.c \
 pop_config.h \
 pop_log.c \
 pop_log.h \
+pop_paf.c \
+pop_paf.h \
 pop_util.c \
 pop_util.h \
 snort_pop.c \
@@ -393,33 +404,33 @@ $(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
 
-install-libLTLIBRARIES: $(lib_LTLIBRARIES)
+install-dynamicpreprocessorLTLIBRARIES: $(dynamicpreprocessor_LTLIBRARIES)
 	@$(NORMAL_INSTALL)
-	@list='$(lib_LTLIBRARIES)'; test -n "$(libdir)" || list=; \
+	@list='$(dynamicpreprocessor_LTLIBRARIES)'; test -n "$(dynamicpreprocessordir)" || list=; \
 	list2=; for p in $$list; do \
 	  if test -f $$p; then \
 	    list2="$$list2 $$p"; \
 	  else :; fi; \
 	done; \
 	test -z "$$list2" || { \
-	  echo " $(MKDIR_P) '$(DESTDIR)$(libdir)'"; \
-	  $(MKDIR_P) "$(DESTDIR)$(libdir)" || exit 1; \
-	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$list2 '$(DESTDIR)$(libdir)'"; \
-	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$list2 "$(DESTDIR)$(libdir)"; \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(dynamicpreprocessordir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(dynamicpreprocessordir)" || exit 1; \
+	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$list2 '$(DESTDIR)$(dynamicpreprocessordir)'"; \
+	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$list2 "$(DESTDIR)$(dynamicpreprocessordir)"; \
 	}
 
-uninstall-libLTLIBRARIES:
+uninstall-dynamicpreprocessorLTLIBRARIES:
 	@$(NORMAL_UNINSTALL)
-	@list='$(lib_LTLIBRARIES)'; test -n "$(libdir)" || list=; \
+	@list='$(dynamicpreprocessor_LTLIBRARIES)'; test -n "$(dynamicpreprocessordir)" || list=; \
 	for p in $$list; do \
 	  $(am__strip_dir) \
-	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f '$(DESTDIR)$(libdir)/$$f'"; \
-	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f "$(DESTDIR)$(libdir)/$$f"; \
+	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f '$(DESTDIR)$(dynamicpreprocessordir)/$$f'"; \
+	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f "$(DESTDIR)$(dynamicpreprocessordir)/$$f"; \
 	done
 
-clean-libLTLIBRARIES:
-	-test -z "$(lib_LTLIBRARIES)" || rm -f $(lib_LTLIBRARIES)
-	@list='$(lib_LTLIBRARIES)'; \
+clean-dynamicpreprocessorLTLIBRARIES:
+	-test -z "$(dynamicpreprocessor_LTLIBRARIES)" || rm -f $(dynamicpreprocessor_LTLIBRARIES)
+	@list='$(dynamicpreprocessor_LTLIBRARIES)'; \
 	locs=`for p in $$list; do echo $$p; done | \
 	      sed 's|^[^/]*$$|.|; s|/[^/]*$$||; s|$$|/so_locations|' | \
 	      sort -u`; \
@@ -429,7 +440,7 @@ clean-libLTLIBRARIES:
 	}
 
 libsf_pop_preproc.la: $(libsf_pop_preproc_la_OBJECTS) $(libsf_pop_preproc_la_DEPENDENCIES) $(EXTRA_libsf_pop_preproc_la_DEPENDENCIES) 
-	$(AM_V_CCLD)$(libsf_pop_preproc_la_LINK) -rpath $(libdir) $(libsf_pop_preproc_la_OBJECTS) $(libsf_pop_preproc_la_LIBADD) $(LIBS)
+	$(AM_V_CCLD)$(libsf_pop_preproc_la_LINK) -rpath $(dynamicpreprocessordir) $(libsf_pop_preproc_la_OBJECTS) $(libsf_pop_preproc_la_LIBADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -466,6 +477,18 @@ sf_email_attach_decode.lo: ../include/sf_email_attach_decode.c
 
 sfPolicyUserData.lo: ../include/sfPolicyUserData.c
 	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o sfPolicyUserData.lo `test -f '../include/sfPolicyUserData.c' || echo '$(srcdir)/'`../include/sfPolicyUserData.c
+
+ssl.lo: ../ssl_common/ssl.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o ssl.lo `test -f '../ssl_common/ssl.c' || echo '$(srcdir)/'`../ssl_common/ssl.c
+
+ssl_config.lo: ../ssl_common/ssl_config.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o ssl_config.lo `test -f '../ssl_common/ssl_config.c' || echo '$(srcdir)/'`../ssl_common/ssl_config.c
+
+ssl_inspect.lo: ../ssl_common/ssl_inspect.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o ssl_inspect.lo `test -f '../ssl_common/ssl_inspect.c' || echo '$(srcdir)/'`../ssl_common/ssl_inspect.c
+
+sfparser.lo: ../libs/sfparser.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o sfparser.lo `test -f '../libs/sfparser.c' || echo '$(srcdir)/'`../libs/sfparser.c
 
 mostlyclean-libtool:
 	-rm -f *.lo
@@ -559,7 +582,7 @@ check-am: all-am
 check: check-am
 all-am: Makefile $(LTLIBRARIES) all-local
 installdirs:
-	for dir in "$(DESTDIR)$(libdir)"; do \
+	for dir in "$(DESTDIR)$(dynamicpreprocessordir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -594,8 +617,8 @@ maintainer-clean-generic:
 	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-clean-am: clean-generic clean-libLTLIBRARIES clean-libtool \
-	mostlyclean-am
+clean-am: clean-dynamicpreprocessorLTLIBRARIES clean-generic \
+	clean-libtool mostlyclean-am
 
 distclean: distclean-am
 	-rm -f Makefile
@@ -614,13 +637,13 @@ info: info-am
 
 info-am:
 
-install-data-am:
+install-data-am: install-dynamicpreprocessorLTLIBRARIES
 
 install-dvi: install-dvi-am
 
 install-dvi-am:
 
-install-exec-am: install-libLTLIBRARIES
+install-exec-am:
 
 install-html: install-html-am
 
@@ -659,27 +682,29 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-libLTLIBRARIES
+uninstall-am: uninstall-dynamicpreprocessorLTLIBRARIES
 
 .MAKE: install-am install-strip
 
 .PHONY: CTAGS GTAGS TAGS all all-am all-local check check-am clean \
-	clean-generic clean-libLTLIBRARIES clean-libtool cscopelist-am \
-	ctags ctags-am distclean distclean-compile distclean-generic \
-	distclean-libtool distclean-tags distdir dvi dvi-am html \
-	html-am info info-am install install-am install-data \
-	install-data-am install-dvi install-dvi-am install-exec \
-	install-exec-am install-html install-html-am install-info \
-	install-info-am install-libLTLIBRARIES install-man install-pdf \
+	clean-dynamicpreprocessorLTLIBRARIES clean-generic \
+	clean-libtool cscopelist-am ctags ctags-am distclean \
+	distclean-compile distclean-generic distclean-libtool \
+	distclean-tags distdir dvi dvi-am html html-am info info-am \
+	install install-am install-data install-data-am install-dvi \
+	install-dvi-am install-dynamicpreprocessorLTLIBRARIES \
+	install-exec install-exec-am install-html install-html-am \
+	install-info install-info-am install-man install-pdf \
 	install-pdf-am install-ps install-ps-am install-strip \
 	installcheck installcheck-am installdirs maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-compile \
 	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
-	tags tags-am uninstall uninstall-am uninstall-libLTLIBRARIES
+	tags tags-am uninstall uninstall-am \
+	uninstall-dynamicpreprocessorLTLIBRARIES
 
 
 all-local: $(LTLIBRARIES)
-	$(MAKE) DESTDIR=`pwd`/../build install-libLTLIBRARIES
+	$(MAKE) DESTDIR=`pwd`/../build install-dynamicpreprocessorLTLIBRARIES
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

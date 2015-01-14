@@ -23,7 +23,7 @@
 /**************************************************************************
  * snort_imap.c
  *
- * Author: Bhagyashree Bantwal <bbantwal@sourcefire.com>
+ * Author: Bhagyashree Bantwal <bbantwal@cisco.com>
  *
  * Description:
  *
@@ -48,7 +48,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <pcre.h>
 
 #include "sf_types.h"
 #include "snort_imap.h"
@@ -63,6 +62,7 @@
 #include "snort_bounds.h"
 #include "sf_dynamic_preprocessor.h"
 #include "ssl.h"
+#include "ssl_include.h"
 #include "sfPolicy.h"
 #include "sfPolicyUserData.h"
 #include "file_api.h"
@@ -70,6 +70,7 @@
 #include "sf_types.h"
 #endif
 
+#include "imap_paf.h"
 /**************************************************************************/
 
 
@@ -166,27 +167,7 @@ const IMAPToken imap_resps[] =
 	{NULL,              0, 0}
 };
 
-const IMAPToken imap_hdrs[] =
-{
-    {"Content-type:", 13, HDR_CONTENT_TYPE},
-    {"Content-Transfer-Encoding:", 26, HDR_CONT_TRANS_ENC},
-    {"Content-Disposition:", 20, HDR_CONT_DISP},
-    {NULL,             0, 0}
-};
-
-const IMAPToken imap_data_end[] =
-{
-	{"\r\n.\r\n",  5,  DATA_END_1},
-	{"\n.\r\n",    4,  DATA_END_2},
-	{"\r\n.\n",    4,  DATA_END_3},
-	{"\n.\n",      3,  DATA_END_4},
-	{NULL,         0,  0}
-};
-
 IMAP *imap_ssn = NULL;
-IMAP imap_no_session;
-IMAPPcre mime_boundary_pcre;
-char imap_normalizing;
 IMAPSearchInfo imap_search_info;
 
 #ifdef DEBUG_MSGS
@@ -200,12 +181,6 @@ int16_t imap_proto_id;
 void *imap_resp_search_mpse = NULL;
 IMAPSearch imap_resp_search[RESP_LAST];
 
-void *imap_hdr_search_mpse = NULL;
-IMAPSearch imap_hdr_search[HDR_LAST];
-
-void *imap_data_search_mpse = NULL;
-IMAPSearch imap_data_end_search[DATA_END_LAST];
-
 IMAPSearch *imap_current_search = NULL;
 
 
@@ -217,54 +192,19 @@ IMAPSearch *imap_current_search = NULL;
 static int IMAP_Setup(SFSnortPacket *p, IMAP *ssn);
 static void IMAP_ResetState(void);
 static void IMAP_SessionFree(void *);
-static void IMAP_NoSessionFree(void);
 static int IMAP_GetPacketDirection(SFSnortPacket *, int);
 static void IMAP_ProcessClientPacket(SFSnortPacket *);
 static void IMAP_ProcessServerPacket(SFSnortPacket *);
 static void IMAP_DisableDetect(SFSnortPacket *);
 static const uint8_t * IMAP_HandleCommand(SFSnortPacket *, const uint8_t *, const uint8_t *);
-static const uint8_t * IMAP_HandleData(SFSnortPacket *, const uint8_t *, const uint8_t *);
-static const uint8_t * IMAP_HandleHeader(SFSnortPacket *, const uint8_t *, const uint8_t *);
-static const uint8_t * IMAP_HandleDataBody(SFSnortPacket *, const uint8_t *, const uint8_t *);
 static int IMAP_SearchStrFound(void *, void *, int, void *, void *);
 
-static int IMAP_BoundaryStrFound(void *, void *, int , void *, void *);
-static int IMAP_GetBoundary(const char *, int);
 
 static int IMAP_Inspect(SFSnortPacket *);
 
+void IMAP_Set_flow_id( void *app_data, uint32_t fid );
+MimeMethods mime_methods = {NULL, NULL, IMAP_DecodeAlert, IMAP_ResetState, is_data_end};
 /**************************************************************************/
-
-static void SetImapBuffers(IMAP *ssn)
-{
-    if ((ssn != NULL) && (ssn->decode_state == NULL))
-    {
-        MemBucket *bkt = mempool_alloc(imap_mime_mempool);
-
-        if (bkt != NULL)
-        {
-            ssn->decode_state = (Email_DecodeState *)calloc(1, sizeof(Email_DecodeState));
-            if( ssn->decode_state != NULL )
-            {
-                ssn->decode_bkt = bkt;
-                SetEmailDecodeState(ssn->decode_state, bkt->data, imap_eval_config->max_depth,
-                        imap_eval_config->b64_depth, imap_eval_config->qp_depth,
-                        imap_eval_config->uu_depth, imap_eval_config->bitenc_depth,
-                        imap_eval_config->file_depth);
-            }
-            else
-            {
-                /*free mempool if calloc fails*/
-                mempool_free(imap_mime_mempool, bkt);
-            }
-        }
-        else
-        {
-            IMAP_GenerateAlert(IMAP_MEMCAP_EXCEEDED, "%s", IMAP_MEMCAP_EXCEEDED_STR);
-            DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "No memory available for decoding. Memcap exceeded \n"););
-        }
-    }
-}
 
 void IMAP_InitCmds(IMAPConfig *config)
 {
@@ -308,7 +248,6 @@ void IMAP_InitCmds(IMAPConfig *config)
     config->num_cmds = CMD_LAST;
 }
 
-
 /*
  * Initialize IMAP searches
  *
@@ -318,8 +257,6 @@ void IMAP_InitCmds(IMAPConfig *config)
  */
 void IMAP_SearchInit(void)
 {
-    const char *error;
-    int erroffset;
     const IMAPToken *tmp;
 
     /* Response search */
@@ -341,93 +278,7 @@ void IMAP_SearchInit(void)
 
     _dpd.searchAPI->search_instance_prep(imap_resp_search_mpse);
 
-    /* Header search */
-    imap_hdr_search_mpse = _dpd.searchAPI->search_instance_new();
-    if (imap_hdr_search_mpse == NULL)
-    {
-        DynamicPreprocessorFatalMessage("Could not allocate IMAP "
-                                        "header search.\n");
-    }
-
-    for (tmp = &imap_hdrs[0]; tmp->name != NULL; tmp++)
-    {
-        imap_hdr_search[tmp->search_id].name = tmp->name;
-        imap_hdr_search[tmp->search_id].name_len = tmp->name_len;
-
-        _dpd.searchAPI->search_instance_add(imap_hdr_search_mpse, tmp->name,
-                                            tmp->name_len, tmp->search_id);
-    }
-
-    _dpd.searchAPI->search_instance_prep(imap_hdr_search_mpse);
-
-    /* Data end search */
-    imap_data_search_mpse = _dpd.searchAPI->search_instance_new();
-    if (imap_data_search_mpse == NULL)
-    {
-        DynamicPreprocessorFatalMessage("Could not allocate IMAP "
-                                        "data search.\n");
-    }
-
-    for (tmp = &imap_data_end[0]; tmp->name != NULL; tmp++)
-    {
-        imap_data_end_search[tmp->search_id].name = tmp->name;
-        imap_data_end_search[tmp->search_id].name_len = tmp->name_len;
-
-        _dpd.searchAPI->search_instance_add(imap_data_search_mpse, tmp->name,
-                                            tmp->name_len, tmp->search_id);
-    }
-
-    _dpd.searchAPI->search_instance_prep(imap_data_search_mpse);
-
-
-    /* create regex for finding boundary string - since it can be cut across multiple
-     * lines, a straight search won't do. Shouldn't be too slow since it will most
-     * likely only be acting on a small portion of data */
-    //"^content-type:\\s*multipart.*boundary\\s*=\\s*\"?([^\\s]+)\"?"
-    //"^\\s*multipart.*boundary\\s*=\\s*\"?([^\\s]+)\"?"
-    //mime_boundary_pcre.re = pcre_compile("^.*boundary\\s*=\\s*\"?([^\\s\"]+)\"?",
-    //mime_boundary_pcre.re = pcre_compile("boundary(?:\n|\r\n)?=(?:\n|\r\n)?\"?([^\\s\"]+)\"?",
-    mime_boundary_pcre.re = pcre_compile("boundary\\s*=\\s*\"?([^\\s\"]+)\"?",
-                                          PCRE_CASELESS | PCRE_DOTALL,
-                                          &error, &erroffset, NULL);
-    if (mime_boundary_pcre.re == NULL)
-    {
-        DynamicPreprocessorFatalMessage("Failed to compile pcre regex for getting boundary "
-                                        "in a multipart IMAP message: %s\n", error);
-    }
-
-    mime_boundary_pcre.pe = pcre_study(mime_boundary_pcre.re, 0, &error);
-
-    if (error != NULL)
-    {
-        DynamicPreprocessorFatalMessage("Failed to study pcre regex for getting boundary "
-                                        "in a multipart IMAP message: %s\n", error);
-    }
 }
-
-/*
- * Initialize run-time boundary search
- */
-static int IMAP_BoundarySearchInit(void)
-{
-    if (imap_ssn->mime_boundary.boundary_search != NULL)
-        _dpd.searchAPI->search_instance_free(imap_ssn->mime_boundary.boundary_search);
-
-    imap_ssn->mime_boundary.boundary_search = _dpd.searchAPI->search_instance_new();
-
-    if (imap_ssn->mime_boundary.boundary_search == NULL)
-        return -1;
-
-    _dpd.searchAPI->search_instance_add(imap_ssn->mime_boundary.boundary_search,
-                                        imap_ssn->mime_boundary.boundary,
-                                        imap_ssn->mime_boundary.boundary_len, BOUNDARY);
-
-    _dpd.searchAPI->search_instance_prep(imap_ssn->mime_boundary.boundary_search);
-
-    return 0;
-}
-
-
 
 /*
  * Reset IMAP session state
@@ -438,20 +289,10 @@ static int IMAP_BoundarySearchInit(void)
  */
 static void IMAP_ResetState(void)
 {
-    if (imap_ssn->mime_boundary.boundary_search != NULL)
-    {
-        _dpd.searchAPI->search_instance_free(imap_ssn->mime_boundary.boundary_search);
-        imap_ssn->mime_boundary.boundary_search = NULL;
-    }
-
-    imap_ssn->state = STATE_UNKNOWN;
-    imap_ssn->data_state = STATE_DATA_INIT;
+    imap_ssn->state = STATE_COMMAND;
     imap_ssn->state_flags = 0;
     imap_ssn->body_read = imap_ssn->body_len = 0;
-    ClearEmailDecodeState(imap_ssn->decode_state);
-    memset(&imap_ssn->mime_boundary, 0, sizeof(IMAPMimeBoundary));
 }
-
 
 /*
  * Given a server configuration and a port number, we decide if the port is
@@ -465,7 +306,7 @@ static void IMAP_ResetState(void)
  */
 int IMAP_IsServer(uint16_t port)
 {
-    if (imap_eval_config->ports[port / 8] & (1 << (port % 8)))
+    if( isPortEnabled( imap_eval_config->ports, port ) )
         return 1;
 
     return 0;
@@ -487,14 +328,21 @@ static IMAP * IMAP_GetNewSession(SFSnortPacket *p, tSfPolicyId policy_id)
     }
 
     imap_ssn = ssn;
+    ssn->session_flags |= IMAP_FLAG_CHECK_SSL;
 
-    if (_dpd.fileAPI->set_log_buffers(&(imap_ssn->log_state), &(pPolicyConfig->log_config), imap_mempool) < 0)
+    imap_ssn->mime_ssn.log_config = &(imap_eval_config->log_config);
+    imap_ssn->mime_ssn.decode_conf = &(imap_eval_config->decode_conf);
+    imap_ssn->mime_ssn.mime_mempool = imap_mime_mempool;
+    imap_ssn->mime_ssn.log_mempool = imap_mempool;
+    imap_ssn->mime_ssn.methods = &(mime_methods);
+
+    if (_dpd.fileAPI->set_log_buffers(&(imap_ssn->mime_ssn.log_state), &(pPolicyConfig->log_config), imap_mempool) < 0)
     {
         free(ssn);
         return NULL;
     }
 
-    _dpd.streamAPI->set_application_data(p->stream_session_ptr, PP_IMAP,
+    _dpd.sessionAPI->set_application_data(p->stream_session, PP_IMAP,
                                          ssn, &IMAP_SessionFree);
 
     if (p->flags & SSNFLAG_MIDSTREAM)
@@ -509,16 +357,16 @@ static IMAP * IMAP_GetNewSession(SFSnortPacket *p, tSfPolicyId policy_id)
     ssn->session_number = imap_session_counter;
 #endif
 
-    if (p->stream_session_ptr != NULL)
+    if (p->stream_session != NULL)
     {
         /* check to see if we're doing client reassembly in stream */
-        if (_dpd.streamAPI->get_reassembly_direction(p->stream_session_ptr) & SSN_DIR_FROM_CLIENT)
+        if (_dpd.streamAPI->get_reassembly_direction(p->stream_session) & SSN_DIR_TO_CLIENT)
             ssn->reassembling = 1;
 
         if(!ssn->reassembling)
         {
-            _dpd.streamAPI->set_reassembly(p->stream_session_ptr,
-                    STREAM_FLPOLICY_FOOTPRINT, SSN_DIR_FROM_CLIENT, STREAM_FLPOLICY_SET_ABSOLUTE);
+            _dpd.streamAPI->set_reassembly(p->stream_session,
+                    STREAM_FLPOLICY_FOOTPRINT, SSN_DIR_TO_CLIENT, STREAM_FLPOLICY_SET_ABSOLUTE);
             ssn->reassembling = 1;
         }
     }
@@ -527,6 +375,7 @@ static IMAP * IMAP_GetNewSession(SFSnortPacket *p, tSfPolicyId policy_id)
 
     ssn->policy_id = policy_id;
     ssn->config = imap_config;
+    ssn->flow_id = 0;
     pPolicyConfig->ref_count++;
 
     return ssn;
@@ -545,10 +394,10 @@ static int IMAP_Setup(SFSnortPacket *p, IMAP *ssn)
     int flags = 0;
     int pkt_dir;
 
-    if (p->stream_session_ptr != NULL)
+    if (p->stream_session != NULL)
     {
         /* set flags to session flags */
-        flags = _dpd.streamAPI->get_session_flags(p->stream_session_ptr);
+        flags = _dpd.sessionAPI->get_session_flags(p->stream_session);
     }
 
     /* Figure out direction of packet */
@@ -556,13 +405,15 @@ static int IMAP_Setup(SFSnortPacket *p, IMAP *ssn)
 
     DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "Session number: "STDu64"\n", ssn->session_number););
 
+    if (!(ssn->session_flags & IMAP_FLAG_CHECK_SSL))
+                ssn->session_flags |= IMAP_FLAG_CHECK_SSL;
     /* Check to see if there is a reassembly gap.  If so, we won't know
      * what state we're in when we get the _next_ reassembled packet */
     if ((pkt_dir != IMAP_PKT_FROM_SERVER) &&
         (p->flags & FLAG_REBUILT_STREAM))
     {
         int missing_in_rebuilt =
-            _dpd.streamAPI->missing_in_reassembled(p->stream_session_ptr, SSN_DIR_FROM_CLIENT);
+            _dpd.streamAPI->missing_in_reassembled(p->stream_session, SSN_DIR_TO_CLIENT);
 
         if (ssn->session_flags & IMAP_FLAG_NEXT_STATE_UNKNOWN)
         {
@@ -652,6 +503,7 @@ static void IMAP_SessionFree(void *session_data)
 #ifdef SNORT_RELOAD
     IMAPConfig *pPolicyConfig = NULL;
 #endif
+    ssl_callback_interface_t *ssl_cb = (ssl_callback_interface_t *)_dpd.getSSLCallback();
 
     if (imap == NULL)
         return;
@@ -675,34 +527,21 @@ static void IMAP_SessionFree(void *session_data)
     }
 #endif
 
-    if (imap->mime_boundary.boundary_search != NULL)
+    if(imap->mime_ssn.decode_state != NULL)
     {
-        _dpd.searchAPI->search_instance_free(imap->mime_boundary.boundary_search);
-        imap->mime_boundary.boundary_search = NULL;
+        mempool_free(imap_mime_mempool, imap->mime_ssn.decode_bkt);
+        free(imap->mime_ssn.decode_state);
     }
 
-    if(imap->decode_state != NULL)
+    if(imap->mime_ssn.log_state != NULL)
     {
-        mempool_free(imap_mime_mempool, imap->decode_bkt);
-        free(imap->decode_state);
+        mempool_free(imap_mempool, imap->mime_ssn.log_state->log_hdrs_bkt);
+        free(imap->mime_ssn.log_state);
     }
-    if(imap->log_state != NULL)
-    {
-        mempool_free(imap_mempool, imap->log_state->log_hdrs_bkt);
-        free(imap->log_state);
-    }
+    if ( ssl_cb )
+        ssl_cb->session_free(imap->flow_id);
 
     free(imap);
-}
-
-
-static void IMAP_NoSessionFree(void)
-{
-    if (imap_no_session.mime_boundary.boundary_search != NULL)
-    {
-        _dpd.searchAPI->search_instance_free(imap_no_session.mime_boundary.boundary_search);
-        imap_no_session.mime_boundary.boundary_search = NULL;
-    }
 }
 
 static int IMAP_FreeConfigsPolicy(
@@ -763,25 +602,11 @@ void IMAP_FreeConfig(IMAPConfig *config)
  */
 void IMAP_Free(void)
 {
-    IMAP_NoSessionFree();
-
     IMAP_FreeConfigs(imap_config);
     imap_config = NULL;
 
     if (imap_resp_search_mpse != NULL)
         _dpd.searchAPI->search_instance_free(imap_resp_search_mpse);
-
-    if (imap_hdr_search_mpse != NULL)
-        _dpd.searchAPI->search_instance_free(imap_hdr_search_mpse);
-
-    if (imap_data_search_mpse != NULL)
-        _dpd.searchAPI->search_instance_free(imap_data_search_mpse);
-
-    if (mime_boundary_pcre.re )
-        pcre_free(mime_boundary_pcre.re);
-
-    if (mime_boundary_pcre.pe )
-        pcre_free(mime_boundary_pcre.pe);
 }
 
 
@@ -808,81 +633,7 @@ static int IMAP_SearchStrFound(void *id, void *unused, int index, void *data, vo
 }
 
 /*
- * Callback function for boundary search
- *
- * @param   id      id in array of search strings
- * @param   index   index in array of search strings
- * @param   data    buffer passed in to search function
- *
- * @return response
- * @retval 1        commands caller to stop searching
- */
-static int IMAP_BoundaryStrFound(void *id, void *unused, int index, void *data, void *unused2)
-{
-    int boundary_id = (int)(uintptr_t)id;
 
-    imap_search_info.id = boundary_id;
-    imap_search_info.index = index;
-    imap_search_info.length = imap_ssn->mime_boundary.boundary_len;
-
-    return 1;
-}
-
-static int IMAP_GetBoundary(const char *data, int data_len)
-{
-    int result;
-    int ovector[9];
-    int ovecsize = 9;
-    const char *boundary;
-    int boundary_len;
-    int ret;
-    char *mime_boundary;
-    int  *mime_boundary_len;
-    int  *mime_boundary_state;
-
-
-    mime_boundary = &imap_ssn->mime_boundary.boundary[0];
-    mime_boundary_len = &imap_ssn->mime_boundary.boundary_len;
-    mime_boundary_state = &imap_ssn->mime_boundary.state;
-
-    /* result will be the number of matches (including submatches) */
-    result = pcre_exec(mime_boundary_pcre.re, mime_boundary_pcre.pe,
-                       data, data_len, 0, 0, ovector, ovecsize);
-    if (result < 0)
-        return -1;
-
-    result = pcre_get_substring(data, ovector, result, 1, &boundary);
-    if (result < 0)
-        return -1;
-
-    boundary_len = strlen(boundary);
-    if (boundary_len > MAX_BOUNDARY_LEN)
-    {
-        /* XXX should we alert? breaking the law of RFC */
-        boundary_len = MAX_BOUNDARY_LEN;
-    }
-
-    mime_boundary[0] = '-';
-    mime_boundary[1] = '-';
-    ret = SafeMemcpy(mime_boundary + 2, boundary, boundary_len,
-                     mime_boundary + 2, mime_boundary + 2 + MAX_BOUNDARY_LEN);
-
-    pcre_free_substring(boundary);
-
-    if (ret != SAFEMEM_SUCCESS)
-    {
-        return -1;
-    }
-
-    *mime_boundary_len = 2 + boundary_len;
-    *mime_boundary_state = 0;
-    mime_boundary[*mime_boundary_len] = '\0';
-
-    return 0;
-}
-
-
-/*
  * Handle COMMAND state
  *
  * @param   p       standard Packet structure
@@ -915,557 +666,61 @@ static const uint8_t * IMAP_HandleCommand(SFSnortPacket *p, const uint8_t *ptr, 
     /* if command not found, alert and move on */
     if (!cmd_found)
     {
-        IMAP_GenerateAlert(IMAP_UNKNOWN_CMD, "%s", IMAP_UNKNOWN_CMD_STR);
-        DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "No known command found\n"););
+        if (imap_ssn->state == STATE_UNKNOWN)
+        {
+            DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "Command not found, but state is "
+                                    "unknown - checking for SSL\n"););
 
-        return eol;
+            /* check for encrypted */
+
+            if ((imap_ssn->session_flags & IMAP_FLAG_CHECK_SSL) &&
+                        (IsSSL(ptr, end - ptr, p->flags)))
+            {
+                DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "Packet is SSL encrypted\n"););
+
+                imap_ssn->state = STATE_TLS_DATA;
+
+                /* Ignore data */
+                return end;
+            }
+            else
+            {
+                DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "Not SSL - try data state\n"););
+                /* don't check for ssl again in this packet */
+                if (imap_ssn->session_flags & IMAP_FLAG_CHECK_SSL)
+                    imap_ssn->session_flags &= ~IMAP_FLAG_CHECK_SSL;
+
+                imap_ssn->state = STATE_DATA;
+                //imap_ssn->data_state = STATE_DATA_UNKNOWN;
+
+                return ptr;
+            }
+        }
+        else
+        {
+            IMAP_GenerateAlert(IMAP_UNKNOWN_CMD, "%s", IMAP_UNKNOWN_CMD_STR);
+            DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "No known command found\n"););
+            return eol;
+        }
+    }
+    else
+    {
+        if (imap_ssn->state == STATE_UNKNOWN)
+            imap_ssn->state = STATE_COMMAND;
     }
 
     /* At this point we have definitely found a legitimate command */
 
     DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "%s\n", imap_eval_config->cmds[imap_search_info.id].name););
 
+    if(imap_search_info.id == CMD_STARTTLS)
+    {
+        if (eol == end)
+            imap_ssn->state = STATE_TLS_CLIENT_PEND;
+    }
+
     return eol;
 }
-
-static const uint8_t * IMAP_HandleData(SFSnortPacket *p, const uint8_t *ptr, const uint8_t *end)
-{
-    const uint8_t *data_end_marker = NULL;
-    const uint8_t *data_end = NULL;
-    int data_end_found;
-    FilePosition position = SNORT_FILE_START;
-
-    /* if we've just entered the data state, check for a dot + end of line
-     * if found, no data */
-    if ((imap_ssn->data_state == STATE_DATA_INIT) ||
-        (imap_ssn->data_state == STATE_DATA_UNKNOWN))
-    {
-        if ((ptr < end) && (*ptr == '.'))
-        {
-            const uint8_t *eol = NULL;
-            const uint8_t *eolm = NULL;
-
-            IMAP_GetEOL(ptr, end, &eol, &eolm);
-
-            /* this means we got a real end of line and not just end of payload
-             * and that the dot is only char on line */
-            if ((eolm != end) && (eolm == (ptr + 1)))
-            {
-                /* if we're normalizing and not ignoring data copy data end marker
-                 * and dot to alt buffer */
-
-                IMAP_ResetState();
-
-                return eol;
-            }
-        }
-
-        if (imap_ssn->data_state == STATE_DATA_INIT)
-            imap_ssn->data_state = STATE_DATA_HEADER;
-
-        /* XXX A line starting with a '.' that isn't followed by a '.' is
-         * deleted (RFC 821 - 4.5.2.  TRANSPARENCY).  If data starts with
-         * '. text', i.e a dot followed by white space then text, some
-         * servers consider it data header and some data body.
-         * Postfix and Qmail will consider the start of data:
-         * . text\r\n
-         * .  text\r\n
-         * to be part of the header and the effect will be that of a
-         * folded line with the '.' deleted.  Exchange will put the same
-         * in the body which seems more reasonable. */
-    }
-
-    /* get end of data body
-     * TODO check last bytes of previous packet to see if we had a partial
-     * end of data */
-    imap_current_search = &imap_data_end_search[0];
-    data_end_found = _dpd.searchAPI->search_instance_find
-        (imap_data_search_mpse, (const char *)ptr, end - ptr,
-         0, IMAP_SearchStrFound);
-
-    if (data_end_found > 0)
-    {
-        data_end_marker = ptr + imap_search_info.index;
-        data_end = data_end_marker + imap_search_info.length;
-    }
-    else
-    {
-        data_end_marker = data_end = end;
-    }
-
-    _dpd.setFileDataPtr((uint8_t*)ptr, (uint16_t)(data_end - ptr));
-
-    if ((imap_ssn->data_state == STATE_DATA_HEADER) ||
-        (imap_ssn->data_state == STATE_DATA_UNKNOWN))
-    {
-#ifdef DEBUG_MSGS
-        if (imap_ssn->data_state == STATE_DATA_HEADER)
-        {
-            DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "DATA HEADER STATE ~~~~~~~~~~~~~~~~~~~~~~\n"););
-        }
-        else
-        {
-            DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "DATA UNKNOWN STATE ~~~~~~~~~~~~~~~~~~~~~\n"););
-        }
-#endif
-
-        ptr = IMAP_HandleHeader(p, ptr, data_end_marker);
-        if (ptr == NULL)
-            return NULL;
-
-    }
-
-    /* now we shouldn't have to worry about copying any data to the alt buffer
-     * only mime headers if we find them and only if we're ignoring data */
-    initFilePosition(&position, _dpd.fileAPI->get_file_processed_size(p->stream_session_ptr));
-
-    while ((ptr != NULL) && (ptr < data_end_marker))
-    {
-        /* multiple MIME attachments in one single packet.
-         * Pipeline the MIME decoded data.*/
-        if ( imap_ssn->state_flags & IMAP_FLAG_MULTIPLE_EMAIL_ATTACH)
-        {
-            int detection_size = getDetectionSize(imap_eval_config->b64_depth, imap_eval_config->qp_depth,
-                    imap_eval_config->uu_depth, imap_eval_config->bitenc_depth,imap_ssn->decode_state );
-            _dpd.setFileDataPtr(imap_ssn->decode_state->decodePtr, (uint16_t)detection_size);
-            /*Download*/
-            if (_dpd.fileAPI->file_process(p,(uint8_t *)imap_ssn->decode_state->decodePtr,
-                    (uint16_t)imap_ssn->decode_state->decoded_bytes, position, false, false)
-                    && (isFileStart(position)) && imap_ssn->log_state)
-            {
-                _dpd.fileAPI->set_file_name_from_log(&(imap_ssn->log_state->file_log), p->stream_session_ptr);
-            }
-            updateFilePosition(&position, _dpd.fileAPI->get_file_processed_size(p->stream_session_ptr));
-            _dpd.detect(p);
-            imap_ssn->state_flags &= ~IMAP_FLAG_MULTIPLE_EMAIL_ATTACH;
-            ResetEmailDecodeState(imap_ssn->decode_state);
-            p->flags |=FLAG_ALLOW_MULTIPLE_DETECT;
-            /* Reset the log count when a packet goes through detection multiple times */
-            _dpd.DetectReset((uint8_t *)p->payload, p->payload_size);
-        }
-        switch (imap_ssn->data_state)
-        {
-            case STATE_MIME_HEADER:
-                DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "MIME HEADER STATE ~~~~~~~~~~~~~~~~~~~~~~\n"););
-                ptr = IMAP_HandleHeader(p, ptr, data_end_marker);
-                _dpd.fileAPI->finalize_mime_position(p->stream_session_ptr,
-                        imap_ssn->decode_state, &position);
-                break;
-            case STATE_DATA_BODY:
-                DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "DATA BODY STATE ~~~~~~~~~~~~~~~~~~~~~~~~\n"););
-                ptr = IMAP_HandleDataBody(p, ptr, data_end_marker);
-                _dpd.fileAPI->update_file_name(imap_ssn->log_state);
-                break;
-        }
-    }
-
-    /* We have either reached the end of MIME header or end of MIME encoded data*/
-
-    if(imap_ssn->decode_state != NULL)
-    {
-
-        int detection_size = getDetectionSize(imap_eval_config->b64_depth, imap_eval_config->qp_depth,
-                imap_eval_config->uu_depth, imap_eval_config->bitenc_depth,imap_ssn->decode_state );
-        _dpd.setFileDataPtr(imap_ssn->decode_state->decodePtr, (uint16_t)detection_size);
-
-        if ((data_end_marker != end)||(imap_ssn->state_flags & IMAP_FLAG_MIME_END))
-        {
-            finalFilePosition(&position);
-        }
-        /*Download*/
-        if (_dpd.fileAPI->file_process(p,(uint8_t *)imap_ssn->decode_state->decodePtr,
-                (uint16_t)imap_ssn->decode_state->decoded_bytes, position, false, false)
-                && (isFileStart(position)) && imap_ssn->log_state)
-        {
-            _dpd.fileAPI->set_file_name_from_log(&(imap_ssn->log_state->file_log), p->stream_session_ptr);
-        }
-        ResetDecodedBytes(imap_ssn->decode_state);
-    }
-
-    /* if we got the data end reset state, otherwise we're probably still in the data
-     * to expect more data in next packet */
-    if (data_end_marker != end)
-    {
-        IMAP_ResetState();
-    }
-
-    return data_end;
-}
-
-
-/*
- * Handle Headers - Data or Mime
- *
- * @param   packet  standard Packet structure
- *
- * @param   i       index into p->payload buffer to start looking at data
- *
- * @return  i       index into p->payload where we stopped looking at data
- */
-static const uint8_t * IMAP_HandleHeader(SFSnortPacket *p, const uint8_t *ptr,
-                                          const uint8_t *data_end_marker)
-{
-    const uint8_t *eol;
-    const uint8_t *eolm;
-    const uint8_t *colon;
-    const uint8_t *content_type_ptr = NULL;
-    const uint8_t *cont_trans_enc = NULL;
-    const uint8_t *cont_disp = NULL;
-    int header_found;
-    int ret;
-    const uint8_t *start_hdr;
-
-    start_hdr = ptr;
-
-    /* if we got a content-type in a previous packet and are
-     * folding, the boundary still needs to be checked for */
-    if (imap_ssn->state_flags & IMAP_FLAG_IN_CONTENT_TYPE)
-        content_type_ptr = ptr;
-
-    if (imap_ssn->state_flags & IMAP_FLAG_IN_CONT_TRANS_ENC)
-        cont_trans_enc = ptr;
-
-    if (imap_ssn->state_flags & IMAP_FLAG_IN_CONT_DISP)
-        cont_disp = ptr;
-
-    while (ptr < data_end_marker)
-    {
-        IMAP_GetEOL(ptr, data_end_marker, &eol, &eolm);
-
-        /* got a line with only end of line marker should signify end of header */
-        if (eolm == ptr)
-        {
-            /* reset global header state values */
-            imap_ssn->state_flags &=
-                ~(IMAP_FLAG_FOLDING | IMAP_FLAG_IN_CONTENT_TYPE | IMAP_FLAG_DATA_HEADER_CONT
-                        | IMAP_FLAG_IN_CONT_TRANS_ENC );
-
-            imap_ssn->data_state = STATE_DATA_BODY;
-
-            /* if no headers, treat as data */
-            if (ptr == start_hdr)
-                return eolm;
-            else
-                return eol;
-        }
-
-        /* if we're not folding, see if we should interpret line as a data line
-         * instead of a header line */
-        if (!(imap_ssn->state_flags & (IMAP_FLAG_FOLDING | IMAP_FLAG_DATA_HEADER_CONT)))
-        {
-            char got_non_printable_in_header_name = 0;
-
-            /* if we're not folding and the first char is a space or
-             * colon, it's not a header */
-            if (isspace((int)*ptr) || *ptr == ':')
-            {
-                imap_ssn->data_state = STATE_DATA_BODY;
-                return ptr;
-            }
-
-            /* look for header field colon - if we're not folding then we need
-             * to find a header which will be all printables (except colon)
-             * followed by a colon */
-            colon = ptr;
-            while ((colon < eolm) && (*colon != ':'))
-            {
-                if (((int)*colon < 33) || ((int)*colon > 126))
-                    got_non_printable_in_header_name = 1;
-
-                colon++;
-            }
-
-            /* If the end on line marker and end of line are the same, assume
-             * header was truncated, so stay in data header state */
-            if ((eolm != eol) &&
-                ((colon == eolm) || got_non_printable_in_header_name))
-            {
-                /* no colon or got spaces in header name (won't be interpreted as a header)
-                 * assume we're in the body */
-                imap_ssn->state_flags &=
-                    ~(IMAP_FLAG_FOLDING | IMAP_FLAG_IN_CONTENT_TYPE | IMAP_FLAG_DATA_HEADER_CONT
-                            |IMAP_FLAG_IN_CONT_TRANS_ENC);
-
-                imap_ssn->data_state = STATE_DATA_BODY;
-
-                return ptr;
-            }
-
-            if(tolower((int)*ptr) == 'c')
-            {
-                imap_current_search = &imap_hdr_search[0];
-                header_found = _dpd.searchAPI->search_instance_find
-                    (imap_hdr_search_mpse, (const char *)ptr,
-                     eolm - ptr, 1, IMAP_SearchStrFound);
-
-                /* Headers must start at beginning of line */
-                if ((header_found > 0) && (imap_search_info.index == 0))
-                {
-                    switch (imap_search_info.id)
-                    {
-                        case HDR_CONTENT_TYPE:
-                            content_type_ptr = ptr + imap_search_info.length;
-                            imap_ssn->state_flags |= IMAP_FLAG_IN_CONTENT_TYPE;
-                            break;
-                        case HDR_CONT_TRANS_ENC:
-                            cont_trans_enc = ptr + imap_search_info.length;
-                            imap_ssn->state_flags |= IMAP_FLAG_IN_CONT_TRANS_ENC;
-                            break;
-                        case HDR_CONT_DISP:
-                            cont_disp = ptr + imap_search_info.length;
-                            imap_ssn->state_flags |= IMAP_FLAG_IN_CONT_DISP;
-                            break;
-                        default:
-                            break;
-                    }
-                }
-            }
-            else if(tolower((int)*ptr) == 'e')
-            {
-                if((eolm - ptr) >= 9)
-                {
-                    if(strncasecmp((const char *)ptr, "Encoding:", 9) == 0)
-                    {
-                        cont_trans_enc = ptr + 9;
-                        imap_ssn->state_flags |= IMAP_FLAG_IN_CONT_TRANS_ENC;
-                    }
-                }
-            }
-        }
-        else
-        {
-            imap_ssn->state_flags &= ~IMAP_FLAG_DATA_HEADER_CONT;
-        }
-
-
-        /* check for folding
-         * if char on next line is a space and not \n or \r\n, we are folding */
-        if ((eol < data_end_marker) && isspace((int)eol[0]) && (eol[0] != '\n'))
-        {
-            if ((eol < (data_end_marker - 1)) && (eol[0] != '\r') && (eol[1] != '\n'))
-            {
-                imap_ssn->state_flags |= IMAP_FLAG_FOLDING;
-            }
-            else
-            {
-                imap_ssn->state_flags &= ~IMAP_FLAG_FOLDING;
-            }
-        }
-        else if (eol != eolm)
-        {
-            imap_ssn->state_flags &= ~IMAP_FLAG_FOLDING;
-        }
-
-        /* check if we're in a content-type header and not folding. if so we have the whole
-         * header line/lines for content-type - see if we got a multipart with boundary
-         * we don't check each folded line, but wait until we have the complete header
-         * because boundary=BOUNDARY can be split across mulitple folded lines before
-         * or after the '=' */
-        if ((imap_ssn->state_flags &
-             (IMAP_FLAG_IN_CONTENT_TYPE | IMAP_FLAG_FOLDING)) == IMAP_FLAG_IN_CONTENT_TYPE)
-        {
-            if (imap_ssn->data_state != STATE_MIME_HEADER)
-            {
-                /* we got the full content-type header - look for boundary string */
-                ret = IMAP_GetBoundary((const char *)content_type_ptr, eolm - content_type_ptr);
-                if (ret != -1)
-                {
-                    ret = IMAP_BoundarySearchInit();
-                    if (ret != -1)
-                    {
-                        DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "Got mime boundary: %s\n",
-                                                             imap_ssn->mime_boundary.boundary););
-
-                        imap_ssn->state_flags |= IMAP_FLAG_GOT_BOUNDARY;
-                    }
-                }
-            }
-            else if (!(imap_ssn->state_flags & IMAP_FLAG_EMAIL_ATTACH))
-            {
-                /* Check for Encoding Type */
-                if( !IMAP_IsDecodingEnabled(imap_eval_config))
-                {
-                    SetImapBuffers(imap_ssn);
-                    if(imap_ssn->decode_state != NULL)
-                    {
-                        ResetBytesRead(imap_ssn->decode_state);
-                        IMAP_DecodeType((const char *)content_type_ptr, (eolm - content_type_ptr), false );
-                        imap_ssn->state_flags |= IMAP_FLAG_EMAIL_ATTACH;
-                        /* check to see if there are other attachments in this packet */
-                        if( imap_ssn->decode_state->decoded_bytes )
-                            imap_ssn->state_flags |= IMAP_FLAG_MULTIPLE_EMAIL_ATTACH;
-                    }
-                }
-            }
-
-            imap_ssn->state_flags &= ~IMAP_FLAG_IN_CONTENT_TYPE;
-            content_type_ptr = NULL;
-        }
-        else if ((imap_ssn->state_flags &
-                (IMAP_FLAG_IN_CONT_TRANS_ENC | IMAP_FLAG_FOLDING)) == IMAP_FLAG_IN_CONT_TRANS_ENC)
-        {
-            /* Check for Encoding Type */
-            if( !IMAP_IsDecodingEnabled(imap_eval_config))
-            {
-                SetImapBuffers(imap_ssn);
-                if(imap_ssn->decode_state != NULL)
-                {
-                    ResetBytesRead(imap_ssn->decode_state);
-                    IMAP_DecodeType((const char *)cont_trans_enc, (eolm - cont_trans_enc), true );
-                    imap_ssn->state_flags |= IMAP_FLAG_EMAIL_ATTACH;
-                    /* check to see if there are other attachments in this packet */
-                    if( imap_ssn->decode_state->decoded_bytes )
-                        imap_ssn->state_flags |= IMAP_FLAG_MULTIPLE_EMAIL_ATTACH;
-                }
-            }
-            imap_ssn->state_flags &= ~IMAP_FLAG_IN_CONT_TRANS_ENC;
-
-            cont_trans_enc = NULL;
-        }
-        else if (((imap_ssn->state_flags &
-                (IMAP_FLAG_IN_CONT_DISP | IMAP_FLAG_FOLDING)) == IMAP_FLAG_IN_CONT_DISP) && cont_disp)
-        {
-            bool disp_cont = (imap_ssn->state_flags & IMAP_FLAG_IN_CONT_DISP_CONT)? true: false;
-            if( imap_eval_config->log_config.log_filename && imap_ssn->log_state )
-            {
-                if(! _dpd.fileAPI->log_file_name(cont_disp, eolm - cont_disp,
-                        &(imap_ssn->log_state->file_log), &disp_cont) )
-                    imap_ssn->log_flags |= IMAP_FLAG_FILENAME_PRESENT;
-            }
-            if (disp_cont)
-            {
-                imap_ssn->state_flags |= IMAP_FLAG_IN_CONT_DISP_CONT;
-            }
-            else
-            {
-                imap_ssn->state_flags &= ~IMAP_FLAG_IN_CONT_DISP;
-                imap_ssn->state_flags &= ~IMAP_FLAG_IN_CONT_DISP_CONT;
-            }
-
-            cont_disp = NULL;
-        }
-
-        /* if state was unknown, at this point assume we know */
-        if (imap_ssn->data_state == STATE_DATA_UNKNOWN)
-            imap_ssn->data_state = STATE_DATA_HEADER;
-
-        ptr = eol;
-
-        if (ptr == data_end_marker)
-            imap_ssn->state_flags |= IMAP_FLAG_DATA_HEADER_CONT;
-    }
-
-    return ptr;
-}
-
-
-/*
- * Handle DATA_BODY state
- *
- * @param   packet  standard Packet structure
- *
- * @param   i       index into p->payload buffer to start looking at data
- *
- * @return  i       index into p->payload where we stopped looking at data
- */
-static const uint8_t * IMAP_HandleDataBody(SFSnortPacket *p, const uint8_t *ptr,
-                                            const uint8_t *data_end_marker)
-{
-    int boundary_found = 0;
-    const uint8_t *boundary_ptr = NULL;
-    const uint8_t *attach_start = NULL;
-    const uint8_t *attach_end = NULL;
-
-    if ( imap_ssn->state_flags & IMAP_FLAG_EMAIL_ATTACH )
-        attach_start = ptr;
-    /* look for boundary */
-    if (imap_ssn->state_flags & IMAP_FLAG_GOT_BOUNDARY)
-    {
-        boundary_found = _dpd.searchAPI->stateful_search_instance_find
-            (imap_ssn->mime_boundary.boundary_search, (const char *)ptr,
-             data_end_marker - ptr, 0, IMAP_BoundaryStrFound, &(imap_ssn->mime_boundary.state));
-
-        if (boundary_found > 0)
-        {
-            imap_ssn->mime_boundary.state = 0;
-            boundary_ptr = ptr + imap_search_info.index;
-
-            /* should start at beginning of line */
-            if ((boundary_ptr == ptr) || (*(boundary_ptr - 1) == '\n'))
-            {
-                const uint8_t *eol;
-                const uint8_t *eolm;
-                const uint8_t *tmp;
-
-                if (imap_ssn->state_flags & IMAP_FLAG_EMAIL_ATTACH )
-                {
-                    attach_end = boundary_ptr-1;
-                    imap_ssn->state_flags &= ~IMAP_FLAG_EMAIL_ATTACH;
-                    if(attach_start < attach_end)
-                    {
-                        if (*(attach_end - 1) == '\r')
-                            attach_end--;
-
-                        if(EmailDecode( attach_start, attach_end, imap_ssn->decode_state) < DECODE_SUCCESS )
-                        {
-                            IMAP_DecodeAlert();
-                        }
-                    }
-                }
-
-                if(boundary_ptr > ptr)
-                    tmp = boundary_ptr + imap_search_info.length;
-                else
-                {
-                    tmp = (const uint8_t *)_dpd.searchAPI->search_instance_find_end((char *)boundary_ptr, 
-                            (data_end_marker - boundary_ptr), imap_ssn->mime_boundary.boundary, imap_search_info.length);
-                }
-
-                /* Check for end boundary */
-                if (((tmp + 1) < data_end_marker) && (tmp[0] == '-') && (tmp[1] == '-'))
-                {
-                    DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "Mime boundary end found: %s--\n",
-                                            (char *)imap_ssn->mime_boundary.boundary););
-
-                    /* no more MIME */
-                    imap_ssn->state_flags &= ~IMAP_FLAG_GOT_BOUNDARY;
-                    imap_ssn->state_flags |= IMAP_FLAG_MIME_END;
-
-                    /* free boundary search */
-                    _dpd.searchAPI->search_instance_free(imap_ssn->mime_boundary.boundary_search);
-                    imap_ssn->mime_boundary.boundary_search = NULL;
-                }
-                else
-                {
-                    DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "Mime boundary found: %s\n",
-                                            (char *)imap_ssn->mime_boundary.boundary););
-
-                    imap_ssn->data_state = STATE_MIME_HEADER;
-                }
-
-                /* get end of line - there could be spaces after boundary before eol */
-                IMAP_GetEOL(boundary_ptr + imap_search_info.length, data_end_marker, &eol, &eolm);
-
-                return eol;
-            }
-        }
-    }
-
-    if ( imap_ssn->state_flags & IMAP_FLAG_EMAIL_ATTACH )
-    {
-        attach_end = data_end_marker;
-        if(attach_start < attach_end)
-        {
-            if(EmailDecode( attach_start, attach_end, imap_ssn->decode_state) < DECODE_SUCCESS )
-            {
-                IMAP_DecodeAlert();
-            }
-        }
-    }
-
-    return data_end_marker;
-}
-
 
 /*
  * Process client packet
@@ -1528,7 +783,7 @@ static void IMAP_ProcessServerPacket(SFSnortPacket *p)
                 else
                     data_end = ptr + len;
 
-                ptr = IMAP_HandleData(p, ptr, data_end);
+                ptr = _dpd.fileAPI->process_mime_data(p, ptr, end, &(imap_ssn->mime_ssn), 0, true);
 
                 if( ptr < data_end)
                     len = len - (data_end - ptr);
@@ -1607,6 +862,19 @@ static void IMAP_ProcessServerPacket(SFSnortPacket *p)
         }
         else
         {
+            if ((imap_ssn->session_flags & IMAP_FLAG_CHECK_SSL) &&
+                    (IsSSL(ptr, end - ptr, p->flags)))
+            {
+                DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "Server response is an SSL packet\n"););
+
+                imap_ssn->state = STATE_TLS_DATA;
+
+                return;
+            }
+            else if (imap_ssn->session_flags & IMAP_FLAG_CHECK_SSL)
+            {
+                imap_ssn->session_flags &= ~IMAP_FLAG_CHECK_SSL;
+            }
             if ( (*ptr != '*') && (*ptr !='+') && (*ptr != '\r') && (*ptr != '\n') )
             {
                 IMAP_GenerateAlert(IMAP_UNKNOWN_RESP, "%s", IMAP_UNKNOWN_RESP_STR);
@@ -1638,7 +906,7 @@ static int IMAP_Inspect(SFSnortPacket *p)
 #ifdef TARGET_BASED
     /* IMAP could be configured to be stateless.  If stream isn't configured, assume app id
      * will never be set and just base inspection on configuration */
-    if (p->stream_session_ptr == NULL)
+    if (p->stream_session == NULL)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "IMAP: Target-based: No stream session.\n"););
 
@@ -1652,7 +920,7 @@ static int IMAP_Inspect(SFSnortPacket *p)
     }
     else
     {
-        int16_t app_id = _dpd.streamAPI->get_application_protocol_id(p->stream_session_ptr);
+        int16_t app_id = _dpd.sessionAPI->get_application_protocol_id(p->stream_session);
 
         if (app_id != 0)
         {
@@ -1703,12 +971,13 @@ void SnortIMAP(SFSnortPacket *p)
 {
     int detected = 0;
     int pkt_dir;
-    tSfPolicyId policy_id = _dpd.getRuntimePolicy();
+    tSfPolicyId policy_id = _dpd.getNapRuntimePolicy();
+    ssl_callback_interface_t *ssl_cb = (ssl_callback_interface_t *)_dpd.getSSLCallback();
 
     PROFILE_VARS;
 
 
-    imap_ssn = (IMAP *)_dpd.streamAPI->get_application_data(p->stream_session_ptr, PP_IMAP);
+    imap_ssn = (IMAP *)_dpd.sessionAPI->get_application_data(p->stream_session, PP_IMAP);
     if (imap_ssn != NULL)
         imap_eval_config = (IMAPConfig *)sfPolicyUserDataGet(imap_ssn->config, imap_ssn->policy_id);
     else
@@ -1731,6 +1000,35 @@ void SnortIMAP(SFSnortPacket *p)
 
     if (pkt_dir == IMAP_PKT_FROM_CLIENT)
     {
+        /* This packet should be a tls client hello */
+        if (imap_ssn->state == STATE_TLS_CLIENT_PEND)
+        {
+            if (IsTlsClientHello(p->payload, p->payload + p->payload_size))
+            {
+                DEBUG_WRAP(DebugMessage(DEBUG_IMAP,
+                                        "TLS DATA STATE ~~~~~~~~~~~~~~~~~~~~~~~~~\n"););
+
+                imap_ssn->state = STATE_TLS_SERVER_PEND;
+                if(ssl_cb)
+                    ssl_cb->session_initialize(p, imap_ssn, IMAP_Set_flow_id);
+                return;
+            }
+            else
+            {
+                /* reset state - server may have rejected STARTTLS command */
+                imap_ssn->state = STATE_UNKNOWN;
+            }
+        }
+        if ((imap_ssn->state == STATE_TLS_DATA)
+                    || (imap_ssn->state == STATE_TLS_SERVER_PEND))
+        {
+            if( _dpd.streamAPI->is_session_decrypted(p->stream_session))
+            {
+                imap_ssn->state = STATE_COMMAND;
+            }
+            else
+                return;
+        }
         IMAP_ProcessClientPacket(p);
         DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "IMAP client packet\n"););
     }
@@ -1747,38 +1045,69 @@ void SnortIMAP(SFSnortPacket *p)
                         "Processing as a server packet\n"););
         }
 #endif
+        if (imap_ssn->state == STATE_TLS_SERVER_PEND)
+        {
+            if( _dpd.streamAPI->is_session_decrypted(p->stream_session))
+            {
+                imap_ssn->state = STATE_COMMAND;
+            }
+            else if (IsTlsServerHello(p->payload, p->payload + p->payload_size))
+            {
+                imap_ssn->state = STATE_TLS_DATA;
+            }
+            else if (!(_dpd.sessionAPI->get_session_flags(p->stream_session) & SSNFLAG_MIDSTREAM)
+                    && !_dpd.streamAPI->missed_packets(p->stream_session, SSN_DIR_BOTH))
+            {
+                /* revert back to command state - assume server didn't accept STARTTLS */
+                imap_ssn->state = STATE_UNKNOWN;
+            }
+            else 
+                return;
+        }
 
-        if (!_dpd.readyForProcess(p))
+        if (imap_ssn->state == STATE_TLS_DATA)
         {
-            /* Packet will be rebuilt, so wait for it */
-            DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "Client packet will be reassembled\n"));
-            return;
+            if( _dpd.streamAPI->is_session_decrypted(p->stream_session))
+            {
+                imap_ssn->state = STATE_COMMAND;
+            }
+            else
+                return;
         }
-        else if (imap_ssn->reassembling && !(p->flags & FLAG_REBUILT_STREAM))
-        {
-            /* If this isn't a reassembled packet and didn't get
-             * inserted into reassembly buffer, there could be a
-             * problem.  If we miss syn or syn-ack that had window
-             * scaling this packet might not have gotten inserted
-             * into reassembly buffer because it fell outside of
-             * window, because we aren't scaling it */
-            imap_ssn->session_flags |= IMAP_FLAG_GOT_NON_REBUILT;
-            imap_ssn->state = STATE_UNKNOWN;
-        }
-        else if (imap_ssn->reassembling && (imap_ssn->session_flags & IMAP_FLAG_GOT_NON_REBUILT))
-        {
-            /* This is a rebuilt packet.  If we got previous packets
-             * that were not rebuilt, state is going to be messed up
-             * so set state to unknown. It's likely this was the
-             * beginning of the conversation so reset state */
-            DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "Got non-rebuilt packets before "
-                "this rebuilt packet\n"););
 
-            imap_ssn->state = STATE_UNKNOWN;
-            imap_ssn->session_flags &= ~IMAP_FLAG_GOT_NON_REBUILT;
+        {
+            if (!_dpd.readyForProcess(p))
+            {
+                /* Packet will be rebuilt, so wait for it */
+                DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "Client packet will be reassembled\n"));
+                return;
+            }
+            else if (imap_ssn->reassembling && !(p->flags & FLAG_REBUILT_STREAM))
+            {
+                /* If this isn't a reassembled packet and didn't get
+                 * inserted into reassembly buffer, there could be a
+                 * problem.  If we miss syn or syn-ack that had window
+                 * scaling this packet might not have gotten inserted
+                 * into reassembly buffer because it fell outside of
+                 * window, because we aren't scaling it */
+                imap_ssn->session_flags |= IMAP_FLAG_GOT_NON_REBUILT;
+                imap_ssn->state = STATE_UNKNOWN;
+            }
+            else if (imap_ssn->reassembling && (imap_ssn->session_flags & IMAP_FLAG_GOT_NON_REBUILT))
+            {
+                /* This is a rebuilt packet.  If we got previous packets
+                 * that were not rebuilt, state is going to be messed up
+                 * so set state to unknown. It's likely this was the
+                 * beginning of the conversation so reset state */
+                DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "Got non-rebuilt packets before "
+                    "this rebuilt packet\n"););
+
+                imap_ssn->state = STATE_UNKNOWN;
+                imap_ssn->session_flags &= ~IMAP_FLAG_GOT_NON_REBUILT;
+            }
+            /* Process as a server packet */
+            IMAP_ProcessServerPacket(p);
         }
-        /* Process as a server packet */
-        IMAP_ProcessServerPacket(p);
     }
 
 
@@ -1805,16 +1134,13 @@ static void IMAP_DisableDetect(SFSnortPacket *p)
 {
     _dpd.disableAllDetect(p);
 
-    _dpd.setPreprocBit(p, PP_SFPORTSCAN);
-    _dpd.setPreprocBit(p, PP_PERFMONITOR);
-    _dpd.setPreprocBit(p, PP_STREAM5);
-    _dpd.setPreprocBit(p, PP_SDF);
+    _dpd.enablePreprocessor(p, PP_SDF);
 }
 
 static inline IMAP *IMAP_GetSession(void *data)
 {
     if(data)
-        return (IMAP *)_dpd.streamAPI->get_application_data(data, PP_IMAP);
+        return (IMAP *)_dpd.sessionAPI->get_application_data(data, PP_IMAP);
 
     return NULL;
 }
@@ -1827,8 +1153,15 @@ int IMAP_GetFilename(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
     if(ssn == NULL)
         return 0;
 
-    *buf = ssn->log_state->file_log.filenames;
-    *len = ssn->log_state->file_log.file_logged;
+    *buf = ssn->mime_ssn.log_state->file_log.filenames;
+    *len = ssn->mime_ssn.log_state->file_log.file_logged;
 
     return 1;
+}
+
+void IMAP_Set_flow_id( void *app_data, uint32_t fid )
+{
+    IMAP *ssn = (IMAP *)app_data;
+    if( ssn )
+        ssn->flow_id = fid;
 }

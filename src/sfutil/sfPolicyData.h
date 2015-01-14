@@ -24,22 +24,37 @@
 
 #include "sfPolicy.h"
 
-extern tSfPolicyId runtimePolicyId;
-extern tSfPolicyId parserPolicyId;
+extern tSfPolicyId napRuntimePolicyId;
+extern tSfPolicyId ipsRuntimePolicyId;
 
-static inline tSfPolicyId getRuntimePolicy(void)
+static inline tSfPolicyId getNapRuntimePolicy(void)
 {
-    return runtimePolicyId;
+    return napRuntimePolicyId;
 }
 
-static inline void setRuntimePolicy(tSfPolicyId id)
+static inline tSfPolicyId getIpsRuntimePolicy(void)
 {
-    runtimePolicyId = id;
+    return ipsRuntimePolicyId;
 }
 
-static inline int isRuntimePolicyDefault(void)
+static inline void setNapRuntimePolicy(tSfPolicyId id)
 {
-    return (runtimePolicyId == 0);
+    napRuntimePolicyId = id;
+}
+
+static inline void setIpsRuntimePolicy(tSfPolicyId id)
+{
+    ipsRuntimePolicyId = id;
+}
+
+static inline int isNapRuntimePolicyDefault(void)
+{
+    return ( napRuntimePolicyId == SF_DEFAULT_POLICY_ID );
+}
+
+static inline int isIpsRuntimePolicyDefault(void)
+{
+    return ( ipsRuntimePolicyId == SF_DEFAULT_POLICY_ID );
 }
 
 static inline tSfPolicyId getParserPolicy(SnortConfig *sc)
@@ -57,7 +72,7 @@ static inline void setParserPolicy(SnortConfig *sc, tSfPolicyId id)
 
 static inline int isParserPolicyDefault(SnortConfig *sc)
 {
-    return ((sc ? sc->parserPolicyId : snort_conf->parserPolicyId) == 0);
+    return ( ( sc ? sc->parserPolicyId : snort_conf->parserPolicyId ) == SF_DEFAULT_POLICY_ID );
 }
 
 #endif

@@ -56,31 +56,8 @@
 #define SIP_SUCCESS	(1)
 #define SIP_FAILURE	(0)
 
-typedef struct _SIP_MediaData
-{
-	sfip_t maddress;  // media IP
-	uint16_t mport;   // media port
-	uint8_t numPort;   // number of media ports
-	struct _SIP_MediaData *nextM;
-} SIP_MediaData;
-
-typedef SIP_MediaData* SIP_MediaDataList;
-
 #define SIP_SESSION_SAVED	(1)
 #define SIP_SESSION_INIT	(0)
-
-typedef struct _SIP_MediaSession
-{
-	uint32_t sessionID; // a hash value of the session
-	int savedFlag;      // whether this data has been saved by a dialog,
-	                    // if savedFlag = 1, this session will be deleted after sip message is processed.
-	sfip_t maddress_default;  //Default media IP
-	SIP_MediaDataList medias; //Media list in the session
-	struct _SIP_MediaSession *nextS; // Next media session
-} SIP_MediaSession;
-
-typedef SIP_MediaSession* SIP_MediaList;
-
 
 typedef struct _SIP_DialogID
 {
@@ -89,17 +66,6 @@ typedef struct _SIP_DialogID
 	uint32_t toTagHash;
 } SIP_DialogID;
 
-typedef enum _SIP_DialogState
-{
-   SIP_DLG_CREATE = 1,    //1
-   SIP_DLG_INVITING,      //2
-   SIP_DLG_EARLY,         //3
-   SIP_DLG_AUTHENCATING,  //4
-   SIP_DLG_ESTABLISHED,   //5
-   SIP_DLG_REINVITING,    //6
-   SIP_DLG_TERMINATING,   //7
-   SIP_DLG_TERMINATED     //8
-} SIP_DialogState;
 
 typedef struct _SIP_DialogData
 {
@@ -162,6 +128,11 @@ typedef struct _SIPMsg
     const uint8_t *body_data;  /* Set to NULL if not applicable */
     uint64_t cseqnum;
 
+    uint16_t userNameLen;
+    uint16_t userAgentLen;
+    uint16_t serverLen;
+    bool     mediaUpdated;
+
     /* nothing after this point is zeroed ...*/
     /*Input parameters*/
     unsigned char isTcp;
@@ -179,6 +150,11 @@ typedef struct _SIPMsg
 
     char *content_type;
     char *content_encode;
+
+    const char *userAgent;
+    const char *userName;
+    const char *server;
+
 
 } SIPMsg;
 

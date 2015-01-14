@@ -84,9 +84,9 @@ static void * DNP3ReloadSwap(struct _SnortConfig *, void *);
 static void DNP3ReloadSwapFree(void *);
 #endif
 
-static void _addPortsToStream5Filter(struct _SnortConfig *, dnp3_config_t *, tSfPolicyId);
+static void _addPortsToStreamFilter(struct _SnortConfig *, dnp3_config_t *, tSfPolicyId);
 #ifdef TARGET_BASED
-static void _addServicesToStream5Filter(struct _SnortConfig *, tSfPolicyId);
+static void _addServicesToStreamFilter(struct _SnortConfig *, tSfPolicyId);
 #endif
 
 static void DNP3FreeConfig(tSfPolicyUserContextId context_id);
@@ -114,6 +114,17 @@ void SetupDNP3(void)
 #endif
 }
 
+static void DNP3RegisterPortsWithSession( struct _SnortConfig *sc, dnp3_config_t *policy )
+{
+    uint32_t port;
+
+    for ( port = 0; port < MAX_PORTS; port++ )
+    {
+        if( isPortEnabled( policy->ports, port ) )
+            _dpd.sessionAPI->enable_preproc_for_port( sc, PP_DNP3, PROTO_BIT__TCP | PROTO_BIT__UDP, port ); 
+    }
+}
+
 /* Allocate memory for preprocessor config, parse the args, set up callbacks */
 static void DNP3Init(struct _SnortConfig *sc, char *argp)
 {
@@ -127,6 +138,8 @@ static void DNP3Init(struct _SnortConfig *sc, char *argp)
     ParseDNP3Args(sc, dnp3_policy, argp);
 
     PrintDNP3Config(dnp3_policy);
+
+    DNP3RegisterPortsWithSession( sc, dnp3_policy );
 
     DNP3RegisterPerPolicyCallbacks(sc, dnp3_policy);
 }
@@ -160,6 +173,9 @@ static inline void DNP3OneTimeInit(struct _SnortConfig *sc)
     dnp3_app_id = _dpd.findProtocolReference("dnp3");
     if (dnp3_app_id == SFTARGET_UNKNOWN_PROTOCOL)
         dnp3_app_id = _dpd.addProtocolReference("dnp3");
+    // register with session to handle application
+    _dpd.sessionAPI->register_service_handler( PP_DNP3, dnp3_app_id );
+
 #endif
 }
 
@@ -200,9 +216,9 @@ static void DNP3RegisterPerPolicyCallbacks(struct _SnortConfig *sc, dnp3_config_
         return;
 
     _dpd.addPreproc(sc, ProcessDNP3, PRIORITY_APPLICATION, PP_DNP3, PROTO_BIT__TCP|PROTO_BIT__UDP);
-    _addPortsToStream5Filter(sc, dnp3_policy, policy_id);
+    _addPortsToStreamFilter(sc, dnp3_policy, policy_id);
 #ifdef TARGET_BASED
-    _addServicesToStream5Filter(sc, policy_id);
+    _addServicesToStreamFilter(sc, policy_id);
     DNP3AddServiceToPaf(sc, dnp3_app_id, policy_id);
 #endif
     DNP3AddPortsToPaf(sc, dnp3_policy, policy_id);
@@ -413,11 +429,14 @@ static int DNP3ProcessUDP(dnp3_config_t *dnp3_eval_config,
         pdu_start = (uint8_t *)(packetp->payload + bytes_processed);
         link = (dnp3_link_header_t *)pdu_start;
 
-        /* Alert and stop if (a) there's not enough data to read a length, or
-           (b) the start bytes are not 0x0564 */
+        /*Stop if the start bytes are not 0x0564 */
+        if ((packetp->payload_size < bytes_processed + 2)
+                || (link->start != DNP3_START_BYTES))
+            break;
+
+        /* Alert and stop if there's not enough data to read a length */
         if ((packetp->payload_size - bytes_processed < (int)sizeof(dnp3_link_header_t)) ||
-            (link->start != DNP3_START_BYTES) ||
-            (link->len < DNP3_HEADER_REMAINDER_LEN))
+                (link->len < DNP3_HEADER_REMAINDER_LEN))
         {
             truncated_pdu = 1;
             break;
@@ -449,7 +468,8 @@ static int DNP3ProcessUDP(dnp3_config_t *dnp3_eval_config,
     /* All detection was done when DNP3FullReassembly() called Detect()
        on the reassembled PDUs. Clear the flag to avoid double alerts
        on the last PDU. */
-    _dpd.DetectReset((uint8_t *)packetp->payload, packetp->payload_size);
+    if (bytes_processed)
+        _dpd.DetectReset((uint8_t *)packetp->payload, packetp->payload_size);
 
     return DNP3_OK;
 }
@@ -481,7 +501,7 @@ static void ProcessDNP3(void *ipacketp, void *contextp)
     dnp3_eval_config = sfPolicyUserDataGetCurrent(dnp3_context_id);
 
     /* Look for a previously-allocated session data. */
-    tmp_bucket = _dpd.streamAPI->get_application_data(packetp->stream_session_ptr, PP_DNP3);
+    tmp_bucket = _dpd.sessionAPI->get_application_data(packetp->stream_session, PP_DNP3);
 
     if (tmp_bucket == NULL)
     {
@@ -492,7 +512,7 @@ static void ProcessDNP3(void *ipacketp, void *contextp)
             return;
         }
 
-        /* Create session data and attach it to the Stream5 session */
+        /* Create session data and attach it to the Stream session */
         tmp_bucket = DNP3CreateSessionData(packetp);
 
         if (tmp_bucket == NULL)
@@ -530,7 +550,7 @@ static void ProcessDNP3(void *ipacketp, void *contextp)
 static int DNP3PortCheck(dnp3_config_t *config, SFSnortPacket *packet)
 {
 #ifdef TARGET_BASED
-    int16_t app_id = _dpd.streamAPI->get_application_protocol_id(packet->stream_session_ptr);
+    int16_t app_id = _dpd.sessionAPI->get_application_protocol_id(packet->stream_session);
 
     /* call to get_application_protocol_id gave an error */
     if (app_id == SFTARGET_UNKNOWN_PROTOCOL)
@@ -562,7 +582,7 @@ static MemBucket * DNP3CreateSessionData(SFSnortPacket *packet)
     dnp3_session_data_t *data = NULL;
 
     /* Sanity Check */
-    if (!packet || !packet->stream_session_ptr)
+    if (!packet || !packet->stream_session)
         return NULL;
 
     /* data = (dnp3_session_data_t *)calloc(1, sizeof(dnp3_session_data_t)); */
@@ -589,12 +609,12 @@ static MemBucket * DNP3CreateSessionData(SFSnortPacket *packet)
     if (!data)
         return NULL;
 
-    /* Attach to Stream5 session */
-    _dpd.streamAPI->set_application_data(packet->stream_session_ptr, PP_DNP3,
+    /* Attach to Stream session */
+    _dpd.sessionAPI->set_application_data(packet->stream_session, PP_DNP3,
         tmp_bucket, FreeDNP3Data);
 
     /* Not sure when this reference counting stuff got added to the old preprocs */
-    data->policy_id = _dpd.getRuntimePolicy();
+    data->policy_id = _dpd.getNapRuntimePolicy();
     data->context_id = dnp3_context_id;
     ((dnp3_config_t *)sfPolicyUserDataGetCurrent(dnp3_context_id))->ref_count++;
 
@@ -633,10 +653,12 @@ static void DNP3Reload(struct _SnortConfig *sc, char *args, void **new_config)
 
     PrintDNP3Config(dnp3_policy);
 
+    DNP3RegisterPortsWithSession( sc, dnp3_policy );
+
     DNP3RegisterPerPolicyCallbacks(sc, dnp3_policy);
 }
 
-/* Check that Stream5 is still running, and that the memcap didn't change. */
+/* Check that Stream is still running, and that the memcap didn't change. */
 static int DNP3ReloadVerify(struct _SnortConfig *sc, void *swap_config)
 {
     tSfPolicyUserContextId dnp3_swap_context_id = (tSfPolicyUserContextId)swap_config;
@@ -671,7 +693,7 @@ static int DNP3ReloadVerify(struct _SnortConfig *sc, void *swap_config)
     }
 
     /* Did stream5 get turned off? */
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
+    if (!_dpd.isPreprocEnabled(sc, PP_STREAM))
     {
         _dpd.errMsg("SetupDNP3(): The Stream preprocessor must be enabled.\n");
         return -1;
@@ -728,15 +750,15 @@ static void DNP3ReloadSwapFree(void *data)
 }
 #endif
 
-/* Stream5 filter functions */
-static void _addPortsToStream5Filter(struct _SnortConfig *sc, dnp3_config_t *config, tSfPolicyId policy_id)
+/* Stream filter functions */
+static void _addPortsToStreamFilter(struct _SnortConfig *sc, dnp3_config_t *config, tSfPolicyId policy_id)
 {
     if (config == NULL)
         return;
 
     if (_dpd.streamAPI)
     {
-        int portNum;
+        uint32_t portNum;
 
         for (portNum = 0; portNum < MAX_PORTS; portNum++)
         {
@@ -754,7 +776,7 @@ static void _addPortsToStream5Filter(struct _SnortConfig *sc, dnp3_config_t *con
 }
 
 #ifdef TARGET_BASED
-static void _addServicesToStream5Filter(struct _SnortConfig *sc, tSfPolicyId policy_id)
+static void _addServicesToStreamFilter(struct _SnortConfig *sc, tSfPolicyId policy_id)
 {
     _dpd.streamAPI->set_service_filter_status(sc, dnp3_app_id, PORT_MONITOR_SESSION, policy_id, 1);
 }
@@ -808,12 +830,12 @@ static int DNP3CheckPolicyConfig(
     _dpd.setParserPolicy(sc, policy_id);
 
     /* In a multiple-policy setting, the preprocessor can be turned on in
-       a "disabled" state. In this case, we don't require Stream5. */
+       a "disabled" state. In this case, we don't require Stream. */
     if (config->disabled)
         return 0;
 
-    /* Otherwise, require Stream5. */
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
+    /* Otherwise, require Stream. */
+    if (!_dpd.isPreprocEnabled(sc, PP_STREAM))
     {
         _dpd.errMsg("ERROR: DNP3CheckPolicyConfig(): "
             "The Stream preprocessor must be enabled.\n");

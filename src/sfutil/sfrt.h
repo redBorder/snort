@@ -113,7 +113,7 @@ typedef struct
 
 
 #include "sfrt_dir.h"
-//#define SUPPORT_LCTRIE
+/*#define SUPPORT_LCTRIE */
 #ifdef SUPPORT_LCTRIE
 #include "sfrt_lctrie.h"
 #endif

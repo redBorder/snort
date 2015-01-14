@@ -46,6 +46,7 @@ HttpBuffer http_buffer[HTTP_BUFFER_MAX];
 DataPointer DetectBuffer;
 DataPointer file_data_ptr;
 DataBuffer DecodeBuffer;
+void *global_ssl_callback = NULL;
 
 const char* http_buffer_name[HTTP_BUFFER_MAX] =
 {
@@ -56,7 +57,7 @@ const char* http_buffer_name[HTTP_BUFFER_MAX] =
     "http_method",
     "http_cookie",
     "http_stat_code",
-    "http_stat_msg"
+    "http_stat_msg",
     "http_raw_uri",
     "http_raw_header",
     "http_raw_cookie",

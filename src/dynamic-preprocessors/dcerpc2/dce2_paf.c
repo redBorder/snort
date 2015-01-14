@@ -109,20 +109,20 @@ static inline bool DCE2_PafAbort(void *ssn, uint32_t flags)
 {
     DCE2_SsnData *sd;
 
-    if (_dpd.streamAPI->get_session_flags(ssn) & SSNFLAG_MIDSTREAM)
+    if (_dpd.sessionAPI->get_session_flags(ssn) & SSNFLAG_MIDSTREAM)
     {
         DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__PAF,
                     "Aborting PAF because of midstream pickup.\n"));
         return true;
     }
-    else if (!(_dpd.streamAPI->get_session_flags(ssn) & SSNFLAG_ESTABLISHED))
+    else if (!(_dpd.sessionAPI->get_session_flags(ssn) & SSNFLAG_ESTABLISHED))
     {
         DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__PAF,
                     "Aborting PAF because of unestablished session.\n"));
         return true;
     }
 
-    sd = (DCE2_SsnData *)_dpd.streamAPI->get_application_data(ssn, PP_DCE2);
+    sd = (DCE2_SsnData *)_dpd.sessionAPI->get_application_data(ssn, PP_DCE2);
     if ((sd != NULL) && DCE2_SsnNoInspect(sd))
     {
         DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__PAF, "Aborting PAF because of session data check.\n"));
@@ -218,7 +218,7 @@ PAF_Status DCE2_SmbPaf(void *ssn, void **user, const uint8_t *data,
 
 #ifdef DEBUG_MSGS
     DCE2_DEBUG_CODE(DCE2_DEBUG__PAF, printf("Session pointer: %p\n",
-                _dpd.streamAPI->get_application_data(ssn, PP_DCE2));)
+                _dpd.sessionAPI->get_application_data(ssn, PP_DCE2));)
     if (flags & FLAG_FROM_CLIENT)
         DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__PAF, "Packet from Client\n"));
     else
@@ -350,14 +350,14 @@ PAF_Status DCE2_TcpPaf(void *ssn, void **user, const uint8_t *data,
     int start_state;
     PAF_Status ps = PAF_SEARCH;
     uint32_t tmp_fp = 0;
-    DCE2_SsnData *sd = (DCE2_SsnData *)_dpd.streamAPI->get_application_data(ssn, PP_DCE2);
+    DCE2_SsnData *sd = (DCE2_SsnData *)_dpd.sessionAPI->get_application_data(ssn, PP_DCE2);
     int num_requests = 0;
 
     DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__PAF, "%s\n", DCE2_DEBUG__PAF_START_MSG));
     DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__PAF, "TCP: %u bytes of data\n", len));
 
     DCE2_DEBUG_CODE(DCE2_DEBUG__PAF, printf("Session pointer: %p\n",
-                _dpd.streamAPI->get_application_data(ssn, PP_DCE2));)
+                _dpd.sessionAPI->get_application_data(ssn, PP_DCE2));)
 
 #ifdef DEBUG_MSGS
     if (flags & FLAG_FROM_CLIENT)
@@ -381,9 +381,9 @@ PAF_Status DCE2_TcpPaf(void *ssn, void **user, const uint8_t *data,
         bool autodetected = false;
 
 #ifdef TARGET_BASED
-        if (_dpd.isAdaptiveConfigured(_dpd.getRuntimePolicy()))
+        if (_dpd.isAdaptiveConfigured())
         {
-            int16_t proto_id = _dpd.streamAPI->get_application_protocol_id(ssn);
+            int16_t proto_id = _dpd.sessionAPI->get_application_protocol_id(ssn);
 
             DEBUG_WRAP(DCE2_DebugMsg(DCE2_DEBUG__PAF, "No session data - checking adaptive "
                                      "to see if it's DCE/RPC.\n"));

@@ -49,7 +49,7 @@
 /* Modbus preprocessor configuration */
 typedef struct _modbus_config
 {
-    char     ports[MAX_PORTS/8];
+    uint8_t ports[MAX_PORTS/8];
 
     int ref_count;
 } modbus_config_t;

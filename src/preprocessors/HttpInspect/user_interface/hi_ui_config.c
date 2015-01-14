@@ -77,9 +77,6 @@ int hi_ui_config_init_global_conf(HTTPINSPECT_GLOBAL_CONF *GlobalConf)
 {
     int iRet;
 
-    /* Set Global Configurations */
-    GlobalConf->inspection_type = HI_UI_CONFIG_STATELESS;
-
     iRet = hi_ui_server_lookup_init(&GlobalConf->server_lookup);
     if (iRet)
     {
@@ -172,7 +169,6 @@ int hi_ui_config_default(HTTPINSPECT_CONF *global_server)
 */
 int hi_ui_config_reset_global(HTTPINSPECT_GLOBAL_CONF *GlobalConf)
 {
-    GlobalConf->inspection_type = 0;
     GlobalConf->iis_unicode_map = 0;
     http_cmd_lookup_cleanup(&(GlobalConf->global_server->cmd_lookup));
 
@@ -312,7 +308,7 @@ int hi_ui_config_set_profile_apache(HTTPINSPECT_CONF *ServerConf)
 **  @retval HI_MEM_ALLOC_FAIL memory allocation failed
 */
 int hi_ui_config_set_profile_iis(HTTPINSPECT_CONF *ServerConf,
-                                 int *iis_unicode_map)
+                                 uint8_t *iis_unicode_map)
 {
     if(iis_unicode_map == NULL)
     {
@@ -390,7 +386,7 @@ int hi_ui_config_set_profile_iis(HTTPINSPECT_CONF *ServerConf,
 **/
 
 int hi_ui_config_set_profile_iis_4or5(HTTPINSPECT_CONF *ServerConf,
-                                 int *iis_unicode_map)
+                                 uint8_t *iis_unicode_map)
 {
     int ret;
 
@@ -420,7 +416,7 @@ int hi_ui_config_set_profile_iis_4or5(HTTPINSPECT_CONF *ServerConf,
 **  @retval HI_MEM_ALLOC_FAIL memory allocation failed
 */
 int hi_ui_config_set_profile_all(HTTPINSPECT_CONF *ServerConf,
-                                 int *iis_unicode_map)
+                                 uint8_t *iis_unicode_map)
 {
     if(iis_unicode_map == NULL)
     {

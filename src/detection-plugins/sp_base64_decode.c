@@ -308,6 +308,7 @@ int Base64DecodeEval(void *option_data, Packet *p)
     uint8_t base64_buf[DECODE_BLEN];
     uint32_t base64_size =0;
     Base64DecodeData *idx;
+    uint32_t buff_size;
     PROFILE_VARS;
 
     PREPROC_PROFILE_START(base64DecodePerfStats);
@@ -346,13 +347,15 @@ int Base64DecodeEval(void *option_data, Packet *p)
         start_ptr = p->data + idx->offset;
     }
 
-    if(start_ptr > (p->data + p->dsize) )
+    if(start_ptr >= (p->data + p->dsize) )
     {
         PREPROC_PROFILE_END(base64DecodePerfStats);
         return rval;
     }
 
-    if(sf_unfold_header(start_ptr, p->dsize, base64_buf, sizeof(base64_buf), &base64_size, 0, 0) != 0)
+    buff_size = p->data + p->dsize - start_ptr;
+
+    if(sf_unfold_header(start_ptr, buff_size, base64_buf, sizeof(base64_buf), &base64_size, 0, 0) != 0)
     {
         PREPROC_PROFILE_END(base64DecodePerfStats);
         return rval;

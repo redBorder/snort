@@ -53,6 +53,7 @@
 #define NO_DATASEG     -1
 #define NO_ZEROSEG     -2
 #define UNMAP_OLDSEG   -3
+#define SHMEM_ERR      -4
 #define ZEROSEG       100
 #define GO_INACTIVE    10
 

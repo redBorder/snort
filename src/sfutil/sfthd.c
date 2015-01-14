@@ -896,7 +896,7 @@ int sfthd_test_local(
     THD_IP_NODE     data,*sfthd_ip_node;
     int             status=0;
     snort_ip_p      ip;
-    tSfPolicyId policy_id = getRuntimePolicy();
+    tSfPolicyId policy_id = getIpsRuntimePolicy();
 
 #ifdef THD_DEBUG
     printf("THD_DEBUG: Key THD_NODE IP=%s,",printIP((unsigned)sfthd_node->ip_address) );
@@ -991,7 +991,7 @@ static inline int sfthd_test_global(
     THD_IP_NODE      data, *sfthd_ip_node;
     int              status=0;
     snort_ip_p       ip;
-    tSfPolicyId policy_id = getRuntimePolicy();
+    tSfPolicyId policy_id = getIpsRuntimePolicy();
 
 #ifdef THD_DEBUG
     printf("THD_DEBUG-GLOBAL:  gen_id=%u, sig_id=%u\n",gen_id,sig_id);
@@ -1103,7 +1103,7 @@ int sfthd_test_threshold(
     int cnt;
 #endif
     int status=0;
-    tSfPolicyId policy_id = getRuntimePolicy();
+    tSfPolicyId policy_id = getIpsRuntimePolicy();
 
     if ((thd_objs == NULL) || (thd == NULL))
         return 0;

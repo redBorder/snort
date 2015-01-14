@@ -40,6 +40,10 @@
 #include "snort_debug.h"
 #include "decode.h"
 
+#ifdef NORMALIZER
+#include "spp_normalize.h"
+#endif
+
 #include <time.h>
 #include <stdio.h>
 
@@ -66,15 +70,20 @@ typedef enum {
     PERF_COUNT_TCP_PAD,
     PERF_COUNT_TCP_RSV,
     PERF_COUNT_TCP_NS,
-    PERF_COUNT_TCP_URG,
     PERF_COUNT_TCP_URP,
-    PERF_COUNT_TCP_TRIM,
     PERF_COUNT_TCP_ECN_PKT,
     PERF_COUNT_TCP_ECN_SSN,
     PERF_COUNT_TCP_TS_ECR,
     PERF_COUNT_TCP_TS_NOP,
     PERF_COUNT_TCP_IPS_DATA,
     PERF_COUNT_TCP_BLOCK,
+    PERF_COUNT_TCP_REQ_URG,
+    PERF_COUNT_TCP_REQ_PAY,
+    PERF_COUNT_TCP_REQ_URP,
+    PERF_COUNT_TCP_TRIM_SYN,
+    PERF_COUNT_TCP_TRIM_RST,
+    PERF_COUNT_TCP_TRIM_WIN,
+    PERF_COUNT_TCP_TRIM_MSS,
     PERF_COUNT_MAX
 } PerfCounts;
 
@@ -131,7 +140,7 @@ typedef struct _SFBASE
     uint64_t   iFragFaults;     /* # of times we've run out of memory */
 
 #ifdef NORMALIZER
-    uint64_t   iPegs[PERF_COUNT_MAX];
+    uint64_t   iPegs[PERF_COUNT_MAX][NORM_MODE_MAX];
 #endif
 
 #ifdef LINUX_SMP
@@ -230,7 +239,7 @@ typedef struct _SFBASE_STATS {
     time_t   time;
 
 #ifdef NORMALIZER
-    uint64_t   pegs[PERF_COUNT_MAX];
+    uint64_t   pegs[PERF_COUNT_MAX][NORM_MODE_MAX];
 #endif
 
 #ifdef LINUX_SMP
@@ -294,7 +303,7 @@ void UpdateMPLSStats(SFBASE *sfBase, int len, int dropped);
 void UpdateIPFragStats(SFBASE *sfBase, int len);
 void UpdateIPReassStats(SFBASE *sfBase, int len);
 void UpdateStreamReassStats(SFBASE *sfBase, int len);
-void UpdateFilteredPacketStats(SFBASE *sfBase, unsigned int proto);
+void UpdateFilteredPacketStats(SFBASE *sfBase, IpProto proto);
 
 void LogBasePerfHeader(FILE*);
 #endif

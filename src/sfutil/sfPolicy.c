@@ -30,6 +30,8 @@
 #include "snort_debug.h"
 #include "sfrt.h"
 
+tSfPolicyId napRuntimePolicyId = 0;
+tSfPolicyId ipsRuntimePolicyId = 0;
 
 static inline int IsBound (
     tSfPolicyId id
@@ -264,8 +266,7 @@ tSfPolicyId sfVlanGetBinding(tSfPolicyConfig *config, int vlanId)
 {
     tSfPolicyId policyId;
 
-    if(vlanId >= SF_VLAN_BINDING_MAX)
-    {
+    if(vlanId >= SF_VLAN_BINDING_MAX){
         //invalid policyid will never be bound. return default
         return config->defaultPolicyId;
     }
@@ -284,7 +285,6 @@ tSfPolicyId sfVlanGetBinding(tSfPolicyConfig *config, int vlanId)
 void sfVlanDeleteBinding(tSfPolicyConfig *config, int vlanId)
 {
     tSfPolicyId policyId;
-
     if(vlanId >= SF_VLAN_BINDING_MAX)
         return; //invalid, can't delete
 
@@ -326,12 +326,10 @@ tSfPolicyId sfPolicyIdGetBinding(tSfPolicyConfig *config, int parsedPolicyId)
 {
     tSfPolicyId policyId;
 
-    if(parsedPolicyId >= SF_POLICY_ID_BINDING_MAX)
-    {
+    if(parsedPolicyId >= SF_POLICY_ID_BINDING_MAX){
         //invalid policyid will never be bound. return default
         return config->defaultPolicyId;
     }
-    
     policyId = config->policyIdBindings[parsedPolicyId];
 
     if ( NotBound(policyId) )
@@ -346,7 +344,7 @@ tSfPolicyId sfPolicyIdGetBinding(tSfPolicyConfig *config, int parsedPolicyId)
 void sfPolicyIdDeleteBinding(tSfPolicyConfig *config, int parsedPolicyId)
 {
     tSfPolicyId policyId;
-    
+
     if(parsedPolicyId >= SF_POLICY_ID_BINDING_MAX)
         return; //invalid, can't delete
 

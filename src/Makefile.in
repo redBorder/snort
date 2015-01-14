@@ -100,18 +100,19 @@ PROGRAMS = $(bin_PROGRAMS)
 am__snort_SOURCES_DIST = cdefs.h event.h generators.h sf_protocols.h \
 	plugin_enum.h rules.h treenodes.h checksum.h debug.c \
 	snort_debug.h decode.c decode.h encode.c encode.h active.c \
-	active.h log.c log.h mstring.c mstring.h parser.c parser.h \
-	profiler.c profiler.h plugbase.c plugbase.h preprocids.h \
-	snort.c snort.h build.h snprintf.c snprintf.h strlcatu.c \
-	strlcatu.h strlcpyu.c strlcpyu.h tag.c tag.h util.c util.h \
-	detect.c detect.h signature.c signature.h mempool.c mempool.h \
-	sf_sdlist.c sf_sdlist.h sf_sdlist_types.h fpcreate.c \
-	fpcreate.h fpdetect.c fpdetect.h pcrm.c pcrm.h snort_bounds.h \
-	byte_extract.c byte_extract.h timersub.h spo_plugbase.h \
-	sfthreshold.c sfthreshold.h packet_time.c packet_time.h \
-	event_wrapper.c event_wrapper.h event_queue.c event_queue.h \
-	ipv6_port.h ppm.c ppm.h pcap_pkthdr32.h cpuclock.h sf_types.h \
-	log_text.c log_text.h detection_filter.c detection_filter.h \
+	active.h log.c log.h mstring.c mstring.h hashstring.c \
+	hashstring.h parser.c parser.h profiler.c profiler.h \
+	plugbase.c plugbase.h preprocids.h snort.c snort.h build.h \
+	snprintf.c snprintf.h strlcatu.c strlcatu.h strlcpyu.c \
+	strlcpyu.h tag.c tag.h util.c util.h detect.c detect.h \
+	signature.c signature.h mempool.c mempool.h sf_sdlist.c \
+	sf_sdlist.h sf_sdlist_types.h fpcreate.c fpcreate.h fpdetect.c \
+	fpdetect.h pcrm.c pcrm.h snort_bounds.h byte_extract.c \
+	byte_extract.h timersub.h spo_plugbase.h sfthreshold.c \
+	sfthreshold.h packet_time.c packet_time.h event_wrapper.c \
+	event_wrapper.h event_queue.c event_queue.h ipv6_port.h ppm.c \
+	ppm.h pcap_pkthdr32.h cpuclock.h sf_types.h log_text.c \
+	log_text.h detection_filter.c detection_filter.h \
 	detection_util.c detection_util.h rate_filter.c rate_filter.h \
 	obfuscation.c obfuscation.h rule_option_types.h sfdaq.c \
 	sfdaq.h idle_processing.c idle_processing.h \
@@ -120,16 +121,17 @@ am__snort_SOURCES_DIST = cdefs.h event.h generators.h sf_protocols.h \
 @BUILD_CONTROL_SOCKET_TRUE@am__objects_2 = dump.$(OBJEXT)
 am_snort_OBJECTS = debug.$(OBJEXT) decode.$(OBJEXT) encode.$(OBJEXT) \
 	active.$(OBJEXT) log.$(OBJEXT) mstring.$(OBJEXT) \
-	parser.$(OBJEXT) profiler.$(OBJEXT) plugbase.$(OBJEXT) \
-	snort.$(OBJEXT) $(am__objects_1) strlcatu.$(OBJEXT) \
-	strlcpyu.$(OBJEXT) tag.$(OBJEXT) util.$(OBJEXT) \
-	detect.$(OBJEXT) signature.$(OBJEXT) mempool.$(OBJEXT) \
-	sf_sdlist.$(OBJEXT) fpcreate.$(OBJEXT) fpdetect.$(OBJEXT) \
-	pcrm.$(OBJEXT) byte_extract.$(OBJEXT) sfthreshold.$(OBJEXT) \
-	packet_time.$(OBJEXT) event_wrapper.$(OBJEXT) \
-	event_queue.$(OBJEXT) ppm.$(OBJEXT) log_text.$(OBJEXT) \
-	detection_filter.$(OBJEXT) detection_util.$(OBJEXT) \
-	rate_filter.$(OBJEXT) obfuscation.$(OBJEXT) sfdaq.$(OBJEXT) \
+	hashstring.$(OBJEXT) parser.$(OBJEXT) profiler.$(OBJEXT) \
+	plugbase.$(OBJEXT) snort.$(OBJEXT) $(am__objects_1) \
+	strlcatu.$(OBJEXT) strlcpyu.$(OBJEXT) tag.$(OBJEXT) \
+	util.$(OBJEXT) detect.$(OBJEXT) signature.$(OBJEXT) \
+	mempool.$(OBJEXT) sf_sdlist.$(OBJEXT) fpcreate.$(OBJEXT) \
+	fpdetect.$(OBJEXT) pcrm.$(OBJEXT) byte_extract.$(OBJEXT) \
+	sfthreshold.$(OBJEXT) packet_time.$(OBJEXT) \
+	event_wrapper.$(OBJEXT) event_queue.$(OBJEXT) ppm.$(OBJEXT) \
+	log_text.$(OBJEXT) detection_filter.$(OBJEXT) \
+	detection_util.$(OBJEXT) rate_filter.$(OBJEXT) \
+	obfuscation.$(OBJEXT) sfdaq.$(OBJEXT) \
 	idle_processing.$(OBJEXT) $(am__objects_2)
 snort_OBJECTS = $(am_snort_OBJECTS)
 snort_DEPENDENCIES = output-plugins/libspo.a \
@@ -137,7 +139,8 @@ snort_DEPENDENCIES = output-plugins/libspo.a \
 	dynamic-output/plugins/liboutput.a preprocessors/libspp.a \
 	parser/libparser.a target-based/libtarget_based.a \
 	preprocessors/HttpInspect/libhttp_inspect.a \
-	preprocessors/Stream5/libstream5.a sfutil/libsfutil.a \
+	preprocessors/Session/libsession.a \
+	preprocessors/Stream6/libstream6.a sfutil/libsfutil.a \
 	control/libsfcontrol.a file-process/libfileAPI.a \
 	file-process/libs/libfile.a $(am__append_2)
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -293,6 +296,8 @@ LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
+LUA_CFLAGS = @LUA_CFLAGS@
+LUA_LIBS = @LUA_LIBS@
 MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
@@ -315,8 +320,6 @@ PKG_CONFIG = @PKG_CONFIG@
 PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
 PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
-RAZORBACK_CFLAGS = @RAZORBACK_CFLAGS@
-RAZORBACK_LIBS = @RAZORBACK_LIBS@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
@@ -366,6 +369,8 @@ libdir = @libdir@
 libexecdir = @libexecdir@
 localedir = @localedir@
 localstatedir = @localstatedir@
+luajit_CFLAGS = @luajit_CFLAGS@
+luajit_LIBS = @luajit_LIBS@
 mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
@@ -386,18 +391,19 @@ AUTOMAKE_OPTIONS = foreign no-dependencies
 snort_SOURCES = cdefs.h event.h generators.h sf_protocols.h \
 	plugin_enum.h rules.h treenodes.h checksum.h debug.c \
 	snort_debug.h decode.c decode.h encode.c encode.h active.c \
-	active.h log.c log.h mstring.c mstring.h parser.c parser.h \
-	profiler.c profiler.h plugbase.c plugbase.h preprocids.h \
-	snort.c snort.h build.h $(SNPRINTF_SOURCES) strlcatu.c \
-	strlcatu.h strlcpyu.c strlcpyu.h tag.c tag.h util.c util.h \
-	detect.c detect.h signature.c signature.h mempool.c mempool.h \
-	sf_sdlist.c sf_sdlist.h sf_sdlist_types.h fpcreate.c \
-	fpcreate.h fpdetect.c fpdetect.h pcrm.c pcrm.h snort_bounds.h \
-	byte_extract.c byte_extract.h timersub.h spo_plugbase.h \
-	sfthreshold.c sfthreshold.h packet_time.c packet_time.h \
-	event_wrapper.c event_wrapper.h event_queue.c event_queue.h \
-	ipv6_port.h ppm.c ppm.h pcap_pkthdr32.h cpuclock.h sf_types.h \
-	log_text.c log_text.h detection_filter.c detection_filter.h \
+	active.h log.c log.h mstring.c mstring.h hashstring.c \
+	hashstring.h parser.c parser.h profiler.c profiler.h \
+	plugbase.c plugbase.h preprocids.h snort.c snort.h build.h \
+	$(SNPRINTF_SOURCES) strlcatu.c strlcatu.h strlcpyu.c \
+	strlcpyu.h tag.c tag.h util.c util.h detect.c detect.h \
+	signature.c signature.h mempool.c mempool.h sf_sdlist.c \
+	sf_sdlist.h sf_sdlist_types.h fpcreate.c fpcreate.h fpdetect.c \
+	fpdetect.h pcrm.c pcrm.h snort_bounds.h byte_extract.c \
+	byte_extract.h timersub.h spo_plugbase.h sfthreshold.c \
+	sfthreshold.h packet_time.c packet_time.h event_wrapper.c \
+	event_wrapper.h event_queue.c event_queue.h ipv6_port.h ppm.c \
+	ppm.h pcap_pkthdr32.h cpuclock.h sf_types.h log_text.c \
+	log_text.h detection_filter.c detection_filter.h \
 	detection_util.c detection_util.h rate_filter.c rate_filter.h \
 	obfuscation.c obfuscation.h rule_option_types.h sfdaq.c \
 	sfdaq.h idle_processing.c idle_processing.h \
@@ -407,7 +413,8 @@ snort_LDADD = output-plugins/libspo.a detection-plugins/libspd.a \
 	dynamic-output/plugins/liboutput.a preprocessors/libspp.a \
 	parser/libparser.a target-based/libtarget_based.a \
 	preprocessors/HttpInspect/libhttp_inspect.a \
-	preprocessors/Stream5/libstream5.a sfutil/libsfutil.a \
+	preprocessors/Session/libsession.a \
+	preprocessors/Stream6/libstream6.a sfutil/libsfutil.a \
 	control/libsfcontrol.a file-process/libfileAPI.a \
 	file-process/libs/libfile.a $(am__append_2)
 @BUILD_DYNAMIC_EXAMPLES_TRUE@EXAMPLES_DIR = dynamic-examples

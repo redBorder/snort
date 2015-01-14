@@ -183,6 +183,9 @@ int acsmCompile2WithSnortConf ( struct _SnortConfig *, ACSM_STRUCT2 * acsm,
 int acsmSearch2 ( ACSM_STRUCT2 * acsm,unsigned char * T, int n,
                   int (*Match)(void * id, void *tree, int index, void *data, void *neg_list),
                   void * data, int* current_state );
+int acsmSearchAll2 ( ACSM_STRUCT2 * acsm,unsigned char * T, int n,
+                  int (*Match)(void * id, void *tree, int index, void *data, void *neg_list),
+                  void * data, int* current_state );
 void acsmFree2 ( ACSM_STRUCT2 * acsm );
 int acsmPatternCount2 ( ACSM_STRUCT2 * acsm );
 

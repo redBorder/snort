@@ -182,9 +182,9 @@ static int InitServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
     iServerSip = IsServer(ServerConfSip, SiInput->sport);
     iServerDip = IsServer(ServerConfDip, SiInput->dport);
 #ifdef TARGET_BASED
-    if (stream_api)
+    if (session_api)
     {
-        app_id = stream_api->get_application_protocol_id(p->ssnptr);
+        app_id = session_api->get_application_protocol_id(p->ssnptr);
         if (app_id == hi_app_protocol_id)
         {
             http_id_found = 1;
@@ -270,17 +270,6 @@ static int InitServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
     }
 
     return HI_SUCCESS;
-}
-
-static int StatefulSessionInspection(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
-        HI_SESSION **Session, HI_SI_INPUT *SiInput, int *piInspectType,
-        Packet *p)
-{
-    /*
-    **  We do stuff here for stateful session inspection in the next phase.
-    */
-
-    return HI_NONFATAL_ERR;
 }
 
 /*
@@ -412,25 +401,9 @@ int hi_si_session_inspection(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
     **  In stateless mode, we just use a static variable that is contained in
     **  the function here.
     */
-    if(GlobalConf->inspection_type == HI_UI_CONFIG_STATEFUL)
-    {
-        iRet = StatefulSessionInspection(GlobalConf, Session, SiInput, piInspectMode, p);
-        if (iRet)
-        {
-            return iRet;
-        }
-    }
-    else
-    {
-        /*
-        **  Assume stateless processing otherwise
-        */
-        iRet = StatelessSessionInspection(GlobalConf, Session, SiInput, piInspectMode, p);
-        if (iRet)
-        {
-            return iRet;
-        }
-    }
+    iRet = StatelessSessionInspection(GlobalConf, Session, SiInput, piInspectMode, p);
+    if (iRet)
+        return iRet;
 
     return HI_SUCCESS;
 }

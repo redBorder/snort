@@ -132,7 +132,7 @@ typedef void (*FreeRuleData)(void *);
  */
 #include "sf_dynamic_common.h"
 
-#define ENGINE_DATA_VERSION 9
+#define ENGINE_DATA_VERSION 10
 
 typedef void *(*PCRECompileFunc)(const char *, int, const char **, int *, const unsigned char *);
 typedef void *(*PCREStudyFunc)(const void *, int, const char **);

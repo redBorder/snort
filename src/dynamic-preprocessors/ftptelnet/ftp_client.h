@@ -70,6 +70,5 @@ typedef struct s_FTP_CLIENT
 }  FTP_CLIENT;
 
 int ftp_client_inspection(void *Session, unsigned char *data, int dsize);
-int ftp_client_init(FTPTELNET_GLOBAL_CONF *GlobalConf);
 
 #endif 

@@ -50,6 +50,7 @@
 #include "sp_preprocopt.h"
 
 extern void ParsePattern(char *, OptTreeNode *, int);
+extern void ParseProtectedPattern(char *, OptTreeNode *, int);
 extern void *pcreCompile(const char *pattern, int options, const char **errptr,
     int *erroffset, const unsigned char *tableptr);
 extern void *pcreStudy(const void *code, int options, const char **errptr);
@@ -69,6 +70,7 @@ extern int Base64DecodeEval(void *option_data, Packet *p) ;
 static int CheckConvertability(Rule *rule, OptTreeNode *otn);
 static int ConvertPreprocessorOption(SnortConfig *, Rule *rule, int index, OptTreeNode *otn);
 static int ConvertContentOption(SnortConfig *, Rule *rule, int index, OptTreeNode *otn);
+static int ConvertProtectedContentOption(SnortConfig *, Rule *rule, int index, OptTreeNode *otn);
 static int ConvertPcreOption(SnortConfig *, Rule *rule, int index, OptTreeNode *otn);
 static int ConvertFlowbitOption(SnortConfig *, Rule *rule, int index, OptTreeNode *otn);
 static int ConvertFlowflagsOption(SnortConfig *, Rule *rule, int index, OptTreeNode *otn);
@@ -95,6 +97,7 @@ static int (* OptionConverterArray[OPTION_TYPE_MAX])
 {
     ConvertPreprocessorOption,
     ConvertContentOption,
+    ConvertProtectedContentOption,
     ConvertPcreOption,
     ConvertFlowbitOption,
     ConvertFlowflagsOption,
@@ -358,7 +361,7 @@ static int ConvertContentOption(SnortConfig *sc, Rule *rule, int index, OptTreeN
     if (content->flags & CONTENT_RELATIVE)
     {
         pmd->distance = content->offset;
-        pmd->within = content->depth;
+        pmd->within = (content->depth) ? content->depth : PMD_WITHIN_UNDEFINED;
         pmd->use_doe = 1;
         fpl->isRelative = 1;
     }
@@ -392,6 +395,118 @@ static int ConvertContentOption(SnortConfig *sc, Rule *rule, int index, OptTreeN
 
     if (pattern != (char *)content->pattern)
         free(pattern);
+
+    return 1;
+}
+
+static int ConvertProtectedContentOption(SnortConfig *sc, Rule *rule, int index, OptTreeNode *otn)
+{
+    ProtectedContentInfo *content = rule->options[index]->option_u.protectedContent;
+    PatternMatchData *pmd = NULL;
+    OptFpList *fpl;
+    char *pattern;
+    unsigned int pattern_size;
+
+    /* ParseProtectedPattern expects quotations marks around the pattern. */
+    if (content->pattern[0] != '"')
+    {
+        pattern_size = strlen((const char*)content->pattern) + 3;
+        pattern = SnortAlloc(sizeof(char) * pattern_size);
+        pattern[0] = '"';
+        memcpy(pattern+1, content->pattern, pattern_size-3);
+        pattern[pattern_size-2] = '"';
+    }
+    else
+    {
+        pattern = (char*)content->pattern;
+    }
+
+    /* Allocate a new node, based on the type of content option. */
+    if ( HTTP_CONTENT(content->flags) )
+    {
+        pmd = NewNode(otn, PLUGIN_PATTERN_MATCH_URI);
+        ParseProtectedPattern(pattern, otn, PLUGIN_PATTERN_MATCH_URI);
+        fpl = AddOptFuncToList(CheckUriPatternMatch, otn);
+        fpl->type = RULE_OPTION_TYPE_CONTENT_URI;
+        pmd->buffer_func = CHECK_URI_PATTERN_MATCH;
+    }
+    else
+    {
+        pmd = NewNode(otn, PLUGIN_PATTERN_MATCH);
+        ParseProtectedPattern(pattern, otn, PLUGIN_PATTERN_MATCH);
+        fpl = AddOptFuncToList(CheckANDPatternMatch, otn);
+        fpl->type = RULE_OPTION_TYPE_CONTENT;
+        pmd->buffer_func = CHECK_AND_PATTERN_MATCH;
+    }
+
+    pmd->protected_pattern = true;
+    pmd->protected_length = content->protected_length;
+
+    if (pattern != (char *)content->pattern)
+        free(pattern);
+    switch( content->hash_type )
+    {
+        case( PROTECTED_CONTENT_HASH_MD5 ):
+            {
+                pmd->pattern_type = SECHASH_MD5;
+                break;
+            }
+        case( PROTECTED_CONTENT_HASH_SHA256 ):
+            {
+                pmd->pattern_type = SECHASH_SHA256;
+                break;
+            }
+        case( PROTECTED_CONTENT_HASH_SHA512 ):
+            {
+                pmd->pattern_type = SECHASH_SHA512;
+                break;
+            }
+        default:
+            return( 0 );
+    }
+
+    /* Initialize var numbers */
+    if (content->flags & CONTENT_RELATIVE)
+    {
+        pmd->distance_var = GetVarByName(content->offset_refId);
+        pmd->within_var = -1;
+        pmd->offset_var = -1;
+        pmd->depth_var = -1;
+    }
+    else
+    {
+        pmd->offset_var = GetVarByName(content->offset_refId);
+        pmd->depth_var = -1;
+        pmd->distance_var = -1;
+        pmd->within_var = -1;
+    }
+
+    /* Set URI buffer flags */
+    pmd->http_buffer = HTTP_CONTENT(content->flags);
+
+    if (content->flags & CONTENT_BUF_RAW)
+    {
+        pmd->rawbytes = 1;
+    }
+
+    /* Handle options */
+    if (content->flags & CONTENT_RELATIVE)
+    {
+        pmd->distance = content->offset;
+        pmd->use_doe = 1;
+        fpl->isRelative = 1;
+    }
+    else
+    {
+        pmd->offset = content->offset;
+    }
+
+    if (content->flags & NOT_FLAG)
+        pmd->exception_flag = 1;
+
+    fpl->context = pmd;
+    pmd->fpl = fpl;
+
 
     return 1;
 }

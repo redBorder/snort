@@ -44,7 +44,7 @@ RSC=rc.exe
 # PROP Target_Dir ""
 # ADD BASE CPP /nologo /MD /W3 /GX /O2 /I "..\..\dynamic-output\plugins" /I "..\Win32-Includes\zlib" /I "..\..\.." /I "..\.." /I "..\..\control" /I "..\..\sfutil" /I "..\..\target-based" /I "..\Win32-Includes" /I "..\Win32-Includes\libnet" /I "..\Win32-Includes\WinPCAP" /I "..\..\output-plugins" /I "..\..\detection-plugins" /I "..\..\dynamic-plugins" /I "..\..\preprocessors" /I "..\..\preprocessors\portscan" /I "..\..\preprocessors\HttpInspect\Include" /I "..\..\preprocessors\Stream5" /I "..\..\..\daq\api" /I "..\..\..\daq\sfbpf" /I "..\Win32-Includes\libdnet" /D "NDEBUG" /D "OUTPUT_DLL" /D "_CONSOLE" /D __BEGIN_DECLS="" /D __END_DECLS="" /D "ENABLE_RESPOND" /D "ENABLE_WIN32_SERVICE" /D "ZLIB" /D "ENABLE_RESPONSE3" /D "_WINDOWS" /D "_USRDLL" /D "ACTIVE_RESPONSE" /D "ENABLE_REACT" /D "GRE" /D "MPLS" /D "TARGET_BASED" /D "PERF_PROFILING" /D "ENABLE_PAF" /D "WIN32" /D "_MBCS" /D "HAVE_CONFIG_H" /D "_AFXDLL" /D SIGNAL_SNORT_READ_ATTR_TBL=30 /FD /c
 # SUBTRACT BASE CPP /YX
-# ADD CPP /nologo /MD /W3 /GX /O2 /I "..\..\dynamic-output\plugins" /I "..\Win32-Includes\zlib" /I "..\..\.." /I "..\.." /I "..\..\control" /I "..\..\sfutil" /I "..\..\target-based" /I "..\Win32-Includes" /I "..\Win32-Includes\libnet" /I "..\Win32-Includes\WinPCAP" /I "..\..\output-plugins" /I "..\..\detection-plugins" /I "..\..\dynamic-plugins" /I "..\..\preprocessors" /I "..\..\preprocessors\portscan" /I "..\..\preprocessors\HttpInspect\Include" /I "..\..\preprocessors\Stream5" /I "..\..\..\daq\api" /I "..\..\..\daq\sfbpf" /I "..\Win32-Includes\libdnet" /I "..\..\file-process" /I "..\..\file-process\libs" /I "..\..\side-channel" /D "NDEBUG" /D "OUTPUT_DLL" /D "_CONSOLE" /D __BEGIN_DECLS="" /D __END_DECLS="" /D "ENABLE_RESPOND" /D "ENABLE_WIN32_SERVICE" /D "ZLIB" /D "ENABLE_RESPONSE3" /D "_WINDOWS" /D "_USRDLL" /D "ACTIVE_RESPONSE" /D "ENABLE_REACT" /D "GRE" /D "MPLS" /D "TARGET_BASED" /D "PERF_PROFILING" /D "ENABLE_PAF" /D "WIN32" /D "_MBCS" /D "HAVE_CONFIG_H" /D "_AFXDLL" /D SIGNAL_SNORT_READ_ATTR_TBL=30 /FD /c
+# ADD CPP /nologo /MD /W3 /GX /O2 /I "..\..\dynamic-output\plugins" /I "..\Win32-Includes\zlib" /I "..\..\.." /I "..\.." /I "..\..\control" /I "..\..\sfutil" /I "..\..\target-based" /I "..\Win32-Includes" /I "..\Win32-Includes\libnet" /I "..\Win32-Includes\WinPCAP" /I "..\..\output-plugins" /I "..\..\detection-plugins" /I "..\..\dynamic-plugins" /I "..\..\preprocessors" /I "..\..\preprocessors\portscan" /I "..\..\preprocessors\HttpInspect\Include" /I "..\..\preprocessors\Stream6" /I "..\..\preprocessors\Session" /I "..\..\..\daq\api" /I "..\..\..\daq\sfbpf" /I "..\Win32-Includes\libdnet" /I "..\..\file-process" /I "..\..\file-process\libs" /I "..\..\side-channel" /D "NDEBUG" /D "OUTPUT_DLL" /D "_CONSOLE" /D __BEGIN_DECLS="" /D __END_DECLS="" /D "ENABLE_RESPOND" /D "ENABLE_WIN32_SERVICE" /D "ZLIB" /D "ENABLE_RESPONSE3" /D "_WINDOWS" /D "_USRDLL" /D "ACTIVE_RESPONSE" /D "ENABLE_REACT" /D "GRE" /D "MPLS" /D "TARGET_BASED" /D "PERF_PROFILING" /D "ENABLE_PAF" /D "WIN32" /D "_MBCS" /D "HAVE_CONFIG_H" /D "_AFXDLL" /D SIGNAL_SNORT_READ_ATTR_TBL=30 /D "NORMALIZER" /D BYTE_ORDER=LITTLE_ENDIAN /FD /c
 # SUBTRACT CPP /YX
 # ADD BASE RSC /l 0x409 /d "NDEBUG" /d "_AFXDLL"
 # ADD RSC /l 0x409 /d "NDEBUG" /d "_AFXDLL"
@@ -73,8 +73,7 @@ LINK32=link.exe
 # PROP Target_Dir ""
 # ADD BASE CPP /nologo /MDd /W3 /Gm /GX /ZI /Od /I "..\..\dynamic-output\plugins" /I "..\Win32-Includes\mysql" /I "..\Win32-Includes\zlib" /I "..\..\.." /I "..\.." /I "..\..\control" /I "..\..\sfutil" /I "..\..\target-based" /I "..\Win32-Includes" /I "..\Win32-Includes\libnet" /I "..\Win32-Includes\WinPCAP" /I "..\..\output-plugins" /I "..\..\detection-plugins" /I "..\..\dynamic-plugins" /I "..\..\preprocessors" /I "..\..\preprocessors\portscan" /I "..\..\preprocessors\HttpInspect\Include" /I "..\..\preprocessors\Stream5" /I "..\..\..\daq\api" /I "..\..\..\daq\sfbpf" /I "..\Win32-Includes\libdnet" /D "_DEBUG" /D "DEBUG" /D "OUTPUT_DLL" /D "_CONSOLE" /D __BEGIN_DECLS="" /D __END_DECLS="" /D "ENABLE_RESPOND" /D "ENABLE_WIN32_SERVICE" /D "ZLIB" /D "ENABLE_RESPONSE3" /D "_WINDOWS" /D "_USRDLL" /D "ACTIVE_RESPONSE" /D "ENABLE_REACT" /D "GRE" /D "MPLS" /D "TARGET_BASED" /D "PERF_PROFILING" /D "ENABLE_PAF" /D "WIN32" /D "_MBCS" /D "HAVE_CONFIG_H" /D "_AFXDLL" /D SIGNAL_SNORT_READ_ATTR_TBL=30 /FR /FD /GZ /c
 # SUBTRACT BASE CPP /YX
-# ADD CPP /nologo /MDd /W3 /Gm /GX /ZI /Od /I "..\..\dynamic-output\plugins" /I "..\Win32-Includes\zlib" /I "..\..\.." /I "..\.." /I "..\..\control" /I "..\..\sfutil" /I "..\..\target-based" /I "..\Win32-Includes" /I "..\Win32-Includes\libnet" /I "..\Win32-Includes\WinPCAP" /I "..\..\output-plugins" /I "..\..\detection-plugins" /I "..\..\dynamic-plugins" /I "..\..\preprocessors" /I "..\..\preprocessors\portscan" /I "..\..\preprocessors\HttpInspect\Include" /I "..\..\preprocessors\Stream5" /I "..\..\..\daq\api" /I "..\..\..\daq\sfbpf" /I "..\Win32-Includes\libdnet" /I "..\..\file-process" /I "..\..\file-process\libs" /I "..\..\side-channel" /D "_DEBUG" /D "DEBUG" /D "OUTPUT_DLL" /D "_CONSOLE" /D __BEGIN_DECLS="" /D __END_DECLS="" /D "ENABLE_RESPOND" /D "ENABLE_WIN32_SERVICE" /D "ZLIB" /D "ENABLE_RESPONSE3" /D "_WINDOWS" /D "_USRDLL" /D "ACTIVE_RESPONSE" /D "ENABLE_REACT" /D "GRE" /D "MPLS" /D "TARGET_BASED" /D "PERF_PROFILING" /D "ENABLE_PAF" /D "WIN32" /D "_MBCS" /D "HAVE_CONFIG_H" /D "_AFXDLL" /D SIGNAL_SNORT_READ_ATTR_TBL=30 /FR /FD /GZ /c
-# SUBTRACT CPP /YX
+# ADD CPP /nologo /MDd /W3 /Gm /GX /ZI /Od /I "..\..\dynamic-output\plugins" /I "..\Win32-Includes\zlib" /I "..\..\.." /I "..\.." /I "..\..\control" /I "..\..\sfutil" /I "..\..\target-based" /I "..\Win32-Includes" /I "..\Win32-Includes\libnet" /I "..\Win32-Includes\WinPCAP" /I "..\..\output-plugins" /I "..\..\detection-plugins" /I "..\..\dynamic-plugins" /I "..\..\preprocessors" /I "..\..\preprocessors\portscan" /I "..\..\preprocessors\HttpInspect\Include" /I "..\..\preprocessors\Stream6" /I "..\..\preprocessors\Session" /I "..\..\..\daq\api" /I "..\..\..\daq\sfbpf" /I "..\Win32-Includes\libdnet" /I "..\..\file-process" /I "..\..\file-process\libs" /I "..\..\side-channel" /D "_DEBUG" /D "DEBUG" /D "OUTPUT_DLL" /D "_CONSOLE" /D __BEGIN_DECLS="" /D __END_DECLS="" /D "ENABLE_RESPOND" /D "ENABLE_WIN32_SERVICE" /D "ZLIB" /D "ENABLE_RESPONSE3" /D "_WINDOWS" /D "_USRDLL" /D "ACTIVE_RESPONSE" /D "ENABLE_REACT" /D "GRE" /D "MPLS" /D "TARGET_BASED" /D "PERF_PROFILING" /D "ENABLE_PAF" /D "WIN32" /D "_MBCS" /D "HAVE_CONFIG_H" /D "_AFXDLL" /D SIGNAL_SNORT_READ_ATTR_TBL=30 /D "NORMALIZER" /D BYTE_ORDER=LITTLE_ENDIAN /FR /FD /GZ /c
 # ADD BASE RSC /l 0x409 /d "_DEBUG" /d "_AFXDLL"
 # ADD RSC /l 0x409 /d "_DEBUG" /d "_AFXDLL"
 BSC32=bscmake.exe
@@ -195,6 +194,14 @@ SOURCE="..\..\detection-plugins\sp_file_data.c"
 # Begin Source File
 
 SOURCE="..\..\detection-plugins\sp_file_data.h"
+# End Source File
+# Begin Source File
+
+SOURCE="..\..\detection-plugins\sp_file_type.c"
+# End Source File
+# Begin Source File
+
+SOURCE="..\..\detection-plugins\sp_file_type.h"
 # End Source File
 # Begin Source File
 
@@ -564,6 +571,18 @@ SOURCE=..\..\preprocessors\HttpInspect\event_output\hi_eo_log.c
 # PROP Default_Filter ""
 # Begin Source File
 
+SOURCE=..\..\preprocessors\HttpInspect\include\file_decomp.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\preprocessors\HttpInspect\include\file_decomp_PDF.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\preprocessors\HttpInspect\include\file_decomp_SWF.h
+# End Source File
+# Begin Source File
+
 SOURCE=..\..\preprocessors\HttpInspect\include\hi_ad.h
 # End Source File
 # Begin Source File
@@ -727,65 +746,143 @@ SOURCE=..\..\preprocessors\HttpInspect\utils\hi_util_kmap.c
 SOURCE=..\..\preprocessors\HttpInspect\utils\hi_util_xmalloc.c
 # End Source File
 # End Group
-# End Group
-# Begin Group "Stream5"
+# Begin Group "files"
 
 # PROP Default_Filter ""
 # Begin Source File
 
-SOURCE=..\..\preprocessors\Stream5\snort_stream5_icmp.c
+SOURCE=..\..\preprocessors\HttpInspect\files\file_decomp.c
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\Stream5\snort_stream5_icmp.h
+SOURCE=..\..\preprocessors\HttpInspect\files\file_decomp_PDF.c
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\Stream5\snort_stream5_ip.c
+SOURCE=..\..\preprocessors\HttpInspect\files\file_decomp_SWF.c
+# End Source File
+# End Group
+# End Group
+# Begin Group "Stream6"
+
+# PROP Default_Filter ""
+# Begin Source File
+
+SOURCE=..\..\preprocessors\Stream6\snort_stream_icmp.c
+
+!IF  "$(CFG)" == "snort - Win32 Release"
+
+!ELSEIF  "$(CFG)" == "snort - Win32 Debug"
+
+!ENDIF 
+
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\Stream5\snort_stream5_ip.h
+SOURCE=..\..\preprocessors\Stream6\snort_stream_icmp.h
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\Stream5\snort_stream5_session.c
+SOURCE=..\..\preprocessors\Stream6\snort_stream_ip.c
+
+!IF  "$(CFG)" == "snort - Win32 Release"
+
+!ELSEIF  "$(CFG)" == "snort - Win32 Debug"
+
+!ENDIF 
+
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\Stream5\snort_stream5_session.h
+SOURCE=..\..\preprocessors\Stream6\snort_stream_ip.h
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\Stream5\snort_stream5_tcp.c
+SOURCE=..\..\preprocessors\Stream6\snort_stream_tcp.c
+
+!IF  "$(CFG)" == "snort - Win32 Release"
+
+!ELSEIF  "$(CFG)" == "snort - Win32 Debug"
+
+!ENDIF 
+
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\Stream5\snort_stream5_tcp.h
+SOURCE=..\..\preprocessors\Stream6\snort_stream_tcp.h
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\Stream5\snort_stream5_udp.c
+SOURCE=..\..\preprocessors\Stream6\snort_stream_udp.c
+
+!IF  "$(CFG)" == "snort - Win32 Release"
+
+!ELSEIF  "$(CFG)" == "snort - Win32 Debug"
+
+!ENDIF 
+
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\Stream5\snort_stream5_udp.h
+SOURCE=..\..\preprocessors\Stream6\snort_stream_udp.h
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\Stream5\stream5_common.c
+SOURCE=..\..\preprocessors\Stream6\stream_common.c
+
+!IF  "$(CFG)" == "snort - Win32 Release"
+
+!ELSEIF  "$(CFG)" == "snort - Win32 Debug"
+
+!ENDIF 
+
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\Stream5\stream5_common.h
+SOURCE=..\..\preprocessors\Stream6\stream_common.h
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\Stream5\stream5_paf.c
+SOURCE=..\..\preprocessors\Stream6\stream_paf.c
+
+!IF  "$(CFG)" == "snort - Win32 Release"
+
+!ELSEIF  "$(CFG)" == "snort - Win32 Debug"
+
+!ENDIF 
+
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\Stream5\stream5_paf.h
+SOURCE=..\..\preprocessors\Stream6\stream_paf.h
+# End Source File
+# End Group
+# Begin Group "Session"
+
+# PROP Default_Filter ""
+# Begin Source File
+
+SOURCE=..\..\preprocessors\Session\session_common.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\preprocessors\Session\session_common.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\preprocessors\Session\session_expect.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\preprocessors\Session\session_expect.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\preprocessors\Session\snort_session.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\preprocessors\Session\snort_session.h
 # End Source File
 # End Group
 # Begin Source File
@@ -835,6 +932,14 @@ SOURCE=..\..\preprocessors\portscan.c
 # Begin Source File
 
 SOURCE=..\..\preprocessors\portscan.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\preprocessors\session_api.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\preprocessors\session_api.h
 # End Source File
 # Begin Source File
 
@@ -910,6 +1015,14 @@ SOURCE=..\..\preprocessors\spp_rpc_decode.h
 # End Source File
 # Begin Source File
 
+SOURCE=..\..\preprocessors\spp_session.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\preprocessors\spp_session.h
+# End Source File
+# Begin Source File
+
 SOURCE=..\..\preprocessors\spp_sfportscan.c
 # End Source File
 # Begin Source File
@@ -918,11 +1031,11 @@ SOURCE=..\..\preprocessors\spp_sfportscan.h
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\spp_stream5.c
+SOURCE=..\..\preprocessors\spp_stream6.c
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\preprocessors\spp_stream5.h
+SOURCE=..\..\preprocessors\spp_stream6.h
 # End Source File
 # Begin Source File
 
@@ -939,14 +1052,6 @@ SOURCE=..\..\preprocessors\stream_api.c
 # Begin Source File
 
 SOURCE=..\..\preprocessors\stream_api.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\preprocessors\stream_expect.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\preprocessors\stream_expect.h
 # End Source File
 # End Group
 # Begin Group "SFUtil"
@@ -1022,6 +1127,14 @@ SOURCE=..\..\sfutil\ipobj.h
 # End Source File
 # Begin Source File
 
+SOURCE=..\..\sfutil\md5.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\sfutil\md5.h
+# End Source File
+# Begin Source File
+
 SOURCE=..\..\sfutil\mpse.c
 # End Source File
 # Begin Source File
@@ -1063,6 +1176,14 @@ SOURCE=..\..\sfutil\sf_ipvar.c
 # Begin Source File
 
 SOURCE=..\..\sfutil\sf_ipvar.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\sfutil\sf_sechash.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\sfutil\sf_sechash.h
 # End Source File
 # Begin Source File
 
@@ -1235,6 +1356,14 @@ SOURCE=..\..\sfutil\sfxhash.c
 # Begin Source File
 
 SOURCE=..\..\sfutil\sfxhash.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\sfutil\sha2.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\sfutil\sha2.h
 # End Source File
 # Begin Source File
 
@@ -1537,14 +1666,6 @@ SOURCE="..\..\file-process\libs\file_lib.c"
 
 SOURCE="..\..\file-process\libs\file_lib.h"
 # End Source File
-# Begin Source File
-
-SOURCE="..\..\file-process\libs\file_sha256.c"
-# End Source File
-# Begin Source File
-
-SOURCE="..\..\file-process\libs\file_sha256.h"
-# End Source File
 # End Group
 # Begin Source File
 
@@ -1670,6 +1791,15 @@ SOURCE=..\..\decode.h
 # Begin Source File
 
 SOURCE=..\..\detect.c
+
+!IF  "$(CFG)" == "snort - Win32 Release"
+
+# ADD CPP /I "..\..\preprocessors\Stream6" /I "..\..\preprocessors\Session"
+
+!ELSEIF  "$(CFG)" == "snort - Win32 Debug"
+
+!ENDIF 
+
 # End Source File
 # Begin Source File
 
@@ -1730,6 +1860,14 @@ SOURCE=..\..\fpdetect.h
 # Begin Source File
 
 SOURCE=..\..\generators.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\hashstring.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\hashstring.h
 # End Source File
 # Begin Source File
 

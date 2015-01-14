@@ -44,11 +44,12 @@
 #include "ftpp_ui_config.h"
 #include "ftp_client.h"
 #include "ftp_server.h"
-//#include "decode.h"
+
 #include "sf_snort_packet.h"
 #include "ftpp_eo.h"
 #include "sfPolicy.h"
 #include "sfPolicyUserData.h"
+#include "session_api.h"
 
 /*
  * These are the defines for the different types of
@@ -169,6 +170,8 @@ typedef struct s_FTP_SESSION
 
     /* Command/data channel encryption */
     int encr_state;
+    bool encr_state_chello;
+    uint32_t flow_id;
 
     /* Alertable event list */
     FTP_EVENTS event_list;

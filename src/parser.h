@@ -98,6 +98,7 @@
 #define CONFIG_OPT__DEFAULT_RULE_STATE              "default_rule_state"
 #define CONFIG_OPT__DETECTION                       "detection"
 #define CONFIG_OPT__DETECTION_FILTER                "detection_filter"
+#define CONFIG_OPT__PROTECTED_CONTENT               "protected_content"
 #ifdef INLINE_FAILOPEN
 # define CONFIG_OPT__DISABLE_INLINE_FAILOPEN         "disable_inline_init_failopen"
 #endif
@@ -183,7 +184,8 @@
 #define CONFIG_OPT__PKT_SNAPLEN                     "snaplen"
 #define CONFIG_OPT__PID_PATH                        "pidpath"
 #define CONFIG_OPT__POLICY                          "policy_id"
-#define CONFIG_OPT__POLICY_MODE                     "policy_mode"
+#define CONFIG_OPT__IPS_POLICY_MODE                 "policy_mode"
+#define CONFIG_OPT__NAP_POLICY_MODE                 "na_policy_mode"
 #define CONFIG_OPT__POLICY_VERSION                  "policy_version"
 #ifdef PPM_MGR
 # define CONFIG_OPT__PPM                            "ppm"
@@ -216,7 +218,7 @@
 #ifdef SIDE_CHANNEL
 # define CONFIG_OPT__SIDE_CHANNEL                    "sidechannel"
 #endif
-
+#define CONFIG_OPT__MAX_IP6_EXTENSIONS              "max_ip6_extensions"             
 /* exported values */
 extern char *file_name;
 extern int file_line;
@@ -355,8 +357,10 @@ void ConfigPcreMatchLimitRecursion(SnortConfig *, char *);
 void ConfigPerfFile(SnortConfig *sc, char *);
 void ConfigPidPath(SnortConfig *, char *);
 void ConfigPolicy(SnortConfig *, char *);
-void ConfigPolicyMode(SnortConfig *, char *);
+void ConfigIpsPolicyMode(SnortConfig *, char *);
+void ConfigNapPolicyMode(SnortConfig *, char *);
 void ConfigPolicyVersion(SnortConfig *, char *);
+void ConfigProtectedContent(SnortConfig *, char *);
 #ifdef PPM_MGR
 void ConfigPPM(SnortConfig *, char *);
 #endif
@@ -391,6 +395,7 @@ void ConfigDumpDynamicRulesPath(SnortConfig *, char *);
 void ConfigControlSocketDirectory(SnortConfig *, char *);
 void ConfigFile(SnortConfig *, char *);
 void ConfigTunnelVerdicts(SnortConfig*, char*);
+void ConfigMaxIP6Extensions(SnortConfig *, char*);
 
 int addRtnToOtn(
         OptTreeNode *otn,
@@ -435,7 +440,7 @@ static inline RuleTreeNode *getParserRtnFromOtn(SnortConfig *sc, OptTreeNode *ot
 
 static inline RuleTreeNode *getRuntimeRtnFromOtn(OptTreeNode *otn)
 {
-    return getRtnFromOtn(otn, getRuntimePolicy());
+    return getRtnFromOtn(otn, getIpsRuntimePolicy());
 }
 
 SnortPolicy * SnortPolicyNew(void);

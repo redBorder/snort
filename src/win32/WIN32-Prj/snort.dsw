@@ -18,9 +18,6 @@ Package=<4>
     Project_Dep_Name sf_engine
     End Project Dependency
     Begin Project Dependency
-    Project_Dep_Name sf_testdetect
-    End Project Dependency
-    Begin Project Dependency
     Project_Dep_Name daq
     End Project Dependency
     Begin Project Dependency
@@ -346,24 +343,6 @@ Package=<4>
 {{{
     Begin Project Dependency
     Project_Dep_Name sf_dynamic_initialize
-    End Project Dependency
-    Begin Project Dependency
-    Project_Dep_Name sfdynamic_preproc_libs
-    End Project Dependency
-}}}
-
-###############################################################################
-
-Project: "sf_testdetect"=".\sf_testdetect.dsp" - Package Owner=<4>
-
-Package=<5>
-{{{
-}}}
-
-Package=<4>
-{{{
-    Begin Project Dependency
-    Project_Dep_Name sf_engine
     End Project Dependency
 }}}
 

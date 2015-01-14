@@ -97,7 +97,7 @@ am__v_AR_1 =
 libfile_a_AR = $(AR) $(ARFLAGS)
 libfile_a_LIBADD =
 am_libfile_a_OBJECTS = file_lib.$(OBJEXT) file_config.$(OBJEXT) \
-	file_identifier.$(OBJEXT) file_sha256.$(OBJEXT)
+	file_identifier.$(OBJEXT)
 libfile_a_OBJECTS = $(am_libfile_a_OBJECTS)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -207,6 +207,8 @@ LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
+LUA_CFLAGS = @LUA_CFLAGS@
+LUA_LIBS = @LUA_LIBS@
 MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
@@ -229,8 +231,6 @@ PKG_CONFIG = @PKG_CONFIG@
 PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
 PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
-RAZORBACK_CFLAGS = @RAZORBACK_CFLAGS@
-RAZORBACK_LIBS = @RAZORBACK_LIBS@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
@@ -280,6 +280,8 @@ libdir = @libdir@
 libexecdir = @libexecdir@
 localedir = @localedir@
 localstatedir = @localstatedir@
+luajit_CFLAGS = @luajit_CFLAGS@
+luajit_LIBS = @luajit_LIBS@
 mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
@@ -303,9 +305,7 @@ libfile_a_SOURCES = \
 	file_config.c \
 	file_config.h \
 	file_identifier.c \
-	file_identifier.h \
-	file_sha256.c \
-	file_sha256.h
+	file_identifier.h 
 
 all: all-am
 

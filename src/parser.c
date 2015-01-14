@@ -55,6 +55,7 @@
 # include <fnmatch.h>
 #endif /* !WIN32 */
 
+#include "encode.h"
 #include "snort_bounds.h"
 #include "rules.h"
 #include "treenodes.h"
@@ -236,6 +237,8 @@
 #define DETECTION_OPT__MAX_PATTERN_LEN                       "max-pattern-len"
 #define DETECTION_OPT__DEBUG_PRINT_FAST_PATTERN              "debug-print-fast-pattern"
 
+/* Protected Content options  - there should be a better way instead of declaring the type strings here */
+#define PROTECTED_CONTENT_OPT__HASH_TYPE         "hash"
 #define EVENT_QUEUE_OPT__LOG                 "log"
 #define EVENT_QUEUE_OPT__MAX_QUEUE           "max_queue"
 #define EVENT_QUEUE_OPT__ORDER_EVENTS        "order_events"
@@ -363,6 +366,7 @@ typedef struct _RuleOptFunc
     char *name;
     int args_required;
     int only_once;
+    int detection;
     ParseRuleOptFunc parse_func;
 
 } RuleOptFunc;
@@ -579,23 +583,23 @@ static void ParseOtnThreshold(SnortConfig *, RuleTreeNode *,
 
 static const RuleOptFunc rule_options[] =
 {
-    { RULE_OPT__ACTIVATED_BY,     1, 1, ParseOtnActivatedBy },
-    { RULE_OPT__ACTIVATES,        1, 1, ParseOtnActivates },
-    { RULE_OPT__CLASSTYPE,        1, 1, ParseOtnClassType },
-    { RULE_OPT__COUNT,            1, 1, ParseOtnCount },
-    { RULE_OPT__DETECTION_FILTER, 1, 1, ParseOtnDetectionFilter },
-    { RULE_OPT__GID,              1, 1, ParseOtnGid },
-    { RULE_OPT__LOGTO,            1, 1, ParseOtnLogTo },
-    { RULE_OPT__METADATA,         1, 0, ParseOtnMetadata },
-    { RULE_OPT__MSG,              1, 1, ParseOtnMessage },
-    { RULE_OPT__PRIORITY,         1, 1, ParseOtnPriority },
-    { RULE_OPT__REFERENCE,        1, 0, ParseOtnReference },
-    { RULE_OPT__REVISION,         1, 1, ParseOtnRevision },
-    { RULE_OPT__SID,              1, 1, ParseOtnSid },
-    { RULE_OPT__TAG,              1, 1, ParseOtnTag },
-    { RULE_OPT__THRESHOLD,        1, 1, ParseOtnThreshold },
+    { RULE_OPT__ACTIVATED_BY,     1, 1, 1, ParseOtnActivatedBy },
+    { RULE_OPT__ACTIVATES,        1, 1, 1, ParseOtnActivates },
+    { RULE_OPT__CLASSTYPE,        1, 1, 0, ParseOtnClassType },
+    { RULE_OPT__COUNT,            1, 1, 1, ParseOtnCount },
+    { RULE_OPT__DETECTION_FILTER, 1, 1, 1, ParseOtnDetectionFilter },
+    { RULE_OPT__GID,              1, 1, 0, ParseOtnGid },
+    { RULE_OPT__LOGTO,            1, 1, 0, ParseOtnLogTo },
+    { RULE_OPT__METADATA,         1, 0, 0, ParseOtnMetadata },
+    { RULE_OPT__MSG,              1, 1, 0, ParseOtnMessage },
+    { RULE_OPT__PRIORITY,         1, 1, 0, ParseOtnPriority },
+    { RULE_OPT__REFERENCE,        1, 0, 0, ParseOtnReference },
+    { RULE_OPT__REVISION,         1, 1, 0, ParseOtnRevision },
+    { RULE_OPT__SID,              1, 1, 0, ParseOtnSid },
+    { RULE_OPT__TAG,              1, 1, 0, ParseOtnTag },
+    { RULE_OPT__THRESHOLD,        1, 1, 1, ParseOtnThreshold },
 
-    { NULL, 0, 0, NULL }   /* Marks end of array */
+    { NULL, 0, 0, 0, NULL }   /* Marks end of array */
 };
 
 #ifdef PERF_PROFILING
@@ -622,28 +626,28 @@ static const ConfigFunc config_opts[] =
     { CONFIG_OPT__DEFAULT_RULE_STATE, 0, 1, 1, ConfigDefaultRuleState },
     { CONFIG_OPT__DETECTION, 1, 0, 1, ConfigDetection },  /* This is reconfigurable */
     { CONFIG_OPT__DETECTION_FILTER, 1, 1, 1, ConfigDetectionFilter },
-    { CONFIG_OPT__DISABLE_DECODE_ALERTS, 0, 1, 1, ConfigDisableDecodeAlerts },
-    { CONFIG_OPT__DISABLE_DECODE_DROPS, 0, 1, 1, ConfigDisableDecodeDrops },
+    { CONFIG_OPT__DISABLE_DECODE_ALERTS, 0, 1, 0, ConfigDisableDecodeAlerts },
+    { CONFIG_OPT__DISABLE_DECODE_DROPS, 0, 1, 0, ConfigDisableDecodeDrops },
 #ifdef INLINE_FAILOPEN
     { CONFIG_OPT__DISABLE_INLINE_FAILOPEN, 0, 1, 1, ConfigDisableInlineFailopen },
 #endif
-    { CONFIG_OPT__DISABLE_IP_OPT_ALERTS, 0, 1, 1, ConfigDisableIpOptAlerts },
-    { CONFIG_OPT__DISABLE_IP_OPT_DROPS, 0, 1, 1, ConfigDisableIpOptDrops },
-    { CONFIG_OPT__DISABLE_TCP_OPT_ALERTS, 0, 1, 1, ConfigDisableTcpOptAlerts },
-    { CONFIG_OPT__DISABLE_TCP_OPT_DROPS, 0, 1, 1, ConfigDisableTcpOptDrops },
-    { CONFIG_OPT__DISABLE_TCP_OPT_EXP_ALERTS, 0, 1, 1, ConfigDisableTcpOptExperimentalAlerts },
-    { CONFIG_OPT__DISABLE_TCP_OPT_EXP_DROPS, 0, 1, 1, ConfigDisableTcpOptExperimentalDrops },
-    { CONFIG_OPT__DISABLE_TCP_OPT_OBS_ALERTS, 0, 1, 1, ConfigDisableTcpOptObsoleteAlerts },
-    { CONFIG_OPT__DISABLE_TCP_OPT_OBS_DROPS, 0, 1, 1, ConfigDisableTcpOptObsoleteDrops },
-    { CONFIG_OPT__DISABLE_TTCP_ALERTS, 0, 1, 1, ConfigDisableTTcpAlerts },
-    { CONFIG_OPT__DISABLE_TCP_OPT_TTCP_ALERTS, 0, 1, 1, ConfigDisableTTcpAlerts },
-    { CONFIG_OPT__DISABLE_TTCP_DROPS, 0, 1, 1, ConfigDisableTTcpDrops },
+    { CONFIG_OPT__DISABLE_IP_OPT_ALERTS, 0, 1, 0, ConfigDisableIpOptAlerts },
+    { CONFIG_OPT__DISABLE_IP_OPT_DROPS, 0, 1, 0, ConfigDisableIpOptDrops },
+    { CONFIG_OPT__DISABLE_TCP_OPT_ALERTS, 0, 1, 0, ConfigDisableTcpOptAlerts },
+    { CONFIG_OPT__DISABLE_TCP_OPT_DROPS, 0, 1, 0, ConfigDisableTcpOptDrops },
+    { CONFIG_OPT__DISABLE_TCP_OPT_EXP_ALERTS, 0, 1, 0, ConfigDisableTcpOptExperimentalAlerts },
+    { CONFIG_OPT__DISABLE_TCP_OPT_EXP_DROPS, 0, 1, 0, ConfigDisableTcpOptExperimentalDrops },
+    { CONFIG_OPT__DISABLE_TCP_OPT_OBS_ALERTS, 0, 1, 0, ConfigDisableTcpOptObsoleteAlerts },
+    { CONFIG_OPT__DISABLE_TCP_OPT_OBS_DROPS, 0, 1, 0, ConfigDisableTcpOptObsoleteDrops },
+    { CONFIG_OPT__DISABLE_TTCP_ALERTS, 0, 1, 0, ConfigDisableTTcpAlerts },
+    { CONFIG_OPT__DISABLE_TCP_OPT_TTCP_ALERTS, 0, 1, 0, ConfigDisableTTcpAlerts },
+    { CONFIG_OPT__DISABLE_TTCP_DROPS, 0, 1, 0, ConfigDisableTTcpDrops },
     { CONFIG_OPT__DUMP_CHARS_ONLY, 0, 1, 1, ConfigDumpCharsOnly },
     { CONFIG_OPT__DUMP_PAYLOAD, 0, 1, 1, ConfigDumpPayload },
     { CONFIG_OPT__DUMP_PAYLOAD_VERBOSE, 0, 1, 1, ConfigDumpPayloadVerbose },
-    { CONFIG_OPT__ENABLE_DECODE_DROPS, 0, 1, 1, ConfigEnableDecodeDrops },
-    { CONFIG_OPT__ENABLE_DECODE_OVERSIZED_ALERTS, 0, 1, 1, ConfigEnableDecodeOversizedAlerts },
-    { CONFIG_OPT__ENABLE_DECODE_OVERSIZED_DROPS, 0, 1, 1, ConfigEnableDecodeOversizedDrops },
+    { CONFIG_OPT__ENABLE_DECODE_DROPS, 0, 1, 0, ConfigEnableDecodeDrops },
+    { CONFIG_OPT__ENABLE_DECODE_OVERSIZED_ALERTS, 0, 1, 0, ConfigEnableDecodeOversizedAlerts },
+    { CONFIG_OPT__ENABLE_DECODE_OVERSIZED_DROPS, 0, 1, 0, ConfigEnableDecodeOversizedDrops },
     { CONFIG_OPT__ENABLE_DEEP_TEREDO_INSPECTION, 0, 1, 1, ConfigEnableDeepTeredoInspection },
     { CONFIG_OPT__ENABLE_GTP_DECODING, 0, 1, 1, ConfigEnableGTPDecoding },
     { CONFIG_OPT__ENABLE_IP_OPT_DROPS, 0, 1, 1, ConfigEnableIpOptDrops },
@@ -651,11 +655,11 @@ static const ConfigFunc config_opts[] =
     { CONFIG_OPT__ENABLE_MPLS_MULTICAST, 0, 1, 1, ConfigEnableMplsMulticast },
     { CONFIG_OPT__ENABLE_MPLS_OVERLAPPING_IP, 0, 1, 1, ConfigEnableMplsOverlappingIp },
 #endif
-    { CONFIG_OPT__ENABLE_TCP_OPT_DROPS, 0, 1, 1, ConfigEnableTcpOptDrops },
-    { CONFIG_OPT__ENABLE_TCP_OPT_EXP_DROPS, 0, 1, 1, ConfigEnableTcpOptExperimentalDrops },
-    { CONFIG_OPT__ENABLE_TCP_OPT_OBS_DROPS, 0, 1, 1, ConfigEnableTcpOptObsoleteDrops },
-    { CONFIG_OPT__ENABLE_TTCP_DROPS, 0, 1, 1, ConfigEnableTTcpDrops },
-    { CONFIG_OPT__ENABLE_TCP_OPT_TTCP_DROPS, 0, 1, 1, ConfigEnableTTcpDrops },
+    { CONFIG_OPT__ENABLE_TCP_OPT_DROPS, 0, 1, 0, ConfigEnableTcpOptDrops },
+    { CONFIG_OPT__ENABLE_TCP_OPT_EXP_DROPS, 0, 1, 0, ConfigEnableTcpOptExperimentalDrops },
+    { CONFIG_OPT__ENABLE_TCP_OPT_OBS_DROPS, 0, 1, 0, ConfigEnableTcpOptObsoleteDrops },
+    { CONFIG_OPT__ENABLE_TTCP_DROPS, 0, 1, 0, ConfigEnableTTcpDrops },
+    { CONFIG_OPT__ENABLE_TCP_OPT_TTCP_DROPS, 0, 1, 0, ConfigEnableTTcpDrops },
     { CONFIG_OPT__EVENT_FILTER, 1, 1, 1, ConfigEventFilter },
     { CONFIG_OPT__EVENT_QUEUE, 1, 1, 1, ConfigEventQueue },
     { CONFIG_OPT__EVENT_TRACE, 0, 1, 1, ConfigEventTrace },
@@ -710,8 +714,10 @@ static const ConfigFunc config_opts[] =
     { CONFIG_OPT__PID_PATH, 1, 1, 1, ConfigPidPath },
 #endif
     { CONFIG_OPT__POLICY, 1, 1, 0, ConfigPolicy },
-    { CONFIG_OPT__POLICY_MODE, 1, 1, 0, ConfigPolicyMode },
+    { CONFIG_OPT__IPS_POLICY_MODE, 1, 1, 0, ConfigIpsPolicyMode },
+    { CONFIG_OPT__NAP_POLICY_MODE, 1, 1, 0, ConfigNapPolicyMode },
     { CONFIG_OPT__POLICY_VERSION , 1, 0, 0, ConfigPolicyVersion },
+    { CONFIG_OPT__PROTECTED_CONTENT , 1, 0, 0, ConfigProtectedContent },
 #ifdef PPM_MGR
     { CONFIG_OPT__PPM, 1, 0, 1, ConfigPPM },
 #endif
@@ -743,6 +749,7 @@ static const ConfigFunc config_opts[] =
 #ifdef SIDE_CHANNEL
     { CONFIG_OPT__SIDE_CHANNEL, 1, 1, 1, ConfigSideChannel },
 #endif
+    { CONFIG_OPT__MAX_IP6_EXTENSIONS, 1, 1, 1, ConfigMaxIP6Extensions },
     { NULL, 0, 0, 0, NULL }   /* Marks end of array */
 };
 
@@ -851,12 +858,12 @@ static RuleTreeNode * findHeadNode(SnortConfig *, RuleTreeNode *, tSfPolicyId);
 // the alert case is tested for separately with ScTreatDropAsAlert().
 static inline int ScKeepDropRules (void)
 {
-    return ( ScInlineMode() || ScAdapterInlineMode() || ScTreatDropAsIgnore() );
+    return ( ScIpsInlineMode() || ScAdapterInlineMode() || ScTreatDropAsIgnore() );
 }
 
 static inline int ScLoadAsDropRules (void)
 {
-    return ( ScInlineTestMode() || ScAdapterInlineTestMode() );
+    return ( ScIpsInlineTestMode() || ScAdapterInlineTestMode() );
 }
 
 /****************************************************************************
@@ -944,11 +951,10 @@ SnortConfig * ParseSnortConf(void)
     }
 
     /* Initialize storage space for preprocessor defined rule options */
-    sc->targeted_policies[policy_id]->preproc_rule_options = PreprocessorRuleOptionsNew();
-    if (sc->targeted_policies[policy_id]->preproc_rule_options == NULL)
+    sc->preproc_rule_options = PreprocessorRuleOptionsNew();
+    if (sc->preproc_rule_options == NULL)
     {
-        ParseError("Could not allocate storage for preprocessor rule "
-                   "options.\n");
+        ParseError("Could not allocate storage for preprocessor rule options.\n");
     }
 
     if ( strcmp(file_name, NULL_CONF) )
@@ -986,14 +992,6 @@ SnortConfig * ParseSnortConf(void)
             {
                 AddVarToTable(sc, tmp->name, tmp->value);
                 tmp = tmp->next;
-            }
-
-            /* Initialize storage space for preprocessor defined rule options */
-            sc->targeted_policies[policy_id]->preproc_rule_options = PreprocessorRuleOptionsNew();
-            if (sc->targeted_policies[policy_id]->preproc_rule_options == NULL)
-            {
-                ParseError("Could not allocate storage for preprocessor rule "
-                           "options.\n");
             }
 
             /* Parse as include file so if the file is specified relative to
@@ -3020,6 +3018,9 @@ OptTreeNode * ParseRuleOptions(SnortConfig *sc, RuleTreeNode *rtn,
 
                     rule_options[j].parse_func(sc, rtn, otn, rule_type, option_args);
                     configured[j] = 1;
+
+                    if ( !dopt_keyword && rule_options[j].detection )
+                        dopt_keyword = SnortStrdup(opts[0]);
                     break;
                 }
             }
@@ -5736,16 +5737,19 @@ static void InitPolicyMode(SnortPolicy *p)
 {
     if (!ScAdapterInlineMode() && !ScAdapterInlineTestMode())
     {
-        p->policy_mode = POLICY_MODE__PASSIVE;
+        p->ips_policy_mode = POLICY_MODE__PASSIVE;
+        p->nap_policy_mode = POLICY_MODE__PASSIVE;
     }
     else if (ScAdapterInlineTestMode())
     {
-        p->policy_mode =  POLICY_MODE__INLINE_TEST;
-    }
+        p->ips_policy_mode =  POLICY_MODE__INLINE_TEST;
+        p->nap_policy_mode =  POLICY_MODE__INLINE_TEST;
+     }
     else
     {
-        p->policy_mode = POLICY_MODE__INLINE;
-    }
+        p->ips_policy_mode = POLICY_MODE__INLINE;
+        p->nap_policy_mode = POLICY_MODE__INLINE;
+     }
 }
 
 static void InitParser(void)
@@ -6139,10 +6143,6 @@ static int ContinuationCheck(char *rule)
 
     return 0;
 }
-
-
-
-
 
 void ConfigAlertBeforePass(SnortConfig *sc, char *args)
 {
@@ -7967,10 +7967,8 @@ void ConfigPafMax (SnortConfig *sc, char *args)
     long int value;
     char *endptr;
 
-    // 255 is max pseudo-random flush point; eth mtu
-    // ensures that maximum flushes are not trimmed
-    // which throws off the tracking total in stream5_paf.c
-    const unsigned max = IP_MAXPACKET - ETHERNET_MTU - 255;
+
+    const unsigned max = MAXIMUM_PAF_MAX;
 
     if ((sc == NULL) || (args == NULL))
         return;
@@ -8133,12 +8131,20 @@ void ConfigPolicy(SnortConfig *sc, char *args)
     mSplitFree(&toks, num_toks);
 }
 
-void ConfigPolicyMode(SnortConfig *sc, char *args)
+void ConfigIpsPolicyMode(SnortConfig *sc, char *args)
 {
     if ((sc == NULL) || (sc->targeted_policies == NULL))
         return;
 
-    sc->targeted_policies[getParserPolicy(sc)]->policy_mode = GetPolicyMode(args, sc->run_flags);
+    sc->targeted_policies[getParserPolicy(sc)]->ips_policy_mode = GetPolicyMode(args, sc->run_flags);
+}
+
+void ConfigNapPolicyMode(SnortConfig *sc, char *args)
+{
+    if ((sc == NULL) || (sc->targeted_policies == NULL))
+        return;
+
+    sc->targeted_policies[getParserPolicy(sc)]->nap_policy_mode = GetPolicyMode(args, sc->run_flags);
 }
 
 static int GetPolicyMode(char *args, int run_flags)
@@ -8276,6 +8282,27 @@ void ConfigPolicyVersion(SnortConfig *sc, char *args)
     mSplitFree(&toks, num_toks);
 }
 
+void ConfigProtectedContent(SnortConfig *sc, char *args)
+{
+    int num_toks;
+    char **toks;
+
+    if ((sc == NULL) || (args == NULL))
+        return;
+
+    toks = mSplit(args, " \t", 2, &num_toks, 0);
+
+    if( num_toks != 2 )
+        ParseError("Invalid argument to protected_content");
+
+    if( strcasecmp(toks[0], PROTECTED_CONTENT_OPT__HASH_TYPE) != 0 )
+        ParseError("Invalid argument to protected_content");
+
+    if( (sc->Default_Protected_Content_Hash_Type = SecHash_Name2Type( toks[1] )) == SECHASH_NONE )
+        ParseError("Invalid protected content hash type");
+
+    mSplitFree(&toks, num_toks);
+}
 #ifdef PPM_MGR
 /*
  * config ppm: feature, feature, feature,..
@@ -8728,6 +8755,7 @@ void ConfigQuiet(SnortConfig *sc, char *args)
         return;
 
     sc->logging_flags |= LOGGING_FLAG__QUIET;
+    sc->internal_log_level = INTERNAL_LOG_LEVEL__ERROR;
 }
 
 /*
@@ -9136,6 +9164,24 @@ static void ConfigSideChannel(SnortConfig *sc, char *args)
         sc->side_channel_config.opts = SnortStrdup(args);
 }
 #endif
+
+void ConfigMaxIP6Extensions(SnortConfig *sc, char *args)
+{
+    char *endptr;
+    unsigned long parsed_value;
+    
+    if ((sc == NULL) || (args == NULL))
+        return;
+
+    parsed_value = SnortStrtoul(args, &endptr, 0);
+
+    if ((*endptr != '\0') || (parsed_value > UINT8_MAX))
+    {
+	ParseError("Max IP6 extension count must be a value between 0 and %d (inclusive), not: '%s'.", UINT8_MAX, args);
+    }
+
+    sc->max_ip6_extensions = (uint8_t) parsed_value;
+}
 
 /****************************************************************************
  *
@@ -12196,6 +12242,8 @@ SnortPolicy * SnortPolicyNew(void)
         pPolicy->decoder_drop_flags |= DECODE_EVENT_FLAG__IPV6_BAD_FRAG;
 
         pPolicy->checksum_flags = CHECKSUM_FLAG__ALL;
+
+        memset( pPolicy->pp_enabled, 0, sizeof( PreprocEnableMask ) * MAX_PORTS );
     }
 
     return pPolicy;

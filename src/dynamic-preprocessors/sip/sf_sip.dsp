@@ -176,6 +176,10 @@ SOURCE=.\sip_utils.h
 
 SOURCE=.\spp_sip.h
 # End Source File
+# Begin Source File
+
+SOURCE=..\include\sip_common.h
+# End Source File
 # End Group
 # Begin Group "Resource Files"
 

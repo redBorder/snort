@@ -3,11 +3,21 @@ AUTOMAKE_OPTIONS=foreign no-dependencies
 
 INCLUDES = @INCLUDES@
 
-lib_LTLIBRARIES = libsf_engine.la
+dynamicengine_LTLIBRARIES = libsf_engine.la
 
-libdir = ${exec_prefix}/lib/snort_dynamicengine
+dynamicenginedir = $(libdir)/snort_dynamicengine
 
 libsf_engine_la_LDFLAGS = -export-dynamic -module @XCCFLAGS@
+
+if BUILD_OPENSSL_MD5
+OPENSSL_MD5 = \
+    md5.c md5.h 
+endif
+
+if BUILD_OPENSSL_SHA
+OPENSSL_SHA = \
+    sha2.c sha2.h
+endif
 
 BUILT_SOURCES = \
 sfhashfcn.c \
@@ -22,7 +32,11 @@ sf_ip.h \
 sf_iph.h \
 snort_debug.h \
 sf_types.h \
-sf_protocols.h 
+sf_protocols.h \
+sf_sechash.h \
+sf_sechash.c \
+$(OPENSSL_MD5) \
+$(OPENSSL_SHA)
 
 nodist_libsf_engine_la_SOURCES = \
 sfhashfcn.c \
@@ -37,7 +51,11 @@ sf_ip.h \
 sf_iph.h \
 snort_debug.h \
 sf_types.h \
-sf_protocols.h 
+sf_protocols.h \
+sf_sechash.h \
+sf_sechash.c \
+$(OPENSSL_MD5) \
+$(OPENSSL_SHA)
 
 libsf_engine_la_SOURCES = \
 bmh.c \
@@ -172,7 +190,25 @@ sf_types.h: ../../sf_types.h
 sf_protocols.h: ../../sf_protocols.h
 	@src_file=$?; dst_file=$@; $(copy_files)
 
+sf_sechash.h: ../../sfutil/sf_sechash.h
+	@src_file=$?; dst_file=$@; $(copy_files)
+
+sf_sechash.c: ../../sfutil/sf_sechash.c
+	@src_file=$?; dst_file=$@; $(copy_files)
+
+md5.h: ../../sfutil/md5.h
+	@src_file=$?; dst_file=$@; $(copy_files)
+
+md5.c: ../../sfutil/md5.c
+	@src_file=$?; dst_file=$@; $(copy_files)
+
+sha2.h: ../../sfutil/sha2.h
+	@src_file=$?; dst_file=$@; $(copy_files)
+
+sha2.c: ../../sfutil/sha2.c
+	@src_file=$?; dst_file=$@; $(copy_files)
+
 SUBDIRS = examples
 
 clean-local:
-	rm -rf sfhashfcn.c sfhashfcn.c.new sfghash.c sfprimetable.c sf_ip.c sf_ip.h sf_iph.h ipv6_port.h snort_debug.h snort_debug.h.new sfprimetable.h sfghash.h ipv6_port.h.new sfhashfcn.h sf_types.h sf_protocols.h
+	rm -rf sfhashfcn.c sfhashfcn.c.new sfghash.c sfprimetable.c sf_ip.c sf_ip.h sf_iph.h ipv6_port.h snort_debug.h snort_debug.h.new sfprimetable.h sfghash.h ipv6_port.h.new sfhashfcn.h sf_types.h sf_protocols.h sf_sechash.h sf_sechash.c md5.h md5.c sha2.h sha2.c

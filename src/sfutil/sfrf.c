@@ -487,7 +487,7 @@ int SFRF_TestThreshold(
     int newStatus = -1;
     int status = -1;
     tSFRFGenHashKey key;
-    tSfPolicyId policy_id = getRuntimePolicy();
+    tSfPolicyId policy_id = getIpsRuntimePolicy();
 
 #ifdef SFRF_DEBUG
     printf("--%d-%d-%d: %s() entering\n", 0, gid, sid, __func__);
@@ -812,7 +812,7 @@ static tSFRFTrackingNode* _getSFRFTrackingNode(
     /* Setup key */
     key.ip = *(IP_PTR(ip));
     key.tid = tid;
-    key.policyId = getRuntimePolicy();
+    key.policyId = getNapRuntimePolicy();  // TBD-EDM should this be NAP or IPS?
 
     /*
      * Check for any Permanent sid objects for this gid or add this one ...

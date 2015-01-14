@@ -31,6 +31,11 @@
 #include <ctype.h>
 #include <errno.h>
 
+#ifndef WIN32
+# include <unistd.h>
+# include <sys/stat.h>
+#endif
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -46,11 +51,7 @@
 #include "perf.h"
 #include "perf-base.h"
 #include "profiler.h"
-
-#ifndef WIN32
-# include <unistd.h>
-# include <sys/stat.h>
-#endif
+#include "session_api.h"
 
 // Performance statistic types
 //#define PERFMON_ARG__BASE          "base"
@@ -81,6 +82,7 @@
 #define PERFMON_ARG__RESET           "reset"
 #define PERFMON_ARG__MAX_STATS       "max"
 #define PERFMON_ARG__FLOW_IP_MEMCAP  "flow-ip-memcap"
+#define PERFMON_ARG__FLOW_IP_MEMCAP_MIN  8200
 
 
 SFPERF *perfmon_config = NULL;
@@ -94,6 +96,7 @@ static void ProcessPerfMonitor(Packet *, void *);
 static void PerfMonitorCleanExit(int, void *);
 static void PerfMonitorReset(int, void *);
 static void PerfMonitorResetStats(int, void *);
+static int  PerfMonitorVerifyConfig(struct _SnortConfig *sc);
 static void PerfMonitorFreeConfig(SFPERF *);
 static void PerfMonitorOpenLogFiles(struct _SnortConfig *, void *);
 
@@ -156,15 +159,11 @@ static void PerfMonitorInit(struct _SnortConfig *sc, char *args)
 
     //not policy specific. Perf monitor configuration should be in the default
     //configuration file.
-    if (getParserPolicy(sc) != 0)
+    if( ( perfmon_config != NULL ) || getParserPolicy( sc ) != 0 )
     {
-        if (perfmon_config != NULL)
-            AddFuncToPreprocList(sc, ProcessPerfMonitor, PRIORITY_SCANNER, PP_PERFMONITOR, PROTO_BIT__ALL);
+        ParseError("Perfmonitor can only be configured in default policy and only once.");
         return;
     }
-
-    if (perfmon_config != NULL)
-        ParseError("Permonitor can only be configured once.");
 
     perfmon_config = (SFPERF *)SnortAlloc(sizeof(SFPERF));
 
@@ -175,11 +174,11 @@ static void PerfMonitorInit(struct _SnortConfig *sc, char *args)
     PerfMonitorChangeLogFilesPermission();
 #endif
 
-    /* Set the preprocessor function into the function list */
-    AddFuncToPreprocList(sc, ProcessPerfMonitor, PRIORITY_SCANNER, PP_PERFMONITOR, PROTO_BIT__ALL);
+    /*  register callbacks */
     AddFuncToPreprocCleanExitList(PerfMonitorCleanExit, NULL, PRIORITY_LAST, PP_PERFMONITOR);
     AddFuncToPreprocResetList(PerfMonitorReset, NULL, PRIORITY_LAST, PP_PERFMONITOR);
     AddFuncToPreprocResetStatsList(PerfMonitorResetStats, NULL, PRIORITY_LAST, PP_PERFMONITOR);
+    AddFuncToConfigCheckList( sc, PerfMonitorVerifyConfig );
     AddFuncToPreprocPostConfigList(sc, PerfMonitorOpenLogFiles, NULL);
 
 #ifdef PERF_PROFILING
@@ -315,11 +314,11 @@ static void ParsePerfMonitorArgs(struct _SnortConfig *sc, SFPERF *pconfig, char 
             }
 
             if ((SnortStrToU32(toks[++i], &endptr, &value, 10) != 0)
-                    || (value == 0) || *endptr || (errno == ERANGE))
+                    || (value < PERFMON_ARG__FLOW_IP_MEMCAP_MIN) || *endptr || (errno == ERANGE))
             {
                 ParseError("Perfmonitor:  Invalid argument to \"%s\".  The "
-                        "value must be a positive integer between 1 and %d.",
-                        PERFMON_ARG__FLOW_IP_MEMCAP, UINT32_MAX);
+                        "value must be a positive integer between %u and %u.",
+                        PERFMON_ARG__FLOW_IP_MEMCAP, PERFMON_ARG__FLOW_IP_MEMCAP_MIN, UINT32_MAX);
             }
 
             pconfig->flowip_memcap = value;
@@ -750,6 +749,24 @@ static void PerfMonitorChangeLogFilesPermission(void)
     }
 }
 #endif
+
+static void initializePerfmonForDispatch( struct _SnortConfig *sc )
+{
+    AddFuncToPreprocListAllNapPolicies( sc, ProcessPerfMonitor, PRIORITY_SCANNER, PP_PERFMONITOR, PROTO_BIT__ALL );
+    session_api->enable_preproc_all_ports_all_policies( sc, PP_PERFMONITOR, PROTO_BIT__ALL );
+}
+
+static int PerfMonitorVerifyConfig(struct _SnortConfig *sc)
+{
+    if (perfmon_config == NULL)
+        return 0;
+
+    // register perfmon callback with policy and session
+    initializePerfmonForDispatch( sc );
+
+    return 0;
+}
+
 /* This function opens the perfmon log files.
    The logic was moved out of PerfMonitorInit() to avoid creating files
    before Snort changed its user & group.
@@ -783,25 +800,18 @@ static void PerfMonitorReload(struct _SnortConfig *sc, char *args, void **new_co
 {
     SFPERF *perfmon_swap_config = (SFPERF *)*new_config;
 
-    //not policy specific. Perf monitor configuration should be in the default
-    //configuration file.
-    if (getParserPolicy(sc) != 0)
+    // Perf monitor configuration must be defined in the default configuration file only.
+    if( ( perfmon_swap_config != NULL ) || getParserPolicy( sc ) != 0 )
     {
-        if (perfmon_swap_config != NULL)
-            AddFuncToPreprocList(sc, ProcessPerfMonitor, PRIORITY_SCANNER, PP_PERFMONITOR, PROTO_BIT__ALL);
+        ParseError("Perfmonitor can only be configured in default policy and only once.");
         return;
     }
-
-    if (perfmon_swap_config != NULL)
-        ParseError("Perfmonitor can only be configured once.");
 
     perfmon_swap_config = (SFPERF *)SnortAlloc(sizeof(SFPERF));
     *new_config = (void *)perfmon_swap_config;
 
     /* parse the argument list from the rules file */
     ParsePerfMonitorArgs(sc, perfmon_swap_config, args);
-
-    AddFuncToPreprocList(sc, ProcessPerfMonitor, PRIORITY_SCANNER, PP_PERFMONITOR, PROTO_BIT__ALL);
 }
 
 static int PerfmonReloadVerify(struct _SnortConfig *sc, void *swap_config)
@@ -854,6 +864,9 @@ static int PerfmonReloadVerify(struct _SnortConfig *sc, void *swap_config)
         ErrorMessage("Perfmonitor Reload: Changing the FlowIP log file requires a restart.\n");
         return -1;
     }
+
+    // register perfmon callback with policy and session
+    initializePerfmonForDispatch( sc );
 
     return 0;
 }

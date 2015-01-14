@@ -533,7 +533,7 @@ int SFAT_AddHostEntryToMap(void)
 HostAttributeEntry *SFAT_LookupHostEntryByIP(sfip_t *ipAddr)
 {
     tTargetBasedPolicyConfig *pConfig = NULL;
-    tSfPolicyId policyId = getRuntimePolicy();
+    tSfPolicyId policyId = getNapRuntimePolicy();
     HostAttributeEntry *host = NULL;
     sfip_t local_ipAddr;
 
@@ -1021,7 +1021,7 @@ int SFAT_ParseAttributeTable(char *args)
 void SFAT_StartReloadThread(void)
 {
 #ifndef WIN32
-    if (!IsAdaptiveConfigured(getDefaultPolicy()) || ScDisableAttrReload())
+    if (!IsAdaptiveConfigured() || ScDisableAttrReload())
         return;
 
     LogMessage("Attribute Table Reload Thread Starting...\n");
@@ -1040,9 +1040,10 @@ void SFAT_StartReloadThread(void)
 #endif
 }
 
-int IsAdaptiveConfigured(tSfPolicyId id)
+int IsAdaptiveConfigured( void )
 {
     SnortConfig *sc = snort_conf;
+    tSfPolicyId id = getDefaultPolicy( ); 
 
     if (id >= sc->num_policies_allocated)
     {
@@ -1060,8 +1061,10 @@ int IsAdaptiveConfigured(tSfPolicyId id)
     return 1;
 }
 
-int IsAdaptiveConfiguredForSnortConfig(struct _SnortConfig *sc, tSfPolicyId id)
+int IsAdaptiveConfiguredForSnortConfig(struct _SnortConfig *sc)
 {
+    tSfPolicyId id = getDefaultPolicy( ); 
+
     if (sc == NULL)
     {
         FatalError("%s(%d) Snort conf for parsing is NULL.\n",

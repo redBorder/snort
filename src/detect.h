@@ -82,15 +82,21 @@ void CallAlertPlugins(Packet *, char *, Event *);
 void CallLogFuncs(Packet *, char *, ListHead *, Event *);
 void CallAlertFuncs(Packet *, char *, ListHead *, Event *);
 
-static inline void DisableDetect(Packet *p)
+static inline void DisableDetect( Packet *p )
 {
-    DisablePreprocessors(p);
+    DisableAppPreprocessors( p );
     do_detect_content = 0;
 }
 
-static inline void DisableAllDetect(Packet *p)
+static inline void DisableAllDetect( Packet *p )
 {
-    DisablePreprocessors(p);
+    DisableAppPreprocessors( p );
+    do_detect = do_detect_content = 0;
+}
+
+static inline void DisablePacketAnalysis( Packet *p )
+{
+    DisableAllPreprocessors ( p );
     do_detect = do_detect_content = 0;
 }
 

@@ -24,7 +24,7 @@
  *
  * spp_pop.c
  *
- * Author: Bhagyashree Bantwal <bbantwal@sourcefire.com>
+ * Author: Bhagyashree Bantwal <bbantwal@cisco.com>
  *
  * Description:
  *
@@ -55,6 +55,7 @@
 #include "snort_pop.h"
 #include "pop_config.h"
 #include "pop_log.h"
+#include "pop_paf.h"
 
 #include "preprocids.h"
 #include "sf_snort_packet.h"
@@ -98,9 +99,11 @@ static void POPDetect(void *, void *context);
 static void POPCleanExitFunction(int, void *);
 static void POPResetFunction(int, void *);
 static void POPResetStatsFunction(int, void *);
-static void _addPortsToStream5Filter(struct _SnortConfig *, POPConfig *, tSfPolicyId);
+static void registerPortsForDispatch( struct _SnortConfig *sc, POPConfig *policy );
+static void registerPortsForReassembly( POPConfig *policy, int direction );
+static void _addPortsToStreamFilter(struct _SnortConfig *, POPConfig *, tSfPolicyId);
 #ifdef TARGET_BASED
-static void _addServicesToStream5Filter(struct _SnortConfig *, tSfPolicyId);
+static void _addServicesToStreamFilter(struct _SnortConfig *, tSfPolicyId);
 #endif
 static int POPCheckConfig(struct _SnortConfig *);
 
@@ -183,6 +186,9 @@ static void POPInit(struct _SnortConfig *sc, char *args)
         if (pop_proto_id == SFTARGET_UNKNOWN_PROTOCOL)
             pop_proto_id = _dpd.addProtocolReference(POP_PROTO_REF_STR);
 
+        // register with session to handle applications
+        _dpd.sessionAPI->register_service_handler( PP_POP, pop_proto_id );
+
         DEBUG_WRAP(DebugMessage(DEBUG_POP,"POP: Target-based: Proto id for %s: %u.\n",
                                 POP_PROTO_REF_STR, pop_proto_id););
 #endif
@@ -244,10 +250,13 @@ static void POPInit(struct _SnortConfig *sc, char *args)
 
     _dpd.searchAPI->search_instance_prep(pPolicyConfig->cmd_search_mpse);
 
-    _addPortsToStream5Filter(sc, pPolicyConfig, policy_id);
+    // register ports with session and stream
+    registerPortsForDispatch( sc, pPolicyConfig );
+    registerPortsForReassembly( pPolicyConfig, SSN_DIR_FROM_SERVER | SSN_DIR_FROM_CLIENT );
+    _addPortsToStreamFilter(sc, pPolicyConfig, policy_id);
 
 #ifdef TARGET_BASED
-    _addServicesToStream5Filter(sc, policy_id);
+    _addServicesToStreamFilter(sc, policy_id);
 #endif
 }
 
@@ -267,7 +276,7 @@ static void POPInit(struct _SnortConfig *sc, char *args)
 static void POPDetect(void *pkt, void *context)
 {
     SFSnortPacket *p = (SFSnortPacket *)pkt;
-    tSfPolicyId policy_id = _dpd.getRuntimePolicy();
+    tSfPolicyId policy_id = _dpd.getNapRuntimePolicy();
     PROFILE_VARS;
 
     // preconditions - what we registered for
@@ -338,7 +347,29 @@ static void POPResetStatsFunction(int signal, void *data)
     return;
 }
 
-static void _addPortsToStream5Filter(struct _SnortConfig *sc, POPConfig *config, tSfPolicyId policy_id)
+static void registerPortsForDispatch( struct _SnortConfig *sc, POPConfig *policy )
+{
+    int port;
+
+    for ( port = 0; port < MAXPORTS; port++ )
+    {
+        if( isPortEnabled( policy->ports, port ) )
+            _dpd.sessionAPI->enable_preproc_for_port( sc, PP_POP, PROTO_BIT__TCP, port ); 
+    }
+}
+
+static void registerPortsForReassembly( POPConfig *policy, int direction )
+{
+    uint32_t port;
+
+    for ( port = 0; port < MAXPORTS; port++ )
+    {
+        if( isPortEnabled( policy->ports, port ) )
+            _dpd.streamAPI->register_reassembly_port( NULL, port, direction );
+    }
+}
+
+static void _addPortsToStreamFilter(struct _SnortConfig *sc, POPConfig *config, tSfPolicyId policy_id)
 {
     unsigned int portNum;
 
@@ -352,16 +383,16 @@ static void _addPortsToStream5Filter(struct _SnortConfig *sc, POPConfig *config,
             //Add port the port
             _dpd.streamAPI->set_port_filter_status(sc, IPPROTO_TCP, (uint16_t)portNum,
                                                    PORT_MONITOR_SESSION, policy_id, 1);
-            _dpd.fileAPI->register_mime_paf_port(sc, portNum, policy_id);
+            register_pop_paf_port(sc, portNum, policy_id);
         }
     }
 }
 
 #ifdef TARGET_BASED
-static void _addServicesToStream5Filter(struct _SnortConfig *sc, tSfPolicyId policy_id)
+static void _addServicesToStreamFilter(struct _SnortConfig *sc, tSfPolicyId policy_id)
 {
     _dpd.streamAPI->set_service_filter_status(sc, pop_proto_id, PORT_MONITOR_SESSION, policy_id, 1);
-    _dpd.fileAPI->register_mime_paf_service(sc, pop_proto_id, policy_id);
+     register_pop_paf_service(sc, pop_proto_id, policy_id);
 }
 #endif
 
@@ -374,10 +405,10 @@ static int CheckFilePolicyConfig(
 {
     POPConfig *context = (POPConfig *)pData;
 
-    context->file_depth = _dpd.fileAPI->get_max_file_depth();
-    if (context->file_depth > -1)
+    context->decode_conf.file_depth = _dpd.fileAPI->get_max_file_depth();
+    if (context->decode_conf.file_depth > -1)
         context->log_config.log_filename = 1;
-    updateMaxDepth(context->file_depth, &context->max_depth);
+    updateMaxDepth(context->decode_conf.file_depth, &context->decode_conf.max_depth);
 
     return 0;
 }
@@ -393,7 +424,7 @@ static int POPEnableDecoding(struct _SnortConfig *sc, tSfPolicyUserContextId con
     if(context->disabled)
         return 0;
 
-    if(!POP_IsDecodingEnabled(context))
+    if(_dpd.fileAPI->is_decoding_enabled(&(context->decode_conf)))
         return 1;
 
     return 0;
@@ -428,11 +459,11 @@ static int POPCheckPolicyConfig(
     _dpd.setParserPolicy(sc, policyId);
 
     /* In a multiple-policy setting, the POP preproc can be turned on in a
-       "disabled" state. In this case, we don't require Stream5. */
+       "disabled" state. In this case, we don't require Stream. */
     if (context->disabled)
         return 0;
 
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
+    if (_dpd.streamAPI == NULL)
     {
         _dpd.errMsg("Streaming & reassembly must be enabled for POP preprocessor\n");
         return -1;
@@ -463,8 +494,8 @@ static int POPCheckConfig(struct _SnortConfig *sc)
             return -1;
         }
 
-        pop_mime_mempool = (MemPool *)_dpd.fileAPI->init_mime_mempool(defaultConfig->max_mime_mem,
-                defaultConfig->max_depth, pop_mime_mempool, PROTOCOL_NAME);
+        pop_mime_mempool = (MemPool *)_dpd.fileAPI->init_mime_mempool(defaultConfig->decode_conf.max_mime_mem,
+                defaultConfig->decode_conf.max_depth, pop_mime_mempool, PROTOCOL_NAME);
     }
 
     if (sfPolicyUserDataIterate(sc, pop_config, POPLogExtraData) != 0)
@@ -545,10 +576,13 @@ static void POPReload(struct _SnortConfig *sc, char *args, void **new_config)
 
     _dpd.addPreproc(sc, POPDetect, PRIORITY_APPLICATION, PP_POP, PROTO_BIT__TCP);
 
-    _addPortsToStream5Filter(sc, pPolicyConfig, policy_id);
+    // register ports with session and stream
+    registerPortsForDispatch( sc, pPolicyConfig );
+    registerPortsForReassembly( pPolicyConfig, SSN_DIR_FROM_SERVER | SSN_DIR_FROM_CLIENT );
+    _addPortsToStreamFilter(sc, pPolicyConfig, policy_id);
 
 #ifdef TARGET_BASED
-    _addServicesToStream5Filter(sc, policy_id);
+    _addServicesToStreamFilter(sc, policy_id);
 #endif
 }
 
@@ -563,59 +597,26 @@ static int POPReloadVerify(struct _SnortConfig *sc, void *swap_config)
         return 0;
 
     if (pop_config != NULL)
-    {
         config = (POPConfig *)sfPolicyUserDataGet(pop_config, _dpd.getDefaultPolicy());
-    }
 
     configNext = (POPConfig *)sfPolicyUserDataGet(pop_swap_config, _dpd.getDefaultPolicy());
 
     if (config == NULL)
-    {
         return 0;
-    }
-    if ((rval = sfPolicyUserDataIterate (sc, pop_swap_config, CheckFilePolicyConfig)))
-    {
+
+    if ((rval = sfPolicyUserDataIterate (sc, pop_swap_config, POPCheckPolicyConfig)))
         return rval;
-    }
+
+    if ((rval = sfPolicyUserDataIterate (sc, pop_swap_config, CheckFilePolicyConfig)))
+        return rval;
 
     if (pop_mime_mempool != NULL)
     {
-        if (configNext == NULL)
+        if(_dpd.fileAPI->is_decoding_conf_changed(&(configNext->decode_conf),
+                &(config->decode_conf), "POP"))
         {
-            _dpd.errMsg("POP reload: Changing the POP configuration requires a restart.\n");
             return -1;
         }
-        if (configNext->max_mime_mem != config->max_mime_mem)
-        {
-            _dpd.errMsg("POP reload: Changing the memcap requires a restart.\n");
-            return -1;
-        }
-        if(configNext->b64_depth != config->b64_depth)
-        {
-            _dpd.errMsg("POP reload: Changing the b64_decode_depth requires a restart.\n");
-            return -1;
-        }
-        if(configNext->qp_depth != config->qp_depth)
-        {
-            _dpd.errMsg("POP reload: Changing the qp_decode_depth requires a restart.\n");
-            return -1;
-        }
-        if(configNext->bitenc_depth != config->bitenc_depth)
-        {
-            _dpd.errMsg("POP reload: Changing the bitenc_decode_depth requires a restart.\n");
-            return -1;
-        }
-        if(configNext->uu_depth != config->uu_depth)
-        {
-            _dpd.errMsg("POP reload: Changing the uu_decode_depth requires a restart.\n");
-            return -1;
-        }
-        if(configNext->file_depth != config->file_depth)
-        {
-            _dpd.errMsg("POP reload: Changing the file_depth requires a restart.\n");
-            return -1;
-        }
-
     }
 
     if (pop_mempool != NULL)
@@ -630,14 +631,13 @@ static int POPReloadVerify(struct _SnortConfig *sc, void *swap_config)
             _dpd.errMsg("POP reload: Changing the memcap requires a restart.\n");
             return -1;
         }
-
     }
     else if(configNext != NULL)
     {
         if (sfPolicyUserDataIterate(sc, pop_swap_config, POPEnableDecoding) != 0)
         {
-            pop_mime_mempool =  (MemPool *)_dpd.fileAPI->init_mime_mempool(configNext->max_mime_mem,
-                    configNext->max_depth, pop_mime_mempool, PREPROC_NAME);
+            pop_mime_mempool =  (MemPool *)_dpd.fileAPI->init_mime_mempool(configNext->decode_conf.max_mime_mem,
+                    configNext->decode_conf.max_depth, pop_mime_mempool, PREPROC_NAME);
         }
 
         if (sfPolicyUserDataIterate(sc, pop_swap_config, POPLogExtraData) != 0)
@@ -649,17 +649,9 @@ static int POPReloadVerify(struct _SnortConfig *sc, void *swap_config)
 
         if ( configNext->disabled )
             return 0;
-
     }
 
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
-    {
-        _dpd.errMsg("Streaming & reassembly must be enabled "
-                                        "for POP preprocessor\n");
-        return -1;
-    }
-
-    return 0;
+   return 0;
 }
 
 static int POPReloadSwapPolicy(

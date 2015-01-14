@@ -32,15 +32,14 @@
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include "sf_types.h"
 #include "util.h"
 #include "mstring.h"
 #include "parser.h"
 
-#if defined(FEAT_FILE_INSPECT)
-# include "sfutil/strvec.h"
-#endif /* FEAT_FILE_INSPECT */
+#include "sfutil/strvec.h"
 
 #include "file_lib.h"
 #include "file_identifier.h"
@@ -66,10 +65,7 @@ typedef struct _FileOptFunc
 #define FILE_OPT__REVISION          "rev"
 #define FILE_OPT__CONTENT           "content"
 #define FILE_OPT__OFFSET            "offset"
-
-#if defined(FEAT_FILE_INSPECT)
-# define FILE_OPT__GROUP            "group"
-#endif /* FEAT_FILE_INSPECT */
+#define FILE_OPT__GROUP            "group"
 
 #define FILE_REVISION_MAX    UINT32_MAX
 #define FILE_OFFSET_MAX      UINT32_MAX
@@ -82,27 +78,20 @@ static void ParseFileRuleMessage(RuleInfo *, char *);
 static void ParseFileRevision(RuleInfo *, char *);
 static void ParseFileContent(RuleInfo *, char *);
 static void ParseFileOffset(RuleInfo *, char *);
-
-#if defined(FEAT_FILE_INSPECT)
 static void ParseFileGroup(RuleInfo *, char *);
-#endif /* FEAT_FILE_INSPECT */
 
 static const FileOptFunc file_options[] =
 {
-        { FILE_OPT__TYPE,     1, 1, ParseFileRuleType },
-        { FILE_OPT__ID,       1, 1, ParseFileRuleID },
-        { FILE_OPT__VERSION,  0, 1, ParseFileRuleVersion },
-        { FILE_OPT__CATEGORY, 1, 1, ParseFileRuleCategory },
-        { FILE_OPT__MSG,      0, 1, ParseFileRuleMessage },
-        { FILE_OPT__REVISION, 0, 1, ParseFileRevision },
-        { FILE_OPT__CONTENT,  1, 0, ParseFileContent },
-        { FILE_OPT__OFFSET,   1, 0, ParseFileOffset },
-
-#if defined(FEAT_FILE_INSPECT)
-        { FILE_OPT__GROUP,    1, 0, ParseFileGroup },
-#endif /* FEAT_FILE_INSPECT */
-
-        { NULL, 0, 0, NULL }   /* Marks end of array */
+    { FILE_OPT__TYPE,     1, 1, ParseFileRuleType },
+    { FILE_OPT__ID,       1, 1, ParseFileRuleID },
+    { FILE_OPT__VERSION,  0, 1, ParseFileRuleVersion },
+    { FILE_OPT__CATEGORY, 1, 1, ParseFileRuleCategory },
+    { FILE_OPT__MSG,      0, 1, ParseFileRuleMessage },
+    { FILE_OPT__REVISION, 0, 1, ParseFileRevision },
+    { FILE_OPT__CONTENT,  1, 0, ParseFileContent },
+    { FILE_OPT__OFFSET,   1, 0, ParseFileOffset },
+    { FILE_OPT__GROUP,    1, 0, ParseFileGroup },
+    { NULL, 0, 0, NULL }   /* Marks end of array */
 };
 
 
@@ -128,6 +117,20 @@ static inline MagicData * GetLastMagic(RuleInfo *rule, const char *option)
     return lastMagic;
 }
 
+static inline bool valid_rule_type_str( const char *src )
+{
+    assert( src );
+    assert( *src );
+
+    while ( *src ) {
+        if ( !IS_RULE_TYPE_IDENT((int)*src) )
+            return false;
+        src++;
+    }
+
+    return true;
+}
+
 static void ParseFileRuleType(RuleInfo *rule, char *args)
 {
 
@@ -135,6 +138,12 @@ static void ParseFileRuleType(RuleInfo *rule, char *args)
 
     if (args == NULL)
         ParseError("Type rule option requires an argument.");
+
+    if ( !valid_rule_type_str(args) )
+    {
+        ParseError("Invalid argument to 'type' rule option: '%s'.  "
+            "Can only contain '0-9','A-Z','a-z','_' and '.' characters.", args);
+    }
 
     rule->type = SnortStrdup(args);
 }
@@ -177,6 +186,12 @@ static void ParseFileRuleVersion(RuleInfo *rule, char *args)
 
     if (args == NULL)
         ParseError("Version rule option requires an argument.");
+
+    if ( !valid_rule_type_str(args) )
+    {
+        ParseError("Invalid argument to 'ver' rule option: '%s'.  "
+            "Can only contain '0-9','A-Z','a-z','_' and '.' characters.", args);
+    }
 
     rule->version = SnortStrdup(args);
 }
@@ -429,7 +444,6 @@ static void ParseFileOffset(RuleInfo *rule, char *args)
     mdata->offset = (uint32_t)offset;
 }
 
-#if defined(FEAT_FILE_INSPECT)
 static void ParseFileGroup(RuleInfo * rule, char * args)
 {
     char **toks;
@@ -451,7 +465,6 @@ static void ParseFileGroup(RuleInfo * rule, char * args)
 
     mSplitFree(&toks, num_toks);
 }
-#endif /* FEAT_FILE_INSPECT */
 
 static void parse_options(char *option_name, char *option_args,
         char *configured, RuleInfo *rule)
@@ -527,9 +540,8 @@ static int file_rule_print(RuleInfo *rule)
 }
 #endif
 
-#if defined(FEAT_FILE_INSPECT)
 static inline void
-__add_id_to_list( uint32_t **list, int *list_size, const uint32_t id )
+__add_id_to_list( uint32_t **list, uint32_t *list_size, const uint32_t id )
 {
     uint32_t *_temp;
 
@@ -546,7 +558,7 @@ __add_id_to_list( uint32_t **list, int *list_size, const uint32_t id )
 }
 
 bool get_ids_from_type(const void *conf, const char *type, uint32_t **ids,
-        int *count)
+        uint32_t *count)
 {
     const FileConfig *file_config = (FileConfig *)conf;
     bool status = false;
@@ -573,7 +585,7 @@ bool get_ids_from_type(const void *conf, const char *type, uint32_t **ids,
 }
 
 bool get_ids_from_type_version(const void *conf, const char *type,
-        const char *version, uint32_t **ids, int *count)
+        const char *version, uint32_t **ids, uint32_t *count)
 {
     const FileConfig *file_config = (FileConfig *)conf;
     bool status = false;
@@ -604,7 +616,7 @@ bool get_ids_from_type_version(const void *conf, const char *type,
 }
 
 bool get_ids_from_group(const void *conf, const char *group, uint32_t **ids,
-        int *count)
+        uint32_t *count)
 {
     const FileConfig *file_config = (FileConfig*)conf;
     bool status = false;
@@ -639,7 +651,6 @@ bool get_ids_from_group(const void *conf, const char *group, uint32_t **ids,
 
     return status;
 }
-#endif /* FEAT_FILE_INSPECT */
 
 /*The main function for parsing rule option*/
 void file_rule_parse(char *args, void *config)
@@ -741,10 +752,8 @@ static void _free_file_rule(RuleInfo *rule)
     if ( rule->version )
         free(rule->version);
 
-#if defined(FEAT_FILE_INSPECT)
     if ( rule->groups )
             StringVector_Delete(rule->groups);
-#endif /* FEAT_FILE_INSPECT */
 
     _free_file_magic(rule->magics);
     free(rule);

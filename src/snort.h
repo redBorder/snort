@@ -39,6 +39,7 @@
 #include "sfdaq.h"
 #include "sf_types.h"
 #include "sfutil/sflsq.h"
+#include "sfutil//sfActionQueue.h"
 #include "profiler.h"
 #include "rules.h"
 #include "treenodes.h"
@@ -47,6 +48,7 @@
 #include "sfutil/sfrim.h"
 #include "sfutil/sfportobject.h"
 #include "sfutil/asn1.h"
+#include "sfutil/sf_sechash.h"
 #include "signature.h"
 #include "event_queue.h"
 #include "sfthreshold.h"
@@ -201,7 +203,14 @@
 # define MIN_MAX_ATTRIBUTE_SERVICES_PER_HOST       1
 # define MAX_MAX_METADATA_SERVICES 256
 # define MIN_MAX_METADATA_SERVICES 1
+#if defined(FEAT_OPEN_APPID)
+# define MAX_MAX_METADATA_APPID 256
+# define MIN_MAX_METADATA_APPID 1
+# define DEFAULT_MAX_METADATA_APPID     8
+#endif /* defined(FEAT_OPEN_APPID) */
 #endif
+
+# define DEFAULT_MAX_IP6_EXTENSIONS     8
 
 /*  D A T A  S T R U C T U R E S  *********************************************/
 typedef struct _VarEntry
@@ -289,6 +298,8 @@ typedef enum _GetOptLongIds
     ARG_HA_PEER,
     ARG_HA_OUT,
     ARG_HA_IN,
+
+    SUPPRESS_CONFIG_LOG,
 
     GET_OPT_LONG_IDS_MAX
 
@@ -512,6 +523,14 @@ typedef enum _LoggingFlag
 
 } LoggingFlag;
 
+typedef enum _InternalLogLevel
+{
+    INTERNAL_LOG_LEVEL__SUPPRESS_ALL,
+    INTERNAL_LOG_LEVEL__ERROR,
+    INTERNAL_LOG_LEVEL__WARNING,
+    INTERNAL_LOG_LEVEL__MESSAGE
+} InternalLogLevel;
+
 /* -k
  * config checksum_mode
  * config checksum_drop_mode */
@@ -578,6 +597,8 @@ typedef struct _TargetBasedConfig
 } TargetBasedConfig;
 #endif
 
+typedef uint32_t PreprocEnableMask;
+
 typedef struct _SnortPolicy
 {
 #ifdef TARGET_BASED
@@ -593,15 +614,16 @@ typedef struct _SnortPolicy
     PortVarTable *portVarTable;     /* named entries, uses a hash table */
     PortTable *nonamePortVarTable;  /* un-named entries */
 
+    PreprocEnableMask pp_enabled[MAX_PORTS];
     PreprocEvalFuncNode *preproc_eval_funcs;
     PreprocEvalFuncNode *unused_preproc_eval_funcs;
     PreprocMetaEvalFuncNode *preproc_meta_eval_funcs;
 
     int preproc_proto_mask;
-    SFGHASH *preproc_rule_options;
     int num_preprocs;
     int num_meta_preprocs;
-    int policy_mode;
+    int ips_policy_mode;
+    int nap_policy_mode;
     uint32_t policy_flags;
 
     /* mask of preprocessors that have registered runtime process functions */
@@ -637,6 +659,7 @@ typedef struct _SnortPolicy
     int decoder_drop_flags;
     int decoder_alert_flags_saved;
     int decoder_drop_flags_saved;
+    bool ssl_policy_enabled;
 } SnortPolicy;
 
 #ifdef INTEL_SOFT_CPM
@@ -795,6 +818,10 @@ typedef struct _SnortConfig
     uint32_t max_attribute_services_per_host;    /* config max_attribute_services_per_host */
     uint32_t max_metadata_services;  /* config max_metadata_services */
 #endif
+#if defined(FEAT_OPEN_APPID)
+
+    uint32_t max_metadata_appid;
+#endif /* defined(FEAT_OPEN_APPID) */
 
     OutputConfig *output_configs;
     OutputConfig *rule_type_output_configs;
@@ -808,6 +835,7 @@ typedef struct _SnortConfig
     ReferenceSystemNode *references;
     SFGHASH *so_rule_otn_map;
     SFGHASH *otn_map;
+    SFGHASH *preproc_rule_options;
 
     FastPatternConfig *fast_pattern_config;
     EventQueueConfig *event_queue_config;
@@ -847,6 +875,9 @@ typedef struct _SnortConfig
     uint64_t tot_inq_flush;
     uint64_t tot_inq_inserts;
     uint64_t tot_inq_uinserts;
+
+    /* Protected Content secure hash type default */
+    Secure_Hash_Type Default_Protected_Content_Hash_Type;
 
     /* master port list table */
     rule_port_tables_t *port_tables;
@@ -912,6 +943,9 @@ typedef struct _SnortConfig
     void *streamReloadConfig;
 #endif
     tSfPolicyId parserPolicyId;
+#ifdef INTEL_SOFT_CPM
+    struct _IntelPmHandles *ipm_handles;
+#endif
 
 /* Used when a user defines a new rule type (ruletype keyword)
  * It points to the new rule type's ListHead and is used for accessing the
@@ -923,6 +957,11 @@ typedef struct _SnortConfig
  * is attached to the new rule type's appropriate list.
  * NOTE:  This variable MUST NOT be used during runtime */
     ListHead *head_tmp;
+
+    uint8_t max_ip6_extensions;
+
+    int internal_log_level;
+    int suppress_config_log;
 } SnortConfig;
 
 /* struct to collect packet statistics */
@@ -1073,6 +1112,7 @@ typedef void (*grinder_t)(Packet *, const DAQ_PktHdr_t*, const uint8_t *);
 
 /*  E X T E R N S  ************************************************************/
 extern SnortConfig *snort_conf;
+extern int internal_log_level;
 
 #include "sfutil/sfPolicyData.h"
 
@@ -1087,10 +1127,15 @@ extern grinder_t grinder;
 extern pthread_mutex_t snort_process_lock;
 #endif
 
+extern OutputFuncNode *AlertList;
+extern OutputFuncNode *LogList;
+extern tSfActionQueueId decoderActionQ;
 
 /*  P R O T O T Y P E S  ******************************************************/
 int SnortMain(int argc, char *argv[]);
 DAQ_Verdict ProcessPacket(Packet*, const DAQ_PktHdr_t*, const uint8_t*, void*);
+Packet *NewGrinderPkt(Packet *p, DAQ_PktHdr_t* phdr, uint8_t *pkt);
+void DeleteGrinderPkt(Packet *);
 void SetupMetadataCallback(void);
 int InMainThread(void);
 bool SnortIsInitializing(void);
@@ -1174,94 +1219,110 @@ static inline int ScLogQuiet(void)
     return snort_conf->logging_flags & LOGGING_FLAG__QUIET;
 }
 
+static inline int ScCheckInternalLogLevel(int level)
+{
+    return internal_log_level >= level;
+}
+
+static inline int ScSetInternalLogLevel(int level)
+{
+    if (!ScLogQuiet())
+        internal_log_level = level;
+}
+
+static inline int ScRestoreInternalLogLevel(void)
+{
+    internal_log_level = snort_conf->internal_log_level;
+}
+
 static inline int ScDecoderAlerts(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__DEFAULT;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__DEFAULT;
 }
 
 static inline int ScDecoderDrops(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__DEFAULT;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__DEFAULT;
 }
 
 static inline int ScDecoderOversizedAlerts(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__OVERSIZED;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__OVERSIZED;
 }
 
 static inline int ScDecoderOversizedDrops(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__OVERSIZED;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__OVERSIZED;
 }
 
 static inline int ScDecoderIpv6BadFragAlerts(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__IPV6_BAD_FRAG;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__IPV6_BAD_FRAG;
 }
 
 static inline int ScDecoderIpv6BadFragDrops(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__IPV6_BAD_FRAG;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__IPV6_BAD_FRAG;
 }
 
 static inline int ScDecoderIpv6BsdIcmpFragAlerts(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__IPV6_BSD_ICMP_FRAG;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__IPV6_BSD_ICMP_FRAG;
 }
 
 static inline int ScDecoderIpv6BsdIcmpFragDrops(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__IPV6_BSD_ICMP_FRAG;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__IPV6_BSD_ICMP_FRAG;
 }
 
 static inline int ScDecoderTcpOptAlerts(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__TCP_OPT_ANOMALY;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__TCP_OPT_ANOMALY;
 }
 
 static inline int ScDecoderTcpOptDrops(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__TCP_OPT_ANOMALY;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__TCP_OPT_ANOMALY;
 }
 
 static inline int ScDecoderTcpOptExpAlerts(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__TCP_EXP_OPT;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__TCP_EXP_OPT;
 }
 
 static inline int ScDecoderTcpOptExpDrops(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__TCP_EXP_OPT;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__TCP_EXP_OPT;
 }
 
 static inline int ScDecoderTcpOptObsAlerts(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__TCP_OBS_OPT;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__TCP_OBS_OPT;
 }
 
 static inline int ScDecoderTcpOptObsDrops(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__TCP_OBS_OPT;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__TCP_OBS_OPT;
 }
 
 static inline int ScDecoderTcpOptTTcpAlerts(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__TCP_TTCP_OPT;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__TCP_TTCP_OPT;
 }
 
 static inline int ScDecoderTcpOptTTcpDrops(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__TCP_TTCP_OPT;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__TCP_TTCP_OPT;
 }
 
 static inline int ScDecoderIpOptAlerts(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__IP_OPT_ANOMALY;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_alert_flags & DECODE_EVENT_FLAG__IP_OPT_ANOMALY;
 }
 
 static inline int ScDecoderIpOptDrops(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__IP_OPT_ANOMALY;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->decoder_drop_flags & DECODE_EVENT_FLAG__IP_OPT_ANOMALY;
 }
 
 static inline int ScIpChecksums(void)
@@ -1271,7 +1332,7 @@ static inline int ScIpChecksums(void)
 
 static inline int ScIpChecksumDrops(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->checksum_drop_flags & CHECKSUM_FLAG__IP;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->checksum_drop_flags & CHECKSUM_FLAG__IP;
 }
 
 static inline int ScUdpChecksums(void)
@@ -1281,7 +1342,7 @@ static inline int ScUdpChecksums(void)
 
 static inline int ScUdpChecksumDrops(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->checksum_drop_flags & CHECKSUM_FLAG__UDP;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->checksum_drop_flags & CHECKSUM_FLAG__UDP;
 }
 
 static inline int ScTcpChecksums(void)
@@ -1291,7 +1352,7 @@ static inline int ScTcpChecksums(void)
 
 static inline int ScTcpChecksumDrops(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->checksum_drop_flags & CHECKSUM_FLAG__TCP;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->checksum_drop_flags & CHECKSUM_FLAG__TCP;
 }
 
 static inline int ScIcmpChecksums(void)
@@ -1301,7 +1362,7 @@ static inline int ScIcmpChecksums(void)
 
 static inline int ScIcmpChecksumDrops(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->checksum_drop_flags & CHECKSUM_FLAG__ICMP;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->checksum_drop_flags & CHECKSUM_FLAG__ICMP;
 }
 
 static inline int ScIgnoreTcpPort(uint16_t port)
@@ -1349,13 +1410,13 @@ static inline uint32_t ScIpv6MaxFragSessions(void)
 
 static inline uint8_t ScMinTTL(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->min_ttl;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->min_ttl;
 }
 
 #ifdef NORMALIZER
 static inline uint8_t ScNewTTL(void)
 {
-    return snort_conf->targeted_policies[getRuntimePolicy()]->new_ttl;
+    return snort_conf->targeted_policies[getNapRuntimePolicy()]->new_ttl;
 }
 #endif
 
@@ -1419,7 +1480,7 @@ static inline int ScStaticHash(void)
 
 static inline int ScAutoGenPreprocDecoderOtns(void)
 {
-    return (((snort_conf->targeted_policies[getRuntimePolicy()])->policy_flags) & POLICY_FLAG__AUTO_OTN );
+    return (((snort_conf->targeted_policies[getNapRuntimePolicy()])->policy_flags) & POLICY_FLAG__AUTO_OTN );
 }
 
 static inline int ScProcessAllEvents(void)
@@ -1427,9 +1488,29 @@ static inline int ScProcessAllEvents(void)
     return snort_conf->event_queue_config->process_all_events;
 }
 
-static inline int ScInlineMode(void)
+static inline int ScNapPassiveMode(void)
 {
-    return (((snort_conf->targeted_policies[getRuntimePolicy()])->policy_mode) == POLICY_MODE__INLINE );
+    return (((snort_conf->targeted_policies[getNapRuntimePolicy()])->nap_policy_mode) == POLICY_MODE__PASSIVE );
+}
+
+static inline int ScIpsPassiveMode(void)
+{
+    return (((snort_conf->targeted_policies[getIpsRuntimePolicy()])->ips_policy_mode) == POLICY_MODE__PASSIVE );
+}
+
+static inline int ScAdapterPassiveMode(void)
+{
+    return !(snort_conf->run_flags & (RUN_FLAG__INLINE | RUN_FLAG__INLINE_TEST));
+}
+
+static inline int ScNapInlineMode(void)
+{
+    return (((snort_conf->targeted_policies[getNapRuntimePolicy()])->nap_policy_mode) == POLICY_MODE__INLINE );
+}
+
+static inline int ScIpsInlineMode(void)
+{
+    return (((snort_conf->targeted_policies[getIpsRuntimePolicy()])->ips_policy_mode) == POLICY_MODE__INLINE );
 }
 
 static inline int ScAdapterInlineMode(void)
@@ -1437,9 +1518,14 @@ static inline int ScAdapterInlineMode(void)
    return snort_conf->run_flags & RUN_FLAG__INLINE;
 }
 
-static inline int ScInlineTestMode(void)
+static inline int ScNapInlineTestMode(void)
 {
-    return (((snort_conf->targeted_policies[getRuntimePolicy()])->policy_mode) == POLICY_MODE__INLINE_TEST );
+    return (((snort_conf->targeted_policies[getNapRuntimePolicy()])->nap_policy_mode) == POLICY_MODE__INLINE_TEST );
+}
+
+static inline int ScIpsInlineTestMode(void)
+{
+    return (((snort_conf->targeted_policies[getIpsRuntimePolicy()])->ips_policy_mode) == POLICY_MODE__INLINE_TEST );
 }
 
 static inline int ScAdapterInlineTestMode(void)
@@ -1721,6 +1807,16 @@ static inline uint32_t ScSoRuleMemcap(void)
 static inline bool ScTunnelBypassEnabled (uint8_t proto)
 {
     return !(snort_conf->tunnel_mask & proto);
+}
+
+static inline uint8_t ScMaxIP6Extensions(void)
+{
+    return snort_conf->max_ip6_extensions;
+}
+
+static inline int ScSuppressConfigLog(void)
+{
+    return snort_conf->suppress_config_log;
 }
 
 #endif  /* __SNORT_H__ */

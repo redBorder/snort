@@ -32,6 +32,7 @@
 
 #include "sfdaq.h"
 #include "snort.h"
+#include "decode.h"
 #include "util.h"
 #include "sfutil/strvec.h"
 #include "sfcontrol_funcs.h"
@@ -629,3 +630,46 @@ int DAQ_ModifyFlow(const void* h, uint32_t id)
     return -1;
 #endif
 }
+#ifdef HAVE_DAQ_DP_ADD_DC
+/*
+ * Initialize key for dynamic channel and call daq api method to notify firmware
+ * of the expected dynamic channel. 
+ */
+void DAQ_Add_Dynamic_Protocol_Channel(const Packet *ctrlPkt, snort_ip_p cliIP, uint16_t cliPort,
+                                    snort_ip_p srvIP, uint16_t srvPort, uint8_t protocol )
+{
+
+    DAQ_DP_key_t dp_key;
+
+    dp_key.af = cliIP->family;
+    if( dp_key.af == AF_INET )
+    {
+        memcpy( &dp_key.sa.src_ip4, &cliIP->ip32[0], 4 );
+        memcpy( &dp_key.da.dst_ip4, &srvIP->ip32[0], 4 );
+    }
+    else
+    {
+        memcpy( &dp_key.sa.src_ip6, &cliIP->ip32[0], sizeof( u_int32_t ) * 4 );
+        memcpy( &dp_key.da.dst_ip6, &srvIP->ip32[0], sizeof( u_int32_t ) * 4 );
+    }
+
+    dp_key.protocol = protocol;
+    dp_key.src_port = cliPort;
+    dp_key.dst_port = srvPort;
+    dp_key.vlan_cnots = 1;
+    if( ctrlPkt->vh )
+        dp_key.vlan_id = VTH_VLAN( ctrlPkt->vh );
+    else
+        dp_key.vlan_id = 0xFFFF;
+
+    if( ctrlPkt->GTPencapsulated )
+        dp_key.tunnel_type = DAQ_DP_TUNNEL_TYPE_GTP_TUNNEL;
+    else if ( ctrlPkt->encapsulated )
+        dp_key.tunnel_type = DAQ_DP_TUNNEL_TYPE_OTHER_TUNNEL;
+    else
+        dp_key.tunnel_type = DAQ_DP_TUNNEL_TYPE_NON_TUNNEL;
+
+    // notify the firmware to add expected flow for this dynamic channel
+    daq_dp_add_dc( daq_mod, daq_hand, ctrlPkt->pkth, &dp_key, ctrlPkt->pkt );
+}
+#endif

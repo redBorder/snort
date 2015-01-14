@@ -63,7 +63,7 @@ typedef struct _DNSConfig
     uint8_t  autodetect;
 #endif
     uint16_t enabled_alerts;
-    char      ports[MAX_PORTS/8];
+    uint8_t  ports[MAX_PORTS/8];
 
 } DNSConfig;
 

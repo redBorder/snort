@@ -115,16 +115,19 @@ am__uninstall_files_from_dir = { \
     || { echo " ( cd '$$dir' && rm -f" $$files ")"; \
          $(am__cd) "$$dir" && rm -f $$files; }; \
   }
-am__installdirs = "$(DESTDIR)$(libdir)"
-LTLIBRARIES = $(lib_LTLIBRARIES)
+am__installdirs = "$(DESTDIR)$(dynamicenginedir)"
+LTLIBRARIES = $(dynamicengine_LTLIBRARIES)
 libsf_engine_la_LIBADD =
 am_libsf_engine_la_OBJECTS = bmh.lo sf_snort_detection_engine.lo \
 	sf_snort_plugin_api.lo sf_snort_plugin_byte.lo \
 	sf_snort_plugin_content.lo sf_snort_plugin_hdropts.lo \
 	sf_snort_plugin_loop.lo sf_snort_plugin_pcre.lo \
 	sf_snort_plugin_rc4.lo sf_decompression.lo
+@BUILD_OPENSSL_MD5_TRUE@am__objects_1 = md5.lo
+@BUILD_OPENSSL_SHA_TRUE@am__objects_2 = sha2.lo
 nodist_libsf_engine_la_OBJECTS = sfhashfcn.lo sfghash.lo \
-	sfprimetable.lo sf_ip.lo
+	sfprimetable.lo sf_ip.lo sf_sechash.lo $(am__objects_1) \
+	$(am__objects_2)
 libsf_engine_la_OBJECTS = $(am_libsf_engine_la_OBJECTS) \
 	$(nodist_libsf_engine_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -281,6 +284,8 @@ LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
+LUA_CFLAGS = @LUA_CFLAGS@
+LUA_LIBS = @LUA_LIBS@
 MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
@@ -303,8 +308,6 @@ PKG_CONFIG = @PKG_CONFIG@
 PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
 PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
-RAZORBACK_CFLAGS = @RAZORBACK_CFLAGS@
-RAZORBACK_LIBS = @RAZORBACK_LIBS@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
@@ -350,10 +353,12 @@ htmldir = @htmldir@
 includedir = @includedir@
 infodir = @infodir@
 install_sh = @install_sh@
-libdir = ${exec_prefix}/lib/snort_dynamicengine
+libdir = @libdir@
 libexecdir = @libexecdir@
 localedir = @localedir@
 localstatedir = @localstatedir@
+luajit_CFLAGS = @luajit_CFLAGS@
+luajit_LIBS = @luajit_LIBS@
 mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
@@ -370,8 +375,15 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign no-dependencies
-lib_LTLIBRARIES = libsf_engine.la
+dynamicengine_LTLIBRARIES = libsf_engine.la
+dynamicenginedir = $(libdir)/snort_dynamicengine
 libsf_engine_la_LDFLAGS = -export-dynamic -module @XCCFLAGS@
+@BUILD_OPENSSL_MD5_TRUE@OPENSSL_MD5 = \
+@BUILD_OPENSSL_MD5_TRUE@    md5.c md5.h 
+
+@BUILD_OPENSSL_SHA_TRUE@OPENSSL_SHA = \
+@BUILD_OPENSSL_SHA_TRUE@    sha2.c sha2.h
+
 BUILT_SOURCES = \
 sfhashfcn.c \
 sfhashfcn.h \
@@ -385,7 +397,11 @@ sf_ip.h \
 sf_iph.h \
 snort_debug.h \
 sf_types.h \
-sf_protocols.h 
+sf_protocols.h \
+sf_sechash.h \
+sf_sechash.c \
+$(OPENSSL_MD5) \
+$(OPENSSL_SHA)
 
 nodist_libsf_engine_la_SOURCES = \
 sfhashfcn.c \
@@ -400,7 +416,11 @@ sf_ip.h \
 sf_iph.h \
 snort_debug.h \
 sf_types.h \
-sf_protocols.h 
+sf_protocols.h \
+sf_sechash.h \
+sf_sechash.c \
+$(OPENSSL_MD5) \
+$(OPENSSL_SHA)
 
 libsf_engine_la_SOURCES = \
 bmh.c \
@@ -533,33 +553,33 @@ $(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
 
-install-libLTLIBRARIES: $(lib_LTLIBRARIES)
+install-dynamicengineLTLIBRARIES: $(dynamicengine_LTLIBRARIES)
 	@$(NORMAL_INSTALL)
-	@list='$(lib_LTLIBRARIES)'; test -n "$(libdir)" || list=; \
+	@list='$(dynamicengine_LTLIBRARIES)'; test -n "$(dynamicenginedir)" || list=; \
 	list2=; for p in $$list; do \
 	  if test -f $$p; then \
 	    list2="$$list2 $$p"; \
 	  else :; fi; \
 	done; \
 	test -z "$$list2" || { \
-	  echo " $(MKDIR_P) '$(DESTDIR)$(libdir)'"; \
-	  $(MKDIR_P) "$(DESTDIR)$(libdir)" || exit 1; \
-	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$list2 '$(DESTDIR)$(libdir)'"; \
-	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$list2 "$(DESTDIR)$(libdir)"; \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(dynamicenginedir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(dynamicenginedir)" || exit 1; \
+	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$list2 '$(DESTDIR)$(dynamicenginedir)'"; \
+	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$list2 "$(DESTDIR)$(dynamicenginedir)"; \
 	}
 
-uninstall-libLTLIBRARIES:
+uninstall-dynamicengineLTLIBRARIES:
 	@$(NORMAL_UNINSTALL)
-	@list='$(lib_LTLIBRARIES)'; test -n "$(libdir)" || list=; \
+	@list='$(dynamicengine_LTLIBRARIES)'; test -n "$(dynamicenginedir)" || list=; \
 	for p in $$list; do \
 	  $(am__strip_dir) \
-	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f '$(DESTDIR)$(libdir)/$$f'"; \
-	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f "$(DESTDIR)$(libdir)/$$f"; \
+	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f '$(DESTDIR)$(dynamicenginedir)/$$f'"; \
+	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f "$(DESTDIR)$(dynamicenginedir)/$$f"; \
 	done
 
-clean-libLTLIBRARIES:
-	-test -z "$(lib_LTLIBRARIES)" || rm -f $(lib_LTLIBRARIES)
-	@list='$(lib_LTLIBRARIES)'; \
+clean-dynamicengineLTLIBRARIES:
+	-test -z "$(dynamicengine_LTLIBRARIES)" || rm -f $(dynamicengine_LTLIBRARIES)
+	@list='$(dynamicengine_LTLIBRARIES)'; \
 	locs=`for p in $$list; do echo $$p; done | \
 	      sed 's|^[^/]*$$|.|; s|/[^/]*$$||; s|$$|/so_locations|' | \
 	      sort -u`; \
@@ -569,7 +589,7 @@ clean-libLTLIBRARIES:
 	}
 
 libsf_engine.la: $(libsf_engine_la_OBJECTS) $(libsf_engine_la_DEPENDENCIES) $(EXTRA_libsf_engine_la_DEPENDENCIES) 
-	$(AM_V_CCLD)$(libsf_engine_la_LINK) -rpath $(libdir) $(libsf_engine_la_OBJECTS) $(libsf_engine_la_LIBADD) $(LIBS)
+	$(AM_V_CCLD)$(libsf_engine_la_LINK) -rpath $(dynamicenginedir) $(libsf_engine_la_OBJECTS) $(libsf_engine_la_LIBADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -752,7 +772,7 @@ check: $(BUILT_SOURCES)
 all-am: Makefile $(LTLIBRARIES)
 installdirs: installdirs-recursive
 installdirs-am:
-	for dir in "$(DESTDIR)$(libdir)"; do \
+	for dir in "$(DESTDIR)$(dynamicenginedir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: $(BUILT_SOURCES)
@@ -789,8 +809,8 @@ maintainer-clean-generic:
 	-test -z "$(BUILT_SOURCES)" || rm -f $(BUILT_SOURCES)
 clean: clean-recursive
 
-clean-am: clean-generic clean-libLTLIBRARIES clean-libtool clean-local \
-	mostlyclean-am
+clean-am: clean-dynamicengineLTLIBRARIES clean-generic clean-libtool \
+	clean-local mostlyclean-am
 
 distclean: distclean-recursive
 	-rm -f Makefile
@@ -809,13 +829,13 @@ info: info-recursive
 
 info-am:
 
-install-data-am:
+install-data-am: install-dynamicengineLTLIBRARIES
 
 install-dvi: install-dvi-recursive
 
 install-dvi-am:
 
-install-exec-am: install-libLTLIBRARIES
+install-exec-am:
 
 install-html: install-html-recursive
 
@@ -854,26 +874,27 @@ ps: ps-recursive
 
 ps-am:
 
-uninstall-am: uninstall-libLTLIBRARIES
+uninstall-am: uninstall-dynamicengineLTLIBRARIES
 
 .MAKE: $(am__recursive_targets) all check install install-am \
 	install-strip
 
 .PHONY: $(am__recursive_targets) CTAGS GTAGS TAGS all all-am check \
-	check-am clean clean-generic clean-libLTLIBRARIES \
+	check-am clean clean-dynamicengineLTLIBRARIES clean-generic \
 	clean-libtool clean-local cscopelist-am ctags ctags-am \
 	distclean distclean-compile distclean-generic \
 	distclean-libtool distclean-tags distdir dvi dvi-am html \
 	html-am info info-am install install-am install-data \
-	install-data-am install-dvi install-dvi-am install-exec \
-	install-exec-am install-html install-html-am install-info \
-	install-info-am install-libLTLIBRARIES install-man install-pdf \
-	install-pdf-am install-ps install-ps-am install-strip \
-	installcheck installcheck-am installdirs installdirs-am \
-	maintainer-clean maintainer-clean-generic mostlyclean \
-	mostlyclean-compile mostlyclean-generic mostlyclean-libtool \
-	pdf pdf-am ps ps-am tags tags-am uninstall uninstall-am \
-	uninstall-libLTLIBRARIES
+	install-data-am install-dvi install-dvi-am \
+	install-dynamicengineLTLIBRARIES install-exec install-exec-am \
+	install-html install-html-am install-info install-info-am \
+	install-man install-pdf install-pdf-am install-ps \
+	install-ps-am install-strip installcheck installcheck-am \
+	installdirs installdirs-am maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-compile \
+	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
+	tags tags-am uninstall uninstall-am \
+	uninstall-dynamicengineLTLIBRARIES
 
 
 ipv6_port.h: ../../ipv6_port.h
@@ -915,8 +936,26 @@ sf_types.h: ../../sf_types.h
 sf_protocols.h: ../../sf_protocols.h
 	@src_file=$?; dst_file=$@; $(copy_files)
 
+sf_sechash.h: ../../sfutil/sf_sechash.h
+	@src_file=$?; dst_file=$@; $(copy_files)
+
+sf_sechash.c: ../../sfutil/sf_sechash.c
+	@src_file=$?; dst_file=$@; $(copy_files)
+
+md5.h: ../../sfutil/md5.h
+	@src_file=$?; dst_file=$@; $(copy_files)
+
+md5.c: ../../sfutil/md5.c
+	@src_file=$?; dst_file=$@; $(copy_files)
+
+sha2.h: ../../sfutil/sha2.h
+	@src_file=$?; dst_file=$@; $(copy_files)
+
+sha2.c: ../../sfutil/sha2.c
+	@src_file=$?; dst_file=$@; $(copy_files)
+
 clean-local:
-	rm -rf sfhashfcn.c sfhashfcn.c.new sfghash.c sfprimetable.c sf_ip.c sf_ip.h sf_iph.h ipv6_port.h snort_debug.h snort_debug.h.new sfprimetable.h sfghash.h ipv6_port.h.new sfhashfcn.h sf_types.h sf_protocols.h
+	rm -rf sfhashfcn.c sfhashfcn.c.new sfghash.c sfprimetable.c sf_ip.c sf_ip.h sf_iph.h ipv6_port.h snort_debug.h snort_debug.h.new sfprimetable.h sfghash.h ipv6_port.h.new sfhashfcn.h sf_types.h sf_protocols.h sf_sechash.h sf_sechash.c md5.h md5.c sha2.h sha2.c
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

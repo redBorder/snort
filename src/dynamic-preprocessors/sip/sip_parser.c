@@ -67,6 +67,8 @@ static int sip_parse_via(SIPMsg *, const char *, const char *);
 static int sip_parse_from(SIPMsg *, const char *, const char *);
 static int sip_parse_to(SIPMsg *, const char *, const char *);
 static int sip_parse_call_id(SIPMsg *, const char *, const char *);
+static int sip_parse_user_agent(SIPMsg *, const char *, const char *);
+static int sip_parse_server(SIPMsg *, const char *, const char *);
 static int sip_parse_cseq(SIPMsg *, const char *, const char *);
 static int sip_parse_contact(SIPMsg *, const char *, const char *);
 static int sip_parse_authorization(SIPMsg *, const char *, const char *);
@@ -119,6 +121,8 @@ SIPheaderField headerFields[] =
 		{"Content-Type", 12, "c",  &sip_parse_content_type},
 		{"Content-Length", 14, "l",  &sip_parse_content_len},
 		{"Content-Encoding", 16, "e", &sip_parse_content_encode},
+		{"User-Agent", 10, NULL, &sip_parse_user_agent},
+		{"Server", 6, NULL, &sip_parse_server},
 		{NULL, 0, NULL, NULL}
 };
 
@@ -696,6 +700,8 @@ static int sip_parse_from(SIPMsg *msg, const char *start, const char *end)
 {
 	DEBUG_WRAP(int length = end -start;)
 	char *buff;
+    char *userEnd;
+    char *userStart;
 
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "From value: %.*s\n", length, start););
 	msg->from = (char *)start;
@@ -720,6 +726,21 @@ static int sip_parse_from(SIPMsg *msg, const char *start, const char *end)
 		}
 		buff = memchr(buff + 1, ';', msg->fromLen);
 	}
+
+	userStart = memchr(msg->from, ':', msg->fromLen);
+	userEnd = memchr(msg->from, '>', msg->fromLen);
+    if (userStart && userEnd && (userEnd > userStart))
+    {
+        /*strndup here */
+	    msg->userName = userStart+1;
+	    msg->userNameLen = userEnd - userStart - 1;
+
+    }
+    else
+    {
+	    msg->userName = NULL;
+	    msg->userNameLen = 0;
+    }
 
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "From tag length: %d , hash: %u, content: %.*s\n",
 			msg->fromTagLen, msg->dlgID.fromTagHash, msg->fromTagLen, msg->from_tag););
@@ -797,6 +818,53 @@ static int sip_parse_call_id(SIPMsg *msg, const char *start, const char *end)
 	msg->dlgID.callIdHash =  strToHash(msg->call_id, msg->callIdLen);
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Call-Id length: %d, Hash: %u\n",
         msg->callIdLen, msg->dlgID.callIdHash););
+
+	return SIP_PARSE_SUCCESS;
+}
+
+/********************************************************************
+ * Function: sip_parse_user_agent()
+ *
+ * Parse the user_agent field
+ *
+ * Arguments:
+ *  SIPMsg *    - sip message
+ *  char* start  - start of the field line
+ *  char* end   - end of the line
+ * Returns:
+ *  SIP_PARSE_ERROR
+ *  SIP_PARSE_SUCCESS
+ ********************************************************************/
+static int sip_parse_user_agent(SIPMsg *msg, const char *start, const char *end)
+{
+	DEBUG_WRAP(int length = end -start;)
+	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "User-Agent value: %.*s\n", length, start););
+
+	msg->userAgent = (char *)start;
+	msg->userAgentLen = end - start;
+
+	return SIP_PARSE_SUCCESS;
+}
+/********************************************************************
+ * Function: sip_parse_server()
+ *
+ * Parse the server field
+ *
+ * Arguments:
+ *  SIPMsg *    - sip message
+ *  char* start  - start of the field line
+ *  char* end   - end of the line
+ * Returns:
+ *  SIP_PARSE_ERROR
+ *  SIP_PARSE_SUCCESS
+ ********************************************************************/
+static int sip_parse_server(SIPMsg *msg, const char *start, const char *end)
+{
+	DEBUG_WRAP(int length = end -start;)
+	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Server value: %.*s\n", length, start););
+
+	msg->server = (char *)start;
+	msg->serverLen = end - start;
 
 	return SIP_PARSE_SUCCESS;
 }
@@ -998,6 +1066,7 @@ static int sip_parse_sdp_o(SIPMsg *msg, const char *start, const char *end)
 {
 	int length;
 	char *spaceIndex = NULL;
+	char *spaceIndex2 = NULL;
 
 	if (NULL == msg->mediaSession)
 		return SIP_PARSE_ERROR;
@@ -1010,8 +1079,15 @@ static int sip_parse_sdp_o(SIPMsg *msg, const char *start, const char *end)
 	spaceIndex = memchr(spaceIndex + 1, ' ', end - spaceIndex -1 ); // second space
 	if (NULL == spaceIndex)
 		return SIP_PARSE_ERROR;
+	spaceIndex2 = memchr(spaceIndex + 1, ' ', end - spaceIndex -1 ); // third space
+	if (NULL == spaceIndex2)
+		return SIP_PARSE_ERROR;
+
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Session information: %.*s\n", spaceIndex - start, start););
+    //sessionId uses all elements from o: line except sessionId version
 	msg->mediaSession->sessionID =  strToHash(start, spaceIndex - start);
+	msg->mediaSession->sessionID +=  strToHash(spaceIndex2+1, end - (spaceIndex2+1));
+
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Session ID: %u\n", msg->mediaSession->sessionID););
 	return SIP_PARSE_SUCCESS;
 }

@@ -2,7 +2,7 @@
  ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 1998-2013 Sourcefire, Inc.
  **
- ** Writen by Bhagyashree Bantwal <bbantwal@sourcefire.com>
+ ** Writen by Bhagyashree Bantwal <bbantwal@cisco.com>
  **
  ** This program is free software; you can redistribute it and/or modify
  ** it under the terms of the GNU General Public License Version 2 as
@@ -92,6 +92,12 @@ typedef struct s_Email_DecodeState
     BitEnc_DecodeState bitenc_state;
 
 } Email_DecodeState;
+typedef struct _MimeStats
+{
+    uint64_t memcap_exceeded;
+    uint64_t attachments[DECODE_ALL];
+    uint64_t decoded_bytes[DECODE_ALL];
+} MimeStats;
 
 // end :: start + length
 int EmailDecode(const uint8_t *start, const uint8_t *end, Email_DecodeState *);

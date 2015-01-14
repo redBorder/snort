@@ -125,6 +125,9 @@ typedef struct _SigInfo
     char          *os;
 #endif
 #endif
+#if defined(FEAT_OPEN_APPID)
+    unsigned int num_appid;
+#endif /* defined(FEAT_OPEN_APPID) */
 } SigInfo;
 
 SFGHASH * SoRuleOtnLookupNew(void);

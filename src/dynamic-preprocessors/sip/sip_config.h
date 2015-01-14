@@ -30,31 +30,9 @@
 #include "sfPolicyUserData.h"
 #include "snort_bounds.h"
 #include "sip_debug.h"
+#include "sip_common.h"
 
 #define SIP_NAME  "sip"
-
-
-typedef enum _SIP_method
-{
-	SIP_METHOD_NULL        = 0, //0x0000,
-	SIP_METHOD_INVITE      = 1, //0x0001,
-	SIP_METHOD_CANCEL      = 2, //0x0002,
-	SIP_METHOD_ACK         = 3, //0x0004,
-	SIP_METHOD_BYE         = 4, //0x0008,
-	SIP_METHOD_REGISTER    = 5, //0x0010,
-	SIP_METHOD_OPTIONS     = 6, //0x0020,
-	SIP_METHOD_REFER       = 7, //0x0040,
-	SIP_METHOD_SUBSCRIBE   = 8, //0x0080,
-	SIP_METHOD_UPDATE      = 9, //0x0100,
-	SIP_METHOD_JOIN        = 10,//0x0200,
-	SIP_METHOD_INFO        = 11,//0x0400,
-	SIP_METHOD_MESSAGE     = 12,//0x0800,
-	SIP_METHOD_NOTIFY      = 13,//0x1000,
-	SIP_METHOD_PRACK       = 14,//0x2000,
-	SIP_METHOD_USER_DEFINE = 15,//0x4000,
-	SIP_METHOD_USER_DEFINE_MAX = 32//0x80000000,
-
-} SIPMethodsFlag;
 
 #define SIP_METHOD_DEFAULT     0x003f
 #define SIP_METHOD_ALL     0xffffffff

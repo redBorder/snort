@@ -34,6 +34,7 @@
 #endif
 
 #include "sf_types.h"
+#include "file_mail_common.h"
 #include "file_mime_config.h"
 #include "file_api.h"
 #include "sf_email_attach_decode.h"
@@ -47,11 +48,13 @@
 #define CONF_BITENC_DECODE               "bitenc_decode_depth"
 #define CONF_UU_DECODE                   "uu_decode_depth"
 
+extern char *file_name;
+extern int file_line;
 
 /*These are temporary values*/
 #define DEFAULT_MAX_MIME_MEM          838860
 #define DEFAULT_MIME_MEMCAP           838860
-#define DEFAULT_DEPTH                 1464
+#define DEFAULT_DEPTH                 1460
 #define MAX_LOG_MEMCAP                104857600
 #define MIN_LOG_MEMCAP                3276
 #define MAX_MIME_MEM                  104857600
@@ -68,6 +71,7 @@ static int ProcessDecodeDepth(DecodeConfig *config, char *ErrorString, int ErrSt
     char *endptr;
     char *value;
     int decode_depth = 0;
+    int neg = 0, pos = 0;
     if (config == NULL)
     {
         snprintf(ErrorString, ErrStrLen, "%s config is NULL.\n", preproc_name);
@@ -81,6 +85,11 @@ static int ProcessDecodeDepth(DecodeConfig *config, char *ErrorString, int ErrSt
                 "Invalid format for %s config option '%s'.", preproc_name, decode_type);
         return -1;
     }
+
+    while (isspace(*value))
+        value++;
+    neg = (*value == '-');
+    pos = (*value == '+');
     decode_depth = strtol(value, &endptr, 10);
 
     if(*endptr)
@@ -94,6 +103,14 @@ static int ProcessDecodeDepth(DecodeConfig *config, char *ErrorString, int ErrSt
         snprintf(ErrorString, ErrStrLen,
                 "Invalid value for %s config option '%s'."
                 "It should range between %d and %d.",
+                preproc_name, decode_type, MIN_DEPTH, MAX_DEPTH);
+        return -1;
+    }
+    if(!decode_depth && (pos || neg))
+    {
+        snprintf(ErrorString, ErrStrLen,
+                "-0 and +0 are invalid values for %s config option '%s'. "
+                "Use 0 for unlimited or a signed integer between %d and %d\n", 
                 preproc_name, decode_type, MIN_DEPTH, MAX_DEPTH);
         return -1;
     }
@@ -133,7 +150,7 @@ static int ProcessDecodeDepth(DecodeConfig *config, char *ErrorString, int ErrSt
 
 void set_mime_decode_config_defauts(DecodeConfig *decode_conf)
 {
-    decode_conf->max_mime_mem = DEFAULT_MIME_MEMCAP;
+    decode_conf->max_mime_mem = DEFAULT_MAX_MIME_MEM;
     decode_conf->b64_depth = DEFAULT_DEPTH;
     decode_conf->qp_depth = DEFAULT_DEPTH;
     decode_conf->uu_depth = DEFAULT_DEPTH;
@@ -154,8 +171,8 @@ void set_mime_log_config_defauts(MAIL_LogConfig *log_config)
 bool is_decoding_enabled(DecodeConfig *decode_conf)
 {
     if( (decode_conf->b64_depth > -1) || (decode_conf->qp_depth > -1)
-     || (decode_conf->uu_depth > -1) || (decode_conf->bitenc_depth > -1)
-     || (decode_conf->file_depth > -1))
+            || (decode_conf->uu_depth > -1) || (decode_conf->bitenc_depth > -1)
+            || (decode_conf->file_depth > -1))
     {
         return true;
     }
@@ -284,5 +301,140 @@ int parse_mime_decode_args(DecodeConfig *decode_conf, char *arg, const char *pre
     }
 
     return ret;
+}
+
+bool check_decode_config(DecodeConfig *currentConfig, DecodeConfig *defaultConfig, const char *preproc_name)
+{
+    int max = -1;
+
+    if (currentConfig == defaultConfig)
+    {
+        if (!currentConfig->max_mime_mem)
+            currentConfig->max_mime_mem = DEFAULT_MAX_MIME_MEM;
+
+        if(!currentConfig->b64_depth || !currentConfig->qp_depth
+                || !currentConfig->uu_depth || !currentConfig->bitenc_depth)
+        {
+            currentConfig->max_depth = MAX_DEPTH;
+            return false;
+        }
+        else
+        {
+            if(max < currentConfig->b64_depth)
+                max = currentConfig->b64_depth;
+
+            if(max < currentConfig->qp_depth)
+                max = currentConfig->qp_depth;
+
+            if(max < currentConfig->bitenc_depth)
+                max = currentConfig->bitenc_depth;
+
+            if(max < currentConfig->uu_depth)
+                max = currentConfig->uu_depth;
+
+            currentConfig->max_depth = max;
+        }
+
+    }
+    else if (defaultConfig == NULL)
+    {
+        if (currentConfig->max_mime_mem)
+        {
+            FatalError("%s(%d) => %s: max_mime_mem must be "
+                    "configured in the default config.\n",
+                    file_name, file_line, preproc_name);
+        }
+
+        if (currentConfig->b64_depth > -1)
+        {
+            FatalError("%s(%d) => %s: b64_decode_depth must be "
+                    "configured in the default config.\n",
+                    file_name, file_line, preproc_name);
+        }
+
+        if (currentConfig->qp_depth > -1)
+        {
+            FatalError("%s(%d) => %s: qp_decode_depth must be "
+                    "configured in the default config.\n",
+                    file_name, file_line, preproc_name);
+        }
+
+        if (currentConfig->uu_depth > -1)
+        {
+            FatalError("%s(%d) => %s: uu_decode_depth must be "
+                    "configured in the default config.\n",
+                    file_name, file_line, preproc_name);
+        }
+
+        if (currentConfig->bitenc_depth > -1)
+        {
+            FatalError("%s(%d) => %s: bitenc_decode_depth must be "
+                    "configured in the default config.\n",
+                    file_name, file_line, preproc_name);
+        }
+    }
+    else
+    {
+        currentConfig->max_mime_mem = defaultConfig->max_mime_mem;
+        currentConfig->max_depth = defaultConfig->max_depth;
+
+        if(!currentConfig->b64_depth && defaultConfig->b64_depth)
+        {
+            FatalError("%s(%d) => %s: Cannot enable unlimited Base64 decoding"
+                    " in non-default config without turning on unlimited Base64 decoding in the default "
+                    " config.\n",
+                    file_name, file_line, preproc_name);
+        }
+        else if(defaultConfig->b64_depth && (currentConfig->b64_depth > defaultConfig->b64_depth))
+        {
+            FatalError("%s(%d) => %s: b64_decode_depth value %d in non-default config"
+                    " cannot exceed default config's value %d.\n",
+                    file_name, file_line, preproc_name, currentConfig->b64_depth, defaultConfig->b64_depth);
+        }
+
+        if(!currentConfig->qp_depth && defaultConfig->qp_depth)
+        {
+            FatalError("%s(%d) => %s: Cannot enable unlimited Quoted-Printable decoding"
+                    " in non-default config without turning on unlimited Quoted-Printable decoding in the default "
+                    " config.\n",
+                    file_name, file_line, preproc_name);
+        }
+        else if(defaultConfig->qp_depth && (currentConfig->qp_depth > defaultConfig->qp_depth))
+        {
+            FatalError("%s(%d) => %s: qp_decode_depth value %d in non-default config"
+                    " cannot exceed default config's value %d.\n",
+                    file_name, file_line, preproc_name, currentConfig->qp_depth, defaultConfig->qp_depth);
+        }
+
+        if(!currentConfig->uu_depth && defaultConfig->uu_depth )
+        {
+            FatalError("%s(%d) => %s: Cannot enable unlimited Unix-to-Unix decoding"
+                    " in non-default config without turning on unlimited Unix-to-Unix decoding in the default "
+                    " config.\n",
+                    file_name, file_line, preproc_name);
+        }
+        else if(defaultConfig->uu_depth && (currentConfig->uu_depth > defaultConfig->uu_depth))
+        {
+            FatalError("%s(%d) => %s: uu_decode_depth value %d in non-default config"
+                    " cannot exceed default config's value %d.\n",
+                    file_name, file_line, preproc_name, currentConfig->uu_depth, defaultConfig->uu_depth);
+        }
+
+        if(!currentConfig->bitenc_depth && defaultConfig->bitenc_depth)
+        {
+            FatalError("%s(%d) => %s: Cannot enable unlimited Non-Encoded MIME attachment extraction"
+                    " in non-default config without turning on unlimited Non-Encoded MIME attachment extraction in the default "
+                    " config.\n",
+                    file_name, file_line, preproc_name);
+        }
+        else if(defaultConfig->bitenc_depth && (currentConfig->bitenc_depth > defaultConfig->bitenc_depth))
+        {
+            FatalError("%s(%d) => %s: bitenc_decode_depth value %d in non-default config "
+                    " cannot exceed default config's value %d.\n",
+                    file_name, file_line, preproc_name, currentConfig->bitenc_depth, defaultConfig->bitenc_depth);
+        }
+
+    }
+    return true;
 }
 

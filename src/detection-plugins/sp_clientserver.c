@@ -251,7 +251,7 @@ static inline void CheckStream(char *token)
 {
     if (!stream_api)
     {
-        FatalError("%s(%d): Stream5 must be enabled to use the '%s' option.\n",
+        FatalError("%s(%d): Stream must be enabled to use the '%s' option.\n",
             file_name, file_line, token);
     }
 }

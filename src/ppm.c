@@ -357,7 +357,11 @@ void ppm_pkt_log(ppm_cfg_t *ppm_cfg, Packet* p)
                  potn->sigInfo.rev, /* Rev */
                  potn->sigInfo.class_id, /* classification */
                  potn->sigInfo.priority, /* priority (low) */
+#if !defined(FEAT_OPEN_APPID)
                  0);
+#else /* defined(FEAT_OPEN_APPID) */
+                 0, NULL);
+#endif /* defined(FEAT_OPEN_APPID) */
 
         if ( IPH_IS_VALID(p) )
         {
@@ -433,7 +437,7 @@ static inline OptTreeNode * PPMGetOTN(uint32_t sid, char *msg)
     }
     else
     {
-        tSfPolicyId policy_id = getRuntimePolicy();
+        tSfPolicyId policy_id = getIpsRuntimePolicy();
 
         if ((getRtnFromOtn(otn, policy_id) == NULL)
                 && (GenerateSnortEventRtn(otn, policy_id) == NULL))
@@ -473,7 +477,11 @@ void ppm_rule_log(ppm_cfg_t *ppm_cfg, uint64_t pktcnt, Packet *p)
                         otn->sigInfo.rev, /* Rev */
                         otn->sigInfo.class_id, /* classification */
                         otn->sigInfo.priority, /* priority (low) */
+#if !defined(FEAT_OPEN_APPID)
                         0);
+#else /* defined(FEAT_OPEN_APPID) */
+                        0, NULL);
+#endif /* defined(FEAT_OPEN_APPID) */
 
                 otn->sigInfo.message = PPM_EVENT_RULE_TREE_ENABLED_STR;
                 if ( IPH_IS_VALID(p) )
@@ -543,7 +551,11 @@ void ppm_rule_log(ppm_cfg_t *ppm_cfg, uint64_t pktcnt, Packet *p)
                         otn->sigInfo.rev, /* Rev */
                         otn->sigInfo.class_id, /* classification */
                         otn->sigInfo.priority, /* priority (low) */
+#if !defined(FEAT_OPEN_APPID)
                         0);
+#else /* defined(FEAT_OPEN_APPID) */
+                        0, NULL);
+#endif /* defined(FEAT_OPEN_APPID) */
 
                 otn->sigInfo.message = PPM_EVENT_RULE_TREE_DISABLED_STR;
                 if ( IPH_IS_VALID(p) )

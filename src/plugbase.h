@@ -354,6 +354,8 @@ void AddFuncToConfigCheckList(struct _SnortConfig *, PreprocCheckConfigFunc);
 void AddFuncToPreprocPostConfigList(struct _SnortConfig *, PreprocPostConfigFunc, void *);
 int CheckPreprocessorsConfig(struct _SnortConfig *);
 PreprocEvalFuncNode * AddFuncToPreprocList(struct _SnortConfig *, PreprocEvalFunc, uint16_t, uint32_t, uint32_t);
+void AddFuncToPreprocListAllNapPolicies(struct _SnortConfig *sc, PreprocEvalFunc pp_eval_func, uint16_t priority,
+                                        uint32_t preproc_id, uint32_t proto_mask);
 PreprocMetaEvalFuncNode * AddFuncToPreprocMetaEvalList(struct _SnortConfig *, PreprocMetaEvalFunc, uint16_t, uint32_t);
 void AddFuncToPreprocCleanExitList(PreprocSignalFunc, void *, uint16_t, uint32_t);
 void AddFuncToPreprocShutdownList(PreprocSignalFunc, void *, uint16_t, uint32_t);
@@ -380,34 +382,30 @@ void FreePreprocessorReloadData(struct _SnortConfig *);
 void AddFuncToPeriodicCheckList(PeriodicFunc, void *, uint16_t, uint32_t, uint32_t);
 void FreePeriodicFuncs(PeriodicCheckFuncNode *head);
 
-static inline void DisablePreprocessors(Packet *p)
+static inline void DisableAppPreprocessors( Packet *p )
 {
-    p->preprocessor_bits = PP_ALL_OFF;
+    p->preprocessor_bits &= ( PP_CLASS_NETWORK | PP_CLASS_NGFW );
 }
 
-static inline void EnablePreprocessors(Packet *p)
+static inline void DisableAllPreprocessors( Packet *p )
 {
-    p->preprocessor_bits = PP_ALL_ON;
+   p->preprocessor_bits = PP_DISABLE_ALL;
 }
 
-static inline int IsPreprocBitSet(Packet *p, unsigned int preproc_bit)
-{
-    return (p->preprocessor_bits & preproc_bit);
-}
-
-static inline int SetPreprocBit(Packet *p, unsigned int preproc_id)
+static inline int EnablePreprocessor(Packet *p, unsigned int preproc_id)
 {
     p->preprocessor_bits |= (1 << preproc_id);
     return 0;
 }
 
-static inline int SetAllPreprocBits(Packet *p)
+static inline void EnablePreprocessors(Packet *p, uint32_t enabled_pps)
 {
-    SetPreprocBit(p, PP_SFPORTSCAN);
-    SetPreprocBit(p, PP_PERFMONITOR);
-    SetPreprocBit(p, PP_STREAM5);
-    SetPreprocBit(p, PP_SDF);
-    return 0;
+    p->preprocessor_bits = enabled_pps;
+}
+
+static inline int IsPreprocessorEnabled(Packet *p, unsigned int preproc_bit)
+{
+    return ( p->preprocessor_bits & preproc_bit );
 }
 
 void DisableAllPolicies(struct _SnortConfig *);

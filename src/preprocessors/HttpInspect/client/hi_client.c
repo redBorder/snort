@@ -83,6 +83,14 @@
 #define HEADER_LENGTH__TRANSFER_ENCODING 17
 #define HEADER_NAME__CONTENT_TYPE "Content-Type"
 #define HEADER_LENGTH__CONTENT_TYPE 12
+#if defined(FEAT_OPEN_APPID)
+#define HEADER_NAME__USER_AGENT "User-Agent"
+#define HEADER_LENGTH__USER_AGENT sizeof(HEADER_NAME__USER_AGENT)-1
+#define HEADER_NAME__REFERER "Referer"
+#define HEADER_LENGTH__REFERER sizeof(HEADER_NAME__REFERER)-1
+#define HEADER_NAME__VIA "Via"
+#define HEADER_LENGTH__VIA sizeof(HEADER_NAME__VIA)-1
+#endif /* defined(FEAT_OPEN_APPID) */
 
 const u_char *proxy_start = NULL;
 const u_char *proxy_end = NULL;
@@ -114,6 +122,9 @@ int NextNonWhiteSpace(HI_SESSION *Session, const u_char *start,
         const u_char *end, const u_char **ptr, URI_PTR *uri_ptr);
 extern const u_char *extract_http_transfer_encoding(HI_SESSION *, HttpSessionData *,
         const u_char *, const u_char *, const u_char *, HEADER_PTR *, int);
+#if defined(FEAT_OPEN_APPID)
+extern void CallHttpHeaderProcessors (Packet* p, HttpParsedHeaders *headers);
+#endif /* defined(FEAT_OPEN_APPID) */
 
 char **hi_client_get_field_names() { return( (char **)g_field_names ); }
 
@@ -1548,7 +1559,11 @@ static inline void HTTP_CopyUri(HTTPINSPECT_CONF *ServerConf, const u_char *star
 
     cur_ptr = start;
 
+#if defined(FEAT_OPEN_APPID)
+    if((ServerConf->log_uri || ServerConf->appid_enabled) && !stream_ins && hsd)
+#else
     if(ServerConf->log_uri && !stream_ins && hsd)
+#endif /* defined(FEAT_OPEN_APPID) */
     {
         SkipBlankSpace(start,end,&cur_ptr);
 
@@ -1970,6 +1985,63 @@ const u_char *extract_http_xff(HI_SESSION *Session, const u_char *p, const u_cha
 
 }
 
+#if defined(FEAT_OPEN_APPID)
+static const u_char *extract_http_client_header(HI_SESSION *Session, const u_char *p, const u_char *start,
+        const u_char *end, HEADER_PTR *header_ptr, HEADER_LOCATION *headerLoc)
+{
+    int num_spaces = 0;
+    uint8_t unfold_buf[DECODE_BLEN];
+    uint32_t unfold_size =0;
+    const u_char *start_ptr, *end_ptr, *cur_ptr;
+
+    SkipBlankSpace(start,end,&p);
+
+    if(hi_util_in_bounds(start, end, p) && *p == ':')
+    {
+        p++;
+        if(hi_util_in_bounds(start, end, p))
+            sf_unfold_header(p, end-p, unfold_buf, sizeof(unfold_buf), &unfold_size, 0 , &num_spaces);
+
+        if(!unfold_size)
+        {
+            header_ptr->header.uri_end = end;
+            return end;
+        }
+
+        if(num_spaces >= Session->server_conf->max_spaces)
+        {
+            if(hi_eo_generate_event(Session, Session->server_conf->max_spaces))
+            {
+                hi_eo_client_event_log(Session, HI_EO_CLIENT_EXCEEDS_SPACES, NULL, NULL);
+            }
+        }
+
+        p = p + unfold_size;
+
+        start_ptr = unfold_buf;
+        cur_ptr = unfold_buf;
+        end_ptr = unfold_buf + unfold_size;
+        SkipBlankSpace(start_ptr,end_ptr,&cur_ptr);
+
+        start_ptr = cur_ptr;
+
+        if(end_ptr - start_ptr)
+        {
+            headerLoc->len = end_ptr - start_ptr;
+            headerLoc->start = (u_char *)strndup((const char *)start_ptr, headerLoc->len);
+        }
+    }
+    else
+    {
+        header_ptr->header.uri_end = end;
+        return end;
+    }
+
+    return p;
+
+}
+
+#endif /* defined(FEAT_OPEN_APPID) */
 
 const u_char *extract_http_hostname(HI_SESSION *Session, const u_char *p, const u_char *start,
         const u_char *end, HEADER_PTR *header_ptr, HttpSessionData *hsd)
@@ -2378,6 +2450,41 @@ static inline const u_char *extractHeaderFieldValues(HI_SESSION *Session,
             p = extract_http_transfer_encoding(Session, hsd, p, start, end, hdrs_args->hdr_ptr, HI_SI_CLIENT_MODE);
         }
     }
+#if defined(FEAT_OPEN_APPID)
+    else if(((p - offset) == 0) && ((*p == 'U') || (*p == 'u')))
+    {
+        if ((ServerConf->appid_enabled))
+        {
+            if(IsHeaderFieldName(p, end, HEADER_NAME__USER_AGENT, HEADER_LENGTH__USER_AGENT))
+            {
+                p = p + HEADER_LENGTH__USER_AGENT;
+                p = extract_http_client_header(Session, p, start, end, hdrs_args->hdr_ptr, &hdrs_args->hdr_ptr->userAgent);
+            }
+        }
+    }
+    else if(((p - offset) == 0) && ((*p == 'R') || (*p == 'r')))
+    {
+        if ((ServerConf->appid_enabled))
+        {
+            if(IsHeaderFieldName(p, end, HEADER_NAME__REFERER, HEADER_LENGTH__REFERER))
+            {
+                p = p + HEADER_LENGTH__REFERER;
+                p = extract_http_client_header(Session, p, start, end, hdrs_args->hdr_ptr, &hdrs_args->hdr_ptr->referer);
+            }
+        }
+    }
+    else if(((p - offset) == 0) && ((*p == 'V') || (*p == 'v')))
+    {
+        if ((ServerConf->appid_enabled))
+        {
+            if(IsHeaderFieldName(p, end, HEADER_NAME__VIA, HEADER_LENGTH__VIA))
+            {
+                p = p + HEADER_LENGTH__VIA;
+                p = extract_http_client_header(Session, p, start, end, hdrs_args->hdr_ptr, &hdrs_args->hdr_ptr->via);
+            }
+        }
+    }
+#endif /* defined(FEAT_OPEN_APPID) */
     else if(((p - offset) == 0) && ((*p == 'H') || (*p == 'h')))
     {
         if(IsHeaderFieldName(p, end, HEADER_NAME__HOSTNAME, HEADER_LENGTH__HOSTNAME))
@@ -2394,7 +2501,11 @@ static inline const u_char *extractHeaderFieldValues(HI_SESSION *Session,
             else
             {
                 hdrs_args->hst_name_hdr = 1;
+#if defined(FEAT_OPEN_APPID)
+                if ( hsd && !(hdrs_args->strm_ins) && (ServerConf->log_hostname || ServerConf->appid_enabled))
+#else
                 if ( hsd && !(hdrs_args->strm_ins) && (ServerConf->log_hostname))
+#endif /* defined(FEAT_OPEN_APPID) */
                 {
                     if(!SetLogBuffers(hsd))
                     {
@@ -2945,8 +3056,13 @@ int StatelessInspection(Packet *p, HI_SESSION *Session, HttpSessionData *hsd, in
         hi_eo_client_event_log(Session, HI_EO_CLIENT_LONG_HDR, NULL, NULL);
     }
 
+#if defined(FEAT_OPEN_APPID)
+    if(iRet == URI_END &&
+        (!(ServerConf->uri_only) || ServerConf->appid_enabled))
+#else
     if(iRet == URI_END &&
         !(ServerConf->uri_only))
+#endif /* defined(FEAT_OPEN_APPID) */
     {
         Client->request.method_raw = method_ptr.uri;
         Client->request.method_size = method_ptr.uri_end - method_ptr.uri;
@@ -3060,6 +3176,44 @@ int StatelessInspection(Packet *p, HI_SESSION *Session, HttpSessionData *hsd, in
         }
         ptr = uri_ptr.delimiter;
     }
+#if defined(FEAT_OPEN_APPID)
+    //copy over extracted headers for appId
+    if ((ServerConf->appid_enabled))
+    {
+        HttpParsedHeaders headers;
+        memset(&headers, 0, sizeof(headers));
+        if (hsd->log_state)
+        {
+            if (hsd->log_state->hostname_extracted)
+            {
+                headers.host.start = hsd->log_state->hostname_extracted;
+                headers.host.len = hsd->log_state->hostname_bytes;
+            }
+            if (hsd->log_state->uri_extracted)
+            {
+                headers.url.start =  hsd->log_state->uri_extracted;
+                headers.url.len = hsd->log_state->uri_bytes;
+            }
+        }
+        if (Client->request.method_raw)
+        {
+            headers.method.start = Client->request.method_raw;
+            headers.method.len = Client->request.method_size;
+        }
+
+        headers.userAgent = header_ptr.userAgent; 
+        headers.referer = header_ptr.referer;
+        headers.via = header_ptr.via;
+
+        /*callback into appId with header values extracted. */
+        CallHttpHeaderProcessors(p, &headers);
+
+        free((void *)headers.userAgent.start);
+        free((void *)headers.referer.start);
+        free((void *)headers.via.start);
+    }
+
+#endif /* defined(FEAT_OPEN_APPID) */
 
     /*
      **  Find the next pipeline request, if one is there.  If we don't find
@@ -3130,47 +3284,20 @@ int StatelessInspection(Packet *p, HI_SESSION *Session, HttpSessionData *hsd, in
 
 int hi_client_inspection(Packet *p, void *S, HttpSessionData *hsd, int stream_ins)
 {
-    HTTPINSPECT_GLOBAL_CONF *GlobalConf;
     HI_SESSION *Session;
-
     int iRet;
 
     if(!S || !(p->data) || (p->dsize < 1))
-    {
         return HI_INVALID_ARG;
-    }
 
     Session = (HI_SESSION *)S;
 
     if(!Session->global_conf)
-    {
         return HI_INVALID_ARG;
-    }
 
-    GlobalConf = Session->global_conf;
-
-    /*
-    **  We inspect the HTTP protocol in either stateful mode or
-    **  stateless mode.
-    */
-    if(GlobalConf->inspection_type == HI_UI_CONFIG_STATEFUL)
-    {
-        /*
-        **  This is where we do stateful inspection.
-        */
-        return HI_NONFATAL_ERR;
-    }
-    else
-    {
-        /*
-        **  Otherwise we assume stateless inspection
-        */
-        iRet = StatelessInspection(p, Session, hsd, stream_ins);
-        if (iRet)
-        {
-            return iRet;
-        }
-    }
+    iRet = StatelessInspection(p, Session, hsd, stream_ins);
+    if (iRet)
+        return iRet;
 
     return HI_SUCCESS;
 }
@@ -3193,59 +3320,46 @@ int hi_client_init(HTTPINSPECT_GLOBAL_CONF *GlobalConf)
 {
     int iCtr;
 
-    if(GlobalConf->inspection_type == HI_UI_CONFIG_STATEFUL)
-    {
-        /*
-        **  We don't have to do anything here yet.
-        */
-    }
-    else
-    {
-        memset(lookup_table, 0x00, sizeof(lookup_table));
+    memset(lookup_table, 0x00, sizeof(lookup_table));
 
-        /*
-        **  Set up the non-ASCII register for processing.
-        */
-        for(iCtr = 0x80; iCtr <= 0xff; iCtr++)
-        {
-            lookup_table[iCtr] = SetBinaryNorm;
-        }
-        lookup_table[0x00] = SetBinaryNorm;
+    /*
+    **  Set up the non-ASCII register for processing.
+    */
+    for(iCtr = 0x80; iCtr <= 0xff; iCtr++)
+        lookup_table[iCtr] = SetBinaryNorm;
+    lookup_table[0x00] = SetBinaryNorm;
 
-        lookup_table[' ']  = NextNonWhiteSpace;
-        lookup_table['\r'] = find_rfc_delimiter;
-        lookup_table['\n'] = find_non_rfc_delimiter;
+    lookup_table[' ']  = NextNonWhiteSpace;
+    lookup_table['\r'] = find_rfc_delimiter;
+    lookup_table['\n'] = find_non_rfc_delimiter;
 
-        /*
-        **  ASCII encoding
-        */
-        lookup_table['%']  = SetPercentNorm;
+    /*
+    **  ASCII encoding
+    */
+    lookup_table['%']  = SetPercentNorm;
 
-        /*
-        **  Looking for multiple slashes
-        */
-        lookup_table['/']  = SetSlashNorm;
+    /*
+    **  Looking for multiple slashes
+    */
+    lookup_table['/']  = SetSlashNorm;
 
-        /*
-        **  Looking for backslashs
-        */
-        lookup_table['\\'] = SetBackSlashNorm;
+    /*
+    **  Looking for backslashs
+    */
+    lookup_table['\\'] = SetBackSlashNorm;
 
-        lookup_table['+'] = SetPlusNorm;
+    lookup_table['+'] = SetPlusNorm;
 
+    /*
+    **  Look up parameter field, so we don't alert on long directory
+    **  strings, when the next slash in the parameter field.
+    */
+    lookup_table['?'] = SetParamField;
 
-        /*
-        **  Look up parameter field, so we don't alert on long directory
-        **  strings, when the next slash in the parameter field.
-        */
-        lookup_table['?'] = SetParamField;
-
-        /*
-        **  Look for absolute URI and proxy communication.
-        */
-        lookup_table[':'] = SetProxy;
-
-    }
+    /*
+    **  Look for absolute URI and proxy communication.
+    */
+    lookup_table[':'] = SetProxy;
 
     return HI_SUCCESS;
 }

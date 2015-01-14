@@ -24,7 +24,7 @@
  *
  * imap_config.h
  *
- * Author: Bhagyashree Bantwal <bbantwal@sourcefire.com>
+ * Author: Bhagyashree Bantwal <bbantwal@cisco.com>
  *
  ***************************************************************************/
 
@@ -32,7 +32,7 @@
 #define __IMAP_CONFIG_H__
 
 #include "sfPolicyUserData.h"
-#include "file_api.h"
+#include "file_mail_common.h"
 
 #define CONF_SEPARATORS                  " \t\n\r"
 #define CONF_PORTS                       "ports"
@@ -49,7 +49,6 @@
 /*These are temporary values*/
 #define DEFAULT_MAX_MIME_MEM          838860
 #define DEFAULT_IMAP_MEMCAP           838860
-#define DEFAULT_DEPTH                 1464
 #define MAX_IMAP_MEMCAP               104857600
 #define MIN_IMAP_MEMCAP               3276
 #define MAX_MIME_MEM                  104857600
@@ -85,15 +84,8 @@ typedef struct _IMAPCmdConfig
 
 typedef struct _IMAPConfig
 {
-    char  ports[8192];
-    int  max_mime_mem;
+    uint8_t ports[8192];
     uint32_t  memcap;
-    int max_depth;
-    int b64_depth;
-    int qp_depth;
-    int bitenc_depth;
-    int uu_depth;
-    int64_t file_depth;
     IMAPToken *cmds;
     IMAPSearch *cmd_search;
     void *cmd_search_mpse;
@@ -101,6 +93,7 @@ typedef struct _IMAPConfig
     int disabled;
     MAIL_LogConfig log_config;
 
+    DecodeConfig decode_conf;
     int ref_count;
 
 } IMAPConfig;
@@ -110,7 +103,6 @@ void IMAP_ParseArgs(IMAPConfig *, char *);
 void IMAP_PrintConfig(IMAPConfig *config);
 
 void IMAP_CheckConfig(IMAPConfig *, tSfPolicyUserContextId);
-int IMAP_IsDecodingEnabled(IMAPConfig *);
 
 #endif
 

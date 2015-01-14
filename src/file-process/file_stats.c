@@ -100,7 +100,9 @@ void printFileContext (FileContext* context)
     printf("%s", buf);
 }
 
-void DumpHex(FILE *fp, const uint8_t *data, unsigned len)
+#include "sfdebug.h"
+
+void DumpHexFile(FILE *fp, const uint8_t *data, unsigned len)
 {
     char str[18];
     unsigned i;
@@ -113,45 +115,7 @@ void DumpHex(FILE *fp, const uint8_t *data, unsigned len)
         len = file_config->show_data_depth;
 
     fprintf(fp,"Show length: %d \n", len);
-    for (i=0, pos=0; i<len; i++, pos++)
-    {
-        if (pos == 17)
-        {
-            str[pos] = 0;
-            fprintf(fp, "  %s\n", str);
-            pos = 0;
-        }
-        else if (pos == 8)
-        {
-            str[pos] = ' ';
-            pos++;
-            fprintf(fp, "%s", " ");
-        }
-        c = (char)data[i];
-        if (isprint(c) && (c == ' ' || !isspace(c)))
-            str[pos] = c;
-        else
-            str[pos] = '.';
-        fprintf(fp, "%02X ", data[i]);
-    }
-    if (pos)
-    {
-        str[pos] = 0;
-        for (; pos < 17; pos++)
-        {
-            if (pos == 8)
-            {
-                str[pos] = ' ';
-                pos++;
-                fprintf(fp, "%s", "    ");
-            }
-            else
-            {
-                fprintf(fp, "%s", "   ");
-            }
-        }
-        fprintf(fp, "  %s\n", str);
-    }
+    DumpHex(fp, data, len);
 }
 #endif
 
@@ -303,7 +267,7 @@ void print_file_stats(int exiting)
     LogMessage("   %12s:           "FMTu64("-10")" \n", "Total",verdicts_total);
 
 #ifdef TARGET_BASED
-    if (IsAdaptiveConfigured(getRuntimePolicy()))
+    if (IsAdaptiveConfigured())
     {
         LogMessage("\nFiles processed by protocol IDs:\n");
         for (i = 0; i < MAX_PROTOCOL_ORDINAL; i++)

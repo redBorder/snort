@@ -137,15 +137,20 @@
 
 #include "sf_types.h"
 
+#ifndef DYNAMIC_PREPROC_CONTEXT
 #define ACSMX2_TRACK_Q
 
 #ifdef  ACSMX2_TRACK_Q
 # include "snort.h"
 #endif
+#endif //DYNAMIC_PREPROC_CONTEXT
 
 #include "acsmx2.h"
 #include "util.h"
 #include "snort_debug.h"
+#ifdef DYNAMIC_PREPROC_CONTEXT
+#include "sf_dynamic_preprocessor.h"
+#endif //DYNAMIC_PREPROC_CONTEXT
 
 #define printf LogMessage
 
@@ -2603,6 +2608,116 @@ acsmSearchSparseDFA_Full_q(
 }
 
 /*
+ *  Matching states are queued, duplicate matches are dropped,
+ *  and after the complete buffer scan, the queued matches are
+ *  processed.  This improves cacheing performance, and reduces
+ *  duplicate rule processing. The queue is limited in size and
+ *  is flushed if it becomes full during the scan.  This allows
+ *  simple insertions. Tracking queue ops is optional, as this can
+ *  impose a modest performance hit of a few percent.
+ */
+#define AC_SEARCH_Q_ALL \
+    for (; T < Tend; T++) \
+    { \
+        ps = NextState[state]; \
+        sindex = xlatcase[T[0]]; \
+        if (ps[1]) \
+        { \
+            for( mlist = MatchList[state]; \
+                 mlist!= NULL; \
+                 mlist = mlist->next ) \
+            { \
+                if( mlist->nocase || (memcmp (mlist->casepatrn, T - mlist->n, mlist->n ) == 0)) \
+                { \
+                    if (_add_queue(&acsm->q,mlist)) \
+                    { \
+                        if (_process_queue(&acsm->q, Match,data)) \
+                        { \
+                            *current_state = state; \
+                            return 1; \
+                        } \
+                    } \
+                } \
+            } \
+        } \
+        state = ps[2 + sindex]; \
+    }
+
+static inline int
+acsmSearchSparseDFA_Full_q_all(
+        ACSM_STRUCT2 *acsm,
+        const unsigned char *T,
+        int n,
+        int (*Match)(void * id, void *tree, int index, void *data, void *neg_list),
+        void *data,
+        int *current_state
+        )
+{
+    const unsigned char *Tend;
+    int sindex;
+    acstate_t state;
+    ACSM_PATTERN2 **MatchList = acsm->acsmMatchList;
+    ACSM_PATTERN2 *mlist;
+
+    Tend = T + n;
+
+    if (current_state == NULL)
+        return 0;
+
+    _init_queue(&acsm->q);
+
+    state = *current_state;
+
+    switch (acsm->sizeofstate)
+    {
+        case 1:
+            {
+                uint8_t *ps;
+                uint8_t **NextState = (uint8_t **)acsm->acsmNextState;
+                AC_SEARCH_Q_ALL;
+            }
+            break;
+        case 2:
+            {
+                uint16_t *ps;
+                uint16_t **NextState = (uint16_t **)acsm->acsmNextState;
+                AC_SEARCH_Q_ALL;
+            }
+            break;
+        default:
+            {
+                acstate_t *ps;
+                acstate_t **NextState = acsm->acsmNextState;
+                AC_SEARCH_Q_ALL;
+            }
+            break;
+    }
+
+    *current_state = state;
+
+    for( mlist = MatchList[state];
+         mlist!= NULL;
+         mlist = mlist->next )
+    {
+        if( mlist->nocase || (memcmp (mlist->casepatrn, T - mlist->n, mlist->n ) == 0))
+        {
+            if (_add_queue(&acsm->q,mlist))
+            {
+                if (_process_queue(&acsm->q, Match,data))
+                {
+                    *current_state = state;
+                    return 1;
+                }
+            }
+        }
+    }
+
+    _process_queue(&acsm->q,Match,data);
+
+    return 0;
+}
+
+/*
 *   Full format DFA search
 *   Do not change anything here without testing, caching and prefetching
 *   performance is very sensitive to any changes.
@@ -2698,6 +2813,117 @@ acsmSearchSparseDFA_Full(
             return nfound;
         }
     }
+
+    *current_state = state;
+    return nfound;
+}
+
+/*
+*   Full format DFA search
+*   Do not change anything here without testing, caching and prefetching
+*   performance is very sensitive to any changes.
+*
+*   Perf-Notes:
+*    1) replaced ConvertCaseEx with inline xlatcase - this improves performance 5-10%
+*    2) using 'nocase' improves performance again by 10-15%, since memcmp is not needed
+*    3)
+*/
+#define AC_SEARCH_ALL \
+    for( ; T < Tend; T++ ) \
+    { \
+        ps = NextState[ state ]; \
+        sindex = xlatcase[T[0]]; \
+        if (ps[1]) \
+        { \
+            for( mlist = MatchList[state]; \
+                 mlist!= NULL; \
+                 mlist = mlist->next ) \
+            { \
+                index = T - mlist->n - Tx; \
+                if( mlist->nocase || (memcmp (mlist->casepatrn, Tx + index, mlist->n ) == 0)) \
+                { \
+                    nfound++; \
+                    if (Match (mlist->udata, mlist->rule_option_tree, index, data, mlist->neg_list) > 0) \
+                    { \
+                        *current_state = state; \
+                        return nfound; \
+                    } \
+                } \
+            } \
+        } \
+        state = ps[2u + sindex]; \
+    }
+
+static inline int
+acsmSearchSparseDFA_Full_All(
+        ACSM_STRUCT2 *acsm,
+        const unsigned char *Tx,
+        int n,
+        int (*Match)(void * id, void *tree, int index, void *data, void *neg_list),
+        void *data,
+        int *current_state
+        )
+{
+    ACSM_PATTERN2 *mlist;
+    const unsigned char   * Tend;
+    const unsigned char   * T;
+    int index;
+    int sindex;
+    int nfound = 0;
+    acstate_t state;
+    ACSM_PATTERN2 **MatchList = acsm->acsmMatchList;
+
+    T = Tx;
+    Tend = Tx + n;
+
+    if (current_state == NULL)
+        return 0;
+
+    state = *current_state;
+
+    switch (acsm->sizeofstate)
+    {
+        case 1:
+            {
+                uint8_t *ps;
+                uint8_t **NextState = (uint8_t **)acsm->acsmNextState;
+                AC_SEARCH_ALL;
+            }
+            break;
+        case 2:
+            {
+                uint16_t *ps;
+                uint16_t **NextState = (uint16_t **)acsm->acsmNextState;
+                AC_SEARCH_ALL;
+            }
+            break;
+        default:
+            {
+                acstate_t *ps;
+                acstate_t **NextState = acsm->acsmNextState;
+                AC_SEARCH_ALL;
+            }
+            break;
+    }
+
+    /* Check the last state for a pattern match */
+    for( mlist = MatchList[state];
+         mlist!= NULL;
+         mlist = mlist->next )
+    {
+        index = T - mlist->n - Tx;
+
+        if( mlist->nocase || (memcmp (mlist->casepatrn, Tx + index, mlist->n) == 0))
+        {
+            nfound++;
+            if (Match(mlist->udata, mlist->rule_option_tree, index, data, mlist->neg_list) > 0)
+            {
+                *current_state = state;
+                return nfound;
+            }
+        }
+    }
+
 
     *current_state = state;
     return nfound;
@@ -2867,6 +3093,51 @@ acsmSearch2(ACSM_STRUCT2 * acsm, unsigned char *Tx, int n,
         else if( acsm->acsmFormat == ACF_FULLQ )
         {
             return acsmSearchSparseDFA_Full_q( acsm, Tx, n, Match, data,
+                    current_state );
+        }
+        else if( acsm->acsmFormat == ACF_BANDED )
+        {
+            return acsmSearchSparseDFA_Banded( acsm, Tx, n, Match, data,
+                    current_state );
+        }
+        else
+        {
+            return acsmSearchSparseDFA( acsm, Tx, n, Match, data,
+                    current_state );
+        }
+
+        case FSA_NFA:
+
+            return acsmSearchSparseNFA( acsm, Tx, n, Match, data,
+                    current_state );
+
+        case FSA_TRIE:
+
+            return 0;
+    }
+    return 0;
+}
+/*
+*   Search Function
+*/
+int
+acsmSearchAll2(ACSM_STRUCT2 * acsm, unsigned char *Tx, int n,
+           int (*Match)(void * id, void *tree, int index, void *data, void *neg_list),
+           void *data, int* current_state )
+{
+
+    switch( acsm->acsmFSA )
+    {
+        case FSA_DFA:
+
+        if( acsm->acsmFormat == ACF_FULL )
+        {
+            return acsmSearchSparseDFA_Full_All( acsm, Tx, n, Match, data,
+                    current_state );
+        }
+        else if( acsm->acsmFormat == ACF_FULLQ )
+        {
+            return acsmSearchSparseDFA_Full_q_all( acsm, Tx, n, Match, data,
                     current_state );
         }
         else if( acsm->acsmFormat == ACF_BANDED )

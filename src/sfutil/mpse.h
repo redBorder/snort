@@ -42,6 +42,7 @@
 
 #include "sf_types.h"
 #include "bitop.h"
+#include "mpse_methods.h"
 
 /*
 *   Move these defines to a generic Win32/Unix compatability file,
@@ -50,28 +51,6 @@
 #ifndef CDECL
 #define CDECL
 #endif
-
-
-/*
-*  Pattern Matching Methods
-*/
-//#define MPSE_MWM       1
-#define MPSE_AC        2
-//#define MPSE_KTBM      3
-#define MPSE_LOWMEM    4
-//#define MPSE_AUTO      5
-#define MPSE_ACF       6
-#define MPSE_ACS       7
-#define MPSE_ACB       8
-#define MPSE_ACSB      9
-#define MPSE_AC_BNFA   10
-#define MPSE_AC_BNFA_Q 11
-#define MPSE_ACF_Q     12
-#define MPSE_LOWMEM_Q  13
-
-#ifdef INTEL_SOFT_CPM
-#define MPSE_INTEL_CPM 14
-#endif /* INTEL_SOFT_CPM */
 
 #define MPSE_INCREMENT_GLOBAL_CNT 1
 #define MPSE_DONT_INCREMENT_GLOBAL_COUNT 0
@@ -111,6 +90,10 @@ int  mpsePrepPatternsWithSnortConf  ( struct _SnortConfig *, void * pvoid,
 void mpseSetRuleMask   ( void *pv, BITOP * rm );
 
 int  mpseSearch( void *pv, const unsigned char * T, int n,
+                 int ( *action )(void* id, void * tree, int index, void *data, void *neg_list),
+                 void * data, int* current_state );
+
+int  mpseSearchAll( void *pv, const unsigned char * T, int n,
                  int ( *action )(void* id, void * tree, int index, void *data, void *neg_list),
                  void * data, int* current_state );
 

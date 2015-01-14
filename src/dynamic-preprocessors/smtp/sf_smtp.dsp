@@ -43,7 +43,7 @@ RSC=rc.exe
 # PROP Ignore_Export_Lib 0
 # PROP Target_Dir ""
 # ADD BASE CPP /nologo /MT /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SF_SMTP_EXPORTS" /YX /FD /c
-# ADD CPP /nologo /MD /W3 /GX /O2 /I "..\libs" /I "..\include" /I "..\..\win32\Win32-Includes" /I ".\\" /I "..\..\win32\Win32-Includes\WinPCAP" /I "..\..\..\daq\api" /I "..\..\..\daq\sfbpf" /D "NDEBUG" /D "SF_SNORT_PREPROC_DLL" /D "ENABLE_PAF" /D "_WINDOWS" /D "_USRDLL" /D "ACTIVE_RESPONSE" /D "GRE" /D "MPLS" /D "TARGET_BASED" /D "PERF_PROFILING" /D "ENABLE_RESPOND" /D "ENABLE_REACT" /D "_WINDLL" /D "WIN32" /D "_MBCS" /D "HAVE_CONFIG_H" /D "_AFXDLL" /D SIGNAL_SNORT_READ_ATTR_TBL=30 /FD /c
+# ADD CPP /nologo /MD /W3 /GX /O2 /I "..\libs" /I "..\ssl_common" /I "..\include" /I "..\..\win32\Win32-Includes" /I ".\\" /I "..\..\win32\Win32-Includes\WinPCAP" /I "..\..\..\daq\api" /I "..\..\..\daq\sfbpf" /D "NDEBUG" /D "SF_SNORT_PREPROC_DLL" /D "ENABLE_PAF" /D "_WINDOWS" /D "_USRDLL" /D "ACTIVE_RESPONSE" /D "GRE" /D "MPLS" /D "TARGET_BASED" /D "PERF_PROFILING" /D "ENABLE_RESPOND" /D "ENABLE_REACT" /D "_WINDLL" /D "WIN32" /D "_MBCS" /D "HAVE_CONFIG_H" /D "_AFXDLL" /D SIGNAL_SNORT_READ_ATTR_TBL=30 /FD /c
 # SUBTRACT CPP /X /YX
 # ADD BASE MTL /nologo /D "NDEBUG" /mktyplib203 /win32
 # ADD MTL /nologo /D "NDEBUG" /mktyplib203 /win32
@@ -70,7 +70,7 @@ LINK32=link.exe
 # PROP Ignore_Export_Lib 0
 # PROP Target_Dir ""
 # ADD BASE CPP /nologo /MTd /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /D "_USRDLL" /D "SF_SMTP_EXPORTS" /YX /FD /GZ /c
-# ADD CPP /nologo /MDd /W3 /Gm /GX /ZI /Od /I "..\libs" /I "..\include" /I "..\..\win32\Win32-Includes" /I ".\\" /I "..\..\win32\Win32-Includes\WinPCAP" /I "..\..\..\daq\api" /I "..\..\..\daq\sfbpf" /D "SF_SNORT_PREPROC_DLL" /D "_DEBUG" /D "DEBUG" /D "ENABLE_PAF" /D "_WINDOWS" /D "_USRDLL" /D "ACTIVE_RESPONSE" /D "GRE" /D "MPLS" /D "TARGET_BASED" /D "PERF_PROFILING" /D "ENABLE_RESPOND" /D "ENABLE_REACT" /D "_WINDLL" /D "WIN32" /D "_MBCS" /D "HAVE_CONFIG_H" /D "_AFXDLL" /D SIGNAL_SNORT_READ_ATTR_TBL=30 /FD /GZ /c
+# ADD CPP /nologo /MDd /W3 /Gm /GX /ZI /Od /I "..\libs" /I "..\ssl_common" /I "..\include" /I "..\..\win32\Win32-Includes" /I ".\\" /I "..\..\win32\Win32-Includes\WinPCAP" /I "..\..\..\daq\api" /I "..\..\..\daq\sfbpf" /D "SF_SNORT_PREPROC_DLL" /D "_DEBUG" /D "DEBUG" /D "ENABLE_PAF" /D "_WINDOWS" /D "_USRDLL" /D "ACTIVE_RESPONSE" /D "GRE" /D "MPLS" /D "TARGET_BASED" /D "PERF_PROFILING" /D "ENABLE_RESPOND" /D "ENABLE_REACT" /D "_WINDLL" /D "WIN32" /D "_MBCS" /D "HAVE_CONFIG_H" /D "_AFXDLL" /D SIGNAL_SNORT_READ_ATTR_TBL=30 /FD /GZ /c
 # SUBTRACT CPP /X /YX
 # ADD BASE MTL /nologo /D "_DEBUG" /mktyplib203 /win32
 # ADD MTL /nologo /D "_DEBUG" /mktyplib203 /win32
@@ -118,6 +118,26 @@ SOURCE=..\include\sfPolicyUserData.c
 # End Source File
 # Begin Source File
 
+SOURCE=..\libs\sfparser.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\ssl_common\ssl.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\ssl_common\ssl_config.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\ssl_common\ssl_ha.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\ssl_common\ssl_inspect.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\smtp_config.c
 # End Source File
 # Begin Source File
@@ -134,6 +154,9 @@ SOURCE=.\smtp_util.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\smtp_paf.c
+# End Source File
+# Begin Source File
 SOURCE=.\smtp_xlink2state.c
 # End Source File
 # Begin Source File
@@ -152,6 +175,14 @@ SOURCE=..\include\util_unfold.c
 # Begin Group "Header Files"
 
 # PROP Default_Filter "h;hpp;hxx;hm;inl"
+# Begin Source File
+
+SOURCE=..\ssl_common\ssl.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\ssl_common\ssl_include.h
+# End Source File
 # Begin Source File
 
 SOURCE=..\include\mempool.h
@@ -187,6 +218,10 @@ SOURCE=.\smtp_normalize.h
 # Begin Source File
 
 SOURCE=.\smtp_util.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\smtp_paf.h
 # End Source File
 # Begin Source File
 

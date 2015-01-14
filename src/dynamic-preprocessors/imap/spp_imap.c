@@ -24,7 +24,7 @@
  *
  * spp_imap.c
  *
- * Author: Bhagyashree Bantwal <bbantwal@sourcefire.com>
+ * Author: Bhagyashree Bantwal <bbantwal@cisco.com>
  *
  * Description:
  *
@@ -55,6 +55,7 @@
 #include "snort_imap.h"
 #include "imap_config.h"
 #include "imap_log.h"
+#include "imap_paf.h"
 
 #include "preprocids.h"
 #include "sf_snort_packet.h"
@@ -90,7 +91,6 @@ MemPool *imap_mime_mempool = NULL;
 tSfPolicyUserContextId imap_config = NULL;
 IMAPConfig *imap_eval_config = NULL;
 
-extern IMAP imap_no_session;
 extern int16_t imap_proto_id;
 
 static void IMAPInit(struct _SnortConfig *, char *);
@@ -98,9 +98,11 @@ static void IMAPDetect(void *, void *context);
 static void IMAPCleanExitFunction(int, void *);
 static void IMAPResetFunction(int, void *);
 static void IMAPResetStatsFunction(int, void *);
-static void _addPortsToStream5Filter(struct _SnortConfig *, IMAPConfig *, tSfPolicyId);
+static void registerPortsForDispatch( struct _SnortConfig *sc, IMAPConfig *policy );
+static void registerPortsForReassembly( IMAPConfig *policy, int direction );
+static void _addPortsToStreamFilter(struct _SnortConfig *, IMAPConfig *, tSfPolicyId);
 #ifdef TARGET_BASED
-static void _addServicesToStream5Filter(struct _SnortConfig *, tSfPolicyId);
+static void _addServicesToStreamFilter(struct _SnortConfig *, tSfPolicyId);
 #endif
 static int IMAPCheckConfig(struct _SnortConfig *);
 
@@ -167,10 +169,6 @@ static void IMAPInit(struct _SnortConfig *sc, char *args)
          * headers, reponsed, data, mime boundary regular expression */
         IMAP_SearchInit();
 
-        /* zero out static IMAP global used for stateless IMAP or if there
-         * is no session pointer */
-        memset(&imap_no_session, 0, sizeof(IMAP));
-
         /* Put the preprocessor function into the function list */
         /* _dpd.addPreproc(IMAPDetect, PRIORITY_APPLICATION, PP_IMAP, PROTO_BIT__TCP);*/
         _dpd.addPreprocExit(IMAPCleanExitFunction, NULL, PRIORITY_LAST, PP_IMAP);
@@ -182,6 +180,9 @@ static void IMAPInit(struct _SnortConfig *sc, char *args)
         imap_proto_id = _dpd.findProtocolReference(IMAP_PROTO_REF_STR);
         if (imap_proto_id == SFTARGET_UNKNOWN_PROTOCOL)
             imap_proto_id = _dpd.addProtocolReference(IMAP_PROTO_REF_STR);
+
+        // register with session to handle applications
+        _dpd.sessionAPI->register_service_handler( PP_IMAP, imap_proto_id );
 
         DEBUG_WRAP(DebugMessage(DEBUG_IMAP,"IMAP: Target-based: Proto id for %s: %u.\n",
                                 IMAP_PROTO_REF_STR, imap_proto_id););
@@ -244,10 +245,13 @@ static void IMAPInit(struct _SnortConfig *sc, char *args)
 
     _dpd.searchAPI->search_instance_prep(pPolicyConfig->cmd_search_mpse);
 
-    _addPortsToStream5Filter(sc, pPolicyConfig, policy_id);
+    // register ports with session and stream
+    registerPortsForDispatch( sc, pPolicyConfig );
+    registerPortsForReassembly( pPolicyConfig, SSN_DIR_FROM_SERVER | SSN_DIR_FROM_CLIENT );
+     _addPortsToStreamFilter(sc, pPolicyConfig, policy_id);
 
 #ifdef TARGET_BASED
-    _addServicesToStream5Filter(sc, policy_id);
+    _addServicesToStreamFilter(sc, policy_id);
 #endif
 }
 
@@ -267,7 +271,7 @@ static void IMAPInit(struct _SnortConfig *sc, char *args)
 static void IMAPDetect(void *pkt, void *context)
 {
     SFSnortPacket *p = (SFSnortPacket *)pkt;
-    tSfPolicyId policy_id = _dpd.getRuntimePolicy();
+    tSfPolicyId policy_id = _dpd.getNapRuntimePolicy();
     PROFILE_VARS;
 
     // preconditions - what we registered for
@@ -338,7 +342,29 @@ static void IMAPResetStatsFunction(int signal, void *data)
     return;
 }
 
-static void _addPortsToStream5Filter(struct _SnortConfig *sc, IMAPConfig *config, tSfPolicyId policy_id)
+static void registerPortsForDispatch( struct _SnortConfig *sc, IMAPConfig *policy )
+{
+    int port;
+
+    for ( port = 0; port < MAXPORTS; port++ )
+    {
+        if( isPortEnabled( policy->ports, port ) )
+            _dpd.sessionAPI->enable_preproc_for_port( sc, PP_IMAP, PROTO_BIT__TCP, port ); 
+    }
+}
+
+static void registerPortsForReassembly( IMAPConfig *policy, int direction )
+{
+    uint32_t port;
+
+    for ( port = 0; port < MAXPORTS; port++ )
+    {
+        if( isPortEnabled( policy->ports, port ) )
+            _dpd.streamAPI->register_reassembly_port( NULL, port, direction );
+    }
+}
+
+static void _addPortsToStreamFilter(struct _SnortConfig *sc, IMAPConfig *config, tSfPolicyId policy_id)
 {
     unsigned int portNum;
 
@@ -352,16 +378,16 @@ static void _addPortsToStream5Filter(struct _SnortConfig *sc, IMAPConfig *config
             //Add port the port
             _dpd.streamAPI->set_port_filter_status(sc, IPPROTO_TCP, (uint16_t)portNum,
                                                    PORT_MONITOR_SESSION, policy_id, 1);
-            _dpd.fileAPI->register_mime_paf_port(sc, portNum, policy_id);
+            register_imap_paf_port(sc, portNum, policy_id);
         }
     }
 }
 
 #ifdef TARGET_BASED
-static void _addServicesToStream5Filter(struct _SnortConfig *sc, tSfPolicyId policy_id)
+static void _addServicesToStreamFilter(struct _SnortConfig *sc, tSfPolicyId policy_id)
 {
     _dpd.streamAPI->set_service_filter_status(sc, imap_proto_id, PORT_MONITOR_SESSION, policy_id, 1);
-    _dpd.fileAPI->register_mime_paf_service(sc, imap_proto_id, policy_id);
+    register_imap_paf_service(sc, imap_proto_id, policy_id);
 }
 #endif
 
@@ -374,10 +400,10 @@ static int CheckFilePolicyConfig(
 {
     IMAPConfig *context = (IMAPConfig *)pData;
 
-    context->file_depth = _dpd.fileAPI->get_max_file_depth();
-    if (context->file_depth > -1)
+    context->decode_conf.file_depth = _dpd.fileAPI->get_max_file_depth();
+    if (context->decode_conf.file_depth > -1)
         context->log_config.log_filename = 1;
-    updateMaxDepth(context->file_depth, &context->max_depth);
+    updateMaxDepth(context->decode_conf.file_depth, &context->decode_conf.max_depth);
 
     return 0;
 }
@@ -393,7 +419,7 @@ static int IMAPEnableDecoding(struct _SnortConfig *sc, tSfPolicyUserContextId co
     if(context->disabled)
         return 0;
 
-    if(!IMAP_IsDecodingEnabled(context))
+    if(_dpd.fileAPI->is_decoding_enabled(&(context->decode_conf)))
         return 1;
 
     return 0;
@@ -411,14 +437,13 @@ static int IMAPCheckPolicyConfig(
     _dpd.setParserPolicy(sc, policyId);
 
     /* In a multiple-policy setting, the IMAP preproc can be turned on in a
-       "disabled" state. In this case, we don't require Stream5. */
+       "disabled" state. In this case, we don't require Stream. */
     if (context->disabled)
         return 0;
 
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
-    {
-        _dpd.errMsg("Streaming & reassembly must be enabled "
-                                        "for IMAP preprocessor\n");
+    if (_dpd.streamAPI == NULL)
+     {
+        _dpd.errMsg("Streaming & reassembly must be enabled for IMAP preprocessor\n");
         return -1;
     }
 
@@ -465,8 +490,8 @@ static int IMAPCheckConfig(struct _SnortConfig *sc)
             return -1;
         }
 
-        imap_mime_mempool = (MemPool *)_dpd.fileAPI->init_mime_mempool(defaultConfig->max_mime_mem,
-                       defaultConfig->max_depth, imap_mime_mempool, PROTOCOL_NAME);
+        imap_mime_mempool = (MemPool *)_dpd.fileAPI->init_mime_mempool(defaultConfig->decode_conf.max_mime_mem,
+                       defaultConfig->decode_conf.max_depth, imap_mime_mempool, PROTOCOL_NAME);
 
     }
 
@@ -556,10 +581,13 @@ static void IMAPReload(struct _SnortConfig *sc, char *args, void **new_config)
 
     _dpd.addPreproc(sc, IMAPDetect, PRIORITY_APPLICATION, PP_IMAP, PROTO_BIT__TCP);
 
-    _addPortsToStream5Filter(sc, pPolicyConfig, policy_id);
+    // register ports with session and stream
+    registerPortsForDispatch( sc, pPolicyConfig );
+    registerPortsForReassembly( pPolicyConfig, SSN_DIR_FROM_SERVER | SSN_DIR_FROM_CLIENT );
+    _addPortsToStreamFilter(sc, pPolicyConfig, policy_id);
 
 #ifdef TARGET_BASED
-    _addServicesToStream5Filter(sc, policy_id);
+    _addServicesToStreamFilter(sc, policy_id);
 #endif
 }
 
@@ -568,58 +596,30 @@ static int IMAPReloadVerify(struct _SnortConfig *sc, void *swap_config)
     tSfPolicyUserContextId imap_swap_config = (tSfPolicyUserContextId)swap_config;
     IMAPConfig *config = NULL;
     IMAPConfig *configNext = NULL;
+    int rval;
 
     if (imap_swap_config == NULL)
         return 0;
 
     if (imap_config != NULL)
-    {
         config = (IMAPConfig *)sfPolicyUserDataGet(imap_config, _dpd.getDefaultPolicy());
-    }
 
     configNext = (IMAPConfig *)sfPolicyUserDataGet(imap_swap_config, _dpd.getDefaultPolicy());
 
     if (config == NULL)
-    {
         return 0;
-    }
 
-    sfPolicyUserDataIterate (sc, imap_swap_config, CheckFilePolicyConfig);
+    if ((rval = sfPolicyUserDataIterate( sc, imap_swap_config, IMAPCheckPolicyConfig )))
+        return rval;
+
+    if ( rval = sfPolicyUserDataIterate( sc, imap_swap_config, CheckFilePolicyConfig ) )
+        return rval;
+
     if (imap_mime_mempool != NULL)
     {
-        if (configNext == NULL)
+        if(_dpd.fileAPI->is_decoding_conf_changed(&(configNext->decode_conf),
+                &(config->decode_conf), "IMAP"))
         {
-            _dpd.errMsg("IMAP reload: Changing the IMAP configuration requires a restart.\n");
-            return -1;
-        }
-        if (configNext->max_mime_mem != config->max_mime_mem)
-        {
-            _dpd.errMsg("IMAP reload: Changing the memcap requires a restart.\n");
-            return -1;
-        }
-        if(configNext->b64_depth != config->b64_depth)
-        {
-            _dpd.errMsg("IMAP reload: Changing the b64_decode_depth requires a restart.\n");
-            return -1;
-        }
-        if(configNext->qp_depth != config->qp_depth)
-        {
-            _dpd.errMsg("IMAP reload: Changing the qp_decode_depth requires a restart.\n");
-            return -1;
-        }
-        if(configNext->bitenc_depth != config->bitenc_depth)
-        {
-            _dpd.errMsg("IMAP reload: Changing the bitenc_decode_depth requires a restart.\n");
-            return -1;
-        }
-        if(configNext->uu_depth != config->uu_depth)
-        {
-            _dpd.errMsg("IMAP reload: Changing the uu_decode_depth requires a restart.\n");
-            return -1;
-        }
-        if(configNext->file_depth != config->file_depth)
-        {
-            _dpd.errMsg("IMAP reload: Changing the file_depth requires a restart.\n");
             return -1;
         }
 
@@ -643,8 +643,8 @@ static int IMAPReloadVerify(struct _SnortConfig *sc, void *swap_config)
     {
         if (sfPolicyUserDataIterate(sc, imap_swap_config, IMAPEnableDecoding) != 0)
         {
-            imap_mime_mempool = (MemPool *)_dpd.fileAPI->init_mime_mempool(configNext->max_mime_mem,
-                    configNext->max_depth, imap_mime_mempool, PROTOCOL_NAME);
+            imap_mime_mempool = (MemPool *)_dpd.fileAPI->init_mime_mempool(configNext->decode_conf.max_mime_mem,
+                    configNext->decode_conf.max_depth, imap_mime_mempool, PROTOCOL_NAME);
         }
 
         if (sfPolicyUserDataIterate(sc, imap_swap_config, IMAPLogExtraData) != 0)
@@ -657,7 +657,7 @@ static int IMAPReloadVerify(struct _SnortConfig *sc, void *swap_config)
             return 0;
     }
 
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
+    if (_dpd.streamAPI == NULL)
     {
         _dpd.errMsg("Streaming & reassembly must be enabled for IMAP preprocessor\n");
         return -1;

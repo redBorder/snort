@@ -69,6 +69,10 @@
 #include "util.h"
 #include "snort_debug.h"
 
+#ifdef DYNAMIC_PREPROC_CONTEXT
+#include "sf_dynamic_preprocessor.h"
+#endif //DYNAMIC_PREPROC_CONTEXT
+
 #define MEMASSERT(p,s) if(!p){fprintf(stderr,"ACSM-No Memory: %s!\n",s);exit(0);}
 
 #ifdef DEBUG_AC

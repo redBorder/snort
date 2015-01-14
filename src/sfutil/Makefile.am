@@ -6,6 +6,16 @@ if HAVE_INTEL_SOFT_CPM
 INTEL_SOFT_CPM_SOURCES = intel-soft-cpm.c intel-soft-cpm.h
 endif
 
+if BUILD_OPENSSL_MD5
+OPENSSL_MD5 = \
+    md5.c md5.h 
+endif
+
+if BUILD_OPENSSL_SHA
+OPENSSL_SHA = \
+    sha2.c sha2.h
+endif
+
 libsfutil_a_SOURCES = \
     sfghash.c sfghash.h \
     sfhashfcn.c sfhashfcn.h \
@@ -41,6 +51,7 @@ libsfutil_a_SOURCES = \
     sf_vartable.c sf_vartable.h \
     sf_iph.c sf_iph.h \
     sf_textlog.c sf_textlog.h \
+    sf_sechash.c sf_sechash.h \
     sfPolicy.c sfPolicy.h \
     sfPolicyUserData.c sfPolicyUserData.h \
     sfPolicyData.h \
@@ -51,8 +62,11 @@ libsfutil_a_SOURCES = \
     sf_base64decode.c sf_base64decode.h \
     Unified2_common.h \
     sf_seqnums.h \
-    $(INTEL_SOFT_CPM_SOURCES)
+	mpse_methods.h \
+	sfdebug.h \
+    $(INTEL_SOFT_CPM_SOURCES) \
+    $(OPENSSL_MD5) \
+    $(OPENSSL_SHA)
 
 INCLUDES = @INCLUDES@
-
 

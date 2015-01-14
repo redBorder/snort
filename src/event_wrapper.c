@@ -111,7 +111,7 @@ OptTreeNode * GenerateSnortEventOtn(
    p->event_data.classification = classification;
    p->event_data.priority = priority;
 
-   rtn = GenerateSnortEventRtn(p, getRuntimePolicy());
+   rtn = GenerateSnortEventRtn(p, getIpsRuntimePolicy());
 
    if( !rtn )
    {
@@ -199,7 +199,11 @@ int LogTagData(Packet *p,
     if(!event_ref || !ref_sec)
         return 0;
 
+#if !defined(FEAT_OPEN_APPID)
     SetEvent(&event, gen_id, sig_id, sig_rev, classification, priority, event_ref);
+#else /* defined(FEAT_OPEN_APPID) */
+    SetEvent(&event, gen_id, sig_id, sig_rev, classification, priority, event_ref, NULL);
+#endif /* defined(FEAT_OPEN_APPID) */
 
     event.ref_time.tv_sec = (uint32_t)ref_sec;
 

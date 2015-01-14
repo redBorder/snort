@@ -47,6 +47,7 @@
 #include "plugbase.h"
 #include "snort_debug.h"
 #include "mstring.h"
+#include "hashstring.h"
 #include "util.h"
 #include "parser.h"
 #include "plugin_enum.h"
@@ -59,6 +60,7 @@
 #include "detection_options.h"
 #include "sp_byte_extract.h"
 #include "detection_util.h"
+#include "sf_sechash.h"
 
 /********************************************************************
  * Macros
@@ -121,6 +123,10 @@ static inline void ValidateContent(struct _SnortConfig *, PatternMatchData *, in
 static unsigned int GetMaxJumpSize(char *, int);
 static int uniSearch(const char *, int, PatternMatchData *);
 static int uniSearchReal(const char *data, int dlen, PatternMatchData *pmd, int nocase);
+static int uniSearchHash(const char *data, int dlen, PatternMatchData *pmd);
+static void PayloadSearchProtected(struct _SnortConfig *, char *, OptTreeNode *, int);
+static void PayloadSearchHash(struct _SnortConfig *, char *, OptTreeNode *, int);
+static void PayloadSearchLength(struct _SnortConfig *, char *, OptTreeNode *, int);
 
 #if 0
 /* Not currently used - DO NOT REMOVE */
@@ -144,6 +150,7 @@ void SetupPatternMatch(void)
     /* initial pmd setup options */
     RegisterRuleOption("content", PayloadSearchInit, NULL, OPT_TYPE_DETECTION, NULL);
     RegisterRuleOption("uricontent", PayloadSearchUri, NULL, OPT_TYPE_DETECTION, NULL);
+    RegisterRuleOption("protected_content", PayloadSearchProtected, NULL, OPT_TYPE_DETECTION, NULL);
 
     /* http content modifiers */
     RegisterRuleOption("http_method", PayloadSearchHttpMethod, NULL, OPT_TYPE_DETECTION, NULL);
@@ -167,6 +174,8 @@ void SetupPatternMatch(void)
     RegisterRuleOption("within", PayloadSearchWithin, NULL, OPT_TYPE_DETECTION, NULL);
 
     /* other modifiers */
+    RegisterRuleOption("hash", PayloadSearchHash, NULL, OPT_TYPE_DETECTION, NULL);
+    RegisterRuleOption("length", PayloadSearchLength, NULL, OPT_TYPE_DETECTION, NULL);
     RegisterRuleOption("nocase", PayloadSearchNocase, NULL, OPT_TYPE_DETECTION, NULL);
     RegisterRuleOption("rawbytes", PayloadSearchRawbytes, NULL, OPT_TYPE_DETECTION, NULL);
     RegisterRuleOption("fast_pattern", PayloadSearchFastPattern, NULL, OPT_TYPE_DETECTION, NULL);
@@ -366,6 +375,41 @@ static void PayloadSearchUri(struct _SnortConfig *sc, char *data, OptTreeNode * 
                 "OTN function PatternMatch Added to rule!\n"););
 }
 
+void PayloadSearchProtected(struct _SnortConfig *sc, char *data, OptTreeNode * otn, int protocol)
+{
+    OptFpList *fpl;
+    PatternMatchData *pmd;
+
+    DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH, "In PayloadSearchProtected()\n"););
+
+    /* whack a new node onto the list */
+    pmd = NewNode(otn, PLUGIN_PATTERN_MATCH);
+    lastType = PLUGIN_PATTERN_MATCH;
+
+    if (!data)
+        ParseError("No Protected Content Pattern specified!");
+
+    /* The default secure hash type is set in the SnortConfig */
+    pmd->pattern_type = sc->Default_Protected_Content_Hash_Type;
+
+    /* set up the pattern buffer */
+    ParseProtectedPattern(data, otn, PLUGIN_PATTERN_MATCH);
+
+    /* link the plugin function in to the current OTN */
+    fpl = AddOptFuncToList(CheckANDPatternMatch, otn);
+    fpl->type = RULE_OPTION_TYPE_CONTENT;
+    pmd->buffer_func = CHECK_AND_PATTERN_MATCH;
+    pmd->protected_pattern = true;
+
+    fpl->context = pmd;
+    pmd->fpl = fpl;
+
+    if(pmd->use_doe == 1)
+        fpl->isRelative = 1;
+
+    DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
+                "OTN function PatternMatchProtected Added to rule!\n"););
+}
 static void PayloadSearchHttpMethod(struct _SnortConfig *sc, char *data, OptTreeNode * otn, int protocol)
 {
     PatternMatchData *pmd = GetLastPmdError(otn, lastType, "http_method");
@@ -504,23 +548,24 @@ static void PayloadSearchHttpStatMsg(struct _SnortConfig *sc, char *data, OptTre
 }
 
 typedef enum {
-    CMF_DISTANCE = 0x1, CMF_WITHIN = 0x2, CMF_OFFSET = 0x4, CMF_DEPTH = 0x8
+    CMF_DISTANCE = 0x1, CMF_WITHIN = 0x2, CMF_OFFSET = 0x4, CMF_DEPTH = 0x8, CMF_PROT = 0x10
 } ContentModifierFlags;
 
 static unsigned GetCMF (PatternMatchData* pmd)
 {
     unsigned cmf = 0;
     if ( (pmd->distance != 0) || (pmd->distance_var != -1) ) cmf |= CMF_DISTANCE;
-    if ( (pmd->within != 0) || (pmd->within_var != -1) ) cmf |= CMF_WITHIN;
+    if ( (pmd->within != PMD_WITHIN_UNDEFINED) || (pmd->within_var != -1) ) cmf |= CMF_WITHIN;
     if ( (pmd->offset != 0) || (pmd->offset_var != -1) ) cmf |= CMF_OFFSET;
     if ( (pmd->depth != 0) || (pmd->depth_var != -1) ) cmf |= CMF_DEPTH;
+    if ( pmd->protected_pattern ) cmf |= CMF_PROT;
     return cmf;
 }
 
 #define BAD_DISTANCE (CMF_DISTANCE | CMF_OFFSET | CMF_DEPTH)
-#define BAD_WITHIN (CMF_WITHIN | CMF_OFFSET | CMF_DEPTH)
+#define BAD_WITHIN (CMF_WITHIN | CMF_OFFSET | CMF_DEPTH | CMF_PROT)
 #define BAD_OFFSET (CMF_OFFSET | CMF_DISTANCE | CMF_WITHIN)
-#define BAD_DEPTH (CMF_DEPTH | CMF_DISTANCE | CMF_WITHIN)
+#define BAD_DEPTH (CMF_DEPTH | CMF_DISTANCE | CMF_WITHIN | CMF_PROT)
 
 static void PayloadSearchOffset(struct _SnortConfig *sc, char *data, OptTreeNode * otn, int protocol)
 {
@@ -554,7 +599,7 @@ static void PayloadSearchDepth(struct _SnortConfig *sc, char *data, OptTreeNode 
     PatternMatchData *pmd = GetLastPmdError(otn, lastType, "depth");
 
     if ( GetCMF(pmd) & BAD_DEPTH )
-        ParseError("depth can't be used with itself, distance, or within");
+        ParseError("depth can't be used with itself, protected, distance, or within");
 
     if (data == NULL)
         ParseError("Missing argument to 'depth' option");
@@ -564,7 +609,7 @@ static void PayloadSearchDepth(struct _SnortConfig *sc, char *data, OptTreeNode 
         pmd->depth = ParseInt(data, "depth");
 
         /* check to make sure that this the depth allows this rule to fire */
-        if (pmd->depth < (int)pmd->pattern_size)
+        if ((!pmd->protected_pattern) && (pmd->depth < (int)pmd->pattern_size))
         {
             ParseError("The depth (%d) is less than the size of the content(%u)!",
                     pmd->depth, pmd->pattern_size);
@@ -622,7 +667,7 @@ static void PayloadSearchWithin(struct _SnortConfig *sc, char *data, OptTreeNode
     PatternMatchData *pmd = GetLastPmdError(otn, lastType, "within");
 
     if ( GetCMF(pmd) & BAD_WITHIN )
-        ParseError("within can't be used with itself, offset, or depth");
+        ParseError("within can't be used with itself, protected, offset, or depth");
 
     if (data == NULL)
         ParseError("Missing argument to 'within' option");
@@ -631,7 +676,7 @@ static void PayloadSearchWithin(struct _SnortConfig *sc, char *data, OptTreeNode
     {
         pmd->within = ParseInt(data, "within");
 
-        if (pmd->within < pmd->pattern_size)
+        if (!pmd->protected_pattern && (pmd->within < pmd->pattern_size))
             ParseError("within (%d) is smaller than size of pattern", pmd->within);
     }
     else
@@ -661,8 +706,10 @@ static void PayloadSearchNocase(struct _SnortConfig *sc, char *data, OptTreeNode
 
     if (data != NULL)
         ParseError("'nocase' does not take an argument");
+    if (pmd->protected_pattern)
+        ParseError("'nocase' not useable with protected content");
 
-    for (i = 0; i < pmd->pattern_size; i++)
+   for (i = 0; i < pmd->pattern_size; i++)
         pmd->pattern_buf[i] = toupper((int)pmd->pattern_buf[i]);
 
     pmd->nocase = 1;
@@ -694,6 +741,8 @@ static void PayloadSearchFastPattern(struct _SnortConfig *sc, char *data, OptTre
         ParseError("Cannot set fast_pattern modifier more than once "
                 "for the same \"content\".");
     }
+    if( pmd->protected_pattern )
+        ParseError("Cannot set fast_pattern modifier with protected content");
 
     if (HasFastPattern(otn, PLUGIN_PATTERN_MATCH))
         ParseError("Can only use the fast_pattern modifier once in a rule.");
@@ -767,6 +816,52 @@ static void PayloadSearchFastPattern(struct _SnortConfig *sc, char *data, OptTre
     }
 }
 
+static void PayloadSearchHash(struct _SnortConfig *sc, char *data, OptTreeNode * otn, int protocol)
+{
+    PatternMatchData *pmd = GetLastPmdError(otn, lastType, "hash");
+
+    if (data == NULL)
+        ParseError("Missing argument to 'hash' option");
+
+    if (!pmd->protected_pattern)
+        ParseError("hash modifier is only valid with protected_content");
+
+    /* strip any whitespace for good measure */
+    while( (*data != '\0') && isspace(*data) )
+        data += 1;
+
+    if( (pmd->pattern_type = SecHash_Name2Type((const char *)data)) == SECHASH_NONE )
+        ParseError("Bad hash type: '%s'", data);
+
+    DEBUG_WRAP(DebugMessage(DEBUG_PARSER, "Hash type = %d\n",
+                pmd->pattern_type););
+}
+
+static void PayloadSearchLength(struct _SnortConfig *sc, char *data, OptTreeNode * otn, int protocol)
+{
+    PatternMatchData *pmd = GetLastPmdError(otn, lastType, "length");
+
+    if (data == NULL)
+        ParseError("Missing argument to 'length' option");
+
+    if (!pmd->protected_pattern)
+        ParseError("length modifier is only valid with protected_content");
+
+    if (isdigit(data[0]))
+    {
+        pmd->protected_length = ParseInt(data, "length");
+        if( (pmd->protected_length <= 0) || (pmd->protected_length > 65536))
+            ParseError("length must be greater than zero");
+    }
+    else
+    {
+        ParseError("Illegal length: %s", data);
+    }
+
+    DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH, "Plaintext length = %d\n",
+                pmd->protected_length););
+}
+
 static inline int HasFastPattern(OptTreeNode *otn, int list_type)
 {
     PatternMatchData *tmp;
@@ -812,7 +907,10 @@ PatternMatchData * NewNode(OptTreeNode *otn, int type)
     pmd->depth_var = BYTE_EXTRACT_NO_VAR;
     pmd->distance_var = BYTE_EXTRACT_NO_VAR;
     pmd->within_var = BYTE_EXTRACT_NO_VAR;
+    pmd->within = PMD_WITHIN_UNDEFINED;
 
+    pmd->protected_pattern = false;
+    pmd->protected_length = 0;
     return pmd;
 }
 
@@ -884,6 +982,30 @@ static inline PatternMatchData * GetLastPmd(OptTreeNode *otn, int type)
     return pmd;
 }
 
+static void ValidateProtectedContentModifiers(struct _SnortConfig *sc, PatternMatchData *pmd)
+{
+    unsigned int length;
+
+    if (pmd == NULL)
+        ParseError("Please place \"content\" rules before protected content modifiers");
+
+    if( (length = SecHash_Type2Length(pmd->pattern_type)) == 0 )
+        ParseError("Bad pattern type");
+
+    if( pmd->pattern_size != length )
+        ParseError("Bad protected pattern hash digest length");
+
+    /* We NEED a specified pattern length (for this implementation) */
+    if( (pmd->protected_length <= 0) || (pmd->protected_length > 65536))
+        ParseError("No length or invalid length specified for protected_content rule"); 
+
+    /* At this point, we have a properly specified protected content rule with a pattern length.
+       Since have the pattern size, we can place it in ->pattern_size for the runtime
+       processing.  If/when protected content searching expands beyond fixed ('specified')
+       patterns, this approach needs to be revisted. */
+    pmd->pattern_size = pmd->protected_length;
+
+}
 
 /* Options that can't be used with http content modifiers.  Additionally
  * http_inspect preprocessor needs to be enabled */
@@ -892,11 +1014,14 @@ static void ValidateHttpContentModifiers(struct _SnortConfig *sc, PatternMatchDa
     if (pmd == NULL)
         ParseError("Please place \"content\" rules before http content modifiers");
 
+/* TBD-EDM - verify this is handled correctly */
+#if 0
     if (!IsPreprocEnabled(sc, PP_HTTPINSPECT))
     {
         ParseError("Please enable the HTTP Inspect preprocessor "
                 "before using the http content modifiers");
     }
+#endif 
 
     if (pmd->replace_buf != NULL)
     {
@@ -1128,6 +1253,13 @@ uint32_t PatternMatchHash(void *d)
     b += pmd->distance_var;
     c += pmd->within_var;
 
+    if( pmd->protected_pattern )
+    {
+        mix(a,b,c);
+        a += 1;
+        b += pmd->pattern_type;
+        c += pmd->protected_length;
+    }
     final(a,b,c);
 
     return c;
@@ -1376,6 +1508,10 @@ static inline void ValidateContent(struct _SnortConfig *sc, PatternMatchData *pm
 
     if (pmd->fp)
     {
+        if( pmd->protected_pattern )
+        {
+            ParseError("Cannot use the fast pattern modifier with protected content");
+        }
         if ((type == PLUGIN_PATTERN_MATCH_URI) && !IsHttpBufFpEligible(pmd->http_buffer))
 
         {
@@ -1413,6 +1549,8 @@ static inline void ValidateContent(struct _SnortConfig *sc, PatternMatchData *pm
 
     if (type == PLUGIN_PATTERN_MATCH_URI)
         ValidateHttpContentModifiers(sc, pmd);
+    if (pmd->protected_pattern)
+        ValidateProtectedContentModifiers(sc, pmd);
 }
 
 /****************************************************************************
@@ -1747,6 +1885,302 @@ void ParsePattern(char *rule, OptTreeNode * otn, int type)
     ds_idx->pattern_max_jump_size = GetMaxJumpSize(ds_idx->pattern_buf, ds_idx->pattern_size);
 }
 
+static bool HexToNybble( char Chr, uint8_t *Val )
+{
+    if( !isxdigit( (int)Chr ) )
+    {
+        *Val = 0;
+        return( false );
+    }
+
+    if( isdigit( Chr ) )
+        *Val = (uint8_t)(Chr - '0');
+    else
+        *Val = (uint8_t)(((char)toupper(Chr) - 'A') + 10);
+
+    return( true );
+}
+
+static bool HexToByte( char *Str, uint8_t *Val )
+{
+    uint8_t nybble;
+
+    *Val = 0;
+
+    if( HexToNybble( *Str++, &nybble ) )
+    {
+        *Val = ((nybble & 0xf) << 4);
+        if( HexToNybble( *Str, &nybble ) )
+        {
+            *Val |= (nybble & 0xf);
+            return( true );
+        }
+    }
+
+    return( false );
+}
+
+/****************************************************************************
+ *
+ * Function: ParseProtectedPattern(char *)
+ *
+ * Purpose: Process the application layer patterns and attach them to the
+ *          appropriate rule.
+ *
+ * Arguments: rule => the pattern string
+ *
+ * Returns: void function
+ *
+ ***************************************************************************/
+void ParseProtectedPattern(char *rule, OptTreeNode * otn, int type)
+{
+    uint8_t tmp_buf[MAX_PATTERN_SIZE];
+
+    char *tmp;
+    unsigned int pat_idx;
+    int exception_flag = 0;
+    PatternMatchData *ds_idx;
+
+    /* clear out the temp buffer */
+    memset(tmp_buf, 0, MAX_PATTERN_SIZE);
+
+    if (rule == NULL)
+        ParseError("ParsePattern Got Null enclosed in quotation marks (\")!");
+
+    while(isspace((int)*rule))
+        rule++;
+
+    if(  *rule == '!' )
+    {
+        exception_flag = 1;
+        rule++;
+    }
+    else
+        exception_flag = 0;
+
+    /* find the start of the data */
+    while(isspace((int)*rule))
+        rule++;
+
+    if (*rule++ != '"')
+        ParseError("Protected content data needs to be enclosed in quotation marks (\")!");
+
+    /* find the end of the data */
+    tmp = strrchr(rule, '"');
+
+    if (tmp == NULL)
+        ParseError("Protected content data needs to be enclosed in quotation marks (\")!");
+
+    /* Terminate the pattern string */
+    *tmp = '\0';
+
+    /* Is there anything other than whitespace after the trailing
+     * double quote? */
+    while (*++tmp != '\0')
+        if(!isspace ((int)*tmp))
+            ParseError("Bad data (possibly due to missing semicolon) after "
+                       "trailing double quote.");
+
+    pat_idx = 0;    /* index into the pattern buffer */
+
+    while((*rule != '\0') && (pat_idx < MAX_PATTERN_SIZE))
+    {
+        if( !HexToByte( rule, &(tmp_buf[pat_idx]) ) )
+            ParseError("Bad protected pattern");
+
+        rule += 2;
+        pat_idx += 1;
+    }
+
+    if( (*rule == '\0') && (pat_idx == 0) )
+        ParseError("Zero protected pattern size");
+
+    if( (*rule != '\0') && (pat_idx == MAX_PATTERN_SIZE) )
+        ParseError("Protected pattern too long");
+
+    ds_idx = (PatternMatchData *) otn->ds_list[type];
+
+    while(ds_idx->next != NULL)
+        ds_idx = ds_idx->next;
+
+    ds_idx->pattern_buf = (char *)SnortAlloc(pat_idx);
+    memcpy(ds_idx->pattern_buf, tmp_buf, pat_idx);
+
+    ds_idx->pattern_size = pat_idx;
+    ds_idx->search = uniSearchHash;
+
+    ds_idx->exception_flag = exception_flag;
+
+}
+
+/*
+ * hash search function.
+ *
+ * data = ptr to buffer to search
+ * dlen = distance to the back of the buffer being tested, validated
+ *        against offset + depth before function entry (not distance/within)
+ * pmd = pointer to pattern match data struct
+ *
+ * return  1 for found
+ * return  0 for not found
+ * return -1 for error (search out of bounds)
+ */
+static int uniSearchHash(const char *data, int dlen, PatternMatchData *pmd)
+{
+    /*
+     * in theory computeDepth doesn't need to be called because the
+     * depth + offset adjustments have been made by the calling function
+     */
+    int depth = dlen;
+    int success = 0;
+    const char *start_ptr = data;
+    const char *end_ptr = data + dlen;
+    const char *base_ptr = start_ptr;
+    uint32_t extract_offset, extract_distance;
+    int search_start = 0;
+
+    if(pmd->use_doe != 1)
+    {
+        DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH, "NOT Using Doe Ptr\n"););
+        UpdateDoePtr(NULL, 0); /* get rid of all our pattern match state */
+    }
+
+    /* Get byte_extract variables */
+    if (pmd->offset_var >= 0 && pmd->offset_var < NUM_BYTE_EXTRACT_VARS)
+    {
+        GetByteExtractValue(&extract_offset, pmd->offset_var);
+        pmd->offset = (int) extract_offset;
+    }
+    if (pmd->distance_var >= 0 && pmd->distance_var < NUM_BYTE_EXTRACT_VARS)
+    {
+        GetByteExtractValue(&extract_distance, pmd->distance_var);
+        pmd->distance = (int) extract_distance;
+    }
+
+    // Set our initial starting point
+    if (doe_ptr)
+    {
+        // Sanity check to make sure the doe_ptr is within the buffer we're
+        // searching.  It could be at the very end of the buffer due to a
+        // previous match, but may have a negative distance here.
+        if (((char *)doe_ptr < start_ptr) || ((char *)doe_ptr > end_ptr))
+        {
+            DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH, "Returning because "
+                        "doe_ptr isn't within the buffer we're searching: "
+                        "start_ptr: %p, end_ptr: %p, doe_ptr: %p\n",
+                        start_ptr, end_ptr, doe_ptr););
+            return -1;
+        }
+
+        DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
+                    "Setting base_ptr to doe_ptr (%p)\n", doe_ptr););
+
+        base_ptr = (const char *)doe_ptr;
+        depth = dlen - ((char *)doe_ptr - data);
+    }
+    else
+    {
+        DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
+                    "Setting base_ptr to start_ptr (%p)\n", start_ptr););
+
+        base_ptr = start_ptr;
+        depth = dlen;
+    }
+
+    // Adjust base_ptr and depth based on distance
+    // or offset parameters.
+    if (pmd->distance != 0)
+    {
+        // This covers the pmd->distance > buffer case
+        if (pmd->distance > depth)
+        {
+            depth = 0;
+        }
+        else
+        {
+            search_start = (base_ptr - start_ptr) + pmd->distance;
+            base_ptr += pmd->distance;
+            depth -= pmd->distance;
+        }
+
+        // If the distance is negative and puts us before start_ptr
+        // set base_ptr to start_ptr and adjust depth based on protected_length.
+        if (search_start < 0)
+        {
+            return -1;
+        }
+        else if ((int)pmd->pattern_size < depth)
+        {
+            depth = (int)pmd->pattern_size;
+        }
+        search_start = 0;
+    }
+    else if (pmd->offset != 0)
+    {
+        if (pmd->offset > depth)
+        {
+            depth = 0;
+        }
+        else
+        {
+            search_start = pmd->offset;
+            base_ptr += pmd->offset;
+            depth -= pmd->offset;
+        }
+
+        // If the distance is negative and puts us before start_ptr
+        // set base_ptr to start_ptr and adjust depth based on pmd->protected_length.
+        if (search_start < 0)
+        {
+            return -1;
+        } 
+        else if ((int)pmd->pattern_size < depth)
+        {
+            depth = (int)pmd->pattern_size;
+        }
+    }
+
+    // If the pattern size is greater than the amount of data we have to
+    // search, there's no way we can match, but return 0 here for the
+    // case where the match is inverted and there is at least some data.
+    if ((int)pmd->pattern_size > depth)
+    {
+        if (pmd->exception_flag && (depth > 0))
+            return 0;
+
+        return -1;
+    }
+
+#ifdef DEBUG_MSGS
+    {
+        char *hexbuf;
+
+        assert(depth <= dlen);
+
+        DebugMessage(DEBUG_PATTERN_MATCH, "uniSearchHash:\n ");
+
+        hexbuf = hex((u_char *)pmd->pattern_buf, pmd->pattern_size);
+        DebugMessage(DEBUG_PATTERN_MATCH, "   p->data: %p\n   doe_ptr: %p\n   "
+                "base_ptr: %p\n   depth: %d\n   searching for: %s\n",
+                data, doe_ptr, base_ptr, depth, hexbuf);
+        free(hexbuf);
+    }
+#endif /* DEBUG_MSGS */
+
+    success = hashSearchFixed(base_ptr, pmd->pattern_size,
+                              pmd->pattern_type, pmd->pattern_buf);
+
+#ifdef DEBUG_MSGS
+    if(success)
+    {
+        DebugMessage(DEBUG_PATTERN_MATCH, "matched, doe_ptr: %p (%d)\n",
+                     doe_ptr, ((char *)doe_ptr - data));
+    }
+#endif
+
+    return success;
+}
+
 /********************************************************************
  * Runtime functions
  ********************************************************************/
@@ -1866,7 +2300,7 @@ static int uniSearchReal(const char *data, int dlen, PatternMatchData *pmd, int 
 
     // Adjust base_ptr and depth based on distance/within
     // or offset/depth parameters.
-    if ((pmd->distance != 0) || (pmd->within != 0))
+    if ((pmd->distance != 0) || (pmd->within != PMD_WITHIN_UNDEFINED))
     {
         // This covers the pmd->distance > buffer case
         if (pmd->distance > depth)
@@ -1884,14 +2318,15 @@ static int uniSearchReal(const char *data, int dlen, PatternMatchData *pmd, int 
         // set base_ptr to start_ptr and adjust depth based on within.
         if (search_start < 0)
         {
-            int delta = (int)pmd->within + search_start;
+            int delta = search_start;
+            delta += (pmd->within == PMD_WITHIN_UNDEFINED) ? 0 : (int)pmd->within;
             // base_ptr is before start_ptr and the within is before start_ptr as well. Cannot re-adjust.
             if(delta < 0)
                 return -1;
             base_ptr = start_ptr;
-            depth = ((pmd->within == 0) || (delta > dlen)) ? dlen : delta;
+            depth = ((pmd->within == PMD_WITHIN_UNDEFINED) || (delta > dlen)) ? dlen : delta;
         }
-        else if ((pmd->within != 0) && ((int)pmd->within < depth))
+        else if ((pmd->within != PMD_WITHIN_UNDEFINED) && ((int)pmd->within < depth))
         {
             depth = (int)pmd->within;
         }
@@ -2331,6 +2766,9 @@ void PatternMatchDuplicatePmd(void *src, PatternMatchData *pmd_dup)
     pmd_dup->fp_only = pmd_src->fp_only;
     pmd_dup->fp_offset = pmd_src->fp_offset;
     pmd_dup->fp_length = pmd_src->fp_length;
+    pmd_dup->pattern_type = pmd_src->pattern_type;
+    pmd_dup->protected_pattern = pmd_src->protected_pattern;
+    pmd_dup->protected_length = pmd_src->protected_length;
 
     pmd_dup->last_check.ts.tv_sec = pmd_src->last_check.ts.tv_sec;
     pmd_dup->last_check.ts.tv_usec = pmd_src->last_check.ts.tv_usec;
@@ -2370,7 +2808,7 @@ int PatternMatchAdjustRelativeOffsets(PatternMatchData *orig_pmd, PatternMatchDa
         /* Make offset where we will start the next search */
         dup_pmd->offset = start_cursor - orig_cursor;
     }
-    else if (orig_pmd->within != 0)
+    else if (orig_pmd->within != PMD_WITHIN_UNDEFINED)
     {
         /* This was relative to a previously found pattern.  No space left to
          * search, we're done */

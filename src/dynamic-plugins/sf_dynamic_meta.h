@@ -30,8 +30,8 @@
 #define REQ_ENGINE_LIB_MAJOR 2
 #endif
 #ifndef REQ_ENGINE_LIB_MINOR
-// FIXTHIS need to update dynamic-plugins/sf_engine/examples/sfsnort_dynamic_detection_lib.c
-#define REQ_ENGINE_LIB_MINOR 1
+/* FIXTHIS need to update dynamic-plugins/sf_engine/examples/sfsnort_dynamic_detection_lib.c */
+#define REQ_ENGINE_LIB_MINOR 4
 #endif
 #define REQ_ENGINE_LIB_NAME "SF_SNORT_DETECTION_ENGINE"
 

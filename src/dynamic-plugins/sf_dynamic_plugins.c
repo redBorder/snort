@@ -79,6 +79,7 @@ typedef HANDLE PluginHandle;
 #include "active.h"
 #include "mstring.h"
 #include "sfsnprintfappend.h"
+#include "session_api.h"
 #include "stream_api.h"
 #include "sf_iph.h"
 #include "fpdetect.h"
@@ -92,6 +93,7 @@ typedef HANDLE PluginHandle;
 #include "idle_processing_funcs.h"
 #include "../dynamic-output/plugins/output.h"
 #include "file_api.h"
+#include "packet_time.h"
 
 #ifdef TARGET_BASED
 #include "target-based/sftarget_protocol_reference.h"
@@ -257,8 +259,7 @@ void LoadAllLibs(const char * const path, LoadLibraryFunc loadFunc)
         dir_entry = readdir(directory);
         while (dir_entry != NULL)
         {
-            if ((dir_entry->d_reclen != 0) &&
-                (fnmatch(MODULE_EXT, dir_entry->d_name, FNM_PATHNAME | FNM_PERIOD) == 0))
+            if (fnmatch(MODULE_EXT, dir_entry->d_name, FNM_PATHNAME | FNM_PERIOD) == 0)
             {
                 /* Get the string up until the first dot.  This will be
                  * considered the file prefix. */
@@ -1104,7 +1105,7 @@ int DynamicSetRuleData(void *p, void *data, uint32_t sid, SessionDataFree sdf)
     if (stream_api && pkt && pkt->ssnptr)
     {
         DynamicRuleSessionData *head =
-            (DynamicRuleSessionData *)stream_api->get_application_data(pkt->ssnptr, PP_SHARED_RULES);
+            (DynamicRuleSessionData *)session_api->get_application_data(pkt->ssnptr, PP_SHARED_RULES);
         DynamicRuleSessionData *tmp = head;
         DynamicRuleSessionData *tail = NULL;
 
@@ -1142,7 +1143,7 @@ int DynamicSetRuleData(void *p, void *data, uint32_t sid, SessionDataFree sdf)
 
         if (head == NULL)
         {
-            if (stream_api->set_application_data(pkt->ssnptr, PP_SHARED_RULES,
+            if (session_api->set_application_data(pkt->ssnptr, PP_SHARED_RULES,
                         (void *)tmp, DynamicRuleDataFreeSession) != 0)
             {
                 DynamicRuleDataFree(tmp);
@@ -1167,7 +1168,7 @@ void * DynamicGetRuleData(void *p, uint32_t sid)
     if (stream_api && pkt && pkt->ssnptr)
     {
         DynamicRuleSessionData *head =
-            (DynamicRuleSessionData *)stream_api->get_application_data(pkt->ssnptr, PP_SHARED_RULES);
+            (DynamicRuleSessionData *)session_api->get_application_data(pkt->ssnptr, PP_SHARED_RULES);
 
         while (head != NULL)
         {
@@ -1376,6 +1377,14 @@ void *AddPreprocessor(struct _SnortConfig *sc, void (*pp_func)(void *, void *), 
     return (void *)AddFuncToPreprocList(sc, preprocessorFunc, priority, preproc_id, proto_mask);
 }
 
+void *AddPreprocessorAllPolicies(struct _SnortConfig *sc, void (*pp_func)(void *, void *),
+                                 uint16_t priority, uint32_t preproc_id, uint32_t proto_mask)
+{
+    SnortPacketProcessFunc preprocessorFunc = (SnortPacketProcessFunc)pp_func;
+    AddFuncToPreprocListAllNapPolicies(sc, preprocessorFunc, priority, preproc_id, proto_mask);
+    return NULL;
+}
+
 typedef void (*MetadataProcessFunc)(int, const uint8_t *);
 void *AddMetaEval(struct _SnortConfig *sc, void (*meta_eval_func)(int, const uint8_t *), uint16_t priority,
                       uint32_t preproc_id)
@@ -1396,14 +1405,19 @@ void AddPreprocessorCheck(struct _SnortConfig *sc, int (*pp_chk_func)(struct _Sn
     AddFuncToConfigCheckList(sc, pp_chk_func);
 }
 
-void DynamicDisableDetection(void *p)
+void DynamicDisableDetection( void *p )
 {
-    DisableDetect((Packet *)p);
+    DisableDetect( ( Packet * ) p );
 }
 
-void DynamicDisableAllDetection(void *p)
+void DynamicDisableAllDetection( void *p )
 {
-    DisableAllDetect((Packet *)p);
+    DisableAllDetect( ( Packet * ) p );
+}
+
+void DynamicDisablePacketAnalysis( void *p )
+{
+    DisablePacketAnalysis( ( Packet * ) p );
 }
 
 int DynamicDetect(void *p)
@@ -1411,9 +1425,9 @@ int DynamicDetect(void *p)
     return Detect((Packet *)p);
 }
 
-int DynamicSetPreprocessorBit(void *p, uint32_t preprocId)
+int DynamicEnablePreprocessor(void *p, uint32_t preprocId)
 {
-    return SetPreprocBit((Packet *)p, preprocId);
+    return EnablePreprocessor((Packet *)p, preprocId);
 }
 
 void DynamicDropReset(void *p)
@@ -1466,12 +1480,12 @@ int DynamicProfilingPreprocs(void)
 
 int DynamicPreprocess(void *packet)
 {
-    return Preprocess((Packet*)packet);
+    return Preprocess( ( Packet * ) packet );
 }
 
 void DynamicDisablePreprocessors(void *p)
 {
-    DisablePreprocessors((Packet *)p);
+    DisableAppPreprocessors( ( Packet * ) p );
 }
 
 void DynamicIP6Build(void *p, const void *hdr, int family)
@@ -1494,9 +1508,14 @@ tSfPolicyId DynamicGetParserPolicy(struct _SnortConfig *sc)
     return getParserPolicy(sc);
 }
 
-tSfPolicyId DynamicGetRuntimePolicy(void)
+tSfPolicyId DynamicGetNapRuntimePolicy(void)
 {
-    return getRuntimePolicy();
+    return getNapRuntimePolicy();
+}
+
+tSfPolicyId DynamicGetIpsRuntimePolicy(void)
+{
+    return getIpsRuntimePolicy();
 }
 
 tSfPolicyId DynamicGetDefaultPolicy(void)
@@ -1509,11 +1528,19 @@ tSfPolicyId DynamicGetPolicyFromId(uint16_t id)
     return sfPolicyIdGetBinding(snort_conf->policy_config, id);
 }
 
-void DynamicChangeRuntimePolicy(tSfPolicyId new_id, void *p)
+void DynamicChangeNapRuntimePolicy(tSfPolicyId new_id, void *scb)
 {
-    setRuntimePolicy(new_id);
-    ((Packet *)p)->configPolicyId =
-        snort_conf->targeted_policies[new_id]->configPolicyId;
+    session_api->set_runtime_policy( scb, SNORT_NAP_POLICY, new_id );
+    setNapRuntimePolicy(new_id);
+}
+
+void DynamicChangeIpsRuntimePolicy(tSfPolicyId new_id, void *p)
+{
+    Packet *pkt = (Packet *) p;
+
+    session_api->set_runtime_policy( pkt->ssnptr, SNORT_IPS_POLICY, new_id );
+    setIpsRuntimePolicy(new_id);
+    pkt->configPolicyId = snort_conf->targeted_policies[new_id]->configPolicyId;
 }
 
 static void* DynamicEncodeNew (void)
@@ -1524,6 +1551,16 @@ static void* DynamicEncodeNew (void)
 static void DynamicEncodeDelete (void *p)
 {
     Encode_Delete((Packet*)p);
+}
+
+static void *DynamicNewGrinderPkt(void *p, void *phdr, uint8_t *pkt)
+{
+    return (void*)NewGrinderPkt((Packet *)p, (DAQ_PktHdr_t *)phdr, pkt);
+}
+
+static void DynamicDeleteGrinderPkt(void *p)
+{
+    DeleteGrinderPkt((Packet*)p);
 }
 
 static int DynamicEncodeFormat (uint32_t f, const void* p, void *c, int t)
@@ -1537,7 +1574,7 @@ static void DynamicEncodeUpdate (void* p)
 }
 
 #ifdef ACTIVE_RESPONSE
-void DynamicSendBlockResponseMsg(void *p, const uint8_t* buffer, uint32_t buffer_len)
+void DynamicSendBlockResponseMsg(void *p, const uint8_t* buffer, uint32_t buffer_len, unsigned flags)
 {
     Packet *packet = (Packet *)p;
     EncodeFlags df = (packet->packet_flags & PKT_FROM_SERVER) ? ENC_FLAG_FWD:0;
@@ -1545,6 +1582,10 @@ void DynamicSendBlockResponseMsg(void *p, const uint8_t* buffer, uint32_t buffer
     if ( !packet->data || packet->dsize == 0 )
         return;
 
+    if (flags & SND_BLK_RESP_FLAG_DO_CLIENT)
+        df |= ENC_FLAG_RST_CLNT;
+    if (flags & SND_BLK_RESP_FLAG_DO_SERVER)
+        df |= ENC_FLAG_RST_SRVR;
     if (packet->packet_flags & PKT_STREAM_EST)
         Active_SendData(packet, df, buffer, buffer_len);
 }
@@ -1581,9 +1622,14 @@ void DynamicSetAltDecode(uint16_t altLen)
     SetAltDecode(altLen);
 }
 
-int DynamicGetInlineMode(void)
+int DynamicGetNapInlineMode(void)
 {
-    return ScInlineMode();
+    return ScNapInlineMode();
+}
+
+int DynamicGetIpsInlineMode(void)
+{
+    return ScIpsInlineMode();
 }
 
 long DynamicSnortStrtol(const char *nptr, char **endptr, int base)
@@ -1637,6 +1683,38 @@ bool DynamicIsPafEnabled(void)
     return ScPafEnabled();
 }
 
+time_t DynamicPktTime(void)
+{
+    return packet_time();
+}
+
+void DynamicGetPktTimeOfDay(struct timeval *tv)
+{
+    packet_gettimeofday(tv);
+}
+
+#ifdef SIDE_CHANNEL
+bool DynamicIsSCEnabled(void)
+{
+    return ScSideChannelEnabled();
+}
+
+int DynamicSCRegisterRXHandler(uint16_t type, SCMProcessMsgFunc processMsgFunc, void *data)
+{
+    return SideChannelRegisterRXHandler(type, processMsgFunc, data);
+}
+
+int DynamicSCPreallocMessageTX(uint32_t length, SCMsgHdr **hdr_ptr, uint8_t **msg_ptr, void **msg_handle)
+{
+    return SideChannelPreallocMessageTX(length, hdr_ptr, msg_ptr, msg_handle);
+}
+
+int DynamicSCEnqueueMessageTX(SCMsgHdr *hdr, const uint8_t *msg, uint32_t length, void *msg_handle, SCMQMsgFreeFunc msgFreeFunc)
+{
+    return SideChannelEnqueueMessageTX(hdr, msg, length, msg_handle, msgFreeFunc);
+}
+#endif
+
 int DynamicCanWhitelist(void)
 {
     return DAQ_CanWhitelist();
@@ -1683,6 +1761,144 @@ static sigset_t DynamicSnortSignalMask(void)
 }
 #endif
 
+static SslAppIdLookupFunc sslAppIdLookupFnPtr;
+
+static void registerSslAppIdLookup(SslAppIdLookupFunc fnptr)
+{
+    sslAppIdLookupFnPtr = fnptr;
+}
+
+static int sslAppIdLookup(void *ssnptr, const char * serverName, const char * commonName, int32_t *serviceAppId, int32_t *clientAppId, int32_t *payloadAppId)
+{
+    if (sslAppIdLookupFnPtr)
+        return (sslAppIdLookupFnPtr)(ssnptr, serverName, commonName, serviceAppId, clientAppId, payloadAppId);
+    return 0;
+}
+
+static GetAppIdFunc getAppIdFnPtr = NULL;
+
+static void registerGetAppId(GetAppIdFunc fnptr)
+{
+    getAppIdFnPtr = fnptr;
+}
+
+static int32_t getAppId(void *ssnptr)
+{
+    if(getAppIdFnPtr)
+        return (getAppIdFnPtr)(ssnptr);
+    return 0;
+}
+
+
+static UrlQueryCreateFunc urlQueryCreateFnPtr;
+static UrlQueryDestroyFunc urlQueryDestroyFnPtr;
+static UrlQueryMatchFunc urlQueryMatchFnPtr;
+static UserGroupIdGetFunc userGroupIdGetFnPtr;
+static GeoIpAddressLookupFunc geoIpAddressLookupFnPtr;
+static UpdateSSLSSnLogDataFunc updateSSLSSnLogDataFnPtr;
+static EndSSLSSnLogDataFunc endSSLSSnLogDataFnPtr;
+static GetIntfDataFunc getIntfDataFnPtr;
+
+void registerUrlQuery(UrlQueryCreateFunc createFn, UrlQueryDestroyFunc destroyFn, UrlQueryMatchFunc matchFn)
+{
+    urlQueryCreateFnPtr = createFn;
+    urlQueryDestroyFnPtr = destroyFn;
+    urlQueryMatchFnPtr = matchFn;
+}
+static struct urlQueryContext* urlQueryCreate(const char *url)
+{
+    if (urlQueryCreateFnPtr)
+    {
+        return ((urlQueryCreateFnPtr)(url));
+    }
+
+    return NULL;
+}
+static void urlQueryDestroy(struct urlQueryContext *context)
+{
+    if (urlQueryDestroyFnPtr)
+        (urlQueryDestroyFnPtr)(context);
+}
+static int urlQueryMatch(struct urlQueryContext *context, uint16_t inUrlCat, uint16_t inUrlMinRep, uint16_t inUrlMaxRep)
+{
+    if (urlQueryMatchFnPtr)
+        return (urlQueryMatchFnPtr)(context, inUrlCat, inUrlMinRep, inUrlMaxRep);
+    return -1;
+}
+
+static void registerUserGroupIdGet(UserGroupIdGetFunc userIdFn)
+{
+    userGroupIdGetFnPtr = userIdFn;
+}
+static int userGroupIdGet(const snort_ip *snortIp, uint32_t *userId, unsigned *groupIdArray, unsigned groupIdArrayLen)
+{
+    if (userGroupIdGetFnPtr)
+        return (userGroupIdGetFnPtr)(snortIp, userId, groupIdArray, groupIdArrayLen);
+    return -1;
+}
+
+static void registerGeoIpAddressLookup(GeoIpAddressLookupFunc fn)
+{
+    geoIpAddressLookupFnPtr = fn;
+}
+static int geoIpAddressLookup(const snort_ip *snortIp, uint16_t* geo)
+{
+    if (geoIpAddressLookupFnPtr)
+        return (geoIpAddressLookupFnPtr)(snortIp, geo);
+    return -1;
+}
+
+static void registerGetIntfData(GetIntfDataFunc fn)
+{
+    getIntfDataFnPtr = fn;
+}
+
+static void getIntfData(void *ssnptr, int32_t *ingressIntfIndex, int32_t *egressIntfIndex,
+                int32_t *ingressZoneIndex, int32_t *egressZoneIndex)
+{
+    if (getIntfDataFnPtr)
+    {
+        (getIntfDataFnPtr)(ssnptr, ingressIntfIndex, egressIntfIndex, ingressZoneIndex, egressZoneIndex);
+    }
+}
+
+static void registerUpdateSSLSSnLogData(UpdateSSLSSnLogDataFunc fn)
+{
+    updateSSLSSnLogDataFnPtr = fn;
+}
+
+static void updateSSLSSnLogData(void *ssnptr, uint8_t logging_on, uint8_t action_is_block, const char *ssl_cert_fingerprint,
+    uint32_t ssl_cert_fingerprint_len, uint16_t ssl_cert_status, uint8_t *ssl_policy_id,
+    uint32_t ssl_policy_id_len, uint32_t ssl_rule_id, uint16_t ssl_cipher_suite, uint8_t ssl_version,
+    uint16_t ssl_actual_action, uint16_t ssl_expected_action, uint32_t ssl_url_category,
+    uint16_t ssl_flow_status, uint32_t ssl_flow_error, uint32_t ssl_flow_messages,
+    uint64_t ssl_flow_flags, char *ssl_server_name, uint8_t *ssl_session_id, uint8_t session_id_len,
+    uint8_t *ssl_ticket_id, uint8_t ticket_id_len)
+{
+    if (updateSSLSSnLogDataFnPtr)
+    {
+        (updateSSLSSnLogDataFnPtr)(ssnptr, logging_on, action_is_block, ssl_cert_fingerprint,
+                ssl_cert_fingerprint_len, ssl_cert_status, ssl_policy_id,
+                ssl_policy_id_len, ssl_rule_id, ssl_cipher_suite, ssl_version,
+                ssl_actual_action, ssl_expected_action, ssl_url_category,
+                ssl_flow_status, ssl_flow_error, ssl_flow_messages,
+                ssl_flow_flags, ssl_server_name, ssl_session_id, session_id_len, ssl_ticket_id, ticket_id_len);
+    }
+}
+
+
+static void registerEndSSLSSnLogData(EndSSLSSnLogDataFunc fn)
+{
+    endSSLSSnLogDataFnPtr = fn;
+}
+
+static void endSSLSSnLogData(void *ssnptr, uint32_t ssl_flow_messages, uint64_t ssl_flow_flags)
+{
+    if (endSSLSSnLogDataFnPtr)
+    {
+        (endSSLSSnLogDataFnPtr)(ssnptr, ssl_flow_messages, ssl_flow_flags);
+    }
+}
 static inline bool DynamicReadyForProcess (void* pkt)
 {
     Packet *p = (Packet *)pkt;
@@ -1691,6 +1907,26 @@ static inline bool DynamicReadyForProcess (void* pkt)
         return PacketHasPAFPayload(p);
 
     return !(p->packet_flags & PKT_STREAM_INSERT);
+}
+
+void DynamicSetSSLCallback(void *p)
+{
+    SetSSLCallback(p);
+}
+
+void *DynamicGetSSLCallback(void)
+{
+    return GetSSLCallback();
+}
+bool DynamicIsSSLPolicyEnabled(void)
+{
+    tSfPolicyId policy = getNapRuntimePolicy();
+    return (snort_conf->targeted_policies[policy]->ssl_policy_enabled );
+}
+
+void DynamicSetSSLPolicyEnabled(struct _SnortConfig *sc, tSfPolicyId policy, bool value)
+{
+    sc->targeted_policies[policy]->ssl_policy_enabled = value;
 }
 
 int InitDynamicPreprocessors(void)
@@ -1717,6 +1953,7 @@ int InitDynamicPreprocessors(void)
     preprocData.getRelatedReloadData = GetRelatedReloadData;
 #endif
     preprocData.addPreproc = &AddPreprocessor;
+    preprocData.addPreprocAllPolicies = &AddPreprocessorAllPolicies;
     preprocData.addMetaEval = &AddMetaEval;
     preprocData.getSnortInstance = DynamicGetSnortInstance;
     preprocData.addPreprocExit = &AddFuncToPreprocCleanExitList;
@@ -1738,8 +1975,10 @@ int InitDynamicPreprocessors(void)
     preprocData.detect = &DynamicDetect;
     preprocData.disableDetect = &DynamicDisableDetection;
     preprocData.disableAllDetect = &DynamicDisableAllDetection;
-    preprocData.setPreprocBit = &DynamicSetPreprocessorBit;
+    preprocData.disablePacketAnalysis = &DynamicDisablePacketAnalysis;
+    preprocData.enablePreprocessor = &DynamicEnablePreprocessor;
 
+    preprocData.sessionAPI = session_api;
     preprocData.streamAPI = stream_api;
     preprocData.searchAPI = search_api;
 
@@ -1778,6 +2017,9 @@ int InitDynamicPreprocessors(void)
 #ifdef TARGET_BASED
     preprocData.findProtocolReference = &FindProtocolReference;
     preprocData.addProtocolReference = &AddProtocolReference;
+#if defined(FEAT_OPEN_APPID)
+    preprocData.findProtocolName = &FindProtocolName;
+#endif /* defined(FEAT_OPEN_APPID) */
     preprocData.isAdaptiveConfigured = &IsAdaptiveConfigured;
     preprocData.isAdaptiveConfiguredForSnortConfig = &IsAdaptiveConfiguredForSnortConfig;
 #endif
@@ -1786,7 +2028,8 @@ int InitDynamicPreprocessors(void)
     preprocData.preprocOptByteOrderKeyword = &RegisterPreprocessorRuleOptionByteOrder;
     preprocData.isPreprocEnabled = &IsPreprocEnabled;
 
-    preprocData.getRuntimePolicy = DynamicGetRuntimePolicy;
+    preprocData.getNapRuntimePolicy = DynamicGetNapRuntimePolicy;
+    preprocData.getIpsRuntimePolicy = DynamicGetIpsRuntimePolicy;
     preprocData.getParserPolicy = DynamicGetParserPolicy;
     preprocData.getDefaultPolicy = DynamicGetDefaultPolicy;
     preprocData.setParserPolicy = DynamicSetParserPolicy;
@@ -1814,6 +2057,9 @@ int InitDynamicPreprocessors(void)
     preprocData.encodeFormat = DynamicEncodeFormat;
     preprocData.encodeUpdate = DynamicEncodeUpdate;
 
+    preprocData.newGrinderPkt = DynamicNewGrinderPkt;
+    preprocData.deleteGrinderPkt = DynamicDeleteGrinderPkt;
+
     preprocData.portObjectCharPortArray = PortObjectCharPortArray;
 
     preprocData.addDetect = &AddDetection;
@@ -1826,8 +2072,18 @@ int InitDynamicPreprocessors(void)
 
     preprocData.isPafEnabled = DynamicIsPafEnabled;
 
+    preprocData.pktTime = DynamicPktTime;
+    preprocData.getPktTimeOfDay = DynamicGetPktTimeOfDay;
+#ifdef SIDE_CHANNEL
+    preprocData.isSCEnabled = DynamicIsSCEnabled;
+    preprocData.scRegisterRXHandler = &DynamicSCRegisterRXHandler;
+    preprocData.scAllocMessageTX = &DynamicSCPreallocMessageTX;
+    preprocData.scEnqueueMessageTX = &DynamicSCEnqueueMessageTX;
+#endif
+
     preprocData.getPolicyFromId = &DynamicGetPolicyFromId;
-    preprocData.changeRuntimePolicy = &DynamicChangeRuntimePolicy;
+    preprocData.changeNapRuntimePolicy = &DynamicChangeNapRuntimePolicy;
+    preprocData.changeIpsRuntimePolicy = &DynamicChangeIpsRuntimePolicy;
 
     preprocData.inlineForceDropPacket = &DynamicForceDropPacket;
     preprocData.inlineForceDropAndReset = &DynamicForceDropReset;
@@ -1841,6 +2097,7 @@ int InitDynamicPreprocessors(void)
     preprocData.dynamicSetFlowId = &setFlowId;
     preprocData.addPeriodicCheck = &AddFuncToPeriodicCheckList;
     preprocData.addPostConfigFunc = &AddFuncToPreprocPostConfigList;
+    preprocData.addFuncToPostConfigList = &AddFuncToPostConfigList;
     preprocData.snort_conf_dir = &snort_conf_dir;
     preprocData.addOutputModule = &output_load_module;
     preprocData.canWhitelist = DynamicCanWhitelist;
@@ -1858,6 +2115,33 @@ int InitDynamicPreprocessors(void)
     preprocData.inlineDropPacket = &DynamicDropPacket;
     preprocData.readyForProcess = &DynamicReadyForProcess;
 
+    preprocData.getSSLCallback = &DynamicGetSSLCallback;
+    preprocData.setSSLCallback = &DynamicSetSSLCallback;
+
+    preprocData.sslAppIdLookup = &sslAppIdLookup;
+    preprocData.registerSslAppIdLookup = &registerSslAppIdLookup;
+
+    preprocData.getAppId = &getAppId;
+    preprocData.registerGetAppId = &registerGetAppId;
+
+    preprocData.urlQueryCreate = &urlQueryCreate;
+    preprocData.urlQueryDestroy = &urlQueryDestroy;
+    preprocData.urlQueryMatch = &urlQueryMatch;
+    preprocData.registerUrlQuery = &registerUrlQuery;
+
+    preprocData.userGroupIdGet = &userGroupIdGet;
+    preprocData.registerUserGroupIdGet = &registerUserGroupIdGet;
+
+    preprocData.geoIpAddressLookup = &geoIpAddressLookup;
+    preprocData.registerGeoIpAddressLookup = &registerGeoIpAddressLookup;
+    preprocData.updateSSLSSnLogData = &updateSSLSSnLogData;
+    preprocData.registerUpdateSSLSSnLogData = &registerUpdateSSLSSnLogData;
+    preprocData.endSSLSSnLogData = &endSSLSSnLogData;
+    preprocData.registerEndSSLSSnLogData = &registerEndSSLSSnLogData;
+    preprocData.getIntfData = &getIntfData;
+    preprocData.registerGetIntfData = &registerGetIntfData;
+    preprocData.isSSLPolicyEnabled = &DynamicIsSSLPolicyEnabled;
+    preprocData.setSSLPolicyEnabled = &DynamicSetSSLPolicyEnabled;
     return InitDynamicPreprocessorPlugins(&preprocData);
 }
 

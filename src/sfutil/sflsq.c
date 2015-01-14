@@ -263,9 +263,7 @@ SF_LNODE * sflist_first_node( SF_LIST * s )
         return 0;
 
     s->cur = s->head;
-    if( s->cur )
-        return s->cur;
-    return 0;
+    return s->cur;
 }
 SF_LNODE * sflist_next_node( SF_LIST * s )
 {
@@ -294,10 +292,13 @@ NODE_DATA sflist_remove_head (SF_LIST * s)
       s->head = s->head->next;
       s->count--;
       if( !s->head  )
-	  {
-	    s->tail = 0;
-	    s->count = 0;
-	  }
+      {
+        s->tail = 0;
+      }
+      else
+      {
+        s->head->prev = NULL;
+      }
       s_free( q );
     }
   return (NODE_DATA)ndata;
@@ -319,20 +320,18 @@ NODE_DATA sflist_remove_tail (SF_LIST * s)
       s->tail = q->prev;
       if (!s->tail)
       {
-	s->tail = 0;
-        s->head = 0;
-	s->count = 0;
+        s->head = NULL;
       }
       else
       {
-        if( q->prev ) q->prev->next = 0;
+        s->tail->next = NULL;
       }
       s_free (q);
     }
   return (NODE_DATA)ndata;
 }
 
-void sflist_remove_node (SF_LIST * s, SF_LNODE * n, void(*nfree)(void*) )
+void sflist_remove_node (SF_LIST * s, SF_LNODE * n)
 {
  // NODE_DATA ndata = 0;
   SF_LNODE * cur;
@@ -342,11 +341,13 @@ void sflist_remove_node (SF_LIST * s, SF_LNODE * n, void(*nfree)(void*) )
         s->head = s->head->next;
         s->count--;
         if (!s->head)
-	    {
-	      s->tail = 0;
-	      s->count = 0;
-	    }
-        if( nfree ) nfree( n->ndata );
+        {
+          s->tail = 0;
+        }
+        else
+        {
+          s->head->prev = NULL;
+        }
         s_free( n );
         return ;
   }
@@ -355,11 +356,13 @@ void sflist_remove_node (SF_LIST * s, SF_LNODE * n, void(*nfree)(void*) )
         s->tail = s->tail->prev;
         s->count--;
         if (!s->tail )
-	    {
-	      s->head = 0;
-	      s->count = 0;
-	    }
-        if( nfree ) nfree( n->ndata );
+        {
+          s->head = 0;
+        }
+        else
+        {
+          s->tail->next = NULL;
+        }
         s_free( n );
         return ;
   }
@@ -373,8 +376,7 @@ void sflist_remove_node (SF_LIST * s, SF_LNODE * n, void(*nfree)(void*) )
        /* unlink a middle node */
        n->next->prev = n->prev;
        n->prev->next = n->next;
-	   s->count--;
-       if( nfree ) nfree( n->ndata );
+       s->count--;
        s_free(n);
        return ;
      }
@@ -431,7 +433,7 @@ void sflist_free_all( SF_LIST * s, void (*nfree)(void*) )
   {
      p = sflist_remove_head (s);
 
-	 if( p && nfree )
+     if( p && nfree )
          nfree( p );
   }
   s_free(s);
@@ -458,7 +460,7 @@ void sflist_static_free_all( SF_LIST * s, void (*nfree)(void*) )
   {
      p = sflist_remove_head (s);
 
-	 if( p && nfree )
+     if( p && nfree )
          nfree( p );
   }
 }

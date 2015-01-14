@@ -24,7 +24,7 @@
  *
  * pop_util.h
  *
- * Author: Bhagyashree Bantwal <bbantwal@sourcefire.com>
+ * Author: Bhagyashree Bantwal <bbantwal@cisco.com>
  *
  *************************************************************************/
 

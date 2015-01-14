@@ -86,9 +86,9 @@ static int file_agent_save_file (FileInfo *, char *);
 static int file_agent_send_file (FileInfo *);
 static FileInfo* file_agent_get_file(void);
 static FileInfo *file_agent_finish_file(void);
-static File_Verdict file_agent_type_callback(void*, void*, uint32_t, bool);
+static File_Verdict file_agent_type_callback(void*, void*, uint32_t, bool,uint32_t);
 static File_Verdict file_agent_signature_callback(void*, void*, uint8_t*,
-        uint64_t, FileState *, bool);
+        uint64_t, FileState *, bool, uint32_t);
 static int file_agent_queue_file(void*, void *);
 static int file_agent_init_socket(char *hostname, int portno);
 
@@ -124,8 +124,7 @@ int file_agent_init_socket(char *hostname, int portno)
 
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
-    bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr,
-            server->h_length);
+    memcpy((char *)&serv_addr.sin_addr.s_addr, (char *)server->h_addr, server->h_length);
     serv_addr.sin_port = htons(portno);
 
     if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0)
@@ -605,7 +604,7 @@ void file_agent_close(void)
  * For file capture or file signature, FILE_VERDICT_PENDING must be returned
  */
 static File_Verdict file_agent_type_callback(void* p, void* ssnptr,
-        uint32_t file_type_id, bool upload)
+        uint32_t file_type_id, bool upload, uint32_t file_id)
 {
     file_inspect_stats.file_types_total++;
     if (file_signature_enabled || file_capture_enabled)
@@ -645,7 +644,7 @@ static inline int file_agent_capture_error(FileCaptureState capture_state)
  * or capture/singature is aborted
  */
 static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
-        uint8_t* file_sig, uint64_t file_size, FileState *state, bool upload)
+        uint8_t* file_sig, uint64_t file_size, FileState *state, bool upload, uint32_t file_id)
 {
     FileCaptureInfo *file_mem = NULL;
     FileCaptureState capture_state;
@@ -704,7 +703,7 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
     }
 
     /*Save the file to our file queue*/
-    if (file_agent_queue_file(pkt->stream_session_ptr, file_mem) < 0)
+    if (file_agent_queue_file(pkt->stream_session, file_mem) < 0)
     {
         file_inspect_stats.file_agent_memcap_failures++;
         _dpd.logMsg("File inspect: can't queue file!\n");

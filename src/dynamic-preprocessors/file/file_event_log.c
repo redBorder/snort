@@ -167,7 +167,7 @@ static void file_log_exec(void* packet, char* msg, void* arg, void* eventInfo)
     _dod.logTimeStamp(data->log, p);
 
     /*Get the file name captured*/
-    if ( _dpd.fileAPI->get_file_name(p->stream_session_ptr, &file_name, &name_size))
+    if ( _dpd.fileAPI->get_file_name(p->stream_session, &file_name, &name_size))
     {
         if (name_size > sizeof(filename))
             name_size = sizeof(filename) - 1;
@@ -175,13 +175,13 @@ static void file_log_exec(void* packet, char* msg, void* arg, void* eventInfo)
         filename[name_size] = '\0';
         _dod.textLog_Puts(data->log, " [**] ");
         _dod.textLog_Print(data->log, " [File: %s, size: %d bytes]", filename,
-                _dpd.fileAPI->get_file_size(p->stream_session_ptr));
+                _dpd.fileAPI->get_file_size(p->stream_session));
     }
 
     if (event->sig_generator == GENERATOR_FILE_SIGNATURE)
     {
         char sha256[SHA256_HASH_STR_SIZE + 1];
-        sha_to_str((char *)_dpd.fileAPI->get_sig_sha256(p->stream_session_ptr),
+        sha_to_str((char *)_dpd.fileAPI->get_sig_sha256(p->stream_session),
                 sha256, SHA256_HASH_STR_SIZE + 1);
         sha256[SHA256_HASH_STR_SIZE] = '\0';
         _dod.textLog_Print(data->log, " [signature: %s]", sha256);

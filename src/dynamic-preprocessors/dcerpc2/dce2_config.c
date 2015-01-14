@@ -283,9 +283,10 @@ static void DCE2_ScPrintPorts(const DCE2_ServerConfig *, int);
 static void DCE2_ScIpListDataFree(void *);
 static int DCE2_ScCheckTransport(void *);
 static DCE2_Ret DCE2_ScCheckPortOverlap(const DCE2_ServerConfig *);
-static void DCE2_AddPortsToStream5Filter(struct _SnortConfig *, DCE2_ServerConfig *, tSfPolicyId);
+static void DCE2_AddPortsToStreamFilter(struct _SnortConfig *, DCE2_ServerConfig *, tSfPolicyId);
 static void DCE2_ScError(const char *, ...);
 static void DCE2_ServerConfigCleanup(void *);
+void DCE2_RegisterPortsWithSession( struct _SnortConfig *sc, DCE2_ServerConfig *policy );
 
 /********************************************************************
  * Function: DCE2_GlobalConfigure()
@@ -1354,7 +1355,7 @@ int DCE2_CreateDefaultServerConfig(struct _SnortConfig *sc, DCE2_Config *config,
         return -1;
     }
 
-    DCE2_AddPortsToStream5Filter(sc, config->dconfig, policy_id);
+    DCE2_AddPortsToStreamFilter(sc, config->dconfig, policy_id);
     return 0;
 }
 
@@ -1444,7 +1445,8 @@ void DCE2_ServerConfigure(struct _SnortConfig *snortConf, DCE2_Config *config, c
         DCE2_Die("%s", dce2_config_error);
     }
 
-    DCE2_AddPortsToStream5Filter(snortConf, sc, policy_id);
+    DCE2_AddPortsToStreamFilter(snortConf, sc, policy_id);
+    DCE2_RegisterPortsWithSession(snortConf, sc);
 
     if ((sc != config->dconfig) &&
         (DCE2_ScAddToRoutingTable(config, sc, ip_queue) != DCE2_RET__SUCCESS))
@@ -4022,7 +4024,44 @@ static DCE2_Ret DCE2_ScCheckPortOverlap(const DCE2_ServerConfig *sc)
 }
 
 /*********************************************************************
- * Function: DCE2_AddPortsToStream5Filter()
+ * Function: DCE2_RegisterPortsWithSession()
+ *
+ * Add all detect ports to session dispatch table so the DCERPC2
+ * preprocessor is dispatched for all interested ports
+ *
+ * Arguments:
+ *  _SnortConfig *
+ *      Pointer to Snort Configuration structure.
+ *  DCE2_ServerConfig *
+ *      Pointer to a server configuration structure.
+ *
+ * Returns: None
+ *
+ *********************************************************************/
+void DCE2_RegisterPortsWithSession( struct _SnortConfig *sc, DCE2_ServerConfig *policy )
+{
+    int port;
+    uint8_t ports[DCE2_PORTS__MAX_INDEX];
+
+    // create bitmap of all ports set across all protocols
+    for( port = 0; port < DCE2_PORTS__MAX_INDEX; port++ )
+        ports[ port ] = policy->smb_ports[ port ] | policy->tcp_ports[ port ] |
+                        policy->udp_ports[ port ] | policy->http_proxy_ports[ port ] |
+                        policy->http_server_ports[ port ] | policy->auto_smb_ports[ port ] | 
+                        policy->auto_tcp_ports[ port ] | policy->auto_udp_ports[ port ] |
+                        policy->auto_http_proxy_ports[ port ] | policy->auto_http_server_ports[ port ];
+
+    // for every port enabled for any protocol, register for dispatch
+    for (port = 0; port < DCE2_PORTS__MAX; port++)
+        if (DCE2_IsPortSet(ports, (uint16_t)port))
+            _dpd.sessionAPI->enable_preproc_for_port( sc,
+                                                      PP_DCE2,
+                                                      PROTO_BIT__TCP | PROTO_BIT__UDP,
+                                                      port ); 
+}
+
+/*********************************************************************
+ * Function: DCE2_AddPortsToStreamFilter()
  *
  * Add all detect ports to stream5 filter so stream sessions are
  * created.  Don't do autodetect ports and rely on rules to set
@@ -4036,7 +4075,7 @@ static DCE2_Ret DCE2_ScCheckPortOverlap(const DCE2_ServerConfig *sc)
  * Returns: None
  *
  *********************************************************************/
-static void DCE2_AddPortsToStream5Filter(struct _SnortConfig *snortConf, DCE2_ServerConfig *sc, tSfPolicyId policy_id)
+static void DCE2_AddPortsToStreamFilter(struct _SnortConfig *snortConf, DCE2_ServerConfig *sc, tSfPolicyId policy_id)
 {
     unsigned int port;
 

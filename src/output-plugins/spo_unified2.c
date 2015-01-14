@@ -82,6 +82,9 @@ typedef struct _Unified2Config
 #endif
     int vlan_event_types;
     int base_proto;
+#if defined(FEAT_OPEN_APPID)
+    int appid_event_types;
+#endif /* defined(FEAT_OPEN_APPID) */
 } Unified2Config;
 
 typedef struct _Unified2LogCallbackData
@@ -455,6 +458,9 @@ static void _AlertIP4_v2(Packet *p, char *msg, Unified2Config *config, Event *ev
     alertdata.signature_revision = htonl(event->sig_rev);
     alertdata.classification_id = htonl(event->classification);
     alertdata.priority_id = htonl(event->priority);
+#if defined(FEAT_OPEN_APPID)
+    memcpy(alertdata.app_name, event->app_name, sizeof(alertdata.app_name));
+#endif /* defined(FEAT_OPEN_APPID) */
 
     if(p)
     {
@@ -493,6 +499,12 @@ static void _AlertIP4_v2(Packet *p, char *msg, Unified2Config *config, Event *ev
                 alertdata.pad2 = htons(p->configPolicyId);
             }
 
+#if defined(FEAT_OPEN_APPID)
+            if((event->app_name[0]) && (config->appid_event_types))
+            {
+                memcpy(alertdata.app_name, event->app_name, sizeof(alertdata.app_name));
+            }
+#endif /* defined(FEAT_OPEN_APPID) */
         }
     }
 
@@ -500,7 +512,11 @@ static void _AlertIP4_v2(Packet *p, char *msg, Unified2Config *config, Event *ev
         Unified2RotateFile(config);
 
     hdr.length = htonl(sizeof(Unified2IDSEvent));
+#if !defined(FEAT_OPEN_APPID)
     hdr.type = htonl(UNIFIED2_IDS_EVENT_VLAN);
+#else /* defined(FEAT_OPEN_APPID) */
+    hdr.type = htonl(UNIFIED2_IDS_EVENT_APPID);
+#endif /* defined(FEAT_OPEN_APPID) */
 
     if (SafeMemcpy(write_pkt_buffer_v2, &hdr, sizeof(Serial_Unified2_Header),
                    write_pkt_buffer_v2, write_pkt_end_v2) != SAFEMEM_SUCCESS)
@@ -653,6 +669,13 @@ static void _AlertIP6_v2(Packet *p, char *msg, Unified2Config *config, Event *ev
 
                 alertdata.pad2 = htons(p->configPolicyId);
             }
+#if defined(FEAT_OPEN_APPID)
+
+            if((event->app_name[0]) && (config->appid_event_types))
+            {
+                memcpy(alertdata.app_name, event->app_name, sizeof(alertdata.app_name));
+            }
+#endif /* defined(FEAT_OPEN_APPID) */
         }
     }
 
@@ -805,9 +828,17 @@ static void Unified2LogAlert(Packet *p, char *msg, void *arg, Event *event)
     if(IS_IP4(p))
     {
 #ifdef MPLS
+#if !defined(FEAT_OPEN_APPID)
         if((config->vlan_event_types) || (config->mpls_event_types))
+#else /* defined(FEAT_OPEN_APPID) */
+        if((config->vlan_event_types) || (config->mpls_event_types) || (config->appid_event_types))
+#endif /* defined(FEAT_OPEN_APPID) */
 #else
+#if !defined(FEAT_OPEN_APPID)
         if(config->vlan_event_types)
+#else /* defined(FEAT_OPEN_APPID) */
+        if(config->vlan_event_types || config->appid_event_types)
+#endif /* defined(FEAT_OPEN_APPID) */
 #endif
         {
             _AlertIP4_v2(p, msg, config, event);
@@ -818,9 +849,17 @@ static void Unified2LogAlert(Packet *p, char *msg, void *arg, Event *event)
     else
     {
 #ifdef MPLS
+#if !defined(FEAT_OPEN_APPID)
         if((config->vlan_event_types) || (config->mpls_event_types))
+#else /* defined(FEAT_OPEN_APPID) */
+        if((config->vlan_event_types) || (config->mpls_event_types) || (config->appid_event_types))
+#endif /* defined(FEAT_OPEN_APPID) */
 #else
+#if !defined(FEAT_OPEN_APPID)
         if(config->vlan_event_types)
+#else /* defined(FEAT_OPEN_APPID) */
+        if(config->vlan_event_types || config->appid_event_types)
+#endif /* defined(FEAT_OPEN_APPID) */
 #endif
         {
             _AlertIP6_v2(p, msg, config, event);
@@ -1278,6 +1317,12 @@ static Unified2Config * Unified2ParseArgs(char *args, char *default_filename)
             else if(strcasecmp("vlan_event_types", stoks[0]) == 0)
             {
                 config->vlan_event_types = 1;
+#if defined(FEAT_OPEN_APPID)
+            }
+            else if(strcasecmp("appid_event_types", stoks[0]) == 0)
+            {
+                config->appid_event_types = 1;
+#endif /* defined(FEAT_OPEN_APPID) */
             }
             else
             {

@@ -41,7 +41,7 @@
 // are available.
 
 #define PP_BO                      0
-//#define PP_DCERPC                  1
+#define PP_APP_ID                  1  
 #define PP_DNS                     2
 #define PP_FRAG3                   3
 #define PP_FTPTELNET               4
@@ -53,36 +53,66 @@
 #define PP_SMTP                   10
 #define PP_SSH                    11
 #define PP_SSL                    12
-#define PP_STREAM5                13
+#define PP_STREAM                13
 #define PP_TELNET                 14
 #define PP_ARPSPOOF               15
 #define PP_DCE2                   16
 #define PP_SDF                    17
 #define PP_NORMALIZE              18
 #define PP_ISAKMP                 19  // used externally
-#define PP_SKYPE                  20  // used externally
+#define PP_SESSION                20
 #define PP_SIP                    21
 #define PP_POP                    22
 #define PP_IMAP                   23
-#define PP_APPLICATION_IDENTIFICATION 24  // used externally
-#define PP_RULE_ENGINE            25  // used externally
+#define PP_NETWORK_DISCOVERY      24  // used externally
+#define PP_FW_RULE_ENGINE         25  // used externally
 #define PP_REPUTATION             26
 #define PP_GTP                    27
 #define PP_MODBUS                 28
 #define PP_DNP3                   29
 #define PP_FILE                   30
-#define PP_FILE_INSPECT           31
+#define PP_FILE_INSPECT           31   // TBD-EDM  fix this conflict
+#define PP_NAP_RULE_ENGINE        31
+#define PP_MAX                    32
 
-#define PP_ALL_ON         0xFFFFFFFF
-#define PP_ALL_OFF        0x00000000
+#define PP_ENABLE_ALL 0xFFFFFFFF
+#define PP_DISABLE_ALL 0x0
 
-#define PRIORITY_FIRST           0x0
-#define PRIORITY_NORMALIZE       0x4
-#define PRIORITY_NETWORK        0x10
+// preprocessors that run before or as part of Network Analysis Policy processing... If enabled by
+// configuration they are never disabled
+#define PP_CLASS_NETWORK ( ( 1 << PP_FRAG3 ) | ( 1 << PP_PERFMONITOR ) | ( 1 << PP_SFPORTSCAN ) | \
+                           ( 1 << PP_STREAM ) | ( 1 << PP_NORMALIZE ) | ( 1 << PP_SESSION ) |         \
+                           ( 1 << PP_REPUTATION ) )
+
+// Firewall and Application ID & Netowrk Discovery preprocessors...also always run if enabled by configuration
+#define PP_CLASS_NGFW ( ( 1 << PP_APP_ID ) | ( 1 << PP_FW_RULE_ENGINE ) | ( 1 << PP_NETWORK_DISCOVERY ) ) 
+
+// Application preprocessors...once the application or protocol for a stream is determined only preprocessors 
+// that analyze that type of stream are enabled (usually there is only 1...)
+#define PP_CLASS_PROTO_APP ( ( 1 << PP_BO ) | ( 1 << PP_DNS ) | ( 1 << PP_FTPTELNET ) | ( 1 << PP_HTTPINSPECT ) | \
+                             ( 1 << PP_RPCDECODE ) | ( 1 << PP_SHARED_RULES ) | ( 1 << PP_SMTP ) | ( 1 << PP_SSH ) | \
+                             ( 1 << PP_SSL ) | ( 1 << PP_TELNET ) | ( 1 << PP_ARPSPOOF ) | ( 1 << PP_DCE2 ) | \
+                             ( 1 << PP_SDF ) | ( 1 << PP_ISAKMP) | ( 1 << PP_POP ) | ( 1 << PP_IMAP ) | \
+                             ( 1 << PP_GTP ) | ( 1 << PP_MODBUS ) | ( 1 << PP_DNP3 ) | \
+                             ( 1 << PP_FILE ) | ( 1 << PP_FILE_INSPECT ) )
+
+#define PP_DEFINED_GLOBAL ( ( 1 << PP_APP_ID ) | ( 1 << PP_FW_RULE_ENGINE ) | ( 1 << PP_NETWORK_DISCOVERY ) | \
+                            ( 1 << PP_PERFMONITOR) | ( 1 << PP_SESSION ) )
+
+#define PP_CORE_ORDER_SESSION   0
+#define PP_CORE_ORDER_IPREP     1
+#define PP_CORE_ORDER_NAP       2
+#define PP_CORE_ORDER_NORML     3
+#define PP_CORE_ORDER_FRAG3     4
+#define PP_CORE_ORDER_STREAM    5
+
+#define PRIORITY_CORE            0x0
+#define PRIORITY_CORE_LAST      0x0f
+#define PRIORITY_FIRST          0x10
+#define PRIORITY_NETWORK        0x20
 #define PRIORITY_TRANSPORT     0x100
 #define PRIORITY_TUNNEL        0x105
 #define PRIORITY_SCANNER       0x110
-#define PRIORITY_SESSION       0x1FF
 #define PRIORITY_APPLICATION   0x200
 #define PRIORITY_LAST         0xffff
 

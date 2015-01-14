@@ -69,7 +69,7 @@ static int GTP_VersionEval(void *, const uint8_t **, void *);
 static inline int GTP_RoptDoEval(SFSnortPacket *p)
 {
     if ((p->payload_size == 0) ||
-            (p->stream_session_ptr == NULL) ||
+            (p->stream_session == NULL) ||
             (!IsUDP(p)))
     {
 
@@ -208,7 +208,7 @@ static int GTP_TypeEval(void *pkt, const uint8_t **cursor, void *data)
     if (!GTP_RoptDoEval(p))
         return RULE_NOMATCH;
 
-    sd = (GTPData *)_dpd.streamAPI->get_application_data(p->stream_session_ptr, PP_GTP);
+    sd = (GTPData *)_dpd.sessionAPI->get_application_data(p->stream_session, PP_GTP);
 
     if (sd == NULL)
     {
@@ -373,7 +373,7 @@ static int GTP_IEEval(void *pkt, const uint8_t **cursor, void *data)
     if (!GTP_RoptDoEval(p))
         return RULE_NOMATCH;
 
-    sd = (GTPData *)_dpd.streamAPI->get_application_data(p->stream_session_ptr, PP_GTP);
+    sd = (GTPData *)_dpd.sessionAPI->get_application_data(p->stream_session, PP_GTP);
 
     if (sd == NULL)
     {
@@ -496,7 +496,7 @@ static int GTP_VersionEval(void *pkt, const uint8_t **cursor, void *data)
     if (!GTP_RoptDoEval(p))
         return RULE_NOMATCH;
 
-    sd = (GTPData *)_dpd.streamAPI->get_application_data(p->stream_session_ptr, PP_GTP);
+    sd = (GTPData *)_dpd.sessionAPI->get_application_data(p->stream_session, PP_GTP);
 
     if (sd == NULL)
     {

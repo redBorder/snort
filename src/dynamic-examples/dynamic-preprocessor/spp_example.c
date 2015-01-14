@@ -168,7 +168,7 @@ void ExampleProcess(void *pkt, void *context)
     ExampleConfig *config;
     PROFILE_VARS;
 
-    sfPolicyUserPolicySet(ex_config, _dpd.getRuntimePolicy());
+    sfPolicyUserPolicySet(ex_config, _dpd.getNapRuntimePolicy());
     config = (ExampleConfig *)sfPolicyUserDataGetCurrent(ex_config);
     if (config == NULL)
         return;
@@ -226,7 +226,7 @@ static void ExampleReload(struct _SnortConfig *sc, char *args, void **new_config
 
 static int ExampleReloadVerify(struct _SnortConfig *sc, void *swap_config)
 {
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
+    if (!_dpd.isPreprocEnabled(sc, PP_STREAM))
     {
         _dpd.errMsg("Streaming & reassembly must be enabled for example preprocessor\n");
         return -1;

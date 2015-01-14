@@ -63,6 +63,9 @@ enum {
     PLUGIN_FLOWBIT,
     PLUGIN_FILE_DATA,
     PLUGIN_BASE64_DECODE,
+#if defined(FEAT_OPEN_APPID)
+    PLUGIN_APPID,
+#endif /* defined(FEAT_OPEN_APPID) */
     PLUGIN_MAX  /* sentinel value */
 };
 

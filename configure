@@ -637,15 +637,17 @@ ICONFIGFLAGS
 CCONFIGFLAGS
 CONFIGFLAGS
 INCLUDES
-FEAT_FILE_INSPECT_FALSE
-FEAT_FILE_INSPECT_TRUE
-WANT_SF_SAAC_FALSE
-WANT_SF_SAAC_TRUE
-RAZORBACK_LIBS
-RAZORBACK_CFLAGS
+LUA_LIBS
+LUA_CFLAGS
+luajit_LIBS
+luajit_CFLAGS
 PKG_CONFIG_LIBDIR
 PKG_CONFIG_PATH
 PKG_CONFIG
+FEAT_OPEN_APPID_FALSE
+FEAT_OPEN_APPID_TRUE
+FEAT_FILE_INSPECT_FALSE
+FEAT_FILE_INSPECT_TRUE
 HAVE_SHARED_REP_FALSE
 HAVE_SHARED_REP_TRUE
 HAVE_INTEL_SOFT_CPM_FALSE
@@ -660,8 +662,8 @@ BUILD_PROCPIDSTATS_FALSE
 BUILD_PROCPIDSTATS_TRUE
 HAVE_TARGET_BASED_FALSE
 HAVE_TARGET_BASED_TRUE
-HAVE_ZLIB_FALSE
-HAVE_ZLIB_TRUE
+HAVE_LZMA_FALSE
+HAVE_LZMA_TRUE
 BUILD_DYNAMIC_EXAMPLES_FALSE
 BUILD_DYNAMIC_EXAMPLES_TRUE
 BUILD_SIDE_CHANNEL_FALSE
@@ -674,6 +676,10 @@ SIGNAL_SNORT_READ_ATTR_TBL
 SIGNAL_SNORT_ROTATE_STATS
 SIGNAL_SNORT_DUMP_STATS
 SIGNAL_SNORT_RELOAD
+BUILD_OPENSSL_SHA_FALSE
+BUILD_OPENSSL_SHA_TRUE
+BUILD_OPENSSL_MD5_FALSE
+BUILD_OPENSSL_MD5_TRUE
 BUILD_SNPRINTF_FALSE
 BUILD_SNPRINTF_TRUE
 LEX
@@ -813,6 +819,8 @@ with_libpcap_includes
 with_libpcap_libraries
 with_libpfring_includes
 with_libpfring_libraries
+with_daq_includes
+with_daq_libraries
 with_libpcre_includes
 with_libpcre_libraries
 with_openssl_includes
@@ -822,12 +830,12 @@ enable_control_socket
 enable_side_channel
 with_dnet_includes
 with_dnet_libraries
-with_daq_includes
-with_daq_libraries
 enable_static_daq
 enable_build_dynamic_examples
 enable_dlclose
-enable_zlib
+enable_lzma
+with_lzma_includes
+with_lzma_libraries
 enable_gre
 enable_mpls
 enable_targetbased
@@ -855,10 +863,9 @@ enable_intel_soft_cpm
 with_intel_soft_cpm_includes
 with_intel_soft_cpm_libraries
 enable_shared_rep
-enable_rzb_saac
-with_librzb_api
 enable_large_pcap
 enable_file_inspect
+enable_open_appid
 '
       ac_precious_vars='build_alias
 host_alias
@@ -876,8 +883,8 @@ SIGNAL_SNORT_READ_ATTR_TBL
 PKG_CONFIG
 PKG_CONFIG_PATH
 PKG_CONFIG_LIBDIR
-RAZORBACK_CFLAGS
-RAZORBACK_LIBS'
+luajit_CFLAGS
+luajit_LIBS'
 
 
 # Initialize some variables set by options.
@@ -1515,7 +1522,7 @@ Optional Features:
   --disable-static-daq     Link static DAQ modules.
   --enable-build-dynamic-examples   Enable building of example dynamically loaded preprocessor and rule (off by default)
   --disable-dlclose        Only use if you are developing dynamic preprocessors or shared object rules.  Disable (--disable-dlclose) for testing valgrind leaks in dynamic libraries so a usable backtrace is reported.  Enabled by default.
-  --disable-zlib           Disable Http Response Decompression
+  --disable-lzma           Disable LZMA Decompression
   --disable-gre            Disable GRE and IP in IP encapsulation support
   --disable-mpls           Disable MPLS support
   --disable-targetbased    Disable Target-Based Support in Stream, Frag, and Rules (adds pthread support implicitly)
@@ -1541,10 +1548,10 @@ Optional Features:
   --disable-flexresp3      Disable flexible responses (v3) on hostile connection attempts
   --enable-intel-soft-cpm  Enable Intel Soft CPM support
   --enable-shared-rep      Enable use of Shared Memory for Reputation (Linux only)
-  --enable-rzb-saac        Enable Razorback SaaC support
   --enable-large-pcap      Enable support for pcaps larger than 2 GB
   --enable-file-inspect   Build with extended file inspection features.
                           (Experimental)
+  --enable-open-appid     Build with application id support. (Experimental)
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -1558,17 +1565,18 @@ Optional Packages:
   --with-libpcap-libraries=DIR   libpcap library directory
   --with-libpfring-includes=DIR  libpfring include directory
   --with-libpfring-libraries=DIR libpfring library directory
+  --with-daq-includes=DIR        DAQ include directory
+  --with-daq-libraries=DIR       DAQ library directory
   --with-libpcre-includes=DIR    libpcre include directory
   --with-libpcre-libraries=DIR   libpcre library directory
   --with-openssl-includes=DIR    openssl include directory
   --with-openssl-libraries=DIR   openssl library directory
   --with-dnet-includes=DIR       libdnet include directory
   --with-dnet-libraries=DIR      libdnet library directory
-  --with-daq-includes=DIR        DAQ include directory
-  --with-daq-libraries=DIR       DAQ library directory
+  --with-lzma-includes=DIR       liblzma include directory
+  --with-lzma-libraries=DIR      liblzma library directory
   --with-intel-soft-cpm-includes=DIR      Intel Soft CPM include directory
   --with-intel-soft-cpm-libraries=DIR     Intel Soft CPM library directory
-  --with-librzb-api=DIR    librazorback_api directory
 
 Some influential environment variables:
   CC          C compiler command
@@ -1592,10 +1600,9 @@ Some influential environment variables:
               directories to add to pkg-config's search path
   PKG_CONFIG_LIBDIR
               path overriding pkg-config's built-in search path
-  RAZORBACK_CFLAGS
-              C compiler flags for RAZORBACK, overriding pkg-config
-  RAZORBACK_LIBS
-              linker flags for RAZORBACK, overriding pkg-config
+  luajit_CFLAGS
+              C compiler flags for luajit, overriding pkg-config
+  luajit_LIBS linker flags for luajit, overriding pkg-config
 
 Use these variables to override the choices made by `configure' or to help
 it to find libraries and programs with nonstandard names/locations.
@@ -2261,6 +2268,63 @@ rm -f conftest.val
   as_fn_set_status $ac_retval
 
 } # ac_fn_c_compute_int
+
+# ac_fn_c_check_member LINENO AGGR MEMBER VAR INCLUDES
+# ----------------------------------------------------
+# Tries to find if the field MEMBER exists in type AGGR, after including
+# INCLUDES, setting cache variable VAR accordingly.
+ac_fn_c_check_member ()
+{
+  as_lineno=${as_lineno-"$1"} as_lineno_stack=as_lineno_stack=$as_lineno_stack
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for $2.$3" >&5
+$as_echo_n "checking for $2.$3... " >&6; }
+if eval \${$4+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+$5
+int
+main ()
+{
+static $2 ac_aggr;
+if (ac_aggr.$3)
+return 0;
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"; then :
+  eval "$4=yes"
+else
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+$5
+int
+main ()
+{
+static $2 ac_aggr;
+if (sizeof ac_aggr.$3)
+return 0;
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"; then :
+  eval "$4=yes"
+else
+  eval "$4=no"
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+fi
+eval ac_res=\$$4
+	       { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_res" >&5
+$as_echo "$ac_res" >&6; }
+  eval $as_lineno_stack; ${as_lineno_stack:+:} unset as_lineno
+
+} # ac_fn_c_check_member
 cat >config.log <<_ACEOF
 This file contains any messages produced by compilers while
 running configure, to aid debugging if configure makes a mistake.
@@ -3136,7 +3200,7 @@ fi
 # Define the identity of the package.
 
  PACKAGE=snort
- VERSION=2.9.6.2
+ VERSION=2.9.7.0
 
 
 cat >>confdefs.h <<_ACEOF
@@ -13112,6 +13176,7 @@ esac
 #AC_CANONICAL_HOST
 linux="no"
 sunos4="no"
+macos="no"
 so_with_static_lib="yes"
 
 case "$host" in
@@ -13222,6 +13287,7 @@ $as_echo "#define OSF1 1" >>confdefs.h
     ;;
 # it is actually <platform>-apple-darwin1.2 or <platform>-apple-rhapsody5.x but lets stick with this for the moment
   *-apple*)
+    macos="yes"
 
 $as_echo "#define MACOS 1" >>confdefs.h
 
@@ -14507,6 +14573,87 @@ if test "x$with_libpfring_libraries" != "xno"; then
    LDFLAGS="${LDFLAGS} -L${with_libpfring_libraries}"
 fi
 
+
+# Check whether --with-daq_includes was given.
+if test "${with_daq_includes+set}" = set; then :
+  withval=$with_daq_includes; with_daq_includes="$withval"
+else
+  with_daq_includes="no"
+fi
+
+
+
+# Check whether --with-daq_libraries was given.
+if test "${with_daq_libraries+set}" = set; then :
+  withval=$with_daq_libraries; with_daq_libraries="$withval"
+else
+  with_daq_libraries="no"
+fi
+
+
+if test "x$with_daq_includes" != "xno"; then
+   CPPFLAGS="${CPPFLAGS} -I${with_daq_includes}"
+   ICONFIGFLAGS="${ICONFIGFLAGS} -I${with_daq_includes}"
+fi
+
+if test "x$with_daq_libraries" != "xno"; then
+   LDFLAGS="${LDFLAGS} -L${with_daq_libraries}"
+fi
+
+if test "x$enable_control_socket" = "xyes"; then
+    LSFBPF=""
+    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for sfbpf_compile in -lsfbpf" >&5
+$as_echo_n "checking for sfbpf_compile in -lsfbpf... " >&6; }
+if ${ac_cv_lib_sfbpf_sfbpf_compile+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lsfbpf   $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char sfbpf_compile ();
+int
+main ()
+{
+return sfbpf_compile ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_sfbpf_sfbpf_compile=yes
+else
+  ac_cv_lib_sfbpf_sfbpf_compile=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_sfbpf_sfbpf_compile" >&5
+$as_echo "$ac_cv_lib_sfbpf_sfbpf_compile" >&6; }
+if test "x$ac_cv_lib_sfbpf_sfbpf_compile" = xyes; then :
+  LIBS="${LIBS} -lsfbpf"
+else
+  LSFBPF="no"
+fi
+
+
+    if test "x$LSFBPF" = "xno"; then
+        echo
+        echo "   ERROR!  sfbpf library not found, go get it from"
+        echo "   http://www.snort.org/."
+        #AC_MSG_ERROR("Fatal!")
+        exit 1
+    fi
+fi
+
 LPCAP=""
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for pcap_datalink in -lpcap" >&5
 $as_echo_n "checking for pcap_datalink in -lpcap... " >&6; }
@@ -14949,24 +15096,7 @@ if test "x$with_openssl_libraries" != "xno"; then
     LDFLAGS="${LDFLAGS}  -L${with_openssl_libraries}"
 fi
 # Verify that we have the headers
-SHA_H=""
-OPENSSL_SHA_L=""
-for ac_header in openssl/sha.h
-do :
-  ac_fn_c_check_header_mongrel "$LINENO" "openssl/sha.h" "ac_cv_header_openssl_sha_h" "$ac_includes_default"
-if test "x$ac_cv_header_openssl_sha_h" = xyes; then :
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_OPENSSL_SHA_H 1
-_ACEOF
-
-else
-  SHA_H="no"
-fi
-
-done
-
-if test "x$SHA_H" != "xno"; then
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for SHA256_Init in -lcrypto" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for SHA256_Init in -lcrypto" >&5
 $as_echo_n "checking for SHA256_Init in -lcrypto... " >&6; }
 if ${ac_cv_lib_crypto_SHA256_Init+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -15003,21 +15133,71 @@ fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_crypto_SHA256_Init" >&5
 $as_echo "$ac_cv_lib_crypto_SHA256_Init" >&6; }
 if test "x$ac_cv_lib_crypto_SHA256_Init" = xyes; then :
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBCRYPTO 1
-_ACEOF
-
-  LIBS="-lcrypto $LIBS"
-
-else
-  OPENSSL_SHA_L="no"
-fi
-
-    if test "x$OPENSSL_SHA_L" != "xno"; then
 
 $as_echo "#define HAVE_OPENSSL_SHA 1" >>confdefs.h
 
-    fi
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for MD5_Init in -lcrypto" >&5
+$as_echo_n "checking for MD5_Init in -lcrypto... " >&6; }
+if ${ac_cv_lib_crypto_MD5_Init+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lcrypto  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char MD5_Init ();
+int
+main ()
+{
+return MD5_Init ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_crypto_MD5_Init=yes
+else
+  ac_cv_lib_crypto_MD5_Init=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_crypto_MD5_Init" >&5
+$as_echo "$ac_cv_lib_crypto_MD5_Init" >&6; }
+if test "x$ac_cv_lib_crypto_MD5_Init" = xyes; then :
+
+$as_echo "#define HAVE_OPENSSL_MD5 1" >>confdefs.h
+
+fi
+
+ if test "$ac_cv_lib_crypto_MD5_Init" != "yes" ; then
+  BUILD_OPENSSL_MD5_TRUE=
+  BUILD_OPENSSL_MD5_FALSE='#'
+else
+  BUILD_OPENSSL_MD5_TRUE='#'
+  BUILD_OPENSSL_MD5_FALSE=
+fi
+
+ if test "$ac_cv_lib_crypto_SHA256_Init" != "yes" ; then
+  BUILD_OPENSSL_SHA_TRUE=
+  BUILD_OPENSSL_SHA_FALSE='#'
+else
+  BUILD_OPENSSL_SHA_TRUE='#'
+  BUILD_OPENSSL_SHA_FALSE=
+fi
+
+if test "$ac_cv_lib_crypto_MD5_Init" = "yes"; then
+    LIBS="${LIBS} -lcrypto"
 fi
 
 
@@ -15295,33 +15475,6 @@ if test "x$DNET" = "xno" -a "x$DUMBNET" = "xno"; then
     exit
 fi
 
-
-# Check whether --with-daq_includes was given.
-if test "${with_daq_includes+set}" = set; then :
-  withval=$with_daq_includes; with_daq_includes="$withval"
-else
-  with_daq_includes="no"
-fi
-
-
-
-# Check whether --with-daq_libraries was given.
-if test "${with_daq_libraries+set}" = set; then :
-  withval=$with_daq_libraries; with_daq_libraries="$withval"
-else
-  with_daq_libraries="no"
-fi
-
-
-if test "x$with_daq_includes" != "xno"; then
-   CPPFLAGS="${CPPFLAGS} -I${with_daq_includes}"
-   ICONFIGFLAGS="${ICONFIGFLAGS} -I${with_daq_includes}"
-fi
-
-if test "x$with_daq_libraries" != "xno"; then
-   LDFLAGS="${LDFLAGS} -L${with_daq_libraries}"
-fi
-
 # Check whether --enable-static_daq was given.
 if test "${enable_static_daq+set}" = set; then :
   enableval=$enable_static_daq; enable_static_daq="$enableval"
@@ -15534,61 +15687,7 @@ fi
     fi
 fi
 
-if test "x$enable_control_socket" = "xyes"; then
-    LSFBPF=""
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for pcap_dump in -lsfbpf" >&5
-$as_echo_n "checking for pcap_dump in -lsfbpf... " >&6; }
-if ${ac_cv_lib_sfbpf_pcap_dump+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lsfbpf   $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char pcap_dump ();
-int
-main ()
-{
-return pcap_dump ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_sfbpf_pcap_dump=yes
-else
-  ac_cv_lib_sfbpf_pcap_dump=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_sfbpf_pcap_dump" >&5
-$as_echo "$ac_cv_lib_sfbpf_pcap_dump" >&6; }
-if test "x$ac_cv_lib_sfbpf_pcap_dump" = xyes; then :
-  LIBS="${LIBS} -lsfbpf"
-else
-  LSFBPF="no"
-fi
-
-
-    if test "x$LSFBPF" = "xno"; then
-        echo
-        echo "   ERROR!  sfbpf library not found, go get it from"
-        echo "   http://www.snort.org/."
-        #AC_MSG_ERROR("Fatal!")
-        exit 1
-    fi
-fi
-
-for ac_func in daq_hup_apply daq_acquire_with_meta
+for ac_func in daq_hup_apply daq_acquire_with_meta daq_dp_add_dc
 do :
   as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
 ac_fn_c_check_func "$LINENO" "$ac_func" "$as_ac_var"
@@ -15600,6 +15699,26 @@ _ACEOF
 fi
 done
 
+
+if test "x$ac_cv_func_daq_dp_add_dc" = "xyes"; then
+
+    ac_fn_c_check_member "$LINENO" "struct _DAQ_DP_key_t" "sa.src_ip4" "ac_cv_member_struct__DAQ_DP_key_t_sa_src_ip4" "#include <daq_common.h>
+"
+if test "x$ac_cv_member_struct__DAQ_DP_key_t_sa_src_ip4" = xyes; then :
+
+else
+  DAQ_C99_STRUCT="no"
+fi
+
+
+    if test "x$DAQ_C99_STRUCT" = "xno" ; then
+        echo
+        echo "   ERROR!  daq library missing C99 patch, upgrade to >=2.0.4, go get it from"
+        echo "   http://www.snort.org/."
+        exit 1
+    fi
+
+fi
 
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for daq address space ID" >&5
 $as_echo_n "checking for daq address space ID... " >&6; }
@@ -15639,6 +15758,88 @@ $as_echo "$have_daq_address_space_id" >&6; }
 if test "x$have_daq_address_space_id" = "xyes"; then
 
 $as_echo "#define HAVE_DAQ_ADDRESS_SPACE_ID 1" >>confdefs.h
+
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for daq flow ID" >&5
+$as_echo_n "checking for daq flow ID... " >&6; }
+if test "$cross_compiling" = yes; then :
+  { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+as_fn_error $? "cannot run test program while cross compiling
+See \`config.log' for more details" "$LINENO" 5; }
+else
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+#include <daq.h>
+
+int
+main ()
+{
+
+   DAQ_PktHdr_t hdr;
+   hdr.flow_id = 0;
+
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_run "$LINENO"; then :
+  have_daq_flow_id="yes"
+else
+  have_daq_flow_id="no"
+fi
+rm -f core *.core core.conftest.* gmon.out bb.out conftest$ac_exeext \
+  conftest.$ac_objext conftest.beam conftest.$ac_ext
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $have_daq_flow_id" >&5
+$as_echo "$have_daq_flow_id" >&6; }
+if test "x$have_daq_flow_id" = "xyes"; then
+
+$as_echo "#define HAVE_DAQ_FLOW_ID 1" >>confdefs.h
+
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for DAQ_VERDICT_RETRY" >&5
+$as_echo_n "checking for DAQ_VERDICT_RETRY... " >&6; }
+if test "$cross_compiling" = yes; then :
+  { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+as_fn_error $? "cannot run test program while cross compiling
+See \`config.log' for more details" "$LINENO" 5; }
+else
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+#include <daq.h>
+
+int
+main ()
+{
+
+   DAQ_Verdict verdict;
+   verdict = DAQ_VERDICT_RETRY;
+
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_run "$LINENO"; then :
+  have_daq_verdict_retry="yes"
+else
+  have_daq_verdict_retry="no"
+fi
+rm -f core *.core core.conftest.* gmon.out bb.out conftest$ac_exeext \
+  conftest.$ac_objext conftest.beam conftest.$ac_ext
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $have_daq_verdict_retry" >&5
+$as_echo "$have_daq_verdict_retry" >&6; }
+if test "x$have_daq_verdict_retry" = "xyes"; then
+
+$as_echo "#define HAVE_DAQ_VERDICT_RETRY 1" >>confdefs.h
 
 fi
 
@@ -15785,24 +15986,8 @@ $as_echo "#define DISABLE_DLCLOSE_FOR_VALGRIND_TESTING 1" >>confdefs.h
 
 fi
 
-# Check whether --enable-zlib was given.
-if test "${enable_zlib+set}" = set; then :
-  enableval=$enable_zlib; enable_zlib="$enableval"
-else
-  enable_zlib="yes"
-fi
-
- if test "x$enable_zlib" = "xyes"; then
-  HAVE_ZLIB_TRUE=
-  HAVE_ZLIB_FALSE='#'
-else
-  HAVE_ZLIB_TRUE='#'
-  HAVE_ZLIB_FALSE=
-fi
-
-if test "x$enable_zlib" = "xyes"; then
-    Z_LIB=""
-    for ac_header in zlib.h
+Z_LIB=""
+for ac_header in zlib.h
 do :
   ac_fn_c_check_header_mongrel "$LINENO" "zlib.h" "ac_cv_header_zlib_h" "$ac_includes_default"
 if test "x$ac_cv_header_zlib_h" = xyes; then :
@@ -15816,15 +16001,15 @@ fi
 
 done
 
-    if test "x$Z_LIB" = "xno"; then
-        echo
-        echo "   ERROR!  zlib header not found, go get it from"
-        echo "   http://www.zlib.net"
-        exit
-    fi
+if test "x$Z_LIB" = "xno"; then
+    echo
+    echo "   ERROR!  zlib header not found, go get it from"
+    echo "   http://www.zlib.net"
+    exit
+fi
 
-    Z_LIB=""
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for inflate in -lz" >&5
+Z_LIB=""
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for inflate in -lz" >&5
 $as_echo_n "checking for inflate in -lz... " >&6; }
 if ${ac_cv_lib_z_inflate+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -15871,14 +16056,124 @@ else
   Z_LIB="no"
 fi
 
-    if test "x$Z_LIB" = "xno"; then
-        echo
-        echo "   ERROR!  zlib library not found, go get it from"
-        echo "   http://www.zlib.net"
-        exit
+if test "x$Z_LIB" = "xno"; then
+    echo
+    echo "   ERROR!  zlib library not found, go get it from"
+    echo "   http://www.zlib.net"
+     exit
+ fi
+LIBS="$LIBS -lz"
+
+# Check whether --enable-lzma was given.
+if test "${enable_lzma+set}" = set; then :
+  enableval=$enable_lzma; enable_lzma="$enableval"
+else
+  enable_lzma="yes"
+fi
+
+
+
+# Check whether --with-lzma_includes was given.
+if test "${with_lzma_includes+set}" = set; then :
+  withval=$with_lzma_includes; with_lzma_includes="$withval"
+else
+  with_lzma_includes="no"
+fi
+
+
+
+# Check whether --with-lzma_libraries was given.
+if test "${with_lzma_libraries+set}" = set; then :
+  withval=$with_lzma_libraries; with_lzma_libraries="$withval"
+else
+  with_lzma_libraries="no"
+fi
+
+
+ if test "x$enable_lzma" = "xyes"; then
+  HAVE_LZMA_TRUE=
+  HAVE_LZMA_FALSE='#'
+else
+  HAVE_LZMA_TRUE='#'
+  HAVE_LZMA_FALSE=
+fi
+
+if test "x$enable_lzma" = "xyes"; then
+
+    if test "x$with_lzma_includes" != "xno"; then
+        CPPFLAGS="${CPPFLAGS} -I${with_lzma_includes}"
+        LZMA_HEADERS="yes"
+    else
+        for ac_header in lzma.h
+do :
+  ac_fn_c_check_header_mongrel "$LINENO" "lzma.h" "ac_cv_header_lzma_h" "$ac_includes_default"
+if test "x$ac_cv_header_lzma_h" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_LZMA_H 1
+_ACEOF
+ LZMA_HEADERS="yes"
+else
+  LZMA_HEADERS="no"
+fi
+
+done
+
     fi
-    CPPFLAGS="$CPPFLAGS -DZLIB"
-    LIBS="$LIBS -lz"
+
+    if test "x$with_lzma_libraries" != "xno"; then
+        LDFLAGS="${LDFLAGS} -L${with_lzma_libraries}"
+        LZMA_LIB="yes"
+    else
+        { $as_echo "$as_me:${as_lineno-$LINENO}: checking for lzma_stream_decoder in -llzma" >&5
+$as_echo_n "checking for lzma_stream_decoder in -llzma... " >&6; }
+if ${ac_cv_lib_lzma_lzma_stream_decoder+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-llzma  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char lzma_stream_decoder ();
+int
+main ()
+{
+return lzma_stream_decoder ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_lzma_lzma_stream_decoder=yes
+else
+  ac_cv_lib_lzma_lzma_stream_decoder=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_lzma_lzma_stream_decoder" >&5
+$as_echo "$ac_cv_lib_lzma_lzma_stream_decoder" >&6; }
+if test "x$ac_cv_lib_lzma_lzma_stream_decoder" = xyes; then :
+  LZMA_LIB="yes"
+else
+  LZMA_LIB="no"
+fi
+
+    fi
+
+    if test "x$LZMA_LIB" != "xno"; then
+        if test "x$LZMA_HEADERS" != "xno"; then
+            CPPFLAGS="$CPPFLAGS -DLZMA"
+            LIBS="$LIBS -llzma"
+        fi
+    fi
 fi
 
 # Check whether --enable-gre was given.
@@ -16320,79 +16615,75 @@ else
 fi
 
 
-# Check whether --enable-rzb-saac was given.
-if test "${enable_rzb_saac+set}" = set; then :
-  enableval=$enable_rzb_saac; enable_rzb_saac="$enableval"
-else
-  enable_rzb_saac="no"
-fi
-
-
-
-# Check whether --with-librzb_api was given.
-if test "${with_librzb_api+set}" = set; then :
-  withval=$with_librzb_api; with_librzb_api="$withval"
-else
-  with_librzb_api="no"
-fi
-
-
-if test "x$with_librzb_api" = "xno"; then
-    export PKG_CONFIG_PATH=$prefix/lib/pkgconfig:$PKG_CONFIG_PATH
-else
-    export PKG_CONFIG_PATH=$with_librzb_api/lib/pkgconfig:$PKG_CONFIG_PATH
-fi
-
 # Define PKG_CHECK_MODULES if it doesnt already exist.
 #file_ This prevents './configure' from erroring on machines that dont have
 # 'pkgconfig' installed.
+#m4_ifdef([PKG_CHECK_MODULES],[], [m4_define([PKG_CHECK_MODULES],
+#     [echo "PKG_CHECK_MODULES not defined"])])
 
-
-if test "x$enable_rzb_saac" = "xyes"; then
-    # Extract the first word of "pkg-config", so it can be a program name with args.
-set dummy pkg-config; ac_word=$2
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
-$as_echo_n "checking for $ac_word... " >&6; }
-if ${ac_cv_prog_PKG_CONFIG+:} false; then :
-  $as_echo_n "(cached) " >&6
+# Check whether --enable-large-pcap was given.
+if test "${enable_large_pcap+set}" = set; then :
+  enableval=$enable_large_pcap; enable_large_pcap="$enableval"
 else
-  if test -n "$PKG_CONFIG"; then
-  ac_cv_prog_PKG_CONFIG="$PKG_CONFIG" # Let the user override the test.
-else
-as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
-for as_dir in $PATH
-do
-  IFS=$as_save_IFS
-  test -z "$as_dir" && as_dir=.
-    for ac_exec_ext in '' $ac_executable_extensions; do
-  if as_fn_executable_p "$as_dir/$ac_word$ac_exec_ext"; then
-    ac_cv_prog_PKG_CONFIG="yes"
-    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
-    break 2
-  fi
-done
-  done
-IFS=$as_save_IFS
-
-fi
-fi
-PKG_CONFIG=$ac_cv_prog_PKG_CONFIG
-if test -n "$PKG_CONFIG"; then
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $PKG_CONFIG" >&5
-$as_echo "$PKG_CONFIG" >&6; }
-else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
-$as_echo "no" >&6; }
+  enable_large_pcap="no"
 fi
 
 
-    if test "x$PKG_CONFIG" != "xyes"; then
-        echo
-        echo
-        echo "   ERROR!  pkg-config not found, go get it from"
-        echo "   http://freedesktop.org"
-        exit
-    fi
+if test "x$enable_large_pcap" = "xyes"; then
+    CPPFLAGS="${CPPFLAGS} -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64"
+fi
+
+###################################################
+##    [!] File Type Inspection (Experimental)    ##
+###################################################
+
+# Check whether --enable-file-inspect was given.
+if test "${enable_file_inspect+set}" = set; then :
+  enableval=$enable_file_inspect; enable_file_inspect=$enableval
+else
+  enable_file_inspect=no
+fi
+
+
+if test x$enable_file_inspect = xyes; then :
+
+$as_echo "#define FEAT_FILE_INSPECT 1" >>confdefs.h
+
+fi
+ if test x$enable_file_inspect = xyes; then
+  FEAT_FILE_INSPECT_TRUE=
+  FEAT_FILE_INSPECT_FALSE='#'
+else
+  FEAT_FILE_INSPECT_TRUE='#'
+  FEAT_FILE_INSPECT_FALSE=
+fi
+
+
+export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
+
+###### Start OpenAppId
+# Check whether --enable-open-appid was given.
+if test "${enable_open_appid+set}" = set; then :
+  enableval=$enable_open_appid; enable_open_appid=$enableval
+else
+  enable_open_appid=no
+fi
+
+
+ if test x$enable_open_appid = xyes; then
+  FEAT_OPEN_APPID_TRUE=
+  FEAT_OPEN_APPID_FALSE='#'
+else
+  FEAT_OPEN_APPID_TRUE='#'
+  FEAT_OPEN_APPID_FALSE=
+fi
+
+
+if test "x$enable_open_appid" = "xyes"; then
+
+$as_echo "#define FEAT_OPEN_APPID 1" >>confdefs.h
+
+    CONFIGFLAGS="$CONFIGFLAGS -DFEAT_OPEN_APPID"
 
 
 
@@ -16516,19 +16807,19 @@ $as_echo "no" >&6; }
 fi
 
 pkg_failed=no
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for RAZORBACK" >&5
-$as_echo_n "checking for RAZORBACK... " >&6; }
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for luajit" >&5
+$as_echo_n "checking for luajit... " >&6; }
 
-if test -n "$RAZORBACK_CFLAGS"; then
-    pkg_cv_RAZORBACK_CFLAGS="$RAZORBACK_CFLAGS"
+if test -n "$luajit_CFLAGS"; then
+    pkg_cv_luajit_CFLAGS="$luajit_CFLAGS"
  elif test -n "$PKG_CONFIG"; then
     if test -n "$PKG_CONFIG" && \
-    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"razorback >= 0.1.3\""; } >&5
-  ($PKG_CONFIG --exists --print-errors "razorback >= 0.1.3") 2>&5
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"luajit\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "luajit") 2>&5
   ac_status=$?
   $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
   test $ac_status = 0; }; then
-  pkg_cv_RAZORBACK_CFLAGS=`$PKG_CONFIG --cflags "razorback >= 0.1.3" 2>/dev/null`
+  pkg_cv_luajit_CFLAGS=`$PKG_CONFIG --cflags "luajit" 2>/dev/null`
 		      test "x$?" != "x0" && pkg_failed=yes
 else
   pkg_failed=yes
@@ -16536,16 +16827,16 @@ fi
  else
     pkg_failed=untried
 fi
-if test -n "$RAZORBACK_LIBS"; then
-    pkg_cv_RAZORBACK_LIBS="$RAZORBACK_LIBS"
+if test -n "$luajit_LIBS"; then
+    pkg_cv_luajit_LIBS="$luajit_LIBS"
  elif test -n "$PKG_CONFIG"; then
     if test -n "$PKG_CONFIG" && \
-    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"razorback >= 0.1.3\""; } >&5
-  ($PKG_CONFIG --exists --print-errors "razorback >= 0.1.3") 2>&5
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"luajit\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "luajit") 2>&5
   ac_status=$?
   $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
   test $ac_status = 0; }; then
-  pkg_cv_RAZORBACK_LIBS=`$PKG_CONFIG --libs "razorback >= 0.1.3" 2>/dev/null`
+  pkg_cv_luajit_LIBS=`$PKG_CONFIG --libs "luajit" 2>/dev/null`
 		      test "x$?" != "x0" && pkg_failed=yes
 else
   pkg_failed=yes
@@ -16566,81 +16857,99 @@ else
         _pkg_short_errors_supported=no
 fi
         if test $_pkg_short_errors_supported = yes; then
-	        RAZORBACK_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "razorback >= 0.1.3" 2>&1`
+	        luajit_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "luajit" 2>&1`
         else
-	        RAZORBACK_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "razorback >= 0.1.3" 2>&1`
+	        luajit_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "luajit" 2>&1`
         fi
 	# Put the nasty error message in config.log where it belongs
-	echo "$RAZORBACK_PKG_ERRORS" >&5
+	echo "$luajit_PKG_ERRORS" >&5
 
-	LRZB=no
+	LLUAJIT="no"
 elif test $pkg_failed = untried; then
      	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-	LRZB=no
+	LLUAJIT="no"
 else
-	RAZORBACK_CFLAGS=$pkg_cv_RAZORBACK_CFLAGS
-	RAZORBACK_LIBS=$pkg_cv_RAZORBACK_LIBS
+	luajit_CFLAGS=$pkg_cv_luajit_CFLAGS
+	luajit_LIBS=$pkg_cv_luajit_LIBS
         { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
 $as_echo "yes" >&6; }
-
+	LLUAJIT="yes"
 fi
-    if test "x$LRZB" = "xno"; then
+    if test "x$LLUAJIT" = "xyes"; then
+        CONFIGFLAGS="$CONFIGFLAGS -DHAVE_LIBLUAJIT"
+        LUA_CFLAGS="$luajit_CFLAGS"
+        LUA_LIBS="$luajit_LIBS"
+
+
+        if test "x$macos" != "xno"; then
+            LDFLAGS="${LDFLAGS} -pagezero_size 10000 -image_base 100000000"
+        fi
+
+    else
         echo
-        echo "   ERROR!  razorback_api library not found, go get it from"
-        echo "   http://sourceforge.net/projects/razorbacktm/"
-        exit
+        echo "   ERROR!  LuaJIT library not found. For better performance, go get it from"
+        echo "   http://www.luajit.org/."
+        as_fn_error $? "\"Fatal!\"" "$LINENO" 5
+    fi
+
+    ac_fn_c_check_header_mongrel "$LINENO" "openssl/x509.h" "ac_cv_header_openssl_x509_h" "$ac_includes_default"
+if test "x$ac_cv_header_openssl_x509_h" = xyes; then :
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for d2i_X509 in -lcrypto" >&5
+$as_echo_n "checking for d2i_X509 in -lcrypto... " >&6; }
+if ${ac_cv_lib_crypto_d2i_X509+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lcrypto  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char d2i_X509 ();
+int
+main ()
+{
+return d2i_X509 ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_crypto_d2i_X509=yes
+else
+  ac_cv_lib_crypto_d2i_X509=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_crypto_d2i_X509" >&5
+$as_echo "$ac_cv_lib_crypto_d2i_X509" >&6; }
+if test "x$ac_cv_lib_crypto_d2i_X509" = xyes; then :
+  openssl_x509=yes
+else
+  openssl_x509=no
+fi
+
+else
+  openssl_x509=no
+fi
+
+
+    if test "x$openssl_x509" = "xno"; then
+        echo
+        echo "   ERROR!  openssl/x509.h or openssl library not found."
+        as_fn_error $? "\"Fatal!\"" "$LINENO" 5
     fi
 fi
 
- if test x$enable_rzb_saac = xyes; then
-  WANT_SF_SAAC_TRUE=
-  WANT_SF_SAAC_FALSE='#'
-else
-  WANT_SF_SAAC_TRUE='#'
-  WANT_SF_SAAC_FALSE=
-fi
-
-
-
-# Check whether --enable-large-pcap was given.
-if test "${enable_large_pcap+set}" = set; then :
-  enableval=$enable_large_pcap; enable_large_pcap="$enableval"
-else
-  enable_large_pcap="no"
-fi
-
-
-if test "x$enable_large_pcap" = "xyes"; then
-    CPPFLAGS="${CPPFLAGS} -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64"
-fi
-
-###################################################
-##    [!] File Type Inspection (Experimental)    ##
-###################################################
-
-# Check whether --enable-file-inspect was given.
-if test "${enable_file_inspect+set}" = set; then :
-  enableval=$enable_file_inspect; enable_file_inspect=$enableval
-else
-  enable_file_inspect=no
-fi
-
-
-if test x$enable_file_inspect = xyes; then :
-
-$as_echo "#define FEAT_FILE_INSPECT 1" >>confdefs.h
-
-fi
- if test x$enable_file_inspect = xyes; then
-  FEAT_FILE_INSPECT_TRUE=
-  FEAT_FILE_INSPECT_FALSE='#'
-else
-  FEAT_FILE_INSPECT_TRUE='#'
-  FEAT_FILE_INSPECT_FALSE=
-fi
-
-
+###### End OpenAppId
 # let's make some fixes..
 
 CFLAGS="${CFLAGS} ${CCONFIGFLAGS}"
@@ -16754,7 +17063,7 @@ fi
 echo $CFLAGS > cflags.out
 echo $CPPFLAGS > cppflags.out
 
-INCLUDES='-I$(top_srcdir) -I$(top_srcdir)/src -I$(top_srcdir)/src/sfutil $(extra_incl) -I$(top_srcdir)/src/output-plugins -I$(top_srcdir)/src/detection-plugins -I$(top_srcdir)/src/dynamic-plugins -I$(top_srcdir)/src/preprocessors -I$(top_srcdir)/src/preprocessors/portscan -I$(top_srcdir)/src/preprocessors/HttpInspect/include -I$(top_srcdir)/src/preprocessors/Stream5 -I$(top_srcdir)/src/target-based -I$(top_srcdir)/src/control -I$(top_srcdir)/src/file-process -I$(top_srcdir)/src/file-process/libs -I$(top_srcdir)/src/side-channel -I$(top_srcdir)/src/side-channel/plugins'
+INCLUDES='-I$(top_srcdir) -I$(top_srcdir)/src -I$(top_srcdir)/src/sfutil $(extra_incl) -I$(top_srcdir)/src/output-plugins -I$(top_srcdir)/src/detection-plugins -I$(top_srcdir)/src/dynamic-plugins -I$(top_srcdir)/src/preprocessors -I$(top_srcdir)/src/preprocessors/portscan -I$(top_srcdir)/src/preprocessors/HttpInspect/include -I$(top_srcdir)/src/preprocessors/Session -I$(top_srcdir)/src/preprocessors/Stream6 -I$(top_srcdir)/src/target-based -I$(top_srcdir)/src/control -I$(top_srcdir)/src/file-process -I$(top_srcdir)/src/file-process/libs -I$(top_srcdir)/src/side-channel -I$(top_srcdir)/src/side-channel/plugins'
 
 
 
@@ -16762,7 +17071,7 @@ INCLUDES='-I$(top_srcdir) -I$(top_srcdir)/src -I$(top_srcdir)/src/sfutil $(extra
 
 
 
-ac_config_files="$ac_config_files snort.pc Makefile src/Makefile src/sfutil/Makefile src/control/Makefile src/file-process/Makefile src/file-process/libs/Makefile src/side-channel/Makefile src/side-channel/dynamic-plugins/Makefile src/side-channel/dynamic-plugins/snort_side_channel.pc src/side-channel/plugins/Makefile src/detection-plugins/Makefile src/dynamic-examples/Makefile src/dynamic-examples/dynamic-preprocessor/Makefile src/dynamic-examples/dynamic-rule/Makefile src/dynamic-plugins/Makefile src/dynamic-plugins/sf_engine/Makefile src/dynamic-plugins/sf_engine/examples/Makefile src/dynamic-plugins/sf_preproc_example/Makefile src/dynamic-preprocessors/Makefile src/dynamic-preprocessors/libs/Makefile src/dynamic-preprocessors/libs/snort_preproc.pc src/dynamic-preprocessors/ftptelnet/Makefile src/dynamic-preprocessors/smtp/Makefile src/dynamic-preprocessors/ssh/Makefile src/dynamic-preprocessors/sip/Makefile src/dynamic-preprocessors/reputation/Makefile src/dynamic-preprocessors/gtp/Makefile src/dynamic-preprocessors/dcerpc2/Makefile src/dynamic-preprocessors/pop/Makefile src/dynamic-preprocessors/imap/Makefile src/dynamic-preprocessors/sdf/Makefile src/dynamic-preprocessors/dns/Makefile src/dynamic-preprocessors/ssl/Makefile src/dynamic-preprocessors/modbus/Makefile src/dynamic-preprocessors/dnp3/Makefile src/dynamic-preprocessors/rzb_saac/Makefile src/dynamic-preprocessors/file/Makefile src/dynamic-output/Makefile src/dynamic-output/plugins/Makefile src/dynamic-output/libs/Makefile src/dynamic-output/libs/snort_output.pc src/output-plugins/Makefile src/preprocessors/Makefile src/preprocessors/HttpInspect/Makefile src/preprocessors/HttpInspect/include/Makefile src/preprocessors/HttpInspect/utils/Makefile src/preprocessors/HttpInspect/anomaly_detection/Makefile src/preprocessors/HttpInspect/client/Makefile src/preprocessors/HttpInspect/event_output/Makefile src/preprocessors/HttpInspect/mode_inspection/Makefile src/preprocessors/HttpInspect/normalization/Makefile src/preprocessors/HttpInspect/server/Makefile src/preprocessors/HttpInspect/session_inspection/Makefile src/preprocessors/HttpInspect/user_interface/Makefile src/preprocessors/Stream5/Makefile src/parser/Makefile src/target-based/Makefile doc/Makefile rpm/Makefile preproc_rules/Makefile m4/Makefile etc/Makefile templates/Makefile tools/Makefile tools/control/Makefile tools/u2boat/Makefile tools/u2spewfoo/Makefile tools/file_server/Makefile src/win32/Makefile"
+ac_config_files="$ac_config_files snort.pc Makefile src/Makefile src/sfutil/Makefile src/control/Makefile src/file-process/Makefile src/file-process/libs/Makefile src/side-channel/Makefile src/side-channel/dynamic-plugins/Makefile src/side-channel/dynamic-plugins/snort_side_channel.pc src/side-channel/plugins/Makefile src/detection-plugins/Makefile src/dynamic-examples/Makefile src/dynamic-examples/dynamic-preprocessor/Makefile src/dynamic-examples/dynamic-rule/Makefile src/dynamic-plugins/Makefile src/dynamic-plugins/sf_engine/Makefile src/dynamic-plugins/sf_engine/examples/Makefile src/dynamic-plugins/sf_preproc_example/Makefile src/dynamic-preprocessors/Makefile src/dynamic-preprocessors/libs/Makefile src/dynamic-preprocessors/libs/snort_preproc.pc src/dynamic-preprocessors/ftptelnet/Makefile src/dynamic-preprocessors/smtp/Makefile src/dynamic-preprocessors/ssh/Makefile src/dynamic-preprocessors/sip/Makefile src/dynamic-preprocessors/reputation/Makefile src/dynamic-preprocessors/gtp/Makefile src/dynamic-preprocessors/dcerpc2/Makefile src/dynamic-preprocessors/pop/Makefile src/dynamic-preprocessors/imap/Makefile src/dynamic-preprocessors/sdf/Makefile src/dynamic-preprocessors/dns/Makefile src/dynamic-preprocessors/ssl/Makefile src/dynamic-preprocessors/modbus/Makefile src/dynamic-preprocessors/dnp3/Makefile src/dynamic-preprocessors/file/Makefile src/dynamic-preprocessors/appid/Makefile src/dynamic-output/Makefile src/dynamic-output/plugins/Makefile src/dynamic-output/libs/Makefile src/dynamic-output/libs/snort_output.pc src/output-plugins/Makefile src/preprocessors/Makefile src/preprocessors/HttpInspect/Makefile src/preprocessors/HttpInspect/include/Makefile src/preprocessors/HttpInspect/utils/Makefile src/preprocessors/HttpInspect/anomaly_detection/Makefile src/preprocessors/HttpInspect/client/Makefile src/preprocessors/HttpInspect/files/Makefile src/preprocessors/HttpInspect/event_output/Makefile src/preprocessors/HttpInspect/mode_inspection/Makefile src/preprocessors/HttpInspect/normalization/Makefile src/preprocessors/HttpInspect/server/Makefile src/preprocessors/HttpInspect/session_inspection/Makefile src/preprocessors/HttpInspect/user_interface/Makefile src/preprocessors/Session/Makefile src/preprocessors/Stream6/Makefile src/parser/Makefile src/target-based/Makefile doc/Makefile rpm/Makefile preproc_rules/Makefile m4/Makefile etc/Makefile templates/Makefile tools/Makefile tools/control/Makefile tools/u2boat/Makefile tools/u2spewfoo/Makefile tools/u2openappid/Makefile tools/u2streamer/Makefile tools/file_server/Makefile src/win32/Makefile"
 
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
@@ -16909,6 +17218,14 @@ if test -z "${BUILD_SNPRINTF_TRUE}" && test -z "${BUILD_SNPRINTF_FALSE}"; then
   as_fn_error $? "conditional \"BUILD_SNPRINTF\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
+if test -z "${BUILD_OPENSSL_MD5_TRUE}" && test -z "${BUILD_OPENSSL_MD5_FALSE}"; then
+  as_fn_error $? "conditional \"BUILD_OPENSSL_MD5\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${BUILD_OPENSSL_SHA_TRUE}" && test -z "${BUILD_OPENSSL_SHA_FALSE}"; then
+  as_fn_error $? "conditional \"BUILD_OPENSSL_SHA\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
 if test -z "${SO_WITH_STATIC_LIB_TRUE}" && test -z "${SO_WITH_STATIC_LIB_FALSE}"; then
   as_fn_error $? "conditional \"SO_WITH_STATIC_LIB\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
@@ -16925,8 +17242,8 @@ if test -z "${BUILD_DYNAMIC_EXAMPLES_TRUE}" && test -z "${BUILD_DYNAMIC_EXAMPLES
   as_fn_error $? "conditional \"BUILD_DYNAMIC_EXAMPLES\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
-if test -z "${HAVE_ZLIB_TRUE}" && test -z "${HAVE_ZLIB_FALSE}"; then
-  as_fn_error $? "conditional \"HAVE_ZLIB\" was never defined.
+if test -z "${HAVE_LZMA_TRUE}" && test -z "${HAVE_LZMA_FALSE}"; then
+  as_fn_error $? "conditional \"HAVE_LZMA\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${HAVE_TARGET_BASED_TRUE}" && test -z "${HAVE_TARGET_BASED_FALSE}"; then
@@ -16957,12 +17274,12 @@ if test -z "${HAVE_SHARED_REP_TRUE}" && test -z "${HAVE_SHARED_REP_FALSE}"; then
   as_fn_error $? "conditional \"HAVE_SHARED_REP\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
-if test -z "${WANT_SF_SAAC_TRUE}" && test -z "${WANT_SF_SAAC_FALSE}"; then
-  as_fn_error $? "conditional \"WANT_SF_SAAC\" was never defined.
-Usually this means the macro was only invoked conditionally." "$LINENO" 5
-fi
 if test -z "${FEAT_FILE_INSPECT_TRUE}" && test -z "${FEAT_FILE_INSPECT_FALSE}"; then
   as_fn_error $? "conditional \"FEAT_FILE_INSPECT\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${FEAT_OPEN_APPID_TRUE}" && test -z "${FEAT_OPEN_APPID_FALSE}"; then
+  as_fn_error $? "conditional \"FEAT_OPEN_APPID\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 
@@ -17873,8 +18190,8 @@ do
     "src/dynamic-preprocessors/ssl/Makefile") CONFIG_FILES="$CONFIG_FILES src/dynamic-preprocessors/ssl/Makefile" ;;
     "src/dynamic-preprocessors/modbus/Makefile") CONFIG_FILES="$CONFIG_FILES src/dynamic-preprocessors/modbus/Makefile" ;;
     "src/dynamic-preprocessors/dnp3/Makefile") CONFIG_FILES="$CONFIG_FILES src/dynamic-preprocessors/dnp3/Makefile" ;;
-    "src/dynamic-preprocessors/rzb_saac/Makefile") CONFIG_FILES="$CONFIG_FILES src/dynamic-preprocessors/rzb_saac/Makefile" ;;
     "src/dynamic-preprocessors/file/Makefile") CONFIG_FILES="$CONFIG_FILES src/dynamic-preprocessors/file/Makefile" ;;
+    "src/dynamic-preprocessors/appid/Makefile") CONFIG_FILES="$CONFIG_FILES src/dynamic-preprocessors/appid/Makefile" ;;
     "src/dynamic-output/Makefile") CONFIG_FILES="$CONFIG_FILES src/dynamic-output/Makefile" ;;
     "src/dynamic-output/plugins/Makefile") CONFIG_FILES="$CONFIG_FILES src/dynamic-output/plugins/Makefile" ;;
     "src/dynamic-output/libs/Makefile") CONFIG_FILES="$CONFIG_FILES src/dynamic-output/libs/Makefile" ;;
@@ -17886,13 +18203,15 @@ do
     "src/preprocessors/HttpInspect/utils/Makefile") CONFIG_FILES="$CONFIG_FILES src/preprocessors/HttpInspect/utils/Makefile" ;;
     "src/preprocessors/HttpInspect/anomaly_detection/Makefile") CONFIG_FILES="$CONFIG_FILES src/preprocessors/HttpInspect/anomaly_detection/Makefile" ;;
     "src/preprocessors/HttpInspect/client/Makefile") CONFIG_FILES="$CONFIG_FILES src/preprocessors/HttpInspect/client/Makefile" ;;
+    "src/preprocessors/HttpInspect/files/Makefile") CONFIG_FILES="$CONFIG_FILES src/preprocessors/HttpInspect/files/Makefile" ;;
     "src/preprocessors/HttpInspect/event_output/Makefile") CONFIG_FILES="$CONFIG_FILES src/preprocessors/HttpInspect/event_output/Makefile" ;;
     "src/preprocessors/HttpInspect/mode_inspection/Makefile") CONFIG_FILES="$CONFIG_FILES src/preprocessors/HttpInspect/mode_inspection/Makefile" ;;
     "src/preprocessors/HttpInspect/normalization/Makefile") CONFIG_FILES="$CONFIG_FILES src/preprocessors/HttpInspect/normalization/Makefile" ;;
     "src/preprocessors/HttpInspect/server/Makefile") CONFIG_FILES="$CONFIG_FILES src/preprocessors/HttpInspect/server/Makefile" ;;
     "src/preprocessors/HttpInspect/session_inspection/Makefile") CONFIG_FILES="$CONFIG_FILES src/preprocessors/HttpInspect/session_inspection/Makefile" ;;
     "src/preprocessors/HttpInspect/user_interface/Makefile") CONFIG_FILES="$CONFIG_FILES src/preprocessors/HttpInspect/user_interface/Makefile" ;;
-    "src/preprocessors/Stream5/Makefile") CONFIG_FILES="$CONFIG_FILES src/preprocessors/Stream5/Makefile" ;;
+    "src/preprocessors/Session/Makefile") CONFIG_FILES="$CONFIG_FILES src/preprocessors/Session/Makefile" ;;
+    "src/preprocessors/Stream6/Makefile") CONFIG_FILES="$CONFIG_FILES src/preprocessors/Stream6/Makefile" ;;
     "src/parser/Makefile") CONFIG_FILES="$CONFIG_FILES src/parser/Makefile" ;;
     "src/target-based/Makefile") CONFIG_FILES="$CONFIG_FILES src/target-based/Makefile" ;;
     "doc/Makefile") CONFIG_FILES="$CONFIG_FILES doc/Makefile" ;;
@@ -17905,6 +18224,8 @@ do
     "tools/control/Makefile") CONFIG_FILES="$CONFIG_FILES tools/control/Makefile" ;;
     "tools/u2boat/Makefile") CONFIG_FILES="$CONFIG_FILES tools/u2boat/Makefile" ;;
     "tools/u2spewfoo/Makefile") CONFIG_FILES="$CONFIG_FILES tools/u2spewfoo/Makefile" ;;
+    "tools/u2openappid/Makefile") CONFIG_FILES="$CONFIG_FILES tools/u2openappid/Makefile" ;;
+    "tools/u2streamer/Makefile") CONFIG_FILES="$CONFIG_FILES tools/u2streamer/Makefile" ;;
     "tools/file_server/Makefile") CONFIG_FILES="$CONFIG_FILES tools/file_server/Makefile" ;;
     "src/win32/Makefile") CONFIG_FILES="$CONFIG_FILES src/win32/Makefile" ;;
 

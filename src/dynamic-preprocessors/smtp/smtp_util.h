@@ -36,10 +36,9 @@
 
 void SMTP_GetEOL(const uint8_t *, const uint8_t *, const uint8_t **, const uint8_t **);
 int SMTP_CopyToAltBuffer(SFSnortPacket *, const uint8_t *, int);
-int SMTP_CopyEmailHdrs(const uint8_t *, int );
-int SMTP_CopyEmailID(const uint8_t *, int , int );
-void SMTP_LogFuncs(SMTPConfig *config, SFSnortPacket *p);
-void SMTP_DecodeType(const char *, int, bool );
+int SMTP_CopyEmailHdrs(const uint8_t *, int, MAIL_LogState *log_state );
+int SMTP_CopyEmailID(const uint8_t *, int , int, MAIL_LogState *log_state );
+void SMTP_LogFuncs(SMTPConfig *config, SFSnortPacket *p, MimeState *mime_ssn);
 
 #ifdef DEBUG_MSGS
 const char * SMTP_PrintBuffer(SFSnortPacket *);

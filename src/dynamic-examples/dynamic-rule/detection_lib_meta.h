@@ -38,7 +38,7 @@
 
 /* Version for this rule library */
 #define DETECTION_LIB_MAJOR 2
-#define DETECTION_LIB_MINOR 0
+#define DETECTION_LIB_MINOR 2
 #define DETECTION_LIB_BUILD 1
 #define DETECTION_LIB_NAME "Snort_Dynamic_Rule_Example"
 

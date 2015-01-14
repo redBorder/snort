@@ -2,7 +2,7 @@
  ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 1998-2013 Sourcefire, Inc.
  **
- ** Writen by Bhagyashree Bantwal <bbantwal@sourcefire.com>
+ ** Writen by Bhagyashree Bantwal <bbantwal@cisco.com>
  **
  ** This program is free software; you can redistribute it and/or modify
  ** it under the terms of the GNU General Public License Version 2 as
@@ -135,7 +135,7 @@ typedef struct {
     uint8_t fsm;
     uint8_t prev_event;
     uint16_t num_spaces;
-    int *unicode_map;
+    uint8_t *unicode_map;
     char *overwrite;
     Dbuf dest;
 } JSNormState;
@@ -148,7 +148,7 @@ typedef struct {
     uint16_t num_spaces;
     int iNorm;
     int paren_count;
-    int *unicode_map;
+    uint8_t *unicode_map;
     char *overwrite;
     ActionUnsc prev_action;
     Dbuf output;
@@ -371,7 +371,7 @@ static JSNorm javascript_norm[] =
 };
 
 
-void UnescapeDecode(char *, uint16_t , char **, char **, uint16_t *, JSState *, int *);
+void UnescapeDecode(char *, uint16_t , char **, char **, uint16_t *, JSState *, uint8_t *);
 
 void InitJSNormLookupTable(void)
 {
@@ -775,7 +775,7 @@ static int SFCC_scan_fsm (SFCCState* s, int c)
 
 }
 
-void StringFromCharCodeDecode(char *src, uint16_t srclen, char **ptr, char **dst, uint16_t *bytes_copied, JSState *js, int *iis_unicode_map)
+void StringFromCharCodeDecode(char *src, uint16_t srclen, char **ptr, char **dst, uint16_t *bytes_copied, JSState *js, uint8_t *iis_unicode_map)
 {
     int iRet;
     const char *start, *end;
@@ -1037,7 +1037,7 @@ static int Unescape_scan_fsm (UnescapeState* s, int c, JSState *js)
 
 }
 
-void UnescapeDecode(char *src, uint16_t srclen, char **ptr, char **dst, uint16_t *bytes_copied, JSState *js, int *iis_unicode_map)
+void UnescapeDecode(char *src, uint16_t srclen, char **ptr, char **dst, uint16_t *bytes_copied, JSState *js, uint8_t *iis_unicode_map)
 {
     int iRet;
     const char *start, *end;
@@ -1220,7 +1220,7 @@ static int JSNorm_scan_fsm (JSNormState* s, int c, char *src, uint16_t srclen, c
     return(JSNorm_exec(s, m->action, c, src, srclen, ptr, js));
 }
 
-int JSNormalizeDecode(char *src, uint16_t srclen, char *dst, uint16_t destlen, char **ptr, int *bytes_copied, JSState *js, int *iis_unicode_map)
+int JSNormalizeDecode(char *src, uint16_t srclen, char *dst, uint16_t destlen, char **ptr, int *bytes_copied, JSState *js, uint8_t *iis_unicode_map)
 {
     int iRet;
     const char *start, *end;

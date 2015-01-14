@@ -133,7 +133,7 @@ int SnortEventqAdd(uint32_t gid, uint32_t sid, uint32_t rev,
             return 0;
         rule_info = (void *)otn;
     }
-    else if (getRtnFromOtn(otn, getRuntimePolicy()) == NULL)
+    else if (getRtnFromOtn(otn, getIpsRuntimePolicy()) == NULL)
     {
         // If the rule isn't in the current policy, don't add it to
         // the event queue.

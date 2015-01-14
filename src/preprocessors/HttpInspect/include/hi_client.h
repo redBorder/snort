@@ -122,6 +122,9 @@ typedef struct s_HEADER_PTR
     CONTLEN_PTR content_len;
     CONT_ENCODING_PTR content_encoding;
     bool is_chunked;
+#if defined(FEAT_OPEN_APPID)
+    HEADER_LOCATION userAgent, referer, method, via, responseCode, server, xWorkingWith, contentType;
+#endif /* defined(FEAT_OPEN_APPID) */
 } HEADER_PTR;
 
 

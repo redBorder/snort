@@ -118,6 +118,8 @@
 #include "packet_time.h"
 #include "sfxhash.h"
 #include "ipobj.h"
+#include "session_common.h"
+#include "session_api.h"
 #include "stream_api.h"
 #include "sfPolicyData.h"
 #include "sfPolicyUserData.h"
@@ -454,10 +456,11 @@ static int ps_filter_ignore(PS_PKT *ps_pkt)
     {
         reverse_pkt = 1;
     }
-    else if (p->udph && p->ssnptr &&
-             stream_api && stream_api->version >= STREAM_API_VERSION5)
+    else if (p->udph && ( p->ssnptr != NULL ) &&
+             ( ( SessionControlBlock * ) p->ssnptr )->session_established &&
+             session_api && session_api->version >= SESSION_API_VERSION1)
     {
-        if (stream_api->get_packet_direction(p) & PKT_FROM_SERVER)
+        if (session_api->get_packet_direction(p) & PKT_FROM_SERVER)
             reverse_pkt = 1;
     }
 
@@ -552,7 +555,7 @@ static int ps_tracker_lookup(PS_PKT *ps_pkt, PS_TRACKER **scanner,
         return -1;
 
     ps_pkt->proto = key.protocol;
-    key.policyId = getRuntimePolicy();
+    key.policyId = getNapRuntimePolicy();
 
     /*
     **  Let's lookup the host that is being scanned, taking into account
@@ -888,8 +891,8 @@ static int ps_tracker_update_tcp(PS_PKT *ps_pkt, PS_TRACKER *scanner,
     **  we will use the available stream4 information.  Otherwise, we
     **  can just revert to flow and look for initiators and responders.
     **
-    **  For Stream5, depending on the configuration, there might not
-    **  be a session created only based on the SYN packet.  Stream5
+    **  For Stream, depending on the configuration, there might not
+    **  be a session created only based on the SYN packet.  Stream
     **  by default has code that helps deal with SYN flood attacks,
     **  and may simply ignore the SYN.  In this case, we fall through
     **  to the checks for specific TCP header files (SYN, SYN-ACK, RST).
@@ -898,9 +901,10 @@ static int ps_tracker_update_tcp(PS_PKT *ps_pkt, PS_TRACKER *scanner,
     **  picked up midstream, then we don't care about the MIDSTREAM flag.
     **  Otherwise, only consider streams not picked up midstream.
     */
-    if(p->ssnptr && stream_api)
+    if( ( p->ssnptr != NULL ) &&
+        ( ( SessionControlBlock * ) p->ssnptr )->session_established && session_api )
     {
-        session_flags = stream_api->get_session_flags(p->ssnptr);
+        session_flags = session_api->get_session_flags(p->ssnptr);
 
         if((session_flags & SSNFLAG_SEEN_CLIENT) &&
            !(session_flags & SSNFLAG_SEEN_SERVER) &&
@@ -1108,10 +1112,10 @@ static int ps_tracker_update_udp(PS_PKT *ps_pkt, PS_TRACKER *scanner,
     }
     else if(p->udph)
     {
-        if (stream_api && (stream_api->version >= STREAM_API_VERSION5) &&
-            p->ssnptr)
+        if (session_api && (session_api->version >= SESSION_API_VERSION1) &&
+            ( p->ssnptr != NULL ) && ( ( SessionControlBlock * ) p->ssnptr )->session_established)
         {
-            uint32_t direction = stream_api->get_packet_direction(p);
+            uint32_t direction = session_api->get_packet_direction(p);
 
             if (direction == PKT_FROM_CLIENT)
             {
@@ -1750,11 +1754,11 @@ int ps_detect(PS_PKT *ps_pkt)
         if(ps_tracker_alert(ps_pkt, scanner, scanned))
             return 0;
 
-        /* This is added to address the case of no Stream5
+        /* This is added to address the case of no Stream
          * session and a RST packet going back from the Server. */
         if (p->tcph && (p->tcph->th_flags & TH_RST)
-            && !p->ssnptr &&
-            stream_api && (stream_api->version >= STREAM_API_VERSION5))
+            && ( p->ssnptr != NULL ) && !( ( SessionControlBlock * ) p->ssnptr )->session_established
+            && stream_api )
         {
             if (ps_pkt->reverse_pkt == 1)
             {

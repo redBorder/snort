@@ -89,6 +89,7 @@ typedef struct _FileContext
     bool suspend_block_verdict;
     FileState file_state;
     uint32_t file_id;
+    uint32_t file_config_version;
 } FileContext;
 
 /*Main File Processing functions */
@@ -111,7 +112,6 @@ uint8_t* file_sig_sha256_get (FileContext *context);
 
 char* file_type_name(void *conf, uint32_t);
 
-#if defined(FEAT_FILE_INSPECT)
 bool file_IDs_from_type(const void *conf, const char *type,
      uint32_t **ids, uint32_t *count);
 
@@ -120,7 +120,6 @@ bool file_IDs_from_type_version(const void *conf, const char *type,
 
 bool file_IDs_from_group(const void *conf, const char *group,
      uint32_t **ids, uint32_t *count);
-#endif
 
 extern int64_t file_type_depth;
 extern int64_t file_signature_depth;

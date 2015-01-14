@@ -36,6 +36,7 @@
 #include "file_capture.h"
 #include "file_stats.h"
 
+#include "session_api.h"
 #include "stream_api.h"
 #include "mstring.h"
 #include "preprocids.h"
@@ -61,7 +62,9 @@ static bool file_type_id_enabled = false;
 static bool file_signature_enabled = false;
 static bool file_capture_enabled = false;
 static bool file_processing_initiated = false;
+static bool file_type_force = false;
 
+static uint32_t file_config_version = 0;
 static File_policy_callback_func file_policy_cb = NULL;
 File_type_callback_func  file_type_cb = NULL;
 File_signature_callback_func file_signature_cb = NULL;
@@ -89,8 +92,6 @@ static void set_file_action_log_callback(Log_file_action_func);
 
 static int64_t get_max_file_depth(void);
 
-static void set_file_name_from_log(FILE_LogState *log_state, void *ssn);
-
 static uint32_t str_to_hash(uint8_t *str, int length );
 
 static void file_signature_lookup(void* p, bool is_retransmit);
@@ -101,10 +102,8 @@ static File_Verdict get_file_verdict(void *ssnptr);
 static void render_block_verdict(void *ctx, void *p);
 
 static bool is_file_service_enabled(void);
-#if defined(FEAT_FILE_INSPECT)
 static uint32_t get_file_type_id(void *ssnptr);
-#endif /* FEAT_FILE_INSPECT */
-static void update_file_name(MAIL_LogState *log_state);
+static uint32_t get_new_file_instance(void *ssnptr);
 
 /* File context based file processing*/
 FileContext* create_file_context(void *ssnptr);
@@ -113,6 +112,9 @@ FileContext* get_current_file_context(void *ssnptr);
 FileContext* get_main_file_context(void *ssnptr);
 static int process_file_context(FileContext *ctx, void *p, uint8_t *file_data,
         int data_size, FilePosition position, bool suspend_block_verdict);
+static FilePosition get_file_position(void *pkt);
+static bool check_paf_abort(void* ssn);
+static int64_t get_max_file_capture_size(void *ssn);
 
 FileAPI fileAPI;
 FileAPI* file_api = NULL;
@@ -137,9 +139,6 @@ void init_fileAPI(void)
     fileAPI.enable_file_capture = &enable_file_capture;
     fileAPI.set_file_action_log_callback = &set_file_action_log_callback;
     fileAPI.get_max_file_depth = &get_max_file_depth;
-    fileAPI.log_file_name = &log_file_name;
-    fileAPI.update_file_name = &update_file_name;
-    fileAPI.set_file_name_from_log = &set_file_name_from_log;
     fileAPI.set_log_buffers = &set_log_buffers;
     fileAPI.init_mime_mempool = &init_mime_mempool;
     fileAPI.init_log_mempool=  &init_log_mempool;
@@ -154,6 +153,7 @@ void init_fileAPI(void)
     fileAPI.free_mime_session = &free_mime_session;
     fileAPI.is_decoding_enabled = &is_decoding_enabled;
     fileAPI.is_decoding_conf_changed = &is_decoding_conf_changed;
+    fileAPI.check_decoding_conf = &check_decode_config;
     fileAPI.is_mime_log_enabled = &is_mime_log_enabled;
     fileAPI.finalize_mime_position = &finalize_mime_position;
     fileAPI.get_file_verdict = &get_file_verdict;
@@ -162,19 +162,21 @@ void init_fileAPI(void)
     fileAPI.read_file = &file_capture_read;
     fileAPI.release_file = &file_capture_release;
     fileAPI.get_file_capture_size = &file_capture_size;
-#if defined(FEAT_FILE_INSPECT)
     fileAPI.get_file_type_id = &get_file_type_id;
-#endif /* FEAT_FILE_INSPECT */
+    fileAPI.get_new_file_instance = &get_new_file_instance;
 
-#ifdef TARGET_BASED
-    fileAPI.register_mime_paf_service = &register_mime_paf_service;
-#endif
-    fileAPI.register_mime_paf_port = &register_mime_paf_port;
     fileAPI.create_file_context = &create_file_context;
     fileAPI.set_current_file_context = &set_current_file_context;
     fileAPI.get_current_file_context = &get_current_file_context;
     fileAPI.get_main_file_context = &get_main_file_context;
     fileAPI.process_file = &process_file_context;
+    fileAPI.get_file_position = &get_file_position;
+    fileAPI.reset_mime_paf_state = &reset_mime_paf_state;
+    fileAPI.process_mime_paf_data = &process_mime_paf_data;
+    fileAPI.check_data_end = check_data_end;
+    fileAPI.check_paf_abort = &check_paf_abort;
+    fileAPI.get_max_file_capture_size = get_max_file_capture_size;
+
     file_api = &fileAPI;
     init_mime();
 }
@@ -217,7 +219,7 @@ static void start_file_processing(void)
 
 void free_file_config(void *conf)
 {
-
+    file_config_version++;
     file_rule_free(conf);
     file_identifiers_free(conf);
     free(conf);
@@ -232,7 +234,7 @@ void close_fileAPI(void)
 
 static inline FileSession* get_file_session(void *ssnptr)
 {
-    return((FileSession*) stream_api->get_application_data(ssnptr, PP_FILE));
+    return((FileSession*) session_api->get_application_data(ssnptr, PP_FILE));
 }
 
 /*Get the current working file context*/
@@ -315,13 +317,17 @@ static inline void init_file_context(void *ssnptr, bool upload, FileContext *con
     if (file_policy_cb)
     {
         uint32_t policy_flags = 0;
-        context->app_id = stream_api->get_application_protocol_id(ssnptr);
+        context->app_id = session_api->get_application_protocol_id(ssnptr);
+
         policy_flags = file_policy_cb(ssnptr, context->app_id, upload);
-        if (!(policy_flags & ENABLE_FILE_TYPE_IDENTIFICATION))
-            context->file_type_enabled = false;
-        if (!(policy_flags & ENABLE_FILE_SIGNATURE_SHA256))
+
+        if ( !file_type_force && !(policy_flags & ENABLE_FILE_TYPE_IDENTIFICATION) )
+                context->file_type_enabled = false;
+
+        if ( !(policy_flags & ENABLE_FILE_SIGNATURE_SHA256) )
             context->file_signature_enabled = false;
-        if (!(policy_flags & ENABLE_FILE_CAPTURE))
+
+        if ( !(policy_flags & ENABLE_FILE_CAPTURE) )
             context->file_capture_enabled = false;
     }
 #endif
@@ -337,7 +343,7 @@ FileContext* create_file_context(void *ssnptr)
     if(!file_session)
     {
         file_session = (FileSession *)SnortAlloc(sizeof(*file_session));
-        stream_api->set_application_data(ssnptr, PP_FILE, file_session,
+        session_api->set_application_data(ssnptr, PP_FILE, file_session,
                 file_session_free);
     }
     file_stats.files_total++;
@@ -371,7 +377,7 @@ static inline FileContext* find_main_file_context(void* p, FilePosition position
 
         if (context->verdict != FILE_VERDICT_PENDING)
         {
-            /*Reuse the same context*/
+            /* Reuse the same context */
             file_context_reset(context);
             file_stats.files_total++;
             init_file_context(ssnptr, upload, context);
@@ -412,7 +418,7 @@ int file_eventq_add(uint32_t gid, uint32_t sid, char *msg, RuleType type)
     if (otn == NULL)
         return 0;
 
-    rtn = getRtnFromOtn(otn, getRuntimePolicy());
+    rtn = getRtnFromOtn(otn, getIpsRuntimePolicy());
     if (rtn == NULL)
     {
         return 0;
@@ -435,8 +441,7 @@ static inline void add_file_to_block(Packet *p, File_Verdict verdict,
     FileConfig *file_config =  (FileConfig *)(snort_conf->file_config);
 
     Active_ForceDropPacket();
-    DisableAllDetect(p);
-    SetPreprocBit(p, PP_PERFMONITOR);
+    DisableAllDetect( p );
     pkt->packet_flags |= PKT_FILE_EVENT_SET;
 
     /*Use URI as the identifier for file*/
@@ -609,7 +614,6 @@ static void render_block_verdict(void *ctx, void *p)
     finish_signature_lookup(context);
 }
 
-#if defined(FEAT_FILE_INSPECT)
 static uint32_t get_file_type_id(void *ssnptr)
 {
     // NOTE: 'ssnptr' NULL checked in get_application_data
@@ -620,7 +624,20 @@ static uint32_t get_file_type_id(void *ssnptr)
 
     return context->file_type_id;
 }
-#endif /* FEAT_FILE_INSPECT */
+
+static uint32_t get_new_file_instance(void *ssnptr)
+{
+    FileSession *file_session = get_file_session (ssnptr);
+
+    if (file_session)
+    {
+        return file_session->max_file_id++;
+    }
+    else
+    {
+        return 0;
+    }
+}
 
 static void file_signature_lookup(void* p, bool is_retransmit)
 {
@@ -685,7 +702,17 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
         return 0;
     }
 
-    context->file_config = snort_conf->file_config;
+    /* if file config is changed, update it*/
+    if ((context->file_config != snort_conf->file_config) ||
+            (context->file_config_version != file_config_version))
+    {
+        context->file_config = snort_conf->file_config;
+        context->file_config_version = file_config_version;
+        /* Reset file type context that relies on file_conf.
+         * File type id will become UNKNOWN after file_type_id()
+         * if in the middle of file and file type is CONTINUE (undecided) */
+        context->file_type_context = NULL;
+    }
 
     /*file type id*/
     if (context->file_type_enabled)
@@ -756,7 +783,8 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
             file_capture_stop(context);
         }
     }
-    /*file signature calculation*/
+
+    /* file signature calculation */
     if (context->file_signature_enabled)
     {
         file_signature_sha256(context, file_data, data_size, position);
@@ -808,7 +836,7 @@ static int file_process( void* p, uint8_t* file_data, int data_size,
     if (position == SNORT_FILE_POSITION_UNKNOWN)
         return 0;
 
-    FILE_REG_DEBUG_WRAP(DumpHex(stdout, file_data, data_size);)
+    FILE_REG_DEBUG_WRAP(DumpHexFile(stdout, file_data, data_size);)
 
     context = find_main_file_context(p, position, upload);
     return process_file_context(context, p, file_data, data_size, position,
@@ -864,17 +892,37 @@ static void set_file_policy_callback(File_policy_callback_func policy_func_cb)
     file_policy_cb = policy_func_cb;
 }
 
+/*
+ * - Only accepts 1 (ONE) callback being registered.
+ *
+ * - Call with NULL callback to "force" (guarantee) file type identification.
+ *
+ * TBD: Remove per-context "file_type_enabled" checking to simplify implementation.
+ *
+ */
 static void enable_file_type(File_type_callback_func callback)
 {
     if (!file_type_id_enabled)
     {
-        file_type_cb = callback;
         file_type_id_enabled = true;
 #ifdef SNORT_RELOAD
         file_sevice_reconfig_set(true);
 #endif
         start_file_processing();
         LogMessage("File service: file type enabled.\n");
+    }
+
+    if ( callback == NULL )
+    {
+        file_type_force = true;
+    }
+    else if ( file_type_cb == NULL )
+    {
+        file_type_cb = callback;
+    }
+    else if ( file_type_cb != callback )
+    {
+        FatalError("Attempt to register multiple file_type callbacks.");
     }
 }
 
@@ -964,27 +1012,65 @@ static int64_t get_max_file_depth(void)
     }
 }
 
-static void update_file_name(MAIL_LogState *log_state)
+static FilePosition get_file_position(void *pkt)
 {
-    if (log_state)
-        log_state->file_log.file_name = log_state->file_log.file_current;
+    FilePosition position = SNORT_FILE_POSITION_UNKNOWN;
+    Packet *p = (Packet *)pkt;
+
+    if(ScPafEnabled())
+    {
+        if (PacketHasFullPDU(p))
+            position = SNORT_FILE_FULL;
+        else if (PacketHasStartOfPDU(p))
+            position = SNORT_FILE_START;
+        else if (p->packet_flags & PKT_PDU_TAIL)
+            position = SNORT_FILE_END;
+        else if (get_file_processed_size(p->ssnptr))
+            position = SNORT_FILE_MIDDLE;
+    }
+
+    return position;
 }
 
-static void set_file_name_from_log(FILE_LogState *log_state, void *ssn)
+/*
+ *  This function determines whether we shold abort PAF.  Will return
+ *  true if the current packet is midstream, or unestablisted session
+ *
+ *  PARAMS:
+ *      uint32_t - session flags passed in to callback.
+ *
+ *  RETURNS:
+ *      true - if we should abort paf
+ *      false - if we should continue using paf
+ */
+static bool check_paf_abort(void* ssn)
 {
-    if ((log_state) && (log_state->file_logged > log_state->file_current))
+    uint32_t flags = session_api->get_session_flags(ssn);
+    if (flags & SSNFLAG_MIDSTREAM)
     {
-        if (log_state->file_current > log_state->file_name)
-            set_file_name(ssn, log_state->filenames + log_state->file_name,
-                    log_state->file_current -log_state->file_name - 1);
-        else
-            set_file_name(ssn, log_state->filenames + log_state->file_current,
-                    log_state->file_logged -log_state->file_current);
+        DEBUG_WRAP(DebugMessage(DEBUG_FILE,
+                "Aborting PAF because of midstream pickup.\n"));
+        return true;
     }
-    else
+    else if (!(flags & SSNFLAG_ESTABLISHED))
     {
-        set_file_name(ssn, NULL, 0);
+        DEBUG_WRAP(DebugMessage(DEBUG_FILE,
+                "Aborting PAF because of unestablished session.\n"));
+        return true;
     }
+    return false;
+}
+
+static int64_t get_max_file_capture_size(void *ssn)
+{
+    FileConfig * file_config;
+    FileContext * file_context = get_current_file_context(ssn); 
+
+    if (!file_context)
+        return 0;
+
+    file_config = file_context->file_config;
+    return file_config->file_capture_max_size;
 }
 
 static uint32_t str_to_hash(uint8_t *str, int length )

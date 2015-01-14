@@ -86,9 +86,7 @@
 #include "sp_ttl_check.h"
 #include "sp_urilen_check.h"
 #include "sp_hdr_opt_wrap.h"
-#if defined(FEAT_FILE_INSPECT)
 # include "sp_file_type.h"
-#endif
 
 #include "sp_preprocopt.h"
 #include "sp_dynamic.h"
@@ -99,6 +97,10 @@
 #include "sfPolicy.h"
 #include "detection_filter.h"
 #include "encode.h"
+#if defined(FEAT_OPEN_APPID)
+#include "stream_common.h"
+#include "sp_appid.h"
+#endif /* defined(FEAT_OPEN_APPID) */
 
 typedef struct _detection_option_key
 {
@@ -233,11 +235,9 @@ uint32_t detection_option_hash_func(SFHASHFCN *p, unsigned char *k, int n)
         case RULE_OPTION_TYPE_HDR_OPT_CHECK:
             hash = HdrOptCheckHash(key->option_data);
             break;
-#if defined(FEAT_FILE_INSPECT)
         case RULE_OPTION_TYPE_FILE_TYPE:
             hash = FileTypeHash(key->option_data);
             break;
-#endif
         case RULE_OPTION_TYPE_PREPROCESSOR:
             hash = PreprocessorRuleOptionHash(key->option_data);
             break;
@@ -247,6 +247,11 @@ uint32_t detection_option_hash_func(SFHASHFCN *p, unsigned char *k, int n)
         case RULE_OPTION_TYPE_LEAF_NODE:
             hash = 0;
             break;
+#if defined(FEAT_OPEN_APPID)
+        case RULE_OPTION_TYPE_APPID:
+            hash = optionAppIdHash(key->option_data);
+            break;
+#endif /* defined(FEAT_OPEN_APPID) */
     }
 
     return hash;
@@ -390,17 +395,20 @@ int detection_option_key_compare_func(const void *k1, const void *k2, size_t n)
         case RULE_OPTION_TYPE_HDR_OPT_CHECK:
             ret = HdrOptCheckCompare(key1->option_data, key2->option_data);
             break;
-#if defined(FEAT_FILE_INSPECT)
         case RULE_OPTION_TYPE_FILE_TYPE:
             ret = FileTypeCompare(key1->option_data, key2->option_data);
             break; 
-#endif
         case RULE_OPTION_TYPE_PREPROCESSOR:
             ret = PreprocessorRuleOptionCompare(key1->option_data, key2->option_data);
             break;
         case RULE_OPTION_TYPE_DYNAMIC:
             ret = DynamicRuleCompare(key1->option_data, key2->option_data);
             break;
+#if defined(FEAT_OPEN_APPID)
+        case RULE_OPTION_TYPE_APPID:
+            ret = optionAppIdCompare(key1->option_data, key2->option_data);
+            break;
+#endif /* defined(FEAT_OPEN_APPID) */
     }
 
     return ret;
@@ -529,11 +537,9 @@ int detection_hash_free_func(void *option_key, void *data)
             break;
         case RULE_OPTION_TYPE_HDR_OPT_CHECK:
             break;
-#if defined(FEAT_FILE_INSPECT)
         case RULE_OPTION_TYPE_FILE_TYPE:
             FileTypeFree(key->option_data);
             break;
-#endif
         case RULE_OPTION_TYPE_PREPROCESSOR:
             PreprocessorRuleOptionsFreeFunc(key->option_data);
             break;
@@ -542,6 +548,11 @@ int detection_hash_free_func(void *option_key, void *data)
             break;
         case RULE_OPTION_TYPE_LEAF_NODE:
             break;
+#if defined(FEAT_OPEN_APPID)
+        case RULE_OPTION_TYPE_APPID:
+            optionAppIdFree(key->option_data);
+            break;
+#endif /* defined(FEAT_OPEN_APPID) */
     }
     return 0;
 }
@@ -765,9 +776,7 @@ char *option_type_str[] =
     "RULE_OPTION_TYPE_IP_TOS",
     "RULE_OPTION_TYPE_IS_DATA_AT",
     "RULE_OPTION_TYPE_FILE_DATA",
-#if defined(FEAT_FILE_INSPECT)
     "RULE_OPTION_TYPE_FILE_TYPE",
-#endif
     "RULE_OPTION_TYPE_BASE64_DECODE",
     "RULE_OPTION_TYPE_BASE64_DATA",
     "RULE_OPTION_TYPE_PKT_DATA",
@@ -791,6 +800,9 @@ char *option_type_str[] =
     "RULE_OPTION_TYPE_HDR_OPT_CHECK",
     "RULE_OPTION_TYPE_PREPROCESSOR",
     "RULE_OPTION_TYPE_DYNAMIC"
+#if defined(FEAT_OPEN_APPID)
+    ,"RULE_OPTION_TYPE_APPID"
+#endif /* defined(FEAT_OPEN_APPID) */
 };
 
 #ifdef DEBUG_OPTION_TREE
@@ -1128,9 +1140,7 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
             case RULE_OPTION_TYPE_TTL:
             case RULE_OPTION_TYPE_URILEN:
             case RULE_OPTION_TYPE_HDR_OPT_CHECK:
-#if defined(FEAT_FILE_INSPECT)
             case RULE_OPTION_TYPE_FILE_TYPE:
-#endif
             case RULE_OPTION_TYPE_PREPROCESSOR:
                 if (node->evaluate)
                     rval = node->evaluate(node->option_data, eval_data->p);
@@ -1139,6 +1149,12 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
                 if (node->evaluate)
                     rval = node->evaluate(node->option_data, eval_data->p);
                 break;
+#if defined(FEAT_OPEN_APPID)
+            case RULE_OPTION_TYPE_APPID:
+                if (node->evaluate)
+                    rval = node->evaluate(node->option_data, eval_data->p);
+                break;
+#endif /* defined(FEAT_OPEN_APPID) */
         }
 
         if (rval == DETECTION_OPTION_NO_MATCH)
@@ -1237,7 +1253,7 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
                             /* Check for an unbounded relative search.  If this
                              * failed before, it's going to fail again so don't
                              * go down this path again */
-                            if (pmd->within == 0)
+                            if (pmd->within == PMD_WITHIN_UNDEFINED)
                             {
                                 /* Only increment result once. Should hit this
                                  * condition on first loop iteration. */
@@ -1309,7 +1325,7 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
 
         if (result - prior_result > 0
             && node->option_type == RULE_OPTION_TYPE_CONTENT
-            && Replace_OffsetStored(&dup_content_option_data) && ScInlineMode())
+            && Replace_OffsetStored(&dup_content_option_data) && ScIpsInlineMode())
         {
             Replace_QueueChange(&dup_content_option_data);
             prior_result = result;

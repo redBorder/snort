@@ -40,6 +40,7 @@ typedef struct _NormalizerContext
 {
     uint32_t normalizer_flags;
     uint8_t normalizer_options[32];
+    NormMode normMode;
 
     // these must be in the same order PROTO_IDs are defined!
     // if entry is NULL, proto doesn't have normalization or it is disabled

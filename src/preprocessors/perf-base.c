@@ -61,6 +61,7 @@
 #include "util.h"
 #include "mpse.h"
 #include "sfdaq.h"
+#include "session_api.h"
 #include "stream_api.h"
 #include "sf_types.h"
 #include "snort_bounds.h"
@@ -181,7 +182,10 @@ int InitBaseStats(SFBASE *sfBase)
     {
         int i = 0;
         for ( i = 0; i < PERF_COUNT_MAX; i++ )
-            sfBase->iPegs[i] = 0;
+        {
+            sfBase->iPegs[i][NORM_MODE_ON] = 0;
+            sfBase->iPegs[i][NORM_MODE_WOULDA] = 0;
+        }
     }
 #endif
 
@@ -376,7 +380,7 @@ void UpdateStreamReassStats(SFBASE *sfBase, int len)
  *
  * @param sfBase - pointer to accumulated stats
  */
-void UpdateFilteredPacketStats(SFBASE *sfBase, unsigned int proto)
+void UpdateFilteredPacketStats(SFBASE *sfBase, IpProto proto)
 {
     switch (proto)
     {
@@ -533,15 +537,17 @@ void ProcessBaseStats(SFBASE *sfBase, FILE *fh, int console, int max_stats)
 {
     SFBASE_STATS sfBaseStats;
 
-    if ((fh  || console) &&
-        CalculateBasePerfStats(sfBase, &sfBaseStats, max_stats))
-        return;
+    if (fh  || console)
+    {
+        if (CalculateBasePerfStats(sfBase, &sfBaseStats, max_stats))
+            return;
 
-    if (console)
-        DisplayBasePerfStatsConsole(&sfBaseStats, max_stats);
-
-    if (fh != NULL)
-        LogBasePerfStats(&sfBaseStats, fh);
+        if (console)
+            DisplayBasePerfStatsConsole(&sfBaseStats, max_stats);
+    
+        if (fh)
+            LogBasePerfStats(&sfBaseStats, fh);
+    }
 }
 
 static int GetProcessingTime(SYSTIMES *Systimes, SFBASE *sfBase)
@@ -689,7 +695,10 @@ static void GetEventsPerSecond(SFBASE *sfBase, SFBASE_STATS *sfBaseStats,
     {
         int i = 0;
         for ( i = 0; i < PERF_COUNT_MAX; i++ )
-            sfBase->iPegs[i] = 0;
+        {
+            sfBase->iPegs[i][NORM_MODE_ON] = 0;
+            sfBase->iPegs[i][NORM_MODE_WOULDA] = 0;
+        }
     }
 #endif
 
@@ -986,7 +995,10 @@ static int CalculateBasePerfStats(SFBASE *sfBase, SFBASE_STATS *sfBaseStats, int
     {
         int iCtr;
         for ( iCtr = 0; iCtr < PERF_COUNT_MAX; iCtr++ )
-            sfBaseStats->pegs[iCtr] = sfBase->iPegs[iCtr];
+        {
+            sfBaseStats->pegs[iCtr][NORM_MODE_ON] = sfBase->iPegs[iCtr][NORM_MODE_ON];
+            sfBaseStats->pegs[iCtr][NORM_MODE_WOULDA] = sfBase->iPegs[iCtr][NORM_MODE_WOULDA];
+        }
     }
 #endif
 
@@ -1140,7 +1152,6 @@ static void GetPktDropStats(SFBASE *sfBase, SFBASE_STATS *sfBaseStats)
         const DAQ_Stats_t* ps = DAQ_GetStats();
         recv = ps->packets_received;
         drop = ps->hw_packets_dropped;
-
         if (perfmon_config->base_reset)
         {
             if (recv < sfBase->pkt_stats.pkts_recv)
@@ -1408,9 +1419,15 @@ static void LogBasePerfStats(SFBASE_STATS *sfBaseStats,  FILE * fh )
         sfBaseStats->total_udp_filtered_packets);
 
 #ifdef NORMALIZER
+    size += SafeSnprintf(buff + size, sizeof(buff) - size, 
+        "%d,",
+        PERF_COUNT_MAX);
     for ( iCtr = 0; iCtr < PERF_COUNT_MAX; iCtr++ )
         size += SafeSnprintf(buff + size, sizeof(buff) - size, 
-            CSVu64, sfBaseStats->pegs[iCtr]);
+            CSVu64, sfBaseStats->pegs[iCtr][NORM_MODE_ON]);
+    for ( iCtr = 0; iCtr < PERF_COUNT_MAX; iCtr++ )
+        size += SafeSnprintf(buff + size, sizeof(buff) - size, 
+            CSVu64, sfBaseStats->pegs[iCtr][NORM_MODE_WOULDA]);
 #endif
 
     size += SafeSnprintf(buff + size, sizeof(buff) - size, 
@@ -1433,7 +1450,10 @@ static void LogBasePerfStats(SFBASE_STATS *sfBaseStats,  FILE * fh )
         WarningMessage("%s: Failed to write stats\n", __FUNCTION__);
 
         // fseek to adjust offset; ftruncate doesn't do that for us.
-        fseek(fh, start, SEEK_SET);
+        if (fseek(fh, start, SEEK_SET))
+        {
+            WarningMessage("%s: Failed to adjust offset\n", __FUNCTION__);
+        }
         ftruncate(fileno(fh), start);
     }
 
@@ -1457,15 +1477,20 @@ static const char* iNames[PERF_COUNT_MAX] = {
     "tcp::pad",
     "tcp::rsv",
     "tcp::ns",
-    "tcp::urg",
     "tcp::urp",
-    "tcp::trim",
     "tcp::ecn_pkt",
     "tcp::ecn_ssn",
     "tcp::ts_ecr",
     "tcp::ts_nop",
     "tcp::ips_data",
-    "tcp::block"
+    "tcp::block",
+    "tcp::req_urg",
+    "tcp::req_pay",
+    "tcp::req_urp",
+    "tcp::trim_syn",
+    "tcp::trim_rst",
+    "tcp::trim_win",
+    "tcp::trim_mss",
 };
 #endif
 
@@ -1601,8 +1626,11 @@ void LogBasePerfHeader (FILE* fh)
         "total_udp_filtered_packets");
 
 #ifdef NORMALIZER
+    fprintf(fh, ",num_normalizations");
     for ( iCtr = 0; iCtr < PERF_COUNT_MAX; iCtr++ )
         fprintf(fh, ",%s", iNames[iCtr]);
+    for ( iCtr = 0; iCtr < PERF_COUNT_MAX; iCtr++ )
+        fprintf(fh, ",would_%s", iNames[iCtr]);
 #endif
 
     fprintf(fh,
@@ -1782,9 +1810,14 @@ static void DisplayBasePerfStatsConsole(SFBASE_STATS *sfBaseStats, int max_stats
 #endif
 
 #ifdef NORMALIZER
+    LogMessage("Number of Normalizations  :  %d\n", PERF_COUNT_MAX);
     for ( iCtr = 0; iCtr < PERF_COUNT_MAX; iCtr++ )
+    {
         LogMessage("%-26s:  " STDu64 "\n",
-            iNames[iCtr], sfBaseStats->pegs[iCtr]);
+            iNames[iCtr], sfBaseStats->pegs[iCtr][NORM_MODE_ON]);
+        LogMessage("Would %-20s:  " STDu64 "\n",
+            iNames[iCtr], sfBaseStats->pegs[iCtr][NORM_MODE_WOULDA]);
+    }
 #endif
     LogMessage("\n");
 

@@ -739,7 +739,7 @@ static void DCE2_SmbInjectDeletePdu(DCE2_SmbSsnData *, DCE2_SmbFileTracker *);
 static void DCE2_SmbFinishFileBlockVerdict(DCE2_SmbSsnData *);
 static File_Verdict DCE2_SmbGetFileVerdict(void *, void *);
 #endif
-
+static inline void DCE2_SmbCleanSessionFileTracker(DCE2_SmbSsnData *, DCE2_SmbFileTracker *);
 /********************************************************************
  * Function: DCE2_SmbType()
  *
@@ -4008,7 +4008,7 @@ static DCE2_Ret DCE2_SmbClose(DCE2_SmbSsnData *ssd, const SmbNtHdr *smb_hdr,
 #ifdef ACTIVE_RESPONSE
         if ((ssd->fb_ftracker != NULL) && (ssd->fb_ftracker == ssd->cur_rtracker->ftracker))
         {
-            void *ssnptr = ssd->sd.wire_pkt->stream_session_ptr;
+            void *ssnptr = ssd->sd.wire_pkt->stream_session;
             void *p = (void *)ssd->sd.wire_pkt;
             File_Verdict verdict = DCE2_SmbGetFileVerdict(p, ssnptr);
             
@@ -7857,8 +7857,7 @@ static DCE2_SmbFileTracker * DCE2_SmbNewFileTracker(DCE2_SmbSsnData *ssd,
 
             if (ssd->ftrackers == NULL)
             {
-                DCE2_SmbCleanFileTracker(ftracker);
-                DCE2_Free((void *)ftracker, sizeof(DCE2_SmbFileTracker), DCE2_MEM_TYPE__SMB_FID);
+                DCE2_SmbCleanSessionFileTracker(ssd, ftracker);
                 PREPROC_PROFILE_END(dce2_pstat_smb_fid);
                 return NULL;
             }
@@ -7867,8 +7866,7 @@ static DCE2_SmbFileTracker * DCE2_SmbNewFileTracker(DCE2_SmbSsnData *ssd,
         if (DCE2_ListInsert(ssd->ftrackers, (void *)(uintptr_t)fid,
                     (void *)ftracker) != DCE2_RET__SUCCESS)
         {
-            DCE2_SmbCleanFileTracker(ftracker);
-            DCE2_Free((void *)ftracker, sizeof(DCE2_SmbFileTracker), DCE2_MEM_TYPE__SMB_FID);
+            DCE2_SmbCleanSessionFileTracker(ssd, ftracker);
             PREPROC_PROFILE_END(dce2_pstat_smb_fid);
             return NULL;
         }
@@ -7925,8 +7923,7 @@ static void DCE2_SmbQueueTmpFileTracker(DCE2_SmbSsnData *ssd,
         rtracker->ft_queue = DCE2_QueueNew(DCE2_SmbFileTrackerDataFree, DCE2_MEM_TYPE__SMB_FID);
         if (rtracker->ft_queue == NULL)
         {
-            DCE2_SmbCleanFileTracker(ftracker);
-            DCE2_Free((void *)ftracker, sizeof(DCE2_SmbFileTracker), DCE2_MEM_TYPE__SMB_FID);
+            DCE2_SmbCleanSessionFileTracker(ssd, ftracker);
             PREPROC_PROFILE_END(dce2_pstat_smb_fid);
             return;
         }
@@ -7934,8 +7931,7 @@ static void DCE2_SmbQueueTmpFileTracker(DCE2_SmbSsnData *ssd,
 
     if (DCE2_QueueEnqueue(rtracker->ft_queue, (void *)ftracker) != DCE2_RET__SUCCESS)
     {
-        DCE2_SmbCleanFileTracker(ftracker);
-        DCE2_Free((void *)ftracker, sizeof(DCE2_SmbFileTracker), DCE2_MEM_TYPE__SMB_FID);
+        DCE2_SmbCleanSessionFileTracker(ssd, ftracker);
         PREPROC_PROFILE_END(dce2_pstat_smb_fid);
         return;
     }
@@ -8022,8 +8018,7 @@ static DCE2_SmbFileTracker * DCE2_SmbDequeueTmpFileTracker(DCE2_SmbSsnData *ssd,
 
             if (ssd->ftrackers == NULL)
             {
-                DCE2_SmbCleanFileTracker(ftracker);
-                DCE2_Free((void *)ftracker, sizeof(DCE2_SmbFileTracker), DCE2_MEM_TYPE__SMB_FID);
+                DCE2_SmbCleanSessionFileTracker(ssd, ftracker);
                 PREPROC_PROFILE_END(dce2_pstat_smb_fid);
                 return NULL;
             }
@@ -8032,8 +8027,7 @@ static DCE2_SmbFileTracker * DCE2_SmbDequeueTmpFileTracker(DCE2_SmbSsnData *ssd,
         if (DCE2_ListInsert(ssd->ftrackers, (void *)(uintptr_t)fid,
                     (void *)ftracker) != DCE2_RET__SUCCESS)
         {
-            DCE2_SmbCleanFileTracker(ftracker);
-            DCE2_Free((void *)ftracker, sizeof(DCE2_SmbFileTracker), DCE2_MEM_TYPE__SMB_FID);
+            DCE2_SmbCleanSessionFileTracker(ssd, ftracker);
             PREPROC_PROFILE_END(dce2_pstat_smb_fid);
             return NULL;
         }
@@ -8286,13 +8280,25 @@ static inline void DCE2_SmbCleanFileTracker(DCE2_SmbFileTracker *ftracker)
 }
 
 /********************************************************************
+ *
+ * Remove file tracker and associated pointers in session
+ *
+ ********************************************************************/
+static inline void DCE2_SmbCleanSessionFileTracker(DCE2_SmbSsnData *ssd, DCE2_SmbFileTracker *ftracker)
+{
+    DCE2_SmbCleanFileTracker(ftracker);
+    DCE2_Free((void *)ftracker, sizeof(DCE2_SmbFileTracker), DCE2_MEM_TYPE__SMB_FID);
+    if (ssd->fapi_ftracker == ftracker)
+        ssd->fapi_ftracker = NULL;
+}
+/********************************************************************
  * Function:
  *
  * Purpose:
  *
  * Arguments:
  *
- * Returns:
+ * Returns: void
  *
  ********************************************************************/
 static inline void DCE2_SmbCleanTransactionTracker(DCE2_SmbTransactionTracker *ttracker)
@@ -9445,7 +9451,7 @@ static void DCE2_SmbInjectDeletePdu(DCE2_SmbSsnData *ssd, DCE2_SmbFileTracker *f
 
 static void DCE2_SmbFinishFileBlockVerdict(DCE2_SmbSsnData *ssd)
 {
-    void *ssnptr = ssd->sd.wire_pkt->stream_session_ptr;
+    void *ssnptr = ssd->sd.wire_pkt->stream_session;
     void *p = (void *)ssd->sd.wire_pkt;
     File_Verdict verdict;
     PROFILE_VARS;
@@ -9489,7 +9495,7 @@ static File_Verdict DCE2_SmbGetFileVerdict(void *p, void *ssnptr)
 
 static inline void DCE2_SmbFinishFileAPI(DCE2_SmbSsnData *ssd)
 {
-    void *ssnptr = ssd->sd.wire_pkt->stream_session_ptr;
+    void *ssnptr = ssd->sd.wire_pkt->stream_session;
     void *p = (void *)ssd->sd.wire_pkt;
     DCE2_SmbFileTracker *ftracker = ssd->fapi_ftracker;
     bool upload;
@@ -9519,7 +9525,7 @@ static inline void DCE2_SmbFinishFileAPI(DCE2_SmbSsnData *ssd)
                 if (upload)
                 {
                     File_Verdict verdict =
-                        _dpd.fileAPI->get_file_verdict(ssd->sd.wire_pkt->stream_session_ptr);
+                        _dpd.fileAPI->get_file_verdict(ssd->sd.wire_pkt->stream_session);
 
                     if ((verdict == FILE_VERDICT_BLOCK) || (verdict == FILE_VERDICT_REJECT))
                         ssd->fb_ftracker = ftracker;
@@ -9557,8 +9563,10 @@ static DCE2_Ret DCE2_SmbFileAPIProcess(DCE2_SmbSsnData *ssd,
     FilePosition position;
     PROFILE_VARS;
 
+#ifdef ACTIVE_RESPONSE
     if (ssd->fb_ftracker && (ssd->fb_ftracker != ftracker))
         return DCE2_RET__SUCCESS;
+#endif
 
     // Trim data length if it exceeds the maximum file depth
     if ((ssd->max_file_depth != 0)
@@ -9623,7 +9631,7 @@ static DCE2_Ret DCE2_SmbFileAPIProcess(DCE2_SmbSsnData *ssd,
         if (((position == SNORT_FILE_START) || (position == SNORT_FILE_FULL))
                 && (strlen(smb_file_name) != 0))
         {
-            _dpd.fileAPI->set_file_name((void *)ssd->sd.wire_pkt->stream_session_ptr,
+            _dpd.fileAPI->set_file_name((void *)ssd->sd.wire_pkt->stream_session,
                     (uint8_t *)smb_file_name, strlen(smb_file_name));
         }
 
@@ -9632,7 +9640,7 @@ static DCE2_Ret DCE2_SmbFileAPIProcess(DCE2_SmbSsnData *ssd,
 #ifdef ACTIVE_RESPONSE
             if (upload)
             {
-                File_Verdict verdict = _dpd.fileAPI->get_file_verdict(ssd->sd.wire_pkt->stream_session_ptr);
+                File_Verdict verdict = _dpd.fileAPI->get_file_verdict(ssd->sd.wire_pkt->stream_session);
 
                 if ((verdict == FILE_VERDICT_BLOCK) || (verdict == FILE_VERDICT_REJECT)
                         || (verdict == FILE_VERDICT_PENDING))

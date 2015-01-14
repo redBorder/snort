@@ -3,9 +3,9 @@ AUTOMAKE_OPTIONS=foreign no-dependencies
 
 INCLUDES = -I../include -I${srcdir}/../libs -I$(srcdir)/includes
 
-libdir = ${exec_prefix}/lib/snort_dynamicpreprocessor
+dynamicpreprocessordir = ${libdir}/snort_dynamicpreprocessor
 
-lib_LTLIBRARIES = libsf_reputation_preproc.la
+dynamicpreprocessor_LTLIBRARIES = libsf_reputation_preproc.la
 
 libsf_reputation_preproc_la_LDFLAGS = -export-dynamic -module @XCCFLAGS@
 if SO_WITH_STATIC_LIB
@@ -58,4 +58,4 @@ EXTRA_DIST = \
 sf_reputation.dsp
 
 all-local: $(LTLIBRARIES)
-	$(MAKE) DESTDIR=`pwd`/../build install-libLTLIBRARIES
+	$(MAKE) DESTDIR=`pwd`/../build install-dynamicpreprocessorLTLIBRARIES

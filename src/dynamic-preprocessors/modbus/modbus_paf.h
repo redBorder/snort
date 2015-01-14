@@ -51,5 +51,13 @@ int ModbusPafRegisterPort(struct _SnortConfig *sc, uint16_t port, tSfPolicyId po
 int ModbusAddServiceToPaf(struct _SnortConfig *sc, uint16_t service, tSfPolicyId policy_id);
 PAF_Status ModbusPaf(void *ssn, void **user, const uint8_t *data,
                      uint32_t len, uint32_t flags, uint32_t *fp);
+static inline bool ModbusIsPafActive(const SFSnortPacket *p)
+{
+    bool to_server = (p->flags && FLAG_FROM_CLIENT)? true:false;
+    if ((p->stream_session_ptr)
+            && _dpd.streamAPI->is_paf_active(p->stream_session_ptr, to_server))
+        return true;
 
+    return false;
+}
 #endif /* MODBUS_PAF__H */

@@ -51,6 +51,8 @@
 #include "event_queue.h"
 #include "obfuscation.h"
 #include "profiler.h"
+#include "session_api.h"
+#include "session_common.h"
 #include "stream_api.h"
 #include "active.h"
 #include "signature.h"
@@ -59,6 +61,9 @@
 #include "sf_types.h"
 #include "active.h"
 #include "detection_util.h"
+#if defined(FEAT_OPEN_APPID)
+#include "sp_appid.h"
+#endif /* defined(FEAT_OPEN_APPID) */
 
 #ifdef PORTLISTS
 #include "sfutil/sfportobject.h"
@@ -66,10 +71,6 @@
 #ifdef PERF_PROFILING
 PreprocStats detectPerfStats;
 #endif
-
-extern int preproc_proto_mask;
-extern OutputFuncNode *AlertList;
-extern OutputFuncNode *LogList;
 
 #ifdef TARGET_BASED
 #include "target-based/sftarget_protocol_reference.h"
@@ -91,10 +92,77 @@ static int CheckTagging(Packet *);
 PreprocStats eventqPerfStats;
 #endif
 
+static inline int preprocHandlesProto( Packet *p, PreprocEvalFuncNode *ppn )
+{
+    return ( ( p->proto_bits & ppn->proto_mask ) || ( ppn->proto_mask == PROTO_BIT__ALL ) );
+}
+
+static inline bool processDecoderAlertsActionQ( Packet *p )
+{
+    // with policy selected, process any decoder alerts and queued actions
+    DecodePolicySpecific(p);
+    // actions are queued only for IDS case
+    sfActionQueueExecAll(decoderActionQ);
+    return true;
+}
+
+static void DispatchPreprocessors( Packet *p, tSfPolicyId policy_id, SnortPolicy *policy )
+{
+    SessionControlBlock *scb = NULL;
+    PreprocEvalFuncNode *ppn;
+    uint32_t pps_enabled_foo;
+    bool alerts_processed = false;
+
+    // until we are in a Session context dispatch preprocs from the policy list if there is one
+    p->cur_pp = policy->preproc_eval_funcs;
+    if( p->cur_pp == NULL )
+    {
+        alerts_processed = processDecoderAlertsActionQ( p );
+        LogMessage("WARNING: No preprocessors configured for policy %d.\n", policy_id);
+        return;
+    }
+   
+    pps_enabled_foo = policy->pp_enabled[ p->dp ] | policy->pp_enabled[ p->sp ];
+    EnablePreprocessors( p, pps_enabled_foo );
+    do {
+        ppn = p->cur_pp;
+        p->cur_pp = ppn->next;
+
+        // if packet has no data and we are up to APP preprocs then get out
+        if( p->dsize == 0 && ppn->priority >= PRIORITY_APPLICATION )
+            break;
+
+        if ( preprocHandlesProto( p, ppn ) && IsPreprocessorEnabled( p, ppn->preproc_bit ) )
+            ppn->func( p, ppn->context );
+
+        if( !alerts_processed && ( p->ips_os_selected || ppn->preproc_id == PP_FW_RULE_ENGINE ) )
+            alerts_processed = processDecoderAlertsActionQ( p );
+
+        if( scb == NULL && p->ssnptr != NULL )
+            scb = ( SessionControlBlock * ) p->ssnptr;
+        // if we now have session, update enabled pps if changed by previous preproc 
+        if( scb != NULL && pps_enabled_foo != scb->enabled_pps )
+        {
+            EnablePreprocessors( p, scb->enabled_pps );
+            pps_enabled_foo = scb->enabled_pps;
+        }
+
+    } while ( ( p->cur_pp != NULL ) && !( p->packet_flags & PKT_PASS_RULE ) ); 
+
+    // queued decoder alerts are processed after the selection of the
+    // IPS rule config for the flow, if not yet done then process them now
+    if( !alerts_processed )
+        alerts_processed = processDecoderAlertsActionQ( p );
+
+    if( p->dsize == 0 )
+        DisableDetect( p );
+}
+
+
 int Preprocess(Packet * p)
 {
     int retval = 0;
-    tSfPolicyId policy_id = getRuntimePolicy();
+    tSfPolicyId policy_id = getNapRuntimePolicy();
     SnortPolicy *policy = snort_conf->targeted_policies[policy_id];
 #ifdef PPM_MGR
     uint64_t pktcnt=0;
@@ -128,6 +196,11 @@ int Preprocess(Packet * p)
     // If the packet has errors, we won't analyze it.
     if ( p->error_flags )
     {
+        // process any decoder alerts now that policy has been selected... 
+        DecodePolicySpecific(p);
+
+        //actions are queued only for IDS case
+        sfActionQueueExecAll(decoderActionQ);
         DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
             "Packet errors = 0x%x, ignoring traffic!\n", p->error_flags););
 
@@ -138,10 +211,6 @@ int Preprocess(Packet * p)
     }
     else
     {
-        tSfPolicyId new_policy_id;
-        PreprocEvalFuncNode *new_idx;
-        PreprocEvalFuncNode *idx = policy->preproc_eval_funcs;
-
         /* Not a completely ideal place for this since any entries added on the
          * PacketCallback -> ProcessPacket -> Preprocess trail will get
          * obliterated - right now there isn't anything adding entries there.
@@ -161,91 +230,11 @@ int Preprocess(Packet * p)
         p->alt_dsize = 0;
         DetectReset((uint8_t *)p->data, p->dsize);
 
-        /* Turn on all preprocessors */
-        EnablePreprocessors(p);
-
-        if ( p->dsize )
-        {
-            while ((idx != NULL) && !(p->packet_flags & PKT_PASS_RULE))
-            {
-                if ( (p->proto_bits & idx->proto_mask) &&
-                    IsPreprocBitSet(p, idx->preproc_bit))
-                {
-                    idx->func(p, idx->context);
-                    new_policy_id = getRuntimePolicy();
-                    if (new_policy_id != policy_id)
-                    {
-                        policy_id = new_policy_id;
-                        policy = snort_conf->targeted_policies[policy_id];
-                        if (!policy)
-                            break;
-                        for (new_idx = policy->preproc_eval_funcs; new_idx; new_idx = new_idx->next)
-                        {
-                            if (new_idx->func == idx->func)
-                            {
-                                new_idx = new_idx->next;
-                                break;
-                            }
-                            else if ((idx->next && new_idx->func == idx->next->func) || new_idx->priority > idx->priority)
-                                break;
-                        }
-                        idx = new_idx;
-                    }
-                    else
-                        idx = idx->next;
-                }
-                else
-                    idx = idx->next;
-
-                if ( !p->dsize )  // required with normalization
-                    break;
-            }
-        }
-        else
-        {
-            while ((idx != NULL) && !(p->packet_flags & PKT_PASS_RULE))
-            {
-                // short-circuit here if no app data
-                if ( idx->priority >= PRIORITY_APPLICATION )
-                {
-                    break;
-                }
-                if ( (p->proto_bits & idx->proto_mask) &&
-                    IsPreprocBitSet(p, idx->preproc_bit))
-                {
-                    idx->func(p, idx->context);
-                    new_policy_id = getRuntimePolicy();
-                    if (new_policy_id != policy_id)
-                    {
-                        policy_id = new_policy_id;
-                        policy = snort_conf->targeted_policies[policy_id];
-                        if (!policy)
-                            break;
-                        for (new_idx = policy->preproc_eval_funcs; new_idx; new_idx = new_idx->next)
-                        {
-                            if (new_idx->func == idx->func)
-                            {
-                                new_idx = new_idx->next;
-                                break;
-                            }
-                            else if ((idx->next && new_idx->func == idx->next->func) || new_idx->priority > idx->priority)
-                                break;
-                        }
-                        idx = new_idx;
-                    }
-                    else
-                        idx = idx->next;
-                }
-                else
-                    idx = idx->next;
-            }
-            DisableDetect(p);
-        }
+        // ok, dispatch all preprocs enabled for this packet/session
+        DispatchPreprocessors( p, policy_id, policy );
 
         if ( do_detect )
-        {
             Detect(p);
-        }
     }
 
     check_tags_flag = 1;
@@ -256,8 +245,8 @@ int Preprocess(Packet * p)
     PREPROC_PROFILE_END(eventqPerfStats);
 
     /* Check for normally closed session */
-    if(stream_api)
-        stream_api->check_session_closed(p);
+    if( session_api )
+        session_api->check_session_closed(p);
 
     /*
     ** By checking tagging here, we make sure that we log the
@@ -345,6 +334,46 @@ static int CheckTagging(Packet *p)
     return 0;
 }
 
+#if defined(FEAT_OPEN_APPID)
+static void updateEventAppName (Packet *p, OptTreeNode *otn, Event *event)
+{
+    const char *appName;
+    AppIdOptionData *app_data = (AppIdOptionData*)otn->ds_list[PLUGIN_APPID];
+
+    if (app_data && (app_data->matched_appid) && (appName = FindProtocolName(app_data->matched_appid)))
+        memcpy(event->app_name, appName, sizeof(event->app_name));
+    else if (p->ssnptr)
+    {
+        //log most specific appid when rule didn't have any appId
+        int16_t serviceProtoId, clientProtoId, payloadProtoId, miscProtoId, pickedProtoId;
+
+        stream_api->get_application_id(p->ssnptr, &serviceProtoId, &clientProtoId, &payloadProtoId, &miscProtoId);
+        if ((p->packet_flags & PKT_FROM_CLIENT))
+        {
+            if (!(pickedProtoId = payloadProtoId) &&  !(pickedProtoId = miscProtoId) && !(pickedProtoId = clientProtoId))
+                pickedProtoId = serviceProtoId;
+        }
+        else
+        {
+            if (!(pickedProtoId = payloadProtoId) &&  !(pickedProtoId = miscProtoId) && !(pickedProtoId = serviceProtoId))
+                pickedProtoId = clientProtoId;
+        }
+
+        if ((pickedProtoId) && (appName = FindProtocolName(pickedProtoId)))
+        {
+            memcpy(event->app_name, appName, sizeof(event->app_name));
+        }
+        else
+        {
+            event->app_name[0] = 0;
+        }
+    }
+    else
+    {
+        event->app_name[0] = 0;
+    }
+}
+#endif /* defined(FEAT_OPEN_APPID) */
 void CallLogFuncs(Packet *p, char *message, ListHead *head, Event *event)
 {
     OutputFuncNode *idx = NULL;
@@ -1113,6 +1142,9 @@ int ActivateAction(Packet * p, OptTreeNode * otn, Event *event)
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
                    "        <!!> Activating and generating alert! \"%s\"\n",
                    otn->sigInfo.message););
+#if defined(FEAT_OPEN_APPID)
+    updateEventAppName (p, otn, event);
+#endif /* defined(FEAT_OPEN_APPID) */
     CallAlertFuncs(p, otn->sigInfo.message, rtn->listhead, event);
 
     if (otn->OTN_activation_ptr == NULL)
@@ -1148,7 +1180,10 @@ int AlertAction(Packet * p, OptTreeNode * otn, Event *event)
         return 0;
 
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
-                "        <!!> Generating alert! \"%s\", policyId %d\n", otn->sigInfo.message, getRuntimePolicy()););
+                "        <!!> Generating alert! \"%s\", policyId %d\n", otn->sigInfo.message, getIpsRuntimePolicy()););
+#if defined(FEAT_OPEN_APPID)
+    updateEventAppName (p, otn, event);
+#endif /* defined(FEAT_OPEN_APPID) */
 
     /* Call OptTreeNode specific output functions */
     if(otn->outputFuncs)
@@ -1192,7 +1227,7 @@ int DropAction(Packet * p, OptTreeNode * otn, Event *event)
 
     if(stream_api && !stream_api->alert_inline_midstream_drops())
     {
-        if(stream_api->get_session_flags(p->ssnptr) & SSNFLAG_MIDSTREAM)
+        if(session_api->get_session_flags(p->ssnptr) & SSNFLAG_MIDSTREAM)
         {
             DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
                 " <!!> Alert Came From Midstream Session Silently Drop! "
@@ -1208,6 +1243,9 @@ int DropAction(Packet * p, OptTreeNode * otn, Event *event)
     **  packet we just logged.
     */
     Active_DropSession(p);
+#if defined(FEAT_OPEN_APPID)
+    updateEventAppName (p, otn, event);
+#endif /* defined(FEAT_OPEN_APPID) */
 
     CallAlertFuncs(p, otn->sigInfo.message, rtn->listhead, event);
 

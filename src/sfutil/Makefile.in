@@ -111,13 +111,16 @@ am__libsfutil_a_SOURCES_DIST = sfghash.c sfghash.h sfhashfcn.c \
 	sfportobject.c sfportobject.h sfrim.c sfrim.h sfprimetable.c \
 	sfprimetable.h sf_ip.c sf_ip.h sf_ipvar.c sf_ipvar.h \
 	sf_vartable.c sf_vartable.h sf_iph.c sf_iph.h sf_textlog.c \
-	sf_textlog.h sfPolicy.c sfPolicy.h sfPolicyUserData.c \
-	sfPolicyUserData.h sfPolicyData.h sfActionQueue.c \
-	sfActionQueue.h sfrf.c sfrf.h strvec.c strvec.h \
-	sf_email_attach_decode.c sf_email_attach_decode.h \
+	sf_textlog.h sf_sechash.c sf_sechash.h sfPolicy.c sfPolicy.h \
+	sfPolicyUserData.c sfPolicyUserData.h sfPolicyData.h \
+	sfActionQueue.c sfActionQueue.h sfrf.c sfrf.h strvec.c \
+	strvec.h sf_email_attach_decode.c sf_email_attach_decode.h \
 	sf_base64decode.c sf_base64decode.h Unified2_common.h \
-	sf_seqnums.h intel-soft-cpm.c intel-soft-cpm.h
+	sf_seqnums.h mpse_methods.h sfdebug.h intel-soft-cpm.c \
+	intel-soft-cpm.h md5.c md5.h sha2.c sha2.h
 @HAVE_INTEL_SOFT_CPM_TRUE@am__objects_1 = intel-soft-cpm.$(OBJEXT)
+@BUILD_OPENSSL_MD5_TRUE@am__objects_2 = md5.$(OBJEXT)
+@BUILD_OPENSSL_SHA_TRUE@am__objects_3 = sha2.$(OBJEXT)
 am_libsfutil_a_OBJECTS = sfghash.$(OBJEXT) sfhashfcn.$(OBJEXT) \
 	sflsq.$(OBJEXT) sfmemcap.$(OBJEXT) sfthd.$(OBJEXT) \
 	sfxhash.$(OBJEXT) ipobj.$(OBJEXT) getopt_long.$(OBJEXT) \
@@ -130,10 +133,11 @@ am_libsfutil_a_OBJECTS = sfghash.$(OBJEXT) sfhashfcn.$(OBJEXT) \
 	segment_mem.$(OBJEXT) sfportobject.$(OBJEXT) sfrim.$(OBJEXT) \
 	sfprimetable.$(OBJEXT) sf_ip.$(OBJEXT) sf_ipvar.$(OBJEXT) \
 	sf_vartable.$(OBJEXT) sf_iph.$(OBJEXT) sf_textlog.$(OBJEXT) \
-	sfPolicy.$(OBJEXT) sfPolicyUserData.$(OBJEXT) \
-	sfActionQueue.$(OBJEXT) sfrf.$(OBJEXT) strvec.$(OBJEXT) \
+	sf_sechash.$(OBJEXT) sfPolicy.$(OBJEXT) \
+	sfPolicyUserData.$(OBJEXT) sfActionQueue.$(OBJEXT) \
+	sfrf.$(OBJEXT) strvec.$(OBJEXT) \
 	sf_email_attach_decode.$(OBJEXT) sf_base64decode.$(OBJEXT) \
-	$(am__objects_1)
+	$(am__objects_1) $(am__objects_2) $(am__objects_3)
 libsfutil_a_OBJECTS = $(am_libsfutil_a_OBJECTS)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -243,6 +247,8 @@ LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
+LUA_CFLAGS = @LUA_CFLAGS@
+LUA_LIBS = @LUA_LIBS@
 MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
@@ -265,8 +271,6 @@ PKG_CONFIG = @PKG_CONFIG@
 PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
 PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
-RAZORBACK_CFLAGS = @RAZORBACK_CFLAGS@
-RAZORBACK_LIBS = @RAZORBACK_LIBS@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
@@ -316,6 +320,8 @@ libdir = @libdir@
 libexecdir = @libexecdir@
 localedir = @localedir@
 localstatedir = @localstatedir@
+luajit_CFLAGS = @luajit_CFLAGS@
+luajit_LIBS = @luajit_LIBS@
 mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
@@ -334,6 +340,12 @@ top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign no-dependencies
 noinst_LIBRARIES = libsfutil.a
 @HAVE_INTEL_SOFT_CPM_TRUE@INTEL_SOFT_CPM_SOURCES = intel-soft-cpm.c intel-soft-cpm.h
+@BUILD_OPENSSL_MD5_TRUE@OPENSSL_MD5 = \
+@BUILD_OPENSSL_MD5_TRUE@    md5.c md5.h 
+
+@BUILD_OPENSSL_SHA_TRUE@OPENSSL_SHA = \
+@BUILD_OPENSSL_SHA_TRUE@    sha2.c sha2.h
+
 libsfutil_a_SOURCES = \
     sfghash.c sfghash.h \
     sfhashfcn.c sfhashfcn.h \
@@ -369,6 +381,7 @@ libsfutil_a_SOURCES = \
     sf_vartable.c sf_vartable.h \
     sf_iph.c sf_iph.h \
     sf_textlog.c sf_textlog.h \
+    sf_sechash.c sf_sechash.h \
     sfPolicy.c sfPolicy.h \
     sfPolicyUserData.c sfPolicyUserData.h \
     sfPolicyData.h \
@@ -379,7 +392,11 @@ libsfutil_a_SOURCES = \
     sf_base64decode.c sf_base64decode.h \
     Unified2_common.h \
     sf_seqnums.h \
-    $(INTEL_SOFT_CPM_SOURCES)
+	mpse_methods.h \
+	sfdebug.h \
+    $(INTEL_SOFT_CPM_SOURCES) \
+    $(OPENSSL_MD5) \
+    $(OPENSSL_SHA)
 
 all: all-am
 

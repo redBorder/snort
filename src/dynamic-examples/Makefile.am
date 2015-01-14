@@ -25,9 +25,10 @@ BUILT_SOURCES = \
 	include/sfsnort_dynamic_detection_lib.c \
 	include/sfsnort_dynamic_detection_lib.h \
 	include/sf_snort_packet.h \
-    include/sf_protocols.h \
+	include/sf_protocols.h \
 	include/sf_snort_plugin_api.h \
 	include/pcap_pkthdr32.h \
+	include/session_api.h \
 	include/stream_api.h \
 	include/str_search.h \
 	include/sf_types.h \
@@ -43,11 +44,14 @@ BUILT_SOURCES = \
 	include/signature.h \
 	include/plugin_enum.h \
 	include/obfuscation.h \
+	include/packet_time.h \
 	include/rule_option_types.h \
 	include/event.h \
 	include/sfcontrol.h \
+	include/sidechannel_define.h \
 	include/idle_processing.h \
-	include/file_api.h
+	include/file_api.h \
+	include/mpse_methods.h 
 
 sed_ipv6_headers = \
 	sed -e "s/->iph->ip_src/->ip4_header->source/" \
@@ -198,6 +202,9 @@ include/sf_types.h: $(srcdir)/../sf_types.h
 include/obfuscation.h: $(srcdir)/../obfuscation.h
 	@src_header=$?; dst_header=$@; $(massage_headers)
 
+include/packet_time.h: $(srcdir)/../packet_time.h
+	@src_header=$?; dst_header=$@; $(massage_headers)
+
 include/rule_option_types.h: $(srcdir)/../rule_option_types.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
@@ -205,6 +212,9 @@ include/event.h: $(srcdir)/../event.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
 include/sfcontrol.h: $(srcdir)/../control/sfcontrol.h
+	@src_header=$?; dst_header=$@; $(copy_headers)
+
+include/sidechannel_define.h: $(srcdir)/../side-channel/sidechannel_define.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
 include/idle_processing.h: $(srcdir)/../idle_processing.h
@@ -296,11 +306,18 @@ include/sf_protocols.h: $(srcdir)/../sf_protocols.h
 include/sf_snort_plugin_api.h: $(srcdir)/../dynamic-plugins/sf_engine/sf_snort_plugin_api.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
+# Session API/String Searching, massage it to use SFSnortPacket
+include/session_api.h: $(srcdir)/../preprocessors/session_api.h
+	@src_header=$?; dst_header=$@; $(massage_headers)
+
 # Stream API/String Searching, massage it to use SFSnortPacket
 include/stream_api.h: $(srcdir)/../preprocessors/stream_api.h
 	@src_header=$?; dst_header=$@; $(massage_headers)
 
 include/str_search.h: $(srcdir)/../preprocessors/str_search.h
+	@src_header=$?; dst_header=$@; $(massage_headers)
+
+include/mpse_methods.h: $(srcdir)/../sfutil/mpse_methods.h
 	@src_header=$?; dst_header=$@; $(massage_headers)
 
 include/treenodes.h: $(srcdir)/../treenodes.h

@@ -30,12 +30,14 @@
 #include "rules.h" /* needed for OptTreeNode defintion */
 #include "treenodes.h"
 #include "detection_util.h"
+#include "hashstring.h"
 
 /********************************************************************
  * Macros
  ********************************************************************/
 #define CHECK_AND_PATTERN_MATCH 1
 #define CHECK_URI_PATTERN_MATCH 2
+#define PMD_WITHIN_UNDEFINED ((unsigned) -1)
 
 /********************************************************************
  * Data structures
@@ -99,6 +101,9 @@ typedef struct _PatternMatchData
     struct _PatternMatchData *prev; /* ptr to previous match struct */
     struct _PatternMatchData *next; /* ptr to next match struct */
 
+    Secure_Hash_Type pattern_type;
+    int protected_length;
+    bool protected_pattern;
 } PatternMatchData;
 
 /********************************************************************
@@ -113,6 +118,7 @@ void FinalizeContentUniqueness(struct _SnortConfig *sc, OptTreeNode *otn);
 void ValidateFastPattern(OptTreeNode *otn);
 void make_precomp(PatternMatchData *);
 void ParsePattern(char *, OptTreeNode *, int);
+void ParseProtectedPattern(char *, OptTreeNode *, int);
 int uniSearchCI(const char *, int, PatternMatchData *);
 int CheckANDPatternMatch(void *, Packet *);
 int CheckUriPatternMatch(void *, Packet *);

@@ -417,7 +417,7 @@ int ModbusDecode(modbus_config_t *config, SFSnortPacket *packet)
         return MODBUS_FAIL;
 
     session = (modbus_session_data_t *)
-        _dpd.streamAPI->get_application_data(packet->stream_session_ptr, PP_MODBUS);
+        _dpd.sessionAPI->get_application_data(packet->stream_session, PP_MODBUS);
     
     /* Lay the header struct over the payload */
     header = (modbus_header_t *) packet->payload;

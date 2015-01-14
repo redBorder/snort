@@ -55,6 +55,7 @@
 #include "snort_smtp.h"
 #include "smtp_config.h"
 #include "smtp_log.h"
+#include "smtp_paf.h"
 
 #include "preprocids.h"
 #include "sf_snort_packet.h"
@@ -98,11 +99,11 @@ static void SMTPDetect(void *, void *context);
 static void SMTPCleanExitFunction(int, void *);
 static void SMTPResetFunction(int, void *);
 static void SMTPResetStatsFunction(int, void *);
-static void _addPortsToStream5Filter(struct _SnortConfig *, SMTPConfig *, tSfPolicyId);
+static void enablePortStreamServices(struct _SnortConfig *, SMTPConfig *, tSfPolicyId);
 static void SMTP_RegXtraDataFuncs(SMTPConfig *config);
 static void SMTP_PrintStats(int);
 #ifdef TARGET_BASED
-static void _addServicesToStream5Filter(struct _SnortConfig *, tSfPolicyId);
+static void _addServicesToStreamFilter(struct _SnortConfig *, tSfPolicyId);
 #endif
 static int SMTPCheckConfig(struct _SnortConfig *);
 
@@ -186,6 +187,9 @@ static void SMTPInit(struct _SnortConfig *sc, char *args)
         if (smtp_proto_id == SFTARGET_UNKNOWN_PROTOCOL)
             smtp_proto_id = _dpd.addProtocolReference(SMTP_PROTO_REF_STR);
 
+        // register with session to handle applications
+        _dpd.sessionAPI->register_service_handler( PP_SMTP, smtp_proto_id );
+
         DEBUG_WRAP(DebugMessage(DEBUG_SMTP,"SMTP: Target-based: Proto id for %s: %u.\n",
                                 SMTP_PROTO_REF_STR, smtp_proto_id););
 #endif
@@ -248,10 +252,10 @@ static void SMTPInit(struct _SnortConfig *sc, char *args)
 
     _dpd.searchAPI->search_instance_prep(pPolicyConfig->cmd_search_mpse);
 
-    _addPortsToStream5Filter(sc, pPolicyConfig, policy_id);
+    enablePortStreamServices(sc, pPolicyConfig, policy_id);
 
 #ifdef TARGET_BASED
-    _addServicesToStream5Filter(sc, policy_id);
+    _addServicesToStreamFilter(sc, policy_id);
 #endif
 }
 
@@ -271,7 +275,7 @@ static void SMTPInit(struct _SnortConfig *sc, char *args)
 static void SMTPDetect(void *pkt, void *context)
 {
     SFSnortPacket *p = (SFSnortPacket *)pkt;
-    tSfPolicyId policy_id = _dpd.getRuntimePolicy();
+    tSfPolicyId policy_id = _dpd.getNapRuntimePolicy();
     PROFILE_VARS;
 
     // preconditions - what we registered for
@@ -342,9 +346,9 @@ static void SMTPResetStatsFunction(int signal, void *data)
     return;
 }
 
-static void _addPortsToStream5Filter(struct _SnortConfig *sc, SMTPConfig *config, tSfPolicyId policy_id)
+static void enablePortStreamServices(struct _SnortConfig *sc, SMTPConfig *config, tSfPolicyId policy_id)
 {
-    unsigned int portNum;
+    uint32_t portNum;
 
     if (config == NULL)
         return;
@@ -356,14 +360,21 @@ static void _addPortsToStream5Filter(struct _SnortConfig *sc, SMTPConfig *config
             //Add port the port
             _dpd.streamAPI->set_port_filter_status(sc, IPPROTO_TCP, (uint16_t)portNum,
                                                    PORT_MONITOR_SESSION, policy_id, 1);
+
+            register_smtp_paf_port(sc, portNum, policy_id);
+            _dpd.streamAPI->register_reassembly_port( NULL, 
+                                                  (uint16_t) portNum, 
+                                                  SSN_DIR_FROM_SERVER | SSN_DIR_FROM_CLIENT );
+            _dpd.sessionAPI->enable_preproc_for_port( sc, PP_SMTP, PROTO_BIT__TCP, (uint16_t) portNum ); 
         }
     }
 }
 
 #ifdef TARGET_BASED
-static void _addServicesToStream5Filter(struct _SnortConfig *sc, tSfPolicyId policy_id)
+static void _addServicesToStreamFilter(struct _SnortConfig *sc, tSfPolicyId policy_id)
 {
     _dpd.streamAPI->set_service_filter_status(sc, smtp_proto_id, PORT_MONITOR_SESSION, policy_id, 1);
+    register_smtp_paf_service(sc, smtp_proto_id, policy_id);
 }
 #endif
 
@@ -378,7 +389,7 @@ static int SMTPEnableDecoding(struct _SnortConfig *sc, tSfPolicyUserContextId co
     if(context->disabled)
         return 0;
 
-    if(!SMTP_IsDecodingEnabled(context))
+    if(_dpd.fileAPI->is_decoding_enabled(&(context->decode_conf)))
         return 1;
 
     return 0;
@@ -410,10 +421,10 @@ static int CheckFilePolicyConfig(
 {
     SMTPConfig *context = (SMTPConfig *)pData;
 
-    context->file_depth = _dpd.fileAPI->get_max_file_depth();
-    if (context->file_depth > -1)
+    context->decode_conf.file_depth = _dpd.fileAPI->get_max_file_depth();
+    if (context->decode_conf.file_depth > -1)
         context->log_config.log_filename = 1;
-    updateMaxDepth(context->file_depth, &context->max_depth);
+    updateMaxDepth(context->decode_conf.file_depth, &context->decode_conf.max_depth);
 
     return 0;
 }
@@ -434,7 +445,7 @@ static int SMTPCheckPolicyConfig(
     if (context->disabled)
         return 0;
 
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
+    if (_dpd.streamAPI == NULL)
     {
         DynamicPreprocessorFatalMessage("Streaming & reassembly must be enabled "
                                         "for SMTP preprocessor\n");
@@ -472,8 +483,8 @@ static int SMTPCheckConfig(struct _SnortConfig *sc)
 
         if (sfPolicyUserDataIterate(sc, smtp_config, SMTPEnableDecoding) != 0)
         {
-            smtp_mime_mempool = (MemPool *) _dpd.fileAPI->init_mime_mempool(defaultConfig->max_mime_mem,
-                defaultConfig->max_depth, smtp_mime_mempool, PROTOCOL_NAME);
+            smtp_mime_mempool = (MemPool *) _dpd.fileAPI->init_mime_mempool(defaultConfig->decode_conf.max_mime_mem,
+                defaultConfig->decode_conf.max_depth, smtp_mime_mempool, PROTOCOL_NAME);
         }
 
         if (sfPolicyUserDataIterate(sc, smtp_config, SMTPLogExtraData) != 0)
@@ -488,20 +499,20 @@ static int SMTPCheckConfig(struct _SnortConfig *sc)
 static void SMTP_PrintStats(int exiting)
 {
     _dpd.logMsg("SMTP Preprocessor Statistics\n");
-    _dpd.logMsg("  Total sessions                                    : "STDu64"\n", smtp_stats.sessions);
-    _dpd.logMsg("  Max concurrent sessions                           : "STDu64"\n", smtp_stats.max_conc_sessions);
+    _dpd.logMsg("  Total sessions                                    : " STDu64 "\n", smtp_stats.sessions);
+    _dpd.logMsg("  Max concurrent sessions                           : " STDu64 "\n", smtp_stats.max_conc_sessions);
     if (smtp_stats.sessions > 0)
     {
-        _dpd.logMsg("  Base64 attachments decoded                        : "STDu64"\n", smtp_stats.attachments[DECODE_B64]);
-        _dpd.logMsg("  Total Base64 decoded bytes                        : "STDu64"\n", smtp_stats.decoded_bytes[DECODE_B64]);
-        _dpd.logMsg("  Quoted-Printable attachments decoded              : "STDu64"\n", smtp_stats.attachments[DECODE_QP]);
-        _dpd.logMsg("  Total Quoted decoded bytes                        : "STDu64"\n", smtp_stats.decoded_bytes[DECODE_QP]);
-        _dpd.logMsg("  UU attachments decoded                            : "STDu64"\n", smtp_stats.attachments[DECODE_UU]);
-        _dpd.logMsg("  Total UU decoded bytes                            : "STDu64"\n", smtp_stats.decoded_bytes[DECODE_UU]);
-        _dpd.logMsg("  Non-Encoded MIME attachments extracted            : "STDu64"\n", smtp_stats.attachments[DECODE_BITENC]);
-        _dpd.logMsg("  Total Non-Encoded MIME bytes extracted            : "STDu64"\n", smtp_stats.decoded_bytes[DECODE_BITENC]);
-        if ( smtp_stats.memcap_exceeded )
-            _dpd.logMsg("  Sessions not decoded due to memory unavailability : "STDu64"\n", smtp_stats.memcap_exceeded);
+        _dpd.logMsg("  Base64 attachments decoded                        : " STDu64 "\n", smtp_stats.mime_stats.attachments[DECODE_B64]);
+        _dpd.logMsg("  Total Base64 decoded bytes                        : " STDu64 "\n", smtp_stats.mime_stats.decoded_bytes[DECODE_B64]);
+        _dpd.logMsg("  Quoted-Printable attachments decoded              : " STDu64 "\n", smtp_stats.mime_stats.attachments[DECODE_QP]);
+        _dpd.logMsg("  Total Quoted decoded bytes                        : " STDu64 "\n", smtp_stats.mime_stats.decoded_bytes[DECODE_QP]);
+        _dpd.logMsg("  UU attachments decoded                            : " STDu64 "\n", smtp_stats.mime_stats.attachments[DECODE_UU]);
+        _dpd.logMsg("  Total UU decoded bytes                            : " STDu64 "\n", smtp_stats.mime_stats.decoded_bytes[DECODE_UU]);
+        _dpd.logMsg("  Non-Encoded MIME attachments extracted            : " STDu64 "\n", smtp_stats.mime_stats.attachments[DECODE_BITENC]);
+        _dpd.logMsg("  Total Non-Encoded MIME bytes extracted            : " STDu64 "\n", smtp_stats.mime_stats.decoded_bytes[DECODE_BITENC]);
+        if ( smtp_stats.mime_stats.memcap_exceeded )
+            _dpd.logMsg("  Sessions not decoded due to memory unavailability : " STDu64 "\n", smtp_stats.mime_stats.memcap_exceeded);
     }
 
 }
@@ -578,10 +589,10 @@ static void SMTPReload(struct _SnortConfig *sc, char *args, void **new_config)
 
     _dpd.addPreproc(sc, SMTPDetect, PRIORITY_APPLICATION, PP_SMTP, PROTO_BIT__TCP);
 
-    _addPortsToStream5Filter(sc, pPolicyConfig, policy_id);
+    enablePortStreamServices(sc, pPolicyConfig, policy_id);
 
 #ifdef TARGET_BASED
-    _addServicesToStream5Filter(sc, policy_id);
+    _addServicesToStreamFilter(sc, policy_id);
 #endif
 }
 
@@ -606,43 +617,14 @@ static int SMTPReloadVerify(struct _SnortConfig *sc, void *swap_config)
         return 0;
     }
 
+    sfPolicyUserDataIterate (sc, smtp_swap_config, SMTPCheckPolicyConfig);
     sfPolicyUserDataIterate (sc, smtp_swap_config, CheckFilePolicyConfig);
 
     if (smtp_mime_mempool != NULL)
     {
-        if (configNext == NULL)
+        if(_dpd.fileAPI->is_decoding_conf_changed(&(configNext->decode_conf),
+                &(config->decode_conf), "SMTP"))
         {
-            _dpd.errMsg("SMTP reload: Changing the SMTP configuration requires a restart.\n");
-            return -1;
-        }
-        if (configNext->max_mime_mem != config->max_mime_mem)
-        {
-            _dpd.errMsg("SMTP reload: Changing the max_mime_mem requires a restart.\n");
-            return -1;
-        }
-        if(configNext->b64_depth != config->b64_depth)
-        {
-            _dpd.errMsg("SMTP reload: Changing the b64_decode_depth requires a restart.\n");
-            return -1;
-        }
-        if(configNext->qp_depth != config->qp_depth)
-        {
-            _dpd.errMsg("SMTP reload: Changing the qp_decode_depth requires a restart.\n");
-            return -1;
-        }
-        if(configNext->bitenc_depth != config->bitenc_depth)
-        {
-            _dpd.errMsg("SMTP reload: Changing the bitenc_decode_depth requires a restart.\n");
-            return -1;
-        }
-        if(configNext->uu_depth != config->uu_depth)
-        {
-            _dpd.errMsg("SMTP reload: Changing the uu_decode_depth requires a restart.\n");
-            return -1;
-        }
-        if(configNext->file_depth != config->file_depth)
-        {
-            _dpd.errMsg("SMTP reload: Changing the file_depth requires a restart.\n");
             return -1;
         }
     }
@@ -671,8 +653,8 @@ static int SMTPReloadVerify(struct _SnortConfig *sc, void *swap_config)
     else if(configNext != NULL)
     {
         if (sfPolicyUserDataIterate(sc, smtp_swap_config, SMTPEnableDecoding) != 0)
-            smtp_mime_mempool = (MemPool *)_dpd.fileAPI->init_mime_mempool(configNext->max_mime_mem,
-                configNext->max_depth, smtp_mime_mempool, PROTOCOL_NAME);
+            smtp_mime_mempool = (MemPool *)_dpd.fileAPI->init_mime_mempool(configNext->decode_conf.max_mime_mem,
+                configNext->decode_conf.max_depth, smtp_mime_mempool, PROTOCOL_NAME);
 
         if (sfPolicyUserDataIterate(sc, smtp_swap_config, SMTPLogExtraData) != 0)
             smtp_mempool = (MemPool *)_dpd.fileAPI->init_log_mempool(configNext->log_config.email_hdrs_log_depth,
@@ -680,14 +662,6 @@ static int SMTPReloadVerify(struct _SnortConfig *sc, void *swap_config)
 
         if ( configNext->disabled )
             return 0;
-    }
-
-
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
-    {
-        _dpd.errMsg("Streaming & reassembly must be enabled "
-                                        "for SMTP preprocessor\n");
-        return -2;
     }
 
     return 0;

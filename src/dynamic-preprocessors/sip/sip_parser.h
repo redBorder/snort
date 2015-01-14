@@ -25,7 +25,7 @@
  ****************************************************************************/
 
 #ifndef _SIP_PARSER_H_
-#define _SIP_PARSE_H_
+#define _SIP_PARSER_H_
 
 #include "sfPolicyUserData.h"
 #include "snort_bounds.h"

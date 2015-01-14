@@ -51,7 +51,8 @@ sp_urilen_check.c sp_urilen_check.h \
 sp_file_data.c sp_file_data.h \
 sp_base64_decode.c sp_base64_decode.h \
 sp_base64_data.c sp_base64_data.h \
-sp_pkt_data.c sp_pkt_data.h
+sp_pkt_data.c sp_pkt_data.h \
+sp_file_type.c sp_file_type.h
 
 if BUILD_REACT
 libspd_a_SOURCES += sp_react.c sp_react.h
@@ -61,10 +62,9 @@ if BUILD_RESPOND3
 libspd_a_SOURCES += sp_respond3.c sp_respond.h
 endif
 
-if FEAT_FILE_INSPECT
-libspd_a_SOURCES += sp_file_type.c sp_file_type.h
+if FEAT_OPEN_APPID
+libspd_a_SOURCES += sp_appid.c sp_appid.h 
 endif
-
 copy_files = \
 	if test -f $$dst_file; then \
 		x=`diff $$src_file $$dst_file >> /dev/null`; \

@@ -230,7 +230,7 @@ static int FileCheckPolicyConfig(struct _SnortConfig *sc,
 {
     _dpd.setParserPolicy(sc, policyId);
 
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
+    if (!_dpd.isPreprocEnabled(sc, PP_STREAM))
     {
         DynamicPreprocessorFatalMessage("FileCheckPolicyConfig(): The Stream preprocessor must be enabled.\n");
     }
@@ -331,7 +331,7 @@ static int FileReloadVerify(struct _SnortConfig *sc, void *swap_config)
         return -1;
     }
 
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
+    if (!_dpd.isPreprocEnabled(sc, PP_STREAM))
     {
         _dpd.errMsg("SetupFile(): The Stream preprocessor must be enabled.\n");
         return -1;

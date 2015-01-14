@@ -86,12 +86,20 @@ int RollAlertFile(const char *);
 
 #ifndef WIN32
 void SetEvent(Event *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, 
+#if !defined(FEAT_OPEN_APPID)
         uint32_t); 
+#else /* defined(FEAT_OPEN_APPID) */
+        uint32_t, char *); 
+#endif /* defined(FEAT_OPEN_APPID) */
 #else
 /* There is a naming conflict with a Win32 standard function, so compensate */
 #define SetEvent SnortSetEvent
 void SnortSetEvent(Event *, uint32_t, uint32_t, uint32_t, uint32_t, 
+#if !defined(FEAT_OPEN_APPID)
         uint32_t, uint32_t); 
+#else /* defined(FEAT_OPEN_APPID) */
+        uint32_t, uint32_t, char *); 
+#endif /* defined(FEAT_OPEN_APPID) */
 #endif
 
 #endif /* __LOG_H__ */

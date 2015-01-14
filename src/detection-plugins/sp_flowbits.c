@@ -65,6 +65,7 @@
 #include "sf_types.h"
 #include "mstring.h"
 
+#include "session_api.h"
 #include "stream_api.h"
 
 #include "snort.h"
@@ -293,19 +294,19 @@ static void FlowBitsInit(struct _SnortConfig *sc, char *data, OptTreeNode *otn, 
     if (otn->sigInfo.generator == 3)
         return;
 
-    /* Flow bits are handled by Stream5 if its enabled */
+    /* Flow bits are handled by Stream if its enabled */
     if( stream_api && stream_api->version != STREAM_API_VERSION5)
     {
         if (ScConfErrorOut())
         {
-            FatalError("WARNING: %s (%d) => flowbits without Stream5. "
-                    "Stream5 must be enabled for this plugin.\n",
+            FatalError("WARNING: %s (%d) => flowbits without Stream. "
+                    "Stream must be enabled for this plugin.\n",
                     file_name,file_line);
         }
         else
         {
-            LogMessage("WARNING: %s (%d) => flowbits without Stream5. "
-                    "Stream5 must be enabled for this plugin.\n",
+            LogMessage("WARNING: %s (%d) => flowbits without Stream. "
+                    "Stream must be enabled for this plugin.\n",
                     file_name,file_line);
         }
     }
@@ -982,7 +983,7 @@ int checkFlowBits( uint8_t type, uint8_t evalType, uint16_t *ids, uint16_t num_i
         return rval;
 
 
-    flowdata = stream_api->get_flow_data(p);
+    flowdata = session_api->get_flow_data(p);
     if(!flowdata)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_FLOWBITS, "No FLOWBITS_DATA"););

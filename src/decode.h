@@ -53,9 +53,10 @@
 #include "sf_ip.h"
 #include "sf_iph.h"
 #include "sf_protocols.h"
-#include "sfdaq.h"
 #include "util.h"
 #include "sf_types.h"
+
+struct _SnortConfig;
 
 /*  D E F I N E S  ************************************************************/
 
@@ -235,7 +236,6 @@ struct enc_header {
 #define ICMP_NORMAL_LEN         8
 
 #define IP_OPTMAX               40
-#define IP6_EXTMAX               8
 #define TCP_OPTLENMAX           40 /* (((2^4) - 1) * 4  - TCP_HEADER_LEN) */
 
 #define LOG_FUNC_MAX            32
@@ -633,6 +633,7 @@ struct enc_header {
 #ifdef NORMALIZER
 #define PKT_RESIZED          0x00800000  /* packet has new size; must set modified too */
 #endif
+#define PKT_EARLY_REASSEMBLY 0x01000000  /* this packet. part of the expected stream, shoudl have stream reassembly set */ 
 
 // neither of these flags will be set for (full) retransmissions or non-data segments
 // a partial overlap results in out of sequence condition
@@ -1737,7 +1738,7 @@ typedef struct _Packet
     // nothing after this point is zeroed ...
     Options ip_options[IP_OPTMAX];         /* ip options decode structure */
     Options tcp_options[TCP_OPTLENMAX];    /* tcp options decode struct */
-    IP6Option ip6_extensions[IP6_EXTMAX];  /* IPv6 Extension References */
+    IP6Option *ip6_extensions;  /* IPv6 Extension References */
 
     const uint8_t *ip_frag_start;
     const uint8_t *ip_options_data;
@@ -1766,6 +1767,8 @@ typedef struct _Packet
 
     uint8_t ps_proto;  // Used for portscan and unified2 logging
 
+    uint8_t ips_os_selected; 
+    void    *cur_pp;
 } Packet;
 
 #define PKT_ZERO_LEN offsetof(Packet, ip_options)

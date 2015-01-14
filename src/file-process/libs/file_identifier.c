@@ -428,54 +428,49 @@ uint32_t file_identifiers_usage(void)
  */
 uint32_t file_identifiers_match(uint8_t *buf, int len, FileContext *context)
 {
-    FileConfig *file_config;
-    IdentifierNode* current;
+    IdentifierNode * current;
     uint64_t end;
 
-    if ((!context)||(!buf)||(len <= 0))
-        return 0;
+    if ( !context )
+        return SNORT_FILE_TYPE_UNKNOWN;
 
-    file_config = (FileConfig *)context->file_config;
+    if ( !buf || len <= 0 )
+        return SNORT_FILE_TYPE_CONTINUE;
 
-    if (!(context->file_type_context))
-        context->file_type_context = (void *)(file_config->identifier_root);
+    if ( !context->file_type_context )
+    {
+        FileConfig * file_config = (FileConfig *)context->file_config;
+        context->file_type_context = file_config->identifier_root;
+    }
 
-    current = (IdentifierNode*) context->file_type_context;
-
+    current = (IdentifierNode*)context->file_type_context;
     end = context->processed_bytes + len;
 
-    while(current && (current->offset < end) && len &&
-            (current->offset >= context->processed_bytes))
+    while ( current && ( current->offset >= context->processed_bytes ) )
     {
-        /*Found file id, save and continue*/
-        if (current->type_id)
-        {
+        /* Found file id, save and continue */
+        if ( current->type_id )
             context->file_type_id = current->type_id;
+
+        if ( current->offset >= end )
+        {
+            /* Save current state */
+            context->file_type_context = current;
+            return SNORT_FILE_TYPE_CONTINUE;
         }
 
-        /*Move to the next level*/
+        /* Move to the next level */
         current = current->next[buf[current->offset - context->processed_bytes]];
-        len--;
     }
 
-    /* save current state */
-    context->file_type_context = current;
+    /*Either end of magics or passed the current offset*/
+    context->file_type_context = NULL;
 
-    /*No more checks are needed*/
-    if (!current)
-    {
-        /*Found file type in current buffer, return*/
-        if (context->file_type_id)
-            return context->file_type_id;
-        else
-            return SNORT_FILE_TYPE_UNKNOWN;
-    }
-    else if (current->offset >= end)
-    {
-        return SNORT_FILE_TYPE_CONTINUE;
-    }
-    else
-        return SNORT_FILE_TYPE_UNKNOWN;
+    if ( context->file_type_id == SNORT_FILE_TYPE_CONTINUE )
+        context->file_type_id = SNORT_FILE_TYPE_UNKNOWN;
+
+    return context->file_type_id;
+
 }
 
 

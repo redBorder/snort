@@ -101,8 +101,10 @@ libhttp_inspect_a_DEPENDENCIES = user_interface/hi_ui_config.o \
 	session_inspection/hi_si.o mode_inspection/hi_mi.o \
 	anomaly_detection/hi_ad.o utils/hi_util_kmap.o \
 	utils/hi_util_xmalloc.o utils/hi_util_hbm.o \
-	utils/hi_cmd_lookup.o utils/hi_paf.o event_output/hi_eo_log.o \
-	client/hi_client.o client/hi_client_norm.o server/hi_server.o \
+	utils/hi_cmd_lookup.o utils/hi_paf.o files/file_decomp.o \
+	files/file_decomp_SWF.o files/file_decomp_PDF.o \
+	event_output/hi_eo_log.o client/hi_client.o \
+	client/hi_client_norm.o server/hi_server.o \
 	server/hi_server_norm.o normalization/hi_norm.o
 am_libhttp_inspect_a_OBJECTS =
 libhttp_inspect_a_OBJECTS = $(am_libhttp_inspect_a_OBJECTS)
@@ -256,6 +258,8 @@ LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
+LUA_CFLAGS = @LUA_CFLAGS@
+LUA_LIBS = @LUA_LIBS@
 MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
@@ -278,8 +282,6 @@ PKG_CONFIG = @PKG_CONFIG@
 PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
 PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
-RAZORBACK_CFLAGS = @RAZORBACK_CFLAGS@
-RAZORBACK_LIBS = @RAZORBACK_LIBS@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
@@ -329,6 +331,8 @@ libdir = @libdir@
 libexecdir = @libexecdir@
 localedir = @localedir@
 localstatedir = @localstatedir@
+luajit_CFLAGS = @luajit_CFLAGS@
+luajit_LIBS = @luajit_LIBS@
 mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
@@ -348,7 +352,7 @@ AUTOMAKE_OPTIONS = foreign no-dependencies
 noinst_LIBRARIES = libhttp_inspect.a
 libhttp_inspect_a_SOURCES = 
 SUBDIRS = include utils user_interface session_inspection mode_inspection  \
-          anomaly_detection event_output server client normalization 
+          anomaly_detection event_output server client normalization files
 
 libhttp_inspect_a_LIBADD = \
 user_interface/hi_ui_config.o \
@@ -362,6 +366,9 @@ utils/hi_util_xmalloc.o \
 utils/hi_util_hbm.o \
 utils/hi_cmd_lookup.o \
 utils/hi_paf.o \
+files/file_decomp.o \
+files/file_decomp_SWF.o \
+files/file_decomp_PDF.o \
 event_output/hi_eo_log.o \
 client/hi_client.o \
 client/hi_client_norm.o  \

@@ -24,7 +24,7 @@
  *
  * snort_imap.h
  *
- * Author: Bhagyashree Bantwal <bbantwal@sourcefire.com>
+ * Author: Bhagyashree Bantwal <bbantwal@cisco.com>
  *
  * Description:
  *
@@ -46,6 +46,7 @@
 #include "sfPolicyUserData.h"
 #include "mempool.h"
 #include "sf_email_attach_decode.h"
+#include "file_mail_common.h"
 #include "file_api.h"
 
 #ifdef DEBUG
@@ -70,10 +71,12 @@
 
 #define BOUNDARY     0
 
-#define MAX_BOUNDARY_LEN  70  /* Max length of boundary string, defined in RFC 2046 */
-
 #define STATE_DATA             0    /* Data state */
-#define STATE_UNKNOWN          1
+#define STATE_TLS_CLIENT_PEND  1    /* Got STARTTLS */
+#define STATE_TLS_SERVER_PEND  2    /* Got STARTTLS */
+#define STATE_TLS_DATA         3    /* Successful handshake, TLS encrypted data */
+#define STATE_COMMAND          4
+#define STATE_UNKNOWN          5
 
 #define STATE_DATA_INIT    0
 #define STATE_DATA_HEADER  1    /* Data header section of data state */
@@ -81,24 +84,10 @@
 #define STATE_MIME_HEADER  3    /* MIME header section within data section */
 #define STATE_DATA_UNKNOWN 4
 
-/* state flags */
-#define IMAP_FLAG_FOLDING                    0x00000001
-#define IMAP_FLAG_IN_CONTENT_TYPE            0x00000002
-#define IMAP_FLAG_GOT_BOUNDARY               0x00000004
-#define IMAP_FLAG_DATA_HEADER_CONT           0x00000008
-#define IMAP_FLAG_IN_CONT_TRANS_ENC          0x00000010
-#define IMAP_FLAG_EMAIL_ATTACH               0x00000020
-#define IMAP_FLAG_MULTIPLE_EMAIL_ATTACH      0x00000040
-#define IMAP_FLAG_MIME_END                   0x00000080
-#define IMAP_FLAG_IN_CONT_DISP               0x00000200
-#define IMAP_FLAG_IN_CONT_DISP_CONT          0x00000400
-
-/* log flags */
-#define IMAP_FLAG_FILENAME_PRESENT           0x00000004
-
 /* session flags */
 #define IMAP_FLAG_NEXT_STATE_UNKNOWN         0x00000004
 #define IMAP_FLAG_GOT_NON_REBUILT            0x00000008
+#define IMAP_FLAG_CHECK_SSL                  0x00000010
 
 #define IMAP_SSL_ERROR_FLAGS  (SSL_BOGUS_HS_DIR_FLAG | \
                                SSL_BAD_VER_FLAG | \
@@ -235,9 +224,7 @@ typedef struct _IMAPPcre
 typedef struct _IMAP
 {
     int state;
-    int data_state;
     int state_flags;
-    int log_flags;
     int session_flags;
     int alert_mask;
     int reassembling;
@@ -247,13 +234,11 @@ typedef struct _IMAP
     uint64_t session_number;
 #endif
 
-    MemBucket *decode_bkt;
-    IMAPMimeBoundary  mime_boundary;
-    Email_DecodeState *decode_state;
-    MAIL_LogState *log_state;
+    MimeState mime_ssn;
 
     tSfPolicyId policy_id;
     tSfPolicyUserContextId config;
+    uint32_t flow_id;
 
 } IMAP;
 

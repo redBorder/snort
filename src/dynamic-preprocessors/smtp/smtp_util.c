@@ -128,20 +128,20 @@ int SMTP_CopyToAltBuffer(SFSnortPacket *p, const uint8_t *start, int length)
     return 0;
 }
 /* Accumulate EOL seperated headers, one or more at a time */
-int SMTP_CopyEmailHdrs(const uint8_t *start, int length)
+int SMTP_CopyEmailHdrs(const uint8_t *start, int length, MAIL_LogState *log_state)
 {
     int log_avail = 0;
     uint8_t *log_buf;
     uint32_t *hdrs_logged;
     int ret = 0;
 
-    if ((smtp_ssn->log_state == NULL) || (length <= 0))
+    if ((log_state == NULL) || (length <= 0))
         return -1;
 
 
-    log_avail = (smtp_ssn->log_state->log_depth - smtp_ssn->log_state->hdrs_logged);
-    hdrs_logged = &(smtp_ssn->log_state->hdrs_logged);
-    log_buf = (uint8_t *)smtp_ssn->log_state->emailHdrs;
+    log_avail = (log_state->log_depth - log_state->hdrs_logged);
+    hdrs_logged = &(log_state->hdrs_logged);
+    log_buf = (uint8_t *)log_state->emailHdrs;
 
     if(log_avail <= 0)
     {
@@ -155,7 +155,7 @@ int SMTP_CopyEmailHdrs(const uint8_t *start, int length)
 
     /* appended by the EOL \r\n */
 
-    ret = SafeMemcpy(log_buf + *hdrs_logged, start, length, log_buf, log_buf+(smtp_ssn->log_state->log_depth));
+    ret = SafeMemcpy(log_buf + *hdrs_logged, start, length, log_buf, log_buf+(log_state->log_depth));
 
     if (ret != SAFEMEM_SUCCESS)
     {
@@ -163,13 +163,12 @@ int SMTP_CopyEmailHdrs(const uint8_t *start, int length)
     }
 
     *hdrs_logged += length;
-    smtp_ssn->log_flags |= SMTP_FLAG_EMAIL_HDRS_PRESENT;
 
     return 0;
 }
 
 /* Accumulate email addresses from RCPT TO and/or MAIL FROM commands. Email addresses are separated by comma */
-int SMTP_CopyEmailID(const uint8_t *start, int length, int command_type)
+int SMTP_CopyEmailID(const uint8_t *start, int length, int command_type, MAIL_LogState *log_state)
 {
     uint8_t *alt_buf;
     int alt_size;
@@ -178,7 +177,7 @@ int SMTP_CopyEmailID(const uint8_t *start, int length, int command_type)
     int log_avail=0;
     const uint8_t *tmp_eol;
 
-    if ((smtp_ssn->log_state == NULL) || (length <= 0))
+    if ((log_state == NULL) || (length <= 0))
         return -1;
 
     tmp_eol = (uint8_t *)memchr(start, ':', length);
@@ -198,15 +197,15 @@ int SMTP_CopyEmailID(const uint8_t *start, int length, int command_type)
     switch (command_type)
     {
         case CMD_MAIL:
-            alt_buf = smtp_ssn->log_state->senders;
+            alt_buf = log_state->senders;
             alt_size = MAX_EMAIL;
-            alt_len = &(smtp_ssn->log_state->snds_logged);
+            alt_len = &(log_state->snds_logged);
             break;
 
         case CMD_RCPT:
-            alt_buf = smtp_ssn->log_state->recipients;
+            alt_buf = log_state->recipients;
             alt_size = MAX_EMAIL;
-            alt_len = &(smtp_ssn->log_state->rcpts_logged);
+            alt_len = &(log_state->rcpts_logged);
             break;
 
         default:
@@ -241,80 +240,29 @@ int SMTP_CopyEmailID(const uint8_t *start, int length, int command_type)
 }
 
 
-void SMTP_DecodeType(const char *start, int length, bool cnt_xf)
-{               
-    const char *tmp = NULL;
-
-    if(cnt_xf)
-    {
-    
-        if(smtp_ssn->decode_state->b64_state.encode_depth > -1)
-        {       
-            tmp = _dpd.SnortStrcasestr(start, length, "base64");
-            if( tmp != NULL )
-            {   
-                smtp_ssn->decode_state->decode_type = DECODE_B64;
-                smtp_stats.attachments[DECODE_B64]++;
-                return;
-            }
-        }   
-                        
-        if(smtp_ssn->decode_state->qp_state.encode_depth > -1)
-        {   
-            tmp = _dpd.SnortStrcasestr(start, length, "quoted-printable");
-            if( tmp != NULL )
-            {   
-                smtp_ssn->decode_state->decode_type = DECODE_QP;
-                smtp_stats.attachments[DECODE_QP]++;
-                return;
-            }
-        }
-
-        if(smtp_ssn->decode_state->uu_state.encode_depth > -1)
-        {
-            tmp = _dpd.SnortStrcasestr(start, length, "uuencode");
-            if( tmp != NULL )
-            {
-                smtp_ssn->decode_state->decode_type = DECODE_UU;
-                smtp_stats.attachments[DECODE_UU]++;
-                return;
-            }
-        }
-    }
-
-    if(smtp_ssn->decode_state->bitenc_state.depth > -1)
-    {
-        smtp_ssn->decode_state->decode_type = DECODE_BITENC;
-        smtp_stats.attachments[DECODE_BITENC]++;
-        return;
-    }
-
-    return;
-}
-
-void SMTP_LogFuncs(SMTPConfig *config, SFSnortPacket *p)
+void SMTP_LogFuncs(SMTPConfig *config, SFSnortPacket *p, MimeState *mime_ssn)
 {
-    if((smtp_ssn->log_flags == 0) || !config)
+    if((mime_ssn->log_flags == 0) || !config)
         return;
 
-    if(smtp_ssn->log_flags & SMTP_FLAG_FILENAME_PRESENT)
+    if(mime_ssn->log_flags & FLAG_FILENAME_PRESENT)
     {
-        _dpd.streamAPI->set_extra_data(p->stream_session_ptr, p, config->xtra_filename_id);
+        _dpd.streamAPI->set_extra_data(p->stream_session, p, config->xtra_filename_id);
     }
 
-    if(smtp_ssn->log_flags & SMTP_FLAG_MAIL_FROM_PRESENT)
+    if(mime_ssn->log_flags & FLAG_MAIL_FROM_PRESENT)
     {
-        _dpd.streamAPI->set_extra_data(p->stream_session_ptr, p, config->xtra_mfrom_id);
+        _dpd.streamAPI->set_extra_data(p->stream_session, p, config->xtra_mfrom_id);
     }
 
-    if(smtp_ssn->log_flags & SMTP_FLAG_RCPT_TO_PRESENT)
+    if(mime_ssn->log_flags & FLAG_RCPT_TO_PRESENT)
     {
-        _dpd.streamAPI->set_extra_data(p->stream_session_ptr, p, config->xtra_rcptto_id);
+        _dpd.streamAPI->set_extra_data(p->stream_session, p, config->xtra_rcptto_id);
     }
 
-    if(smtp_ssn->log_flags & SMTP_FLAG_EMAIL_HDRS_PRESENT)
+    if(mime_ssn->log_flags & FLAG_EMAIL_HDRS_PRESENT)
     {
-        _dpd.streamAPI->set_extra_data(p->stream_session_ptr, p, config->xtra_ehdrs_id);
+        _dpd.streamAPI->set_extra_data(p->stream_session, p, config->xtra_ehdrs_id);
     }
 
 }

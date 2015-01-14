@@ -34,6 +34,7 @@
 
 #include "ctype.h"
 
+#include "sf_sechash.h"
 #include "sf_dynamic_define.h"
 #include "sf_snort_packet.h"
 #include "sf_snort_plugin_api.h"
@@ -46,6 +47,8 @@
 extern int checkCursorInternal(void *p, int flags, int offset, const uint8_t *cursor);
 static int contentMatchInternal(void *, ContentInfo*, const uint8_t **);
 static int contentMatchCommon(ContentInfo*, const uint8_t *, int, const uint8_t **);
+static int protectedContentMatchInternal(void *, ProtectedContentInfo*, const uint8_t **);
+static int protectedContentMatchCommon(ProtectedContentInfo*, const uint8_t *, int, const uint8_t **);
 
 static const uint8_t *_buffer_end = NULL;
 static const uint8_t *_alt_buffer_end = NULL;
@@ -141,6 +144,15 @@ ENGINE_LINKAGE int contentMatch(void *p, ContentInfo* content, const uint8_t **c
     return ret;
 }
 
+ENGINE_LINKAGE int protectedContentMatch(void *p, ProtectedContentInfo* content, const uint8_t **cursor)
+{
+    int ret = protectedContentMatchInternal(p, content, cursor);
+    if (ret < 0)
+        return CONTENT_NOMATCH;
+    if (content->flags & NOT_FLAG)
+        return invertMatchResult(ret);
+    return ret;
+}
 /*
  *  Content Option processing function
  *
@@ -246,6 +258,70 @@ static int contentMatchInternal(void *p, ContentInfo* content, const uint8_t **c
     return contentMatchCommon(content, start_ptr, end_ptr - start_ptr, cursor);
 }
 
+static int protectedContentMatchInternal(void *p, ProtectedContentInfo* content, const uint8_t **cursor)
+{
+    const uint8_t *start_ptr;
+    const uint8_t *end_ptr;
+    SFSnortPacket *sp = (SFSnortPacket *)p;
+    unsigned hb_type;
+
+    /* Check for byte_extract variables and use them if present. */
+    if (content->offset_location)
+        content->offset = *content->offset_location;
+
+    if ( (hb_type = HTTP_CONTENT(content->flags)) )
+    {
+        unsigned len;
+        const uint8_t* buf = _ded.getHttpBuffer(hb_type, &len);
+
+        if ( buf )
+        {
+            if (protectedContentMatchCommon(content, buf, len, cursor) == CONTENT_MATCH)
+                return CONTENT_MATCH;
+        }
+        return CONTENT_NOMATCH;
+    }
+
+    if ((content->flags & CONTENT_BUF_NORMALIZED) && _ded.Is_DetectFlag(SF_FLAG_DETECT_ALL))
+    {
+        if (_ded.Is_DetectFlag(SF_FLAG_ALT_DETECT))
+        {
+            start_ptr = _ded.altDetect->data;
+
+            if (_alt_detect_end)
+                end_ptr = _alt_detect_end;
+            else
+                end_ptr = _ded.altDetect->data + _ded.altDetect->len;
+        }
+        else if (_ded.Is_DetectFlag(SF_FLAG_ALT_DECODE))
+        {
+            start_ptr = _ded.altBuffer->data;
+
+            if (_alt_buffer_end)
+                end_ptr = _alt_buffer_end;
+            else
+                end_ptr = _ded.altBuffer->data + _ded.altBuffer->len;
+        }
+        else
+        {
+            return CONTENT_CURSOR_ERROR;
+        }
+    }
+    else
+    {
+        start_ptr = sp->payload;
+
+        if (sp->normalized_payload_size)
+            end_ptr = sp->payload + sp->normalized_payload_size;
+        else if (_buffer_end)
+            end_ptr = _buffer_end;
+        else
+            end_ptr = sp->payload + sp->payload_size;
+    }
+
+    return protectedContentMatchCommon(content, start_ptr, end_ptr - start_ptr, cursor);
+}
+
 static int contentMatchCommon(ContentInfo* content,
         const uint8_t *start_ptr, int dlen, const uint8_t **cursor)
 {
@@ -338,6 +414,110 @@ static int contentMatchCommon(ContentInfo* content,
 
         if (cursor)
             *cursor = q + content->patternByteFormLength;
+        return CONTENT_MATCH;
+    }
+
+    return CONTENT_NOMATCH;
+}
+
+static int protectedContentMatchCommon(ProtectedContentInfo* content,
+        const uint8_t *start_ptr, int dlen, const uint8_t **cursor)
+{
+    const uint8_t *base_ptr;
+    const uint8_t *end_ptr = start_ptr + dlen;
+    int depth, ret;
+    char relative = (content->flags & CONTENT_RELATIVE) ? 1 : 0;
+
+    if (relative)
+    {
+        // Sanity check to make sure the cursor isn't NULL and is within the
+        // buffer we're searching.  It could be at the very end of the buffer
+        // due to a previous match, but may have a negative offset here.
+        if ((cursor == NULL) || (*cursor == NULL)
+                || (*cursor < start_ptr) || (*cursor > end_ptr))
+            return CONTENT_CURSOR_ERROR;
+
+        base_ptr = *cursor;
+        depth = dlen - (*cursor - start_ptr);
+    }
+    else
+    {
+        base_ptr = start_ptr;
+        depth = dlen;
+    }
+
+    // Adjust base_ptr and depth based on offset/depth parameters.
+    if (relative && ((content->offset != 0)))
+    {
+        base_ptr += content->offset;
+        depth -= content->offset;
+
+        // If the offset is negative and puts us before start_ptr
+        // set base_ptr to start_ptr and adjust depth based on depth.
+        if (base_ptr < start_ptr)
+            return CONTENT_NOMATCH;
+        else if((int)content->protected_length < depth)
+            depth = (int)content->protected_length;
+    }
+    else if (content->offset != 0)
+    {
+        base_ptr += content->offset;
+        depth -= content->offset;
+    }
+
+    // If the pattern size is greater than the amount of data we have to
+    // search, there's no way we can match, so return error, however, return
+    // CONTENT_NOMATCH here for the case where the match is inverted and there
+    // is at least some data.
+    if ((int)content->protected_length > depth)
+    {
+        if ((content->flags & NOT_FLAG) && (depth > 0))
+            return CONTENT_NOMATCH;  // This will get inverted on return
+        return CONTENT_CURSOR_ERROR;
+    }
+
+    switch( content->hash_type )
+    {
+        case PROTECTED_CONTENT_HASH_MD5:
+        {
+            ret = memcmp(MD5DIGEST(base_ptr, content->protected_length, NULL),
+                         content->patternByteForm, MD5_HASH_SIZE);
+            break;
+        }
+        case PROTECTED_CONTENT_HASH_SHA256:
+        {
+            ret = memcmp(SHA256DIGEST(base_ptr, content->protected_length, NULL),
+                         content->patternByteForm, SHA256_HASH_SIZE);
+            break;
+        }
+        case PROTECTED_CONTENT_HASH_SHA512:
+        {
+            ret = memcmp(SHA512DIGEST(base_ptr, content->protected_length, NULL),
+                         content->patternByteForm, SHA512_HASH_SIZE);
+            break;
+        }
+        default:
+            return( CONTENT_HASH_ERROR );
+    }
+
+    if( ret == 0 )
+    {
+        if (content->flags & CONTENT_END_BUFFER)
+        {
+            if ( HTTP_CONTENT(content->flags) )
+                _uri_buffer_end = base_ptr;
+            else if ((content->flags & CONTENT_BUF_NORMALIZED)
+                    && _ded.Is_DetectFlag(SF_FLAG_ALT_DETECT) )
+                _alt_detect_end = base_ptr;
+            else if ((content->flags & CONTENT_BUF_NORMALIZED)
+                    && _ded.Is_DetectFlag(SF_FLAG_ALT_DECODE) )
+                _alt_buffer_end = base_ptr;
+            else
+                _buffer_end = base_ptr;
+        }
+
+        if (cursor)
+            *cursor = base_ptr + content->protected_length;
 
         return CONTENT_MATCH;
     }

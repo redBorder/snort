@@ -80,7 +80,7 @@ build_triplet = @build@
 host_triplet = @host@
 @BUILD_REACT_TRUE@am__append_1 = sp_react.c sp_react.h
 @BUILD_RESPOND3_TRUE@am__append_2 = sp_respond3.c sp_respond.h
-@FEAT_FILE_INSPECT_TRUE@am__append_3 = sp_file_type.c sp_file_type.h
+@FEAT_OPEN_APPID_TRUE@am__append_3 = sp_appid.c sp_appid.h 
 subdir = src/detection-plugins
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
@@ -122,11 +122,11 @@ am__libspd_a_SOURCES_DIST = detection_options.c detection_options.h \
 	sp_urilen_check.c sp_urilen_check.h sp_file_data.c \
 	sp_file_data.h sp_base64_decode.c sp_base64_decode.h \
 	sp_base64_data.c sp_base64_data.h sp_pkt_data.c sp_pkt_data.h \
-	sp_react.c sp_react.h sp_respond3.c sp_respond.h \
-	sp_file_type.c sp_file_type.h
+	sp_file_type.c sp_file_type.h sp_react.c sp_react.h \
+	sp_respond3.c sp_respond.h sp_appid.c sp_appid.h
 @BUILD_REACT_TRUE@am__objects_1 = sp_react.$(OBJEXT)
 @BUILD_RESPOND3_TRUE@am__objects_2 = sp_respond3.$(OBJEXT)
-@FEAT_FILE_INSPECT_TRUE@am__objects_3 = sp_file_type.$(OBJEXT)
+@FEAT_OPEN_APPID_TRUE@am__objects_3 = sp_appid.$(OBJEXT)
 am_libspd_a_OBJECTS = detection_options.$(OBJEXT) sp_asn1.$(OBJEXT) \
 	sp_asn1_detect.$(OBJEXT) sp_byte_check.$(OBJEXT) \
 	sp_byte_jump.$(OBJEXT) sp_byte_extract.$(OBJEXT) \
@@ -145,8 +145,8 @@ am_libspd_a_OBJECTS = detection_options.$(OBJEXT) sp_asn1.$(OBJEXT) \
 	sp_tcp_win_check.$(OBJEXT) sp_ttl_check.$(OBJEXT) \
 	sp_urilen_check.$(OBJEXT) sp_file_data.$(OBJEXT) \
 	sp_base64_decode.$(OBJEXT) sp_base64_data.$(OBJEXT) \
-	sp_pkt_data.$(OBJEXT) $(am__objects_1) $(am__objects_2) \
-	$(am__objects_3)
+	sp_pkt_data.$(OBJEXT) sp_file_type.$(OBJEXT) $(am__objects_1) \
+	$(am__objects_2) $(am__objects_3)
 nodist_libspd_a_OBJECTS = sf_snort_plugin_hdropts.$(OBJEXT)
 libspd_a_OBJECTS = $(am_libspd_a_OBJECTS) $(nodist_libspd_a_OBJECTS)
 AM_V_P = $(am__v_P_@AM_V@)
@@ -257,6 +257,8 @@ LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
+LUA_CFLAGS = @LUA_CFLAGS@
+LUA_LIBS = @LUA_LIBS@
 MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
@@ -279,8 +281,6 @@ PKG_CONFIG = @PKG_CONFIG@
 PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
 PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
-RAZORBACK_CFLAGS = @RAZORBACK_CFLAGS@
-RAZORBACK_LIBS = @RAZORBACK_LIBS@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
@@ -330,6 +330,8 @@ libdir = @libdir@
 libexecdir = @libexecdir@
 localedir = @localedir@
 localstatedir = @localstatedir@
+luajit_CFLAGS = @luajit_CFLAGS@
+luajit_LIBS = @luajit_LIBS@
 mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
@@ -380,7 +382,8 @@ libspd_a_SOURCES = detection_options.c detection_options.h sp_asn1.c \
 	sp_urilen_check.c sp_urilen_check.h sp_file_data.c \
 	sp_file_data.h sp_base64_decode.c sp_base64_decode.h \
 	sp_base64_data.c sp_base64_data.h sp_pkt_data.c sp_pkt_data.h \
-	$(am__append_1) $(am__append_2) $(am__append_3)
+	sp_file_type.c sp_file_type.h $(am__append_1) $(am__append_2) \
+	$(am__append_3)
 copy_files = \
 	if test -f $$dst_file; then \
 		x=`diff $$src_file $$dst_file >> /dev/null`; \

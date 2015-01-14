@@ -98,9 +98,9 @@ static void ProcessDNS( void*, void* );
 static inline int CheckDNSPort(DNSConfig *, uint16_t);
 static void DNSReset(int, void *);
 static void DNSResetStats(int, void *);
-static void _addPortsToStream5Filter(struct _SnortConfig *, DNSConfig *, tSfPolicyId);
+static void enablePortStreamServices(struct _SnortConfig *, DNSConfig *, tSfPolicyId);
 #ifdef TARGET_BASED
-static void _addServicesToStream5Filter(struct _SnortConfig *, tSfPolicyId);
+static void _addServicesToStreamFilter(struct _SnortConfig *, tSfPolicyId);
 #endif
 static void DNSFreeConfig(tSfPolicyUserContextId config);
 static int DNSCheckConfig(struct _SnortConfig *);
@@ -196,6 +196,9 @@ static void DNSInit( struct _SnortConfig *sc, char* argp )
         {
             dns_app_id = _dpd.addProtocolReference("dns");
         }
+
+        // register with session to handle applications
+        _dpd.sessionAPI->register_service_handler( PP_DNS, dns_app_id );
 #endif
     }
 
@@ -219,9 +222,9 @@ static void DNSInit( struct _SnortConfig *sc, char* argp )
     ParseDNSArgs(pPolicyConfig, (u_char *)argp);
 
     _dpd.addPreproc(sc, ProcessDNS, PRIORITY_APPLICATION, PP_DNS, PROTO_BIT__TCP | PROTO_BIT__UDP);
-    _addPortsToStream5Filter(sc, pPolicyConfig, policy_id);
+    enablePortStreamServices(sc, pPolicyConfig, policy_id);
 #ifdef TARGET_BASED
-    _addServicesToStream5Filter(sc, policy_id);
+    _addServicesToStreamFilter(sc, policy_id);
 #endif
 }
 
@@ -433,7 +436,7 @@ DNSSessionData * GetDNSSessionData(SFSnortPacket *p, DNSConfig *config)
     }
 
     /* More Sanity check(s) */
-    if ( !p->stream_session_ptr )
+    if ( !p->stream_session )
     {
         return NULL;
     }
@@ -444,8 +447,8 @@ DNSSessionData * GetDNSSessionData(SFSnortPacket *p, DNSConfig *config)
         return NULL;
 
     /*Register the new DNS data block in the stream session. */
-    _dpd.streamAPI->set_application_data(
-        p->stream_session_ptr,
+    _dpd.sessionAPI->set_application_data(
+        p->stream_session,
         PP_DNS, dnsSessionData, FreeDNSSessionData );
 
     return dnsSessionData;
@@ -1429,7 +1432,7 @@ static void ProcessDNS( void* packetPtr, void* context )
     DNSConfig *config = NULL;
     PROFILE_VARS;
 
-    sfPolicyUserPolicySet (dns_config, _dpd.getRuntimePolicy());
+    sfPolicyUserPolicySet (dns_config, _dpd.getNapRuntimePolicy());
     config = (DNSConfig *)sfPolicyUserDataGetCurrent(dns_config);
 
     if (config == NULL)
@@ -1444,8 +1447,8 @@ static void ProcessDNS( void* packetPtr, void* context )
 
     /* Attempt to get a previously allocated DNS block. If none exists,
      * allocate and register one with the stream layer. */
-    dnsSessionData = _dpd.streamAPI->get_application_data(
-        p->stream_session_ptr, PP_DNS );
+    dnsSessionData = _dpd.sessionAPI->get_application_data(
+        p->stream_session, PP_DNS );
 
     if (dnsSessionData == NULL)
     {
@@ -1453,7 +1456,7 @@ static void ProcessDNS( void* packetPtr, void* context )
          * Otherwise no need to examine the traffic.
          */
 #ifdef TARGET_BASED
-        app_id = _dpd.streamAPI->get_application_protocol_id(p->stream_session_ptr);
+        app_id = _dpd.sessionAPI->get_application_protocol_id(p->stream_session);
 
         if (app_id == SFTARGET_UNKNOWN_PROTOCOL)
             return;
@@ -1497,24 +1500,24 @@ static void ProcessDNS( void* packetPtr, void* context )
         /* If session picked up mid-stream, do not process further.
          * Would be almost impossible to tell where we are in the
          * data stream. */
-        if ( _dpd.streamAPI->get_session_flags(
-            p->stream_session_ptr) & SSNFLAG_MIDSTREAM )
+        if ( _dpd.sessionAPI->get_session_flags(
+            p->stream_session) & SSNFLAG_MIDSTREAM )
         {
             return;
         }
 
-        if ( !_dpd.streamAPI->is_stream_sequenced(p->stream_session_ptr,
-                    SSN_DIR_FROM_SERVER))
+        if ( !_dpd.streamAPI->is_stream_sequenced(p->stream_session,
+                    SSN_DIR_TO_SERVER))
         {
             return;
         }
 
-        if (!(_dpd.streamAPI->get_reassembly_direction(p->stream_session_ptr) & SSN_DIR_FROM_SERVER))
+        if (!(_dpd.streamAPI->get_reassembly_direction(p->stream_session) & SSN_DIR_TO_SERVER))
         {
             /* This should only happen for the first packet (SYN or SYN-ACK)
              * in the TCP session */
-            _dpd.streamAPI->set_reassembly(p->stream_session_ptr,
-                STREAM_FLPOLICY_FOOTPRINT, SSN_DIR_FROM_SERVER,
+            _dpd.streamAPI->set_reassembly(p->stream_session,
+                STREAM_FLPOLICY_FOOTPRINT, SSN_DIR_TO_SERVER,
                 STREAM_FLPOLICY_SET_ABSOLUTE);
 
             return;
@@ -1589,28 +1592,35 @@ static void DNSResetStats(int signal, void *data)
     return;
 }
 
-static void _addPortsToStream5Filter(struct _SnortConfig *sc, DNSConfig *config, tSfPolicyId policy_id)
+static void enablePortStreamServices(struct _SnortConfig *sc, DNSConfig *config, tSfPolicyId policy_id)
 {
-    unsigned int portNum;
+    uint32_t port;
 
     if (config == NULL)
         return;
 
-    for (portNum = 0; portNum < MAXPORTS; portNum++)
+    for (port = 0; port < MAXPORTS; port++)
     {
-        if(config->ports[(portNum/8)] & (1<<(portNum%8)))
+        if( isPortEnabled( config->ports, port ) )
         {
-            //Add port the port
+            // set port filter status 
             _dpd.streamAPI->set_port_filter_status
-                (sc, IPPROTO_TCP, (uint16_t)portNum, PORT_MONITOR_SESSION, policy_id, 1);
+                (sc, IPPROTO_TCP, (uint16_t)port, PORT_MONITOR_SESSION, policy_id, 1);
 
             _dpd.streamAPI->set_port_filter_status
-                (sc, IPPROTO_UDP, (uint16_t)portNum, PORT_MONITOR_SESSION, policy_id, 1);
+                (sc, IPPROTO_UDP, (uint16_t)port, PORT_MONITOR_SESSION, policy_id, 1);
+            
+            // register for reassembly
+            _dpd.streamAPI->register_reassembly_port( NULL,
+                                                      port,
+                                                      SSN_DIR_FROM_SERVER | SSN_DIR_FROM_CLIENT );
+            // enable dns preproc for dispatch on configure ports
+            _dpd.sessionAPI->enable_preproc_for_port( sc, PP_DNS, PROTO_BIT__TCP | PROTO_BIT__UDP, port );
         }
     }
 }
 #ifdef TARGET_BASED
-static void _addServicesToStream5Filter(struct _SnortConfig *sc, tSfPolicyId policy_id)
+static void _addServicesToStreamFilter(struct _SnortConfig *sc, tSfPolicyId policy_id)
 {
     _dpd.streamAPI->set_service_filter_status
         (sc, dns_app_id, PORT_MONITOR_SESSION, policy_id, 1);
@@ -1650,8 +1660,8 @@ static int DNSCheckPolicyConfig(
 {
     _dpd.setParserPolicy(sc, policyId);
 
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
-    {
+    if (_dpd.streamAPI == NULL)
+     {
         _dpd.errMsg("Streaming & reassembly must be enabled for DNS preprocessor\n");
         return -1;
     }
@@ -1720,22 +1730,19 @@ static void DNSReload(struct _SnortConfig *sc, char *argp, void **new_config)
     ParseDNSArgs(pPolicyConfig, (u_char *)argp);
 
     _dpd.addPreproc(sc, ProcessDNS, PRIORITY_APPLICATION, PP_DNS, PROTO_BIT__TCP | PROTO_BIT__UDP);
-
-    _addPortsToStream5Filter(sc, pPolicyConfig, policy_id);
+    enablePortStreamServices(sc, pPolicyConfig, policy_id);
 
 #ifdef TARGET_BASED
-    _addServicesToStream5Filter(sc, policy_id);
+    _addServicesToStreamFilter(sc, policy_id);
 #endif
 }
 
 static int DNSReloadVerify(struct _SnortConfig *sc, void *swap_config)
 {
-    if (!_dpd.isPreprocEnabled(sc, PP_STREAM5))
-    {
-        _dpd.errMsg("Streaming & reassembly must be enabled for DNS preprocessor\n");
-        return -1;
-    }
+    int rval;
 
+    if( ( rval = sfPolicyUserDataIterate( sc, swap_config, DNSCheckPolicyConfig ) ) )
+        return rval;
     return 0;
 }
 

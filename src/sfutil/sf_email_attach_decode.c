@@ -2,7 +2,7 @@
  ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 1998-2013 Sourcefire, Inc.
  **
- ** Author: Bhagyashree Bantwal <bbantwal@sourcefire.com>
+ ** Author: Bhagyashree Bantwal <bbantwal@cisco.com>
  **
  ** This program is free software; you can redistribute it and/or modify
  ** it under the terms of the GNU General Public License Version 2 as
@@ -515,7 +515,6 @@ int UUDecode(const uint8_t *start, const uint8_t *end, Email_DecodeState *ds)
     {
         ds->uu_state.end_found = 0;
         ds->uu_state.begin_found = 0;
-        ds->decode_type = DECODE_NONE;
     }
 
 

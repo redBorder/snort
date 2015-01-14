@@ -20,7 +20,7 @@
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  *
- * Author: Bhagyashree Bantwal <bbantwal@sourcefire.com>
+ * Author: Bhagyashree Bantwal <bbantwal@cisco.com>
  *
  * Description:
  *
@@ -94,54 +94,6 @@ void IMAP_GetEOL(const uint8_t *ptr, const uint8_t *end,
     *eol = tmp_eol;
     *eolm = tmp_eolm;
 }
-
-void IMAP_DecodeType(const char *start, int length, bool cnt_xf)
-{
-    const char *tmp = NULL;
-
-    if(cnt_xf)
-    {
-
-        if(imap_ssn->decode_state->b64_state.encode_depth > -1)
-        {
-            tmp = _dpd.SnortStrcasestr(start, length, "base64");
-            if( tmp != NULL )
-            {
-                imap_ssn->decode_state->decode_type = DECODE_B64;
-                return;
-            }
-        }
-
-        if(imap_ssn->decode_state->qp_state.encode_depth > -1)
-        {
-            tmp = _dpd.SnortStrcasestr(start, length, "quoted-printable");
-            if( tmp != NULL )
-            {
-                imap_ssn->decode_state->decode_type = DECODE_QP;
-                return;
-            }
-        }
-
-        if(imap_ssn->decode_state->uu_state.encode_depth > -1)
-        {
-            tmp = _dpd.SnortStrcasestr(start, length, "uuencode");
-            if( tmp != NULL )
-            {
-                imap_ssn->decode_state->decode_type = DECODE_UU;
-                return;
-            }
-        }
-    }
-
-    if(imap_ssn->decode_state->bitenc_state.depth > -1)
-    {
-        imap_ssn->decode_state->decode_type = DECODE_BITENC;
-        return;
-    }
-
-    return;
-}
-
 
 #ifdef DEBUG_MSGS
 char imap_print_buffer[65537];

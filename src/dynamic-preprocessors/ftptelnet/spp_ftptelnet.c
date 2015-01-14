@@ -54,10 +54,6 @@
 #include "snort_debug.h"
 
 #include "ftpp_ui_config.h"
-#ifdef CLIENT_READY
-#include "ftp_client.h"
-#include "ftp_norm.h"
-#endif
 #include "snort_ftptelnet.h"
 #include "spp_ftptelnet.h"
 #include "sf_preproc_info.h"
@@ -166,7 +162,7 @@ void FTPDataTelnetChecks(void *pkt, void *context)
 
     if ( _dpd.fileAPI->get_max_file_depth() >= 0 )
     {
-        if ( _dpd.streamAPI->get_application_protocol_id(p->stream_session_ptr)
+        if ( _dpd.sessionAPI->get_application_protocol_id(p->stream_session)
             == ftp_data_app_id )
         {
             PROFILE_VARS;
@@ -262,14 +258,15 @@ static void FTPTelnetInit(struct _SnortConfig *sc, char *args)
                                             "FTP/Telnet configuration.\n");
         }
 
-        _dpd.addPreprocExit(FTPTelnetCleanExit, NULL, PRIORITY_SESSION, PP_FTPTELNET);
-        _dpd.addPreprocReset(FTPTelnetReset, NULL, PRIORITY_SESSION, PP_FTPTELNET);
-        _dpd.addPreprocResetStats(FTPTelnetResetStats, NULL, PRIORITY_SESSION, PP_FTPTELNET);
+        _dpd.addPreprocExit(FTPTelnetCleanExit, NULL, PRIORITY_APPLICATION, PP_FTPTELNET);
+        _dpd.addPreprocReset(FTPTelnetReset, NULL, PRIORITY_APPLICATION, PP_FTPTELNET);
+        _dpd.addPreprocResetStats(FTPTelnetResetStats, NULL, PRIORITY_APPLICATION, PP_FTPTELNET);
         _dpd.addPreprocConfCheck(sc, FTPConfigCheck);
 
 #ifdef PERF_PROFILING
         _dpd.addPreprocProfileFunc("ftptelnet_ftp", (void*)&ftpPerfStats, 0, _dpd.totalPerfStats);
         _dpd.addPreprocProfileFunc("ftptelnet_telnet", (void*)&telnetPerfStats, 0, _dpd.totalPerfStats);
+        _dpd.addPreprocProfileFunc("ftptelnet_ftpdata", (void*)&ftpdataPerfStats, 0, _dpd.totalPerfStats);
 #endif
 
 #ifdef TARGET_BASED
@@ -280,6 +277,11 @@ static void FTPTelnetInit(struct _SnortConfig *sc, char *args)
             ftp_data_app_id = _dpd.addProtocolReference("ftp-data");
             telnet_app_id = _dpd.addProtocolReference("telnet");
         }
+
+        // register with session to handle applications
+        _dpd.sessionAPI->register_service_handler( PP_FTPTELNET, ftp_app_id );
+        _dpd.sessionAPI->register_service_handler( PP_FTPTELNET, ftp_data_app_id );
+        _dpd.sessionAPI->register_service_handler( PP_FTPTELNET, telnet_app_id );
 #endif
     }
 
@@ -342,6 +344,8 @@ static void FTPTelnetInit(struct _SnortConfig *sc, char *args)
     else if (strcasecmp(pcToken, TELNET) == 0)
     {
         iRet = ProcessTelnetConf(pPolicyConfig, ErrorString, iErrStrLen);
+        enableFtpTelnetPortStreamServices( sc, &pPolicyConfig->telnet_config->proto_ports, NULL,
+                                           SSN_DIR_FROM_SERVER | SSN_DIR_FROM_CLIENT ); 
     }
     else if (strcasecmp(pcToken, FTP) == 0)
     {
@@ -355,11 +359,11 @@ static void FTPTelnetInit(struct _SnortConfig *sc, char *args)
         }
         else if (strcasecmp(pcToken, SERVER) == 0)
         {
-            iRet = ProcessFTPServerConf(pPolicyConfig, ErrorString, iErrStrLen);
+            iRet = ProcessFTPServerConf(sc, pPolicyConfig, ErrorString, iErrStrLen);
         }
         else if (strcasecmp(pcToken, CLIENT) == 0)
         {
-            iRet = ProcessFTPClientConf(pPolicyConfig, ErrorString, iErrStrLen);
+            iRet = ProcessFTPClientConf(sc, pPolicyConfig, ErrorString, iErrStrLen);
         }
         else
         {
@@ -536,6 +540,8 @@ static void _FtpTelnetReload(struct _SnortConfig *sc, tSfPolicyUserContextId ftp
     else if (strcasecmp(pcToken, TELNET) == 0)
     {
         iRet = ProcessTelnetConf(pPolicyConfig, ErrorString, iErrStrLen);
+        enableFtpTelnetPortStreamServices( sc, &pPolicyConfig->telnet_config->proto_ports, NULL,
+                                           SSN_DIR_FROM_SERVER | SSN_DIR_FROM_CLIENT ); 
     }
     else if (strcasecmp(pcToken, FTP) == 0)
     {
@@ -549,11 +555,11 @@ static void _FtpTelnetReload(struct _SnortConfig *sc, tSfPolicyUserContextId ftp
         }
         else if (strcasecmp(pcToken, SERVER) == 0)
         {
-            iRet = ProcessFTPServerConf(pPolicyConfig, ErrorString, iErrStrLen);
+            iRet = ProcessFTPServerConf(sc, pPolicyConfig, ErrorString, iErrStrLen);
         }
         else if (strcasecmp(pcToken, CLIENT) == 0)
         {
-            iRet = ProcessFTPClientConf(pPolicyConfig, ErrorString, iErrStrLen);
+            iRet = ProcessFTPClientConf(sc, pPolicyConfig, ErrorString, iErrStrLen);
         }
         else
         {

@@ -30,9 +30,11 @@
 #include <stdio.h>
 #include <daq.h>
 
+#include "ipv6_port.h"
 #define PKT_TIMEOUT  1000  // ms, worst daq resolution is 1 sec
 
 struct _SnortConfig;
+#include "decode.h"
 
 void DAQ_Load(const struct _SnortConfig*);
 void DAQ_Unload(void);
@@ -75,6 +77,10 @@ void DAQ_Set_MetaCallback(DAQ_Meta_Func_t meta_callback);
 DAQ_Mode DAQ_GetInterfaceMode(const DAQ_PktHdr_t *h);
 
 int DAQ_ModifyFlow(const void* h, uint32_t id);
+#ifdef HAVE_DAQ_DP_ADD_DC
+void DAQ_Add_Dynamic_Protocol_Channel(const Packet *ctrlPkt, snort_ip_p cliIP, uint16_t cliPort,
+                                    snort_ip_p srvIP, uint16_t srvPort, uint8_t protocol );
+#endif
 
 #ifdef HAVE_DAQ_ADDRESS_SPACE_ID
 static inline uint16_t DAQ_GetAddressSpaceID(const DAQ_PktHdr_t *h)

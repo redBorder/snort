@@ -90,11 +90,6 @@ LIB32=link.exe -lib
 SOURCE=.\sfparser.c
 # End Source File
 # Begin Source File
-
-SOURCE=.\ssl.c
-# End Source File
-# Begin Source File
-
 SOURCE="..\..\win32\WIN32-Code\strtok_r.c"
 # End Source File
 # End Group
@@ -104,10 +99,6 @@ SOURCE="..\..\win32\WIN32-Code\strtok_r.c"
 # Begin Source File
 
 SOURCE=.\sfcommon.h
-# End Source File
-# Begin Source File
-
-SOURCE=.\ssl.h
 # End Source File
 # End Group
 # End Target

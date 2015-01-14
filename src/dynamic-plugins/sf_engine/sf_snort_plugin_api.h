@@ -75,6 +75,7 @@
 #define CONTENT_TYPE_MISMATCH -1
 #define CONTENT_TYPE_MISSING  -2
 #define CONTENT_CURSOR_ERROR  -3
+#define CONTENT_HASH_ERROR    -4
 #define CURSOR_IN_BOUNDS       1
 #define CURSOR_OUT_OF_BOUNDS   0
 
@@ -129,6 +130,9 @@
 
 #define EXTRACT_AS_BYTE           0x10000000
 #define EXTRACT_AS_STRING         0x20000000
+#define PROTECTED_CONTENT_HASH_MD5    (1)
+#define PROTECTED_CONTENT_HASH_SHA256 (2)
+#define PROTECTED_CONTENT_HASH_SHA512 (3)
 //==========================================
 
 #define CHECK_EQ            0
@@ -173,6 +177,21 @@ typedef struct _ContentInfo
     int32_t *offset_location;
     uint32_t *depth_location;
 } ContentInfo;
+typedef struct _ProtectedContentInfo
+{
+    const uint8_t *pattern;
+    uint32_t depth;
+    int32_t offset;
+    uint32_t flags;        /* must include a CONTENT_BUF_X */
+    uint8_t hash_type;
+    uint32_t protected_length;
+    uint8_t *patternByteForm;
+    uint32_t patternByteFormLength;
+    char *offset_refId;     /* To match up with a DynamicElement refId */
+    char *depth_refId;      /* To match up with a DynamicElement refId */
+    int32_t *offset_location;
+    uint32_t *depth_location;
+} ProtectedContentInfo;
 
 typedef struct _CursorInfo
 {
@@ -359,6 +378,7 @@ typedef struct _RuleOption
     {
         void *ptr;
         ContentInfo *content;
+        ProtectedContentInfo *protectedContent;
         CursorInfo *cursor;
         PCREInfo *pcre;
         FlowBitsInfo *flowBit;
@@ -432,6 +452,7 @@ ENGINE_LINKAGE int RegisterRules(struct _SnortConfig *sc, Rule **rules);
 ENGINE_LINKAGE int DumpRules(char *rulesFileName, Rule **rules);
 
 ENGINE_LINKAGE int contentMatch(void *p, ContentInfo* content, const uint8_t **cursor);
+ENGINE_LINKAGE int protectedContentMatch(void *p, ProtectedContentInfo* content, const uint8_t **cursor);
 ENGINE_LINKAGE int checkFlow(void *p, FlowFlags *flowFlags);
 ENGINE_LINKAGE int extractValue(void *p, ByteExtract *byteExtract, const uint8_t *cursor);
 ENGINE_LINKAGE int processFlowbits(void *p, FlowBitsInfo *flowBits);

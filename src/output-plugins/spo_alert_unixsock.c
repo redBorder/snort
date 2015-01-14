@@ -179,7 +179,11 @@ static void AlertUnixSock(Packet *p, char *msg, void *arg, Event *event)
     memset((char *)&alertpkt,0,sizeof(alertpkt));
     if (event)
     {
+#if defined(FEAT_OPEN_APPID)
+        memmove((void *)&alertpkt.event,(const void *)event,sizeof(Event) - offsetof(Event, app_name));
+#else
         memmove((void *)&alertpkt.event,(const void *)event,sizeof(Event));
+#endif /* defined(FEAT_OPEN_APPID) */
     }
 
     if(p && p->pkt)

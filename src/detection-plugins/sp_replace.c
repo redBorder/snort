@@ -48,7 +48,7 @@ void PayloadReplaceInit(struct _SnortConfig *sc, char *data, OptTreeNode * otn, 
     static int warned = 0;
     PatternMatchData *idx;
 
-    if( !ScInlineMode() )
+    if( !ScIpsInlineMode() )
         return;
 
     if ( !DAQ_CanReplace() )

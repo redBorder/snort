@@ -320,7 +320,7 @@ static inline int64_t DCE2_ScSmbFileDepth(const DCE2_ServerConfig *);
 static inline uint8_t DCE2_ScSmb2MaxCompound(const DCE2_ServerConfig *);
 static inline uint8_t DCE2_ScIsValidSmbVersion(const DCE2_ServerConfig *, DCE2_ValidSmbVersionFlag);
 
-static inline int DCE2_IsPortSet(const uint8_t *, const uint16_t);
+static inline bool DCE2_IsPortSet(const uint8_t *, const uint16_t);
 static inline void DCE2_SetPort(uint8_t *, const uint16_t);
 static inline void DCE2_SetPortRange(uint8_t *, uint16_t, uint16_t);
 static inline void DCE2_ClearPorts(uint8_t *);
@@ -832,9 +832,9 @@ static inline uint8_t DCE2_ScIsValidSmbVersion(
  *      Zero if the port is not set.
  *
  *********************************************************************/
-static inline int DCE2_IsPortSet(const uint8_t *port_array, const uint16_t port)
+static inline bool DCE2_IsPortSet(const uint8_t *port_array, const uint16_t port)
 {
-    return port_array[(port / 8)] & (1 << (port % 8));
+    return isPortEnabled( port_array, port );
 }
 
 /*********************************************************************
@@ -853,7 +853,7 @@ static inline int DCE2_IsPortSet(const uint8_t *port_array, const uint16_t port)
  *********************************************************************/
 static inline void DCE2_SetPort(uint8_t *port_array, const uint16_t port)
 {
-    port_array[(port / 8)] |= (1 << (port % 8));
+    enablePort( port_array, port );
 }
 
 /*********************************************************************
@@ -1280,6 +1280,8 @@ static inline DCE2_Ret DCE2_CheckAndSetMask(int flag, int *mask)
 
     return DCE2_RET__SUCCESS;
 }
+
+void DCE2_RegisterPortsWithSession( struct _SnortConfig *sc, DCE2_ServerConfig *policy );
 
 #endif  /* _DCE2_CONFIG_H_ */
 

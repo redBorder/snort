@@ -4,7 +4,7 @@
 
 # TARGTYPE "Win32 (x86) Generic Project" 0x010a
 
-CFG=sf_engine_initialize - Win32 IPv6 Release
+CFG=sf_engine_initialize - Win32 Release
 !MESSAGE This is not a valid makefile. To build this project using NMAKE,
 !MESSAGE use the Export Makefile command and run
 !MESSAGE 
@@ -13,7 +13,7 @@ CFG=sf_engine_initialize - Win32 IPv6 Release
 !MESSAGE You can specify a configuration when running NMAKE
 !MESSAGE by defining the macro CFG on the command line. For example:
 !MESSAGE 
-!MESSAGE NMAKE /f "sf_engine_initialize.mak" CFG="sf_engine_initialize - Win32 IPv6 Release"
+!MESSAGE NMAKE /f "sf_engine_initialize.mak" CFG="sf_engine_initialize - Win32 Release"
 !MESSAGE 
 !MESSAGE Possible choices for configuration are:
 !MESSAGE 
@@ -104,6 +104,64 @@ BuildCmds= \
 # End Source File
 # Begin Source File
 
+SOURCE=..\..\sfutil\md5.c
+
+!IF  "$(CFG)" == "sf_engine_initialize - Win32 Release"
+
+# Begin Custom Build
+InputPath=..\..\sfutil\md5.c
+InputName=md5
+
+"..\..\dynamic-plugins\sf_engine\$(InputName).c" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
+	copy $(InputPath) ..\..\dynamic-plugins\sf_engine
+
+# End Custom Build
+
+!ELSEIF  "$(CFG)" == "sf_engine_initialize - Win32 Debug"
+
+# Begin Custom Build
+InputPath=..\..\sfutil\md5.c
+InputName=md5
+
+"..\..\dynamic-plugins\sf_engine\$(InputName).c" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
+	copy $(InputPath) ..\..\dynamic-plugins\sf_engine
+
+# End Custom Build
+
+!ENDIF 
+
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\sfutil\md5.h
+
+!IF  "$(CFG)" == "sf_engine_initialize - Win32 Release"
+
+# Begin Custom Build
+InputPath=..\..\sfutil\md5.h
+InputName=md5
+
+"..\..\dynamic-plugins\sf_engine\$(InputName).h" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
+	copy $(InputPath) ..\..\dynamic-plugins\sf_engine
+
+# End Custom Build
+
+!ELSEIF  "$(CFG)" == "sf_engine_initialize - Win32 Debug"
+
+# Begin Custom Build
+InputPath=..\..\sfutil\md5.h
+InputName=md5
+
+"..\..\dynamic-plugins\sf_engine\$(InputName).h" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
+	copy $(InputPath) ..\..\dynamic-plugins\sf_engine
+
+# End Custom Build
+
+!ENDIF 
+
+# End Source File
+# Begin Source File
+
 SOURCE=..\..\sfutil\sf_ip.c
 
 !IF  "$(CFG)" == "sf_engine_initialize - Win32 Release"
@@ -180,6 +238,64 @@ InputName=sf_protocols
 # Begin Custom Build
 InputPath=..\..\sf_protocols.h
 InputName=sf_protocols
+
+"..\..\dynamic-plugins\sf_engine\$(InputName).h" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
+	copy $(InputPath) ..\..\dynamic-plugins\sf_engine
+
+# End Custom Build
+
+!ENDIF 
+
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\sfutil\sf_sechash.c
+
+!IF  "$(CFG)" == "sf_engine_initialize - Win32 Release"
+
+# Begin Custom Build
+InputPath=..\..\sfutil\sf_sechash.c
+InputName=sf_sechash
+
+"..\..\dynamic-plugins\sf_engine\$(InputName).c" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
+	copy $(InputPath) ..\..\dynamic-plugins\sf_engine
+
+# End Custom Build
+
+!ELSEIF  "$(CFG)" == "sf_engine_initialize - Win32 Debug"
+
+# Begin Custom Build
+InputPath=..\..\sfutil\sf_sechash.c
+InputName=sf_sechash
+
+"..\..\dynamic-plugins\sf_engine\$(InputName).c" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
+	copy $(InputPath) ..\..\dynamic-plugins\sf_engine
+
+# End Custom Build
+
+!ENDIF 
+
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\sfutil\sf_sechash.h
+
+!IF  "$(CFG)" == "sf_engine_initialize - Win32 Release"
+
+# Begin Custom Build
+InputPath=..\..\sfutil\sf_sechash.h
+InputName=sf_sechash
+
+"..\..\dynamic-plugins\sf_engine\$(InputName).h" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
+	copy $(InputPath) ..\..\dynamic-plugins\sf_engine
+
+# End Custom Build
+
+!ELSEIF  "$(CFG)" == "sf_engine_initialize - Win32 Debug"
+
+# Begin Custom Build
+InputPath=..\..\sfutil\sf_sechash.h
+InputName=sf_sechash
 
 "..\..\dynamic-plugins\sf_engine\$(InputName).h" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
 	copy $(InputPath) ..\..\dynamic-plugins\sf_engine
@@ -397,6 +513,64 @@ InputName=sfprimetable
 # Begin Custom Build
 InputPath=..\..\sfutil\sfprimetable.h
 InputName=sfprimetable
+
+"..\..\dynamic-plugins\sf_engine\$(InputName).h" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
+	copy $(InputPath) ..\..\dynamic-plugins\sf_engine
+
+# End Custom Build
+
+!ENDIF 
+
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\sfutil\sha2.c
+
+!IF  "$(CFG)" == "sf_engine_initialize - Win32 Release"
+
+# Begin Custom Build
+InputPath=..\..\sfutil\sha2.c
+InputName=sha2
+
+"..\..\dynamic-plugins\sf_engine\$(InputName).c" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
+	copy $(InputPath) ..\..\dynamic-plugins\sf_engine
+
+# End Custom Build
+
+!ELSEIF  "$(CFG)" == "sf_engine_initialize - Win32 Debug"
+
+# Begin Custom Build
+InputPath=..\..\sfutil\sha2.c
+InputName=sha2
+
+"..\..\dynamic-plugins\sf_engine\$(InputName).c" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
+	copy $(InputPath) ..\..\dynamic-plugins\sf_engine
+
+# End Custom Build
+
+!ENDIF 
+
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\sfutil\sha2.h
+
+!IF  "$(CFG)" == "sf_engine_initialize - Win32 Release"
+
+# Begin Custom Build
+InputPath=..\..\sfutil\sha2.h
+InputName=sha2
+
+"..\..\dynamic-plugins\sf_engine\$(InputName).h" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
+	copy $(InputPath) ..\..\dynamic-plugins\sf_engine
+
+# End Custom Build
+
+!ELSEIF  "$(CFG)" == "sf_engine_initialize - Win32 Debug"
+
+# Begin Custom Build
+InputPath=..\..\sfutil\sha2.h
+InputName=sha2
 
 "..\..\dynamic-plugins\sf_engine\$(InputName).h" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
 	copy $(InputPath) ..\..\dynamic-plugins\sf_engine

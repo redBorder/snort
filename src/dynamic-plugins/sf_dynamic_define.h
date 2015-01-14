@@ -37,6 +37,7 @@
 typedef enum {
      OPTION_TYPE_PREPROCESSOR,
      OPTION_TYPE_CONTENT,
+     OPTION_TYPE_PROTECTED_CONTENT,
      OPTION_TYPE_PCRE,
      OPTION_TYPE_FLOWBIT,
      OPTION_TYPE_FLOWFLAGS,
@@ -55,7 +56,7 @@ typedef enum {
      OPTION_TYPE_MAX
 } DynamicOptionType;
 
-// beware: these are redefined from sf_snort_packet.h FLAG_*!
+/* beware: these are redefined from sf_snort_packet.h FLAG_*! */
 #define FLOW_ESTABLISHED         0x0008
 #define FLOW_FR_SERVER           0x0040
 #define FLOW_TO_CLIENT           0x0040 /* Just for convenience */
@@ -97,8 +98,8 @@ typedef enum {
 
 /* Parameters are rule info pointer, int to indicate URI or NORM,
  * and list pointer */
-// low nibble must be HTTP_BUFFER_* (see sf_dynamic_common.h)
-// FIXTHIS eliminate these redefines
+/* low nibble must be HTTP_BUFFER_* (see sf_dynamic_common.h) */
+/* FIXTHIS eliminate these redefines */
 #define CONTENT_HTTP_URI          0x00000001
 #define CONTENT_HTTP_HEADER       0x00000002
 #define CONTENT_HTTP_CLIENT_BODY  0x00000003

@@ -126,8 +126,7 @@ static inline bool DCE2_SsnIsServerSambaPolicy(DCE2_SsnData *);
  ********************************************************************/
 static inline int DCE2_SsnIsEstablished(const SFSnortPacket *p)
 {
-    return _dpd.streamAPI->get_session_flags
-        (p->stream_session_ptr) & SSNFLAG_ESTABLISHED;
+    return _dpd.sessionAPI->get_session_flags(p->stream_session) & SSNFLAG_ESTABLISHED;
 }
 
 /********************************************************************
@@ -146,8 +145,8 @@ static inline int DCE2_SsnIsEstablished(const SFSnortPacket *p)
  ********************************************************************/
 static inline int DCE2_SsnIsMidstream(const SFSnortPacket *p)
 {
-    return _dpd.streamAPI->get_session_flags
-        (p->stream_session_ptr) & SSNFLAG_MIDSTREAM;
+    return _dpd.sessionAPI->get_session_flags
+        (p->stream_session) & SSNFLAG_MIDSTREAM;
 }
 
 /********************************************************************
@@ -169,7 +168,7 @@ static inline int DCE2_SsnIsMidstream(const SFSnortPacket *p)
  ********************************************************************/
 static inline void DCE2_SsnSetAppData(const SFSnortPacket *p, void *data, StreamAppDataFree sdfree)
 {
-    _dpd.streamAPI->set_application_data(p->stream_session_ptr, PP_DCE2, data, sdfree);
+    _dpd.sessionAPI->set_application_data(p->stream_session, PP_DCE2, data, sdfree);
 }
 
 /********************************************************************
@@ -186,7 +185,7 @@ static inline void DCE2_SsnSetAppData(const SFSnortPacket *p, void *data, Stream
  ********************************************************************/
 static inline void * DCE2_SsnGetAppData(const SFSnortPacket *p)
 {
-    return _dpd.streamAPI->get_application_data(p->stream_session_ptr, PP_DCE2);
+    return _dpd.sessionAPI->get_application_data(p->stream_session, PP_DCE2);
 }
 
 /********************************************************************
@@ -204,7 +203,7 @@ static inline void * DCE2_SsnGetAppData(const SFSnortPacket *p)
  ********************************************************************/
 static inline int DCE2_SsnGetReassembly(const SFSnortPacket *p)
 {
-    return (int)_dpd.streamAPI->get_reassembly_direction(p->stream_session_ptr);
+    return (int)_dpd.streamAPI->get_reassembly_direction(p->stream_session);
 }
 
 /********************************************************************
@@ -222,7 +221,7 @@ static inline int DCE2_SsnGetReassembly(const SFSnortPacket *p)
  ********************************************************************/
 static inline void DCE2_SsnSetReassembly(const SFSnortPacket *p)
 {
-    _dpd.streamAPI->set_reassembly(p->stream_session_ptr, STREAM_FLPOLICY_FOOTPRINT,
+    _dpd.streamAPI->set_reassembly(p->stream_session, STREAM_FLPOLICY_FOOTPRINT,
             SSN_DIR_BOTH, STREAM_FLPOLICY_SET_ABSOLUTE);
 }
 
@@ -335,9 +334,9 @@ static inline int DCE2_SsnFromClient(const SFSnortPacket *p)
  ********************************************************************/
 static inline bool DCE2_SsnIsPafActive(const SFSnortPacket *p)
 {
-    if ((p->stream_session_ptr == NULL)
-            || (_dpd.streamAPI->is_paf_active(p->stream_session_ptr, true)
-                && _dpd.streamAPI->is_paf_active(p->stream_session_ptr, false)))
+    if ((p->stream_session == NULL)
+            || (_dpd.streamAPI->is_paf_active(p->stream_session, true)
+                && _dpd.streamAPI->is_paf_active(p->stream_session, false)))
         return true;
 
     return false;
@@ -500,7 +499,7 @@ static inline void DCE2_SsnClearAutodetected(DCE2_SsnData *sd)
  ********************************************************************/
 static inline void DCE2_SsnSetNoInspect(const SFSnortPacket *p)
 {
-    _dpd.streamAPI->set_application_data(p->stream_session_ptr, PP_DCE2,
+    _dpd.sessionAPI->set_application_data(p->stream_session, PP_DCE2,
             (void *)&dce2_no_inspect, NULL);
 }
 

@@ -376,7 +376,6 @@ void CollectRTNProfile(void)
     OTN_WorstPerformer *new, *node, *last = NULL;
     char got_position;
     SFGHASH_NODE *hashNode;
-    tSfPolicyId policyId = 0;
     SnortConfig *sc = snort_conf;
 
     if (sc == NULL)
@@ -387,118 +386,114 @@ void CollectRTNProfile(void)
             hashNode = sfghash_findnext(sc->otn_map))
     {
         otn = (OptTreeNode *)hashNode->data;
-        for ( policyId = 0;
-              policyId < otn->proto_node_num;
-              policyId++ )
+
+        /* Only log info if OTN has actually been eval'd */
+        if (otn->checks > 0 && otn->ticks > 0)
         {
-            /* Only log info if OTN has actually been eval'd */
-            if (otn->checks > 0 && otn->ticks > 0)
+            double ticks_per_check = (double)otn->ticks/(double)otn->checks;
+            double ticks_per_nomatch;
+            double ticks_per_match;
+
+            if (otn->matches > otn->checks)
+                otn->checks = otn->matches;
+
+            if (otn->matches)
+                ticks_per_match = (double)otn->ticks_match/(double)otn->matches;
+            else
+                ticks_per_match = 0.0;
+
+            if (otn->checks == otn->matches)
+                ticks_per_nomatch = 0.0;
+            else
+                ticks_per_nomatch = (double)otn->ticks_no_match/(double)(otn->checks - otn->matches);
+
+            /* Find where he goes in the list
+             * Cycle through the list and add
+             * this where it goes
+             */
+            new = (OTN_WorstPerformer *)SnortAlloc(sizeof(OTN_WorstPerformer));
+            new->otn = otn;
+            new->ticks_per_check = ticks_per_check;
+            new->ticks_per_match = ticks_per_match;
+            new->ticks_per_nomatch = ticks_per_nomatch;
+
+            got_position = 0;
+
+            for (node = worstPerformers; node && !got_position; node = node->next)
             {
-                double ticks_per_check = (double)otn->ticks/(double)otn->checks;
-                double ticks_per_nomatch;
-                double ticks_per_match;
-
-                if (otn->matches > otn->checks)
-                    otn->checks = otn->matches;
-
-                if (otn->matches)
-                    ticks_per_match = (double)otn->ticks_match/(double)otn->matches;
-                else
-                    ticks_per_match = 0.0;
-
-                if (otn->checks == otn->matches)
-                    ticks_per_nomatch = 0.0;
-                else
-                    ticks_per_nomatch = (double)otn->ticks_no_match/(double)(otn->checks - otn->matches);
-
-                /* Find where he goes in the list
-                 * Cycle through the list and add
-                 * this where it goes
-                 */
-                new = (OTN_WorstPerformer *)SnortAlloc(sizeof(OTN_WorstPerformer));
-                new->otn = otn;
-                new->ticks_per_check = ticks_per_check;
-                new->ticks_per_match = ticks_per_match;
-                new->ticks_per_nomatch = ticks_per_nomatch;
-
-                got_position = 0;
-
-                for (node = worstPerformers; node && !got_position; node = node->next)
+                last = node;
+                switch (sc->profile_rules.sort)
                 {
-                    last = node;
-                    switch (sc->profile_rules.sort)
-                    {
-                        case PROFILE_SORT_CHECKS:
-                            if (otn->checks >= node->otn->checks)
-                            {
-                                got_position = 1;
-                            }
-                            break;
-                        case PROFILE_SORT_MATCHES:
-                            if (otn->matches >= node->otn->matches)
-                            {
-                                got_position = 1;
-                            }
-                            break;
-                        case PROFILE_SORT_NOMATCHES:
-                            if (otn->checks - otn->matches >
-                                    node->otn->checks - node->otn->matches)
-                            {
-                                got_position = 1;
-                            }
-                            break;
-                        case PROFILE_SORT_AVG_TICKS_PER_MATCH:
-                            if (ticks_per_match >= node->ticks_per_match)
-                            {
-                                got_position = 1;
-                            }
-                            break;
-                        case PROFILE_SORT_AVG_TICKS_PER_NOMATCH:
-                            if (ticks_per_nomatch >= node->ticks_per_nomatch)
-                            {
-                                got_position = 1;
-                            }
-                            break;
-                        case PROFILE_SORT_TOTAL_TICKS:
-                            if (otn->ticks >= node->otn->ticks)
-                            {
-                                got_position = 1;
-                            }
-                            break;
-                        default:
-                        case PROFILE_SORT_AVG_TICKS:
-                            if (ticks_per_check >= node->ticks_per_check)
-                            {
-                                got_position = 1;
-                            }
-                            break;
-                    }
-                    if (got_position)
+                    case PROFILE_SORT_CHECKS:
+                        if (otn->checks >= node->otn->checks)
+                        {
+                            got_position = 1;
+                        }
+                        break;
+                    case PROFILE_SORT_MATCHES:
+                        if (otn->matches >= node->otn->matches)
+                        {
+                            got_position = 1;
+                        }
+                        break;
+                    case PROFILE_SORT_NOMATCHES:
+                        if (otn->checks - otn->matches >
+                                node->otn->checks - node->otn->matches)
+                        {
+                            got_position = 1;
+                        }
+                        break;
+                    case PROFILE_SORT_AVG_TICKS_PER_MATCH:
+                        if (ticks_per_match >= node->ticks_per_match)
+                        {
+                            got_position = 1;
+                        }
+                        break;
+                    case PROFILE_SORT_AVG_TICKS_PER_NOMATCH:
+                        if (ticks_per_nomatch >= node->ticks_per_nomatch)
+                        {
+                            got_position = 1;
+                        }
+                        break;
+                    case PROFILE_SORT_TOTAL_TICKS:
+                        if (otn->ticks >= node->otn->ticks)
+                        {
+                            got_position = 1;
+                        }
+                        break;
+                    default:
+                    case PROFILE_SORT_AVG_TICKS:
+                        if (ticks_per_check >= node->ticks_per_check)
+                        {
+                            got_position = 1;
+                        }
                         break;
                 }
+                if (got_position)
+                    break;
+            }
 
-                if (node)
+            if (node)
+            {
+                new->next = node;
+                new->prev = node->prev;
+                node->prev = new;
+                if (new->prev)
+                    new->prev->next = new;
+                /* Reset the head of list */
+                if (node == worstPerformers)
+                    worstPerformers = new;
+            }
+            else
+            {
+                if (!last)
                 {
-                    new->next = node;
-                    new->prev = node->prev;
-                    node->prev = new;
-                    if (new->prev)
-                        new->prev->next = new;
-                    /* Reset the head of list */
-                    if (node == worstPerformers)
-                        worstPerformers = new;
+                    worstPerformers = new;
                 }
                 else
                 {
-                    if (!last)
-                    {
-                        worstPerformers = new;
-                    }
-                    else
-                    {
-                        new->prev = last;
-                        last->next = new;
-                    }
+                    new->prev = last;
+                    last->next = new;
                 }
             }
         }

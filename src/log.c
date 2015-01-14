@@ -1907,7 +1907,11 @@ void SetEvent
 void SnortSetEvent
 #endif
        (Event *event, uint32_t generator, uint32_t id, uint32_t rev,
+#if !defined(FEAT_OPEN_APPID)
         uint32_t classification, uint32_t priority, uint32_t event_ref)
+#else /* defined(FEAT_OPEN_APPID) */
+        uint32_t classification, uint32_t priority, uint32_t event_ref, char *event_appid)
+#endif /* defined(FEAT_OPEN_APPID) */
 {
     event->sig_generator = generator;
     event->sig_id = id;
@@ -1920,6 +1924,13 @@ void SnortSetEvent
         event->event_reference = event_ref;
     else
         event->event_reference = event->event_id;
+#if defined(FEAT_OPEN_APPID)
+
+    if (event_appid)
+        memcpy(event->app_name, event_appid, MAX_EVENT_APPNAME_LEN);
+    else
+        event->app_name[0] = 0;
+#endif /* defined(FEAT_OPEN_APPID) */
 
     event->ref_time.tv_sec = 0;
 

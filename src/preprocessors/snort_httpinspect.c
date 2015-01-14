@@ -75,6 +75,8 @@
 #include "plugbase.h"
 #include "util.h"
 #include "event_queue.h"
+#include "session_common.h"
+#include "session_api.h"
 #include "stream_api.h"
 #include "sfsnprintfappend.h"
 
@@ -91,8 +93,11 @@
 #include "hi_cmd_lookup.h"
 #include "Unified2_common.h"
 #include "mempool.h"
+#include "file_mail_common.h"
 #include "file_api.h"
 #include "sf_email_attach_decode.h"
+#include "file_decomp.h"
+#include "hi_eo_log.h"
 #ifdef PERF_PROFILING
 extern PreprocStats hiDetectPerfStats;
 extern int hiDetectCalled;
@@ -100,9 +105,7 @@ extern int hiDetectCalled;
 
 extern char *snort_conf_dir;
 
-#ifdef ZLIB
 extern MemPool *hi_gzip_mempool;
-#endif
 
 
 /* Stats tracking for HTTP Inspect */
@@ -140,7 +143,6 @@ HISearchInfo hi_search_info;
 /**
 **  Takes an integer arugment
 */
-#define MAX_PIPELINE  "max_pipeline"
 /**
 **  Specifies whether to alert on anomalous
 **  HTTP servers or not.
@@ -154,14 +156,7 @@ HISearchInfo hi_search_info;
 **  Takes an inspection type argument
 **  stateful or stateless
 */
-#define INSPECT_TYPE  "inspection_type"
 #define DEFAULT       "default"
-
-/*
-**  GLOBAL subkeyword values
-*/
-#define INSPECT_TYPE_STATELESS "stateless"
-#define INSPECT_TYPE_STATEFUL  "stateful"
 
 /*
 **  SERVER subkeywords.
@@ -191,7 +186,7 @@ HISearchInfo hi_search_info;
 #define DIRECTORY         "directory"
 #define APACHE_WS         "apache_whitespace"
 #define IIS_DELIMITER     "iis_delimiter"
-#define PROFILE           "profile"
+#define PROFILE_STRING    "profile"
 #define NON_STRICT        "non_strict"
 #define ALLOW_PROXY       "allow_proxy_use"
 #define OVERSIZE_DIR      "oversize_dir_length"
@@ -222,6 +217,11 @@ HISearchInfo hi_search_info;
 #define LOG_HOSTNAME      "log_hostname"
 #define HTTP_MEMCAP       "memcap"
 #define MAX_SPACES    "max_spaces"
+#define INSPECT_SWF       "decompress_swf"
+#define INSPECT_PDF       "decompress_pdf"
+
+#define DECOMPRESS_DEFLATE "deflate"
+#define DECOMPRESS_LZMA    "lzma"
 
 #define MAX_CLIENT_DEPTH 1460
 #define MAX_SERVER_DEPTH 65535
@@ -314,140 +314,7 @@ static int ProcessGlobalAlert(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
 }
 */
 
-/*
-**  NAME
-**    ProcessMaxPipeline::
-*/
-/**
-**  Process the max pipeline configuration.
-**
-**  This sets the maximum number of pipeline requests that we
-**  will buffer while waiting for responses, before inspection.
-**  There is a maximum limit on this, but we can track a user
-**  defined amount.
-**
-**  @param GlobalConf  pointer to the global configuration
-**  @param ErrorString error string buffer
-**  @param ErrStrLen   the lenght of the error string buffer
-**
-**  @return an error code integer
-**          (0 = success, >0 = non-fatal error, <0 = fatal error)
-**
-**  @retval  0 successs
-**  @retval -1 generic fatal error
-**  @retval  1 generic non-fatal error
-*/
-static int ProcessMaxPipeline(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
-                              char *ErrorString, int ErrStrLen)
-{
-    char *pcToken;
-    char *pcEnd = NULL;
-
-    pcToken = strtok(NULL, CONF_SEPARATORS);
-    if(pcToken == NULL)
-    {
-        SnortSnprintf(ErrorString, ErrStrLen,
-                      "No argument to token '%s'.", MAX_PIPELINE);
-
-        return -1;
-    }
-
-    GlobalConf->max_pipeline_requests = strtol(pcToken, &pcEnd, 10);
-
-    /*
-    **  Let's check to see if the entire string was valid.
-    **  If there is an address here, then there was an
-    **  invalid character in the string.
-    */
-    if(*pcEnd)
-    {
-        SnortSnprintf(ErrorString, ErrStrLen,
-                      "Invalid argument to token '%s'.  Must be a positive "
-                      "number between 0 and %d.", MAX_PIPELINE,
-                      HI_UI_CONFIG_MAX_PIPE);
-
-        return -1;
-    }
-
-    if(GlobalConf->max_pipeline_requests < 0 ||
-       GlobalConf->max_pipeline_requests > HI_UI_CONFIG_MAX_PIPE)
-    {
-        SnortSnprintf(ErrorString, ErrStrLen,
-                      "Invalid argument to token '%s'.  Must be a positive "
-                      "number between 0 and %d.", MAX_PIPELINE, HI_UI_CONFIG_MAX_PIPE);
-
-        return -1;
-    }
-
-    return 0;
-}
-
-/*
-**  NAME
-**    ProcessInspectType::
-*/
-/**
-**  Process the type of inspection.
-**
-**  This sets the type of inspection for HttpInspect to do.
-**
-**  @param GlobalConf  pointer to the global configuration
-**  @param ErrorString error string buffer
-**
-**  @param ErrStrLen   the lenght of the error string buffer
-**
-**  @return an error code integer
-**          (0 = success, >0 = non-fatal error, <0 = fatal error)
-**
-**  @retval  0 successs
-**  @retval -1 generic fatal error
-**  @retval  1 generic non-fatal error
-*/
-static int ProcessInspectType(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
-                              char *ErrorString, int ErrStrLen)
-{
-    char *pcToken;
-
-    pcToken = strtok(NULL, CONF_SEPARATORS);
-    if(pcToken == NULL)
-    {
-        SnortSnprintf(ErrorString, ErrStrLen,
-                      "No argument to token '%s'.", INSPECT_TYPE);
-
-        return -1;
-    }
-
-    if(!strcmp(INSPECT_TYPE_STATEFUL, pcToken))
-    {
-        GlobalConf->inspection_type = HI_UI_CONFIG_STATEFUL;
-
-        /*
-        **  We don't support this option yet, so we'll give an error and
-        **  bail.
-        */
-        SnortSnprintf(ErrorString, ErrStrLen,
-                      "Stateful HttpInspect processing is not yet available.  "
-                      "Please use stateless processing for now.");
-
-        return -1;
-    }
-    else if(!strcmp(INSPECT_TYPE_STATELESS, pcToken))
-    {
-        GlobalConf->inspection_type = HI_UI_CONFIG_STATELESS;
-    }
-    else
-    {
-        SnortSnprintf(ErrorString, ErrStrLen,
-                      "Invalid argument to token '%s'.  Must be either '%s' or '%s'.",
-                      INSPECT_TYPE, INSPECT_TYPE_STATEFUL, INSPECT_TYPE_STATELESS);
-
-        return -1;
-    }
-
-    return 0;
-}
-
-static int ProcessIISUnicodeMap(int **iis_unicode_map,
+static int ProcessIISUnicodeMap(uint8_t **iis_unicode_map,
                                 char **iis_unicode_map_filename,
                                 int *iis_unicode_map_codepage,
                                 char *ErrorString, int ErrStrLen)
@@ -665,7 +532,6 @@ static int ProcessHttpMemcap(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
 }
 
 
-#ifdef ZLIB
 static int ProcessMaxGzipMem(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
         char *ErrorString, int ErrStrLen)
 {
@@ -777,7 +643,6 @@ static int ProcessDecompressDepth(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
 
     return 0;
 }
-#endif
 
 /*
 **  NAME
@@ -826,26 +691,7 @@ int ProcessGlobalConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
         */
         iTokens = 1;
 
-        /*
-        **  Search for configuration keywords
-        */
-        if(!strcmp(MAX_PIPELINE, pcToken))
-        {
-            iRet = ProcessMaxPipeline(GlobalConf, ErrorString, ErrStrLen);
-            if (iRet)
-            {
-                return iRet;
-            }
-        }
-        else if(!strcmp(INSPECT_TYPE, pcToken))
-        {
-            iRet = ProcessInspectType(GlobalConf, ErrorString, ErrStrLen);
-            if (iRet)
-            {
-                return iRet;
-            }
-        }
-        else if(!strcmp(IIS_UNICODE_MAP, pcToken))
+        if(!strcmp(IIS_UNICODE_MAP, pcToken))
         {
             iRet = ProcessIISUnicodeMap(&GlobalConf->iis_unicode_map, &GlobalConf->iis_unicode_map_filename,
                                         &GlobalConf->iis_unicode_codepage, ErrorString,ErrStrLen);
@@ -866,7 +712,6 @@ int ProcessGlobalConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
         {
             GlobalConf->proxy_alert = 1;
         }
-#ifdef ZLIB
         else if (!strcmp(MAX_GZIP_MEM, pcToken))
         {
             iRet = ProcessMaxGzipMem(GlobalConf, ErrorString, ErrStrLen);
@@ -885,7 +730,6 @@ int ProcessGlobalConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
             if(iRet)
                 return iRet;
         }
-#endif
         else if (!strcmp(OPT_DISABLED, pcToken))
         {
             GlobalConf->disabled = 1;
@@ -1000,7 +844,7 @@ static int ProcessProfile(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
     if(pcToken == NULL)
     {
         SnortSnprintf(ErrorString, ErrStrLen,
-                      "No argument to '%s'.", PROFILE);
+                      "No argument to '%s'.", PROFILE_STRING);
 
         return -1;
     }
@@ -1142,7 +986,7 @@ static int ProcessPorts(HTTPINSPECT_CONF *ServerConf,
             return -1;
         }
 
-        ServerConf->ports[iPort/8] |= (1 << (iPort % 8) );
+        enablePort( ServerConf->ports, iPort );
 
         if(ServerConf->port_count < MAXPORTS)
             ServerConf->port_count++;
@@ -1877,7 +1721,7 @@ static int Add_XFF_Field( HTTPINSPECT_CONF *ServerConf, uint8_t *Prec_Array, uin
 {
     uint8_t **Fields = ServerConf->xff_headers;
     uint8_t *Lengths = ServerConf->xff_header_lengths;
-    uint8_t Length;
+    size_t Length;
     int i;
     char **Builtin_Fields;
     char *cp;
@@ -1925,7 +1769,7 @@ static int Add_XFF_Field( HTTPINSPECT_CONF *ServerConf, uint8_t *Prec_Array, uin
         if( (i = Find_Open_Field( Fields )) >= 0 )
         {
             Fields[i] = Field_Name;
-            Lengths[i] = Length;
+            Lengths[i] = (uint8_t)Length;
             Prec_Array[i] = 0;
             return( 0 );
         }
@@ -1939,7 +1783,7 @@ static int Add_XFF_Field( HTTPINSPECT_CONF *ServerConf, uint8_t *Prec_Array, uin
         if( Fields[i] == NULL )
         {
             Fields[i] = Field_Name;
-            Lengths[i] = Length;
+            Lengths[i] = (uint8_t)Length;
             Prec_Array[i] = Precedence;
             break;
         }
@@ -1950,7 +1794,7 @@ static int Add_XFF_Field( HTTPINSPECT_CONF *ServerConf, uint8_t *Prec_Array, uin
         {
             Push_Down_XFF_List( Fields, Lengths, Prec_Array, i+1 );
             Fields[i] = Field_Name;
-            Lengths[i] = Length;
+            Lengths[i] = (uint8_t)Length;
             Prec_Array[i] = Precedence;
             break;
         }
@@ -1971,7 +1815,7 @@ static int ProcessXFF_HeaderList(HTTPINSPECT_CONF *ServerConf,
     unsigned char Count = 0;
     unsigned char Max_XFF = { (HI_UI_CONFIG_MAX_XFF_FIELD_NAMES-XFF_BUILTIN_NAMES) };
     uint8_t *Field_Name;
-    uint8_t Precedence;
+    unsigned int Precedence;
     int i;
 
 
@@ -2034,6 +1878,13 @@ static int ProcessXFF_HeaderList(HTTPINSPECT_CONF *ServerConf,
             {
                 Precedence = xatou( pcToken, "Precedence" );
 
+                if( (Precedence > XFF_MAX_PREC) || (Precedence < XFF_MIN_PREC) )
+                {
+                    SnortSnprintf(ErrorString, ErrStrLen,
+                                 "illegal precendence value: %u", Precedence);
+                    return( -1 );
+                }
+
                 if( strcasecmp( (char *)Field_Name, HI_UI_CONFIG_XFF_FIELD_NAME) == 0 )
                 {
                     Max_XFF += 1;
@@ -2054,7 +1905,7 @@ static int ProcessXFF_HeaderList(HTTPINSPECT_CONF *ServerConf,
                     return( -1 );
                 }
 
-                if( Add_XFF_Field( ServerConf, Prec_List, Field_Name, Precedence,
+                if( Add_XFF_Field( ServerConf, Prec_List, Field_Name, (uint8_t)Precedence,
                                    ErrorString, ErrStrLen ) != 0 )
                 {
                     SnortSnprintf(ErrorString, ErrStrLen,
@@ -2086,6 +1937,12 @@ static int ProcessXFF_HeaderList(HTTPINSPECT_CONF *ServerConf,
         }
     }
     while( Keep_Parsing && ((pcToken = strtok(NULL, CONF_SEPARATORS)) != NULL) );
+
+    if( Parse_State != XFF_STATE_END )
+    {
+        SnortSnprintf(ErrorString, ErrStrLen, "xff header parsing error");
+        return( -1 );
+    }
 
     /* NOTE:  The number of fields added here MUST be represented in XFF_BUILTIN_NAMES value
               to assure that we reserve room for them on the list. */
@@ -2189,6 +2046,97 @@ static int ProcessHttpMethodList(HTTPINSPECT_CONF *ServerConf,
         snprintf(ErrorString, ErrStrLen,
             "Must end '%s' configuration with '%s'.",
                 HTTP_METHODS, END_PORT_LIST);
+
+        return -1;
+    }
+
+    return 0;
+}
+
+static int ProcessDecompressionTypeList(HTTPINSPECT_CONF *ServerConf,
+                      char *ConfigType, char *ErrorString, int ErrStrLen)
+{
+    char *pcToken;
+    char *cmd;
+    int  iEndCmds = 0;
+
+    pcToken = strtok(NULL, CONF_SEPARATORS);
+    if(!pcToken)
+    {
+        SnortSnprintf(ErrorString, ErrStrLen,
+                "Invalid algorithm list format.");
+
+        return -1;
+    }
+
+    if(strcmp(START_PORT_LIST, pcToken))
+    {
+        SnortSnprintf(ErrorString, ErrStrLen,
+                "Must start an algotithm list with the '%s' token.",
+                START_PORT_LIST);
+
+        return -1;
+    }
+
+    while ((pcToken = strtok(NULL, CONF_SEPARATORS)) != NULL)
+    {
+        if(!strcmp(END_PORT_LIST, pcToken))
+        {
+            iEndCmds = 1;
+            break;
+        }
+
+        cmd = pcToken;
+
+        /* FIX THIS:  For now, the decompression types are limited to SWF/LZMA, SWF/Deflate, and PDF/Deflate.
+                      Hardcode the comparison logic and storage in the HTTPINSPECT_CONF struc. */
+        if( 0 == strcmp(ConfigType, INSPECT_SWF))
+        {
+            if( 0 == strcmp(cmd, DECOMPRESS_DEFLATE) )
+            {
+                ServerConf->file_decomp_modes |= (FILE_SWF_ZLIB_BIT | FILE_REVERT_BIT);
+            }
+#ifdef LZMA
+            else if( 0 == strcmp(cmd, DECOMPRESS_LZMA) )
+            {
+                ServerConf->file_decomp_modes |= (FILE_SWF_LZMA_BIT | FILE_REVERT_BIT);
+            }
+#endif
+            else 
+            {
+                snprintf(ErrorString, ErrStrLen,
+                         "Bad cmd element passed to ProcessDecompressionTypeList(): %s", cmd);
+                return( -1 );
+ 
+            }
+        }
+        else if( 0 == strcmp(ConfigType, INSPECT_PDF) )
+        {
+            if( 0 == strcmp(cmd, DECOMPRESS_DEFLATE) )
+            {
+                ServerConf->file_decomp_modes |= (FILE_PDF_DEFL_BIT | FILE_REVERT_BIT);
+            }
+            else
+            {
+            snprintf(ErrorString, ErrStrLen,
+                     "Bad cmd passed to ProcessDecompressionTypeList(): %s", cmd);
+            return( -1 );
+ 
+            }
+        }
+        else
+        {
+            snprintf(ErrorString, ErrStrLen,
+                     "Bad ConfigType passed to ProcessDecompressionTypeList(): %s", ConfigType);
+            return( -1 );
+        }
+    }
+
+    if(!iEndCmds)
+    {
+        snprintf(ErrorString, ErrStrLen,
+            "Must end '%s' configuration with '%s'.",
+                ConfigType, END_PORT_LIST);
 
         return -1;
     }
@@ -2316,7 +2264,7 @@ static int ProcessServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
         return 1;
     }
 
-    if(!strcmp(PROFILE, pcToken))
+    if(!strcmp(PROFILE_STRING, pcToken))
     {
         iRet = ProcessProfile(GlobalConf, ServerConf, ErrorString, ErrStrLen);
         if (iRet)
@@ -2454,7 +2402,6 @@ static int ProcessServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
                     return iRet;
                 }
             }
-#ifdef ZLIB
             else if (!strcmp(EXTRACT_GZIP, pcToken))
             {
                 if(!ServerConf->inspect_response)
@@ -2485,6 +2432,31 @@ static int ProcessServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
 
                 GlobalConf->compr_depth = GlobalConf->decompr_depth = MAX_GZIP_DEPTH;
                 ServerConf->unlimited_decompress = 1;
+            }
+#ifdef FILE_DECOMP_SWF
+            else if (!strcmp(INSPECT_SWF, pcToken))
+            {
+                if(!ServerConf->inspect_response)
+                {
+                    SnortSnprintf(ErrorString, ErrStrLen,
+                            "Enable '%s' before setting '%s'",INSPECT_RESPONSE, INSPECT_SWF);
+                    return -1;
+                }
+
+                ProcessDecompressionTypeList(ServerConf,pcToken,ErrorString,ErrStrLen);
+            }
+#endif
+#ifdef FILE_DECOMP_PDF
+            else if (!strcmp(INSPECT_PDF, pcToken))
+            {
+                if(!ServerConf->inspect_response)
+                {
+                    SnortSnprintf(ErrorString, ErrStrLen,
+                            "Enable '%s' before setting '%s'",INSPECT_RESPONSE, INSPECT_PDF);
+                    return -1;
+                }
+
+                ProcessDecompressionTypeList(ServerConf,pcToken,ErrorString,ErrStrLen);
             }
 #endif
             else if(!strcmp(MAX_HDR_LENGTH, pcToken))
@@ -2551,12 +2523,24 @@ static int ProcessServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
                               "Invalid token while configuring the profile token.  "
                               "The only allowed tokens when configuring profiles "
                               "are: '%s', '%s', '%s', '%s', '%s', '%s', '%s', "
-                              "'%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' "
+                              "'%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', "
+#ifdef FILE_DECOMP_SWF
+"'%s', "
+#endif
+#ifdef FILE_DECOMP_PDF
+"'%s', "
+#endif
                               "'%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', and '%s'. ",
                               PORTS,IIS_UNICODE_MAP, ALLOW_PROXY, FLOW_DEPTH,
                               CLIENT_FLOW_DEPTH, GLOBAL_ALERT, OVERSIZE_DIR, MAX_HDR_LENGTH,
                               INSPECT_URI_ONLY, INSPECT_COOKIES, INSPECT_RESPONSE,
                               EXTRACT_GZIP,MAX_HEADERS, NORMALIZE_COOKIES, ENABLE_XFF, XFF_HEADERS_TOK,
+#ifdef FILE_DECOMP_SWF
+INSPECT_SWF,
+#endif
+#ifdef FILE_DECOMP_PDF
+INSPECT_PDF,
+#endif
                               NORMALIZE_HEADERS, NORMALIZE_UTF, UNLIMIT_DECOMPRESS, HTTP_METHODS, 
                               LOG_URI, LOG_HOSTNAME, MAX_SPACES, NORMALIZE_JS, MAX_JS_WS);
 
@@ -2734,7 +2718,6 @@ static int ProcessServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
                 return iRet;
             }
         }
-#ifdef ZLIB
         else if(!strcmp(EXTRACT_GZIP, pcToken))
         {
             if(!ServerConf->inspect_response)
@@ -2764,6 +2747,31 @@ static int ProcessServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
 
             GlobalConf->compr_depth = GlobalConf->decompr_depth = MAX_GZIP_DEPTH;
             ServerConf->unlimited_decompress = 1;
+        }
+#ifdef FILE_DECOMP_SWF
+        else if (!strcmp(INSPECT_SWF, pcToken))
+        {
+            if(!ServerConf->inspect_response)
+            {
+                SnortSnprintf(ErrorString, ErrStrLen,
+                        "Enable '%s' before setting '%s'",INSPECT_RESPONSE, INSPECT_SWF);
+                return -1;
+            }
+
+            ProcessDecompressionTypeList(ServerConf,pcToken,ErrorString,ErrStrLen);
+        }
+#endif
+#ifdef FILE_DECOMP_PDF
+        else if (!strcmp(INSPECT_PDF, pcToken))
+        {
+            if(!ServerConf->inspect_response)
+            {
+                SnortSnprintf(ErrorString, ErrStrLen,
+                        "Enable '%s' before setting '%s'",INSPECT_RESPONSE, INSPECT_PDF);
+                return -1;
+            }
+
+            ProcessDecompressionTypeList(ServerConf,pcToken,ErrorString,ErrStrLen);
         }
 #endif
         /*
@@ -3003,6 +3011,14 @@ static int ProcessServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
     return 0;
 }
 
+static void PrintFileDecompOpt(HTTPINSPECT_CONF *ServerConf)
+{
+    LogMessage("      Decompress response files: %s %s %s\n",
+               ((ServerConf->file_decomp_modes & FILE_SWF_ZLIB_BIT) != 0) ? "SWF-ZLIB" : "",
+               ((ServerConf->file_decomp_modes & FILE_SWF_LZMA_BIT) != 0) ? "SWF-LZMA" : "",
+               ((ServerConf->file_decomp_modes & FILE_PDF_DEFL_BIT) != 0) ? "PDF-DEFL" : "");
+}
+
 static int PrintConfOpt(HTTPINSPECT_CONF_OPT *ConfOpt, char *Option)
 {
     if(!ConfOpt || !Option)
@@ -3056,7 +3072,7 @@ static int PrintServerConf(HTTPINSPECT_CONF *ServerConf)
     */
     for(iCtr = 0; iCtr < MAXPORTS; iCtr++)
     {
-        if(ServerConf->ports[iCtr/8] & (1 << (iCtr % 8) ))
+        if( isPortEnabled( ServerConf->ports, iCtr ) )
         {
             sfsnprintfappend(buf, STD_BUF, "%d ", iCtr);
         }
@@ -3091,12 +3107,11 @@ static int PrintServerConf(HTTPINSPECT_CONF *ServerConf)
                ServerConf->enable_cookie ? "YES" : "NO");
     LogMessage("      Inspect HTTP Responses: %s\n",
                ServerConf->inspect_response ? "YES" : "NO");
-#ifdef ZLIB
     LogMessage("      Extract Gzip from responses: %s\n",
                ServerConf->extract_gzip ? "YES" : "NO");
+    PrintFileDecompOpt(ServerConf);
     LogMessage("      Unlimited decompression of gzip data from responses: %s\n",
                 ServerConf->unlimited_decompress ? "YES" : "NO");
-#endif
     LogMessage("      Normalize Javascripts in HTTP Responses: %s\n",
                        ServerConf->normalize_javascript ? "YES" : "NO");
     if(ServerConf->normalize_javascript)
@@ -3192,7 +3207,35 @@ static int PrintServerConf(HTTPINSPECT_CONF *ServerConf)
     return 0;
 }
 
-int ProcessUniqueServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
+static void registerPortsWithStream( HTTPINSPECT_CONF *policy, char *network )
+{
+    uint32_t port;
+    uint32_t dir = 0;
+
+    if( policy->client_flow_depth > -1 )
+        dir |= SSN_DIR_FROM_CLIENT;
+    if( ( policy->server_extract_size > -1 ) )
+        dir |= SSN_DIR_FROM_SERVER;
+
+    for ( port = 0; port < MAXPORTS; port++ )
+    {
+        if( isPortEnabled( policy->ports, port ) )
+            stream_api->register_reassembly_port( network, port, dir );
+    }
+}
+
+static void enableHiForConfiguredPorts( struct _SnortConfig *sc, HTTPINSPECT_CONF *policy )
+{
+    int port;
+
+    for ( port = 0; port < MAXPORTS; port++ )
+    {
+        if( isPortEnabled( policy->ports, port ) )
+            session_api->enable_preproc_for_port( sc, PP_HTTPINSPECT, PROTO_BIT__TCP, port ); 
+    }
+}
+
+int ProcessUniqueServerConf(struct _SnortConfig *sc, HTTPINSPECT_GLOBAL_CONF *GlobalConf,
                             char *ErrorString, int ErrStrLen)
 {
     char *pcToken;
@@ -3248,6 +3291,10 @@ int ProcessUniqueServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
             retVal =  iRet;
             goto _return;
         }
+
+        // register enabled ports for reassembly with Stream for the default
+        registerPortsWithStream( ServerConf, NULL ); 
+        enableHiForConfiguredPorts( sc, ServerConf );
 
         /*
         **  Start writing out the Default Server Config
@@ -3351,6 +3398,10 @@ int ProcessUniqueServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
                 }
             }
 
+            // register enabled ports for reassembly with Stream for the current netowrk
+            registerPortsWithStream( ServerConf, pcToken ); 
+            enableHiForConfiguredPorts( sc, ServerConf );
+
             if (firstIpAddress)
             {
                 //process the first IP address as usual
@@ -3400,18 +3451,12 @@ int PrintGlobalConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf)
     if(GlobalConf->disabled)
     {
         LogMessage("      Http Inspect: INACTIVE\n");
-#ifdef ZLIB
         LogMessage("      Max Gzip Memory: %d\n",
                                 GlobalConf->max_gzip_mem);
-#endif
         LogMessage("      Memcap used for logging URI and Hostname: %u\n",
                                 GlobalConf->memcap);
         return 0;
     }
-    LogMessage("      Max Pipeline Requests:    %d\n",
-               GlobalConf->max_pipeline_requests);
-    LogMessage("      Inspection Type:          %s\n",
-               GlobalConf->inspection_type ? "STATEFUL" : "STATELESS");
     LogMessage("      Detect Proxy Usage:       %s\n",
                GlobalConf->proxy_alert ? "YES" : "NO");
     LogMessage("      IIS Unicode Map Filename: %s\n",
@@ -3420,7 +3465,6 @@ int PrintGlobalConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf)
                GlobalConf->iis_unicode_codepage);
     LogMessage("      Memcap used for logging URI and Hostname: %u\n",
                GlobalConf->memcap);
-#ifdef ZLIB
     LogMessage("      Max Gzip Memory: %d\n",
                 GlobalConf->max_gzip_mem);
     LogMessage("      Max Gzip Sessions: %d\n",
@@ -3429,7 +3473,6 @@ int PrintGlobalConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf)
                GlobalConf->compr_depth);
     LogMessage("      Gzip Decompress Depth: %d\n",
                GlobalConf->decompr_depth);
-#endif
 
     return 0;
 }
@@ -3476,10 +3519,10 @@ static inline int LogEvents(HI_SESSION *hi_ssn, Packet *p,
     HI_GEN_EVENTS GenEvents;
     HI_EVENT      *OrigEvent;
     HI_EVENT      *HiEvent = NULL;
-    uint32_t     uiMask = 0;
+    uint64_t      uiMask = 0;
     int           iGenerator;
     int           iStackCnt;
-    int           iEvent;
+    uint64_t      iEvent;
     int           iCtr;
 
     /*
@@ -3531,7 +3574,7 @@ static inline int LogEvents(HI_SESSION *hi_ssn, Packet *p,
     */
     for(iCtr = 0; iCtr < iStackCnt; iCtr++)
     {
-        iEvent = GenEvents.stack[iCtr];
+        iEvent = (uint64_t)GenEvents.stack[iCtr];
         OrigEvent = &(GenEvents.events[iEvent]);
 
         /*
@@ -3567,9 +3610,9 @@ static inline int LogEvents(HI_SESSION *hi_ssn, Packet *p,
     **  reason, it appears that the first event can't be zero, so we
     **  use the internal value and add one for snort.
     */
-    iEvent = HiEvent->event_info->alert_id + 1;
+    iEvent = (uint64_t)HiEvent->event_info->alert_id + 1;
 
-    uiMask = (uint32_t)(1 << (iEvent & 31));
+    uiMask = (uint64_t)1 << (iEvent & 63);
 
     if (hsd != NULL)
     {
@@ -3602,7 +3645,7 @@ static inline int SetSiInput(HI_SI_INPUT *SiInput, Packet *p)
     **  We now set the packet direction
     */
     if(p->ssnptr &&
-        stream_api->get_session_flags(p->ssnptr) & SSNFLAG_MIDSTREAM)
+            session_api->get_session_flags(p->ssnptr) & SSNFLAG_MIDSTREAM)
     {
         SiInput->pdir = HI_SI_NO_MODE;
     }
@@ -3656,25 +3699,6 @@ static inline void ApplyClientFlowDepth (Packet* p, int flow_depth)
     }
 }
 
-static inline FilePosition getFilePoistion(Packet *p)
-{
-    FilePosition position = SNORT_FILE_POSITION_UNKNOWN;
-
-    if(ScPafEnabled())
-    {
-        if (PacketHasFullPDU(p))
-            position = SNORT_FILE_FULL;
-        else if (PacketHasStartOfPDU(p))
-            position = SNORT_FILE_START;
-        else if (p->packet_flags & PKT_PDU_TAIL)
-            position = SNORT_FILE_END;
-        else if (file_api->get_file_processed_size(p->ssnptr))
-            position = SNORT_FILE_MIDDLE;
-    }
-
-    return position;
-}
-
 // FIXTHIS extra data masks should only be updated as extra data changes state
 // eg just once when captured; this function is called on every packet and 
 // repeatedly sets the flags on session
@@ -3710,12 +3734,10 @@ static inline void HttpLogFuncs(HTTPINSPECT_GLOBAL_CONF *GlobalConf, HttpSession
     {
         SetExtraData(p, GlobalConf->xtra_jsnorm_id);
     }
-#ifdef ZLIB
     if(hsd->log_flags & HTTP_LOG_GZIP_DATA)
     {
         SetExtraData(p, GlobalConf->xtra_gzip_id);
     }
-#endif
 #endif
 }
 
@@ -3736,12 +3758,12 @@ static inline void processFileData(Packet *p, HttpSessionData *hsd, bool *filePr
     if (hsd->mime_ssn)
     {
         uint8_t *end = ( uint8_t *)(p->data) + p->dsize;
-        file_api->process_mime_data(p, p->data, end, end, end, hsd->mime_ssn, 1);
+        file_api->process_mime_data(p, p->data, end, hsd->mime_ssn, 1, false);
         *fileProcessed = true;
     }
     else if (file_api->get_file_processed_size(p->ssnptr) >0)
     {
-        file_api->file_process(p, (uint8_t *)p->data, p->dsize, getFilePoistion(p), true, false);
+        file_api->file_process(p, (uint8_t *)p->data, p->dsize, file_api->get_file_position(p), true, false);
         *fileProcessed = true;
     }
 }
@@ -3883,8 +3905,8 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
 
         if ( p->alt_dsize == 0 )
         {
-            DisableDetect(p);
-            SetAllPreprocBits(p);
+            DisableDetect( p );
+            EnablePreprocessor(p, PP_SDF);
             return 0;
         }
         // see comments on call to Detect() below
@@ -3898,7 +3920,11 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
     }
 
     if (hsd == NULL)
+    {
         hsd = SetNewHttpSessionData(p, (void *)Session);
+        if (hsd == NULL)
+            return 0;
+    }
     else
     {
         /* Gzip data should not be logged with all the packets of the session.*/
@@ -4057,13 +4083,13 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                         }
 
                         end = (uint8_t *)(Session->client.request.post_raw + Session->client.request.post_raw_size);
-                        file_api->process_mime_data(p, start, end, end, end, hsd->mime_ssn, 1);
+                        file_api->process_mime_data(p, start, end, hsd->mime_ssn, 1, false);
                     }
                     else
                     {
                         if (file_api->file_process(p,(uint8_t *)Session->client.request.post_raw,
                                 (uint16_t)Session->client.request.post_raw_size,
-                                getFilePoistion(p), true, false))
+                                    file_api->get_file_position(p), true, false))
                         {
                             setFileName(p);
                         }
@@ -4159,8 +4185,8 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
 
                 if( !GetHttpBufferMask() && (p->alt_dsize == 0)  )
                 {
-                    DisableDetect(p);
-                    SetAllPreprocBits(p);
+                    DisableDetect( p );
+                    EnablePreprocessor(p, PP_SDF);
                     return 0;
                 }
             }
@@ -4175,15 +4201,18 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
             **  header or not.  If the header size is 0 then, we know that this
             **  is not the header and don't do any detection.
             */
+#if defined(FEAT_OPEN_APPID)
+            if( !(Session->server_conf->inspect_response || Session->server_conf->appid_enabled) &&
+#else
             if( !(Session->server_conf->inspect_response) &&
+#endif /* defined(FEAT_OPEN_APPID) */
                 IsLimitedDetect(p) && !p->alt_dsize )
             {
-                DisableDetect(p);
-
-                SetAllPreprocBits(p);
+                DisableDetect( p );
+                    EnablePreprocessor(p, PP_SDF);
                 if(Session->server_conf->server_flow_depth == -1)
                 {
-                    SetPreprocBit(p, PP_DCE2);
+                    EnablePreprocessor(p, PP_DCE2);
                 }
                 return 0;
             }
@@ -4296,11 +4325,57 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                      detect_data_size = 0;
                  }
 
-                 setFileDataPtr((uint8_t *)Session->server.response.body, (uint16_t)detect_data_size);
+                 /* Do we have a file decompression object? */
+                 if( hsd->fd_state != 0 )
+                 {
+                     fd_status_t Ret_Code;
 
-                 if (ScPafEnabled() && PacketHasPAFPayload(p)
-                         && file_api->file_process(p,(uint8_t *)Session->server.response.body, (uint16_t)Session->server.response.body_size,
-                         getFilePoistion(p), false, false))
+                     uint16_t Data_Len;
+                     uint8_t *Data;
+
+                     hsd->fd_state->Next_In = (Data = Session->server.response.body);
+                     hsd->fd_state->Avail_In = (Data_Len = (uint16_t)detect_data_size);
+
+                     (void)File_Decomp_SetBuf( hsd->fd_state );
+
+                     Ret_Code = File_Decomp( hsd->fd_state );
+
+                     if( Ret_Code == File_Decomp_DecompError )
+                     {
+                         Session->server.response.body = Data;
+                         Session->server.response.body_size = Data_Len;
+
+                         if(hi_eo_generate_event(Session, hsd->fd_state->Error_Event))
+                         {
+                             hi_eo_server_event_log(Session, hsd->fd_state->Error_Event, NULL, NULL);
+                         }
+                         File_Decomp_StopFree( hsd->fd_state );
+                         hsd->fd_state = NULL;
+                      }
+                     /* If we didn't find a Sig, then clear the File_Decomp state
+                        and don't keep looking. */
+                     else if( Ret_Code == File_Decomp_NoSig )
+                     {
+                         File_Decomp_StopFree( hsd->fd_state );
+                         hsd->fd_state = NULL;
+                     }
+                     else
+                     {
+                         Session->server.response.body = hsd->fd_state->Buffer;
+                         Session->server.response.body_size = hsd->fd_state->Total_Out;
+                     }
+
+                     setFileDataPtr((uint8_t *)Session->server.response.body, (uint16_t)Session->server.response.body_size);
+                 } 
+                 else
+                 {
+                     setFileDataPtr((uint8_t *)Session->server.response.body, (uint16_t)detect_data_size);
+                 }
+
+                 if( ScPafEnabled() && PacketHasPAFPayload( p )
+                     && file_api->file_process( p, (uint8_t *)Session->server.response.body, 
+                                                (uint16_t)Session->server.response.body_size,
+                                                file_api->get_file_position( p ), false, false ) )
                  {
                      setFileName(p);
                  }
@@ -4309,15 +4384,13 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
              if( IsLimitedDetect(p) &&
                  !GetHttpBufferMask() && (p->alt_dsize == 0)  )
              {
-                 DisableDetect(p);
-
-                 SetAllPreprocBits(p);
+                 DisableDetect( p );
+                 EnablePreprocessor(p, PP_SDF);
                  if(Session->server_conf->server_flow_depth == -1)
                  {
-                     SetPreprocBit(p, PP_DCE2);
+                            EnablePreprocessor(p, PP_DCE2);
                  }
                  return 0;
-
              }
         }
 
@@ -4362,14 +4435,14 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
     if ( iCallDetect == 0 )
     {
         /* Detect called at least once from above pkt processing loop. */
-        DisableAllDetect(p);
+        DisableAllDetect( p );
 
         /* dcerpc2 preprocessor may need to look at this for
          * RPC over HTTP setup */
-        SetPreprocBit(p, PP_DCE2);
+        EnablePreprocessor(p, PP_DCE2);
 
         /* sensitive_data preprocessor may look for PII over HTTP */
-        SetPreprocBit(p, PP_SDF);
+        EnablePreprocessor(p, PP_SDF);
     }
 
     return 0;
@@ -4419,7 +4492,9 @@ HttpSessionData * SetNewHttpSessionData(Packet *p, void *data)
     hsd = (HttpSessionData *)SnortAlloc(sizeof(HttpSessionData));
     init_decode_utf_state(&hsd->utf_state);
 
-    stream_api->set_application_data(p->ssnptr, PP_HTTPINSPECT, hsd, FreeHttpSessionData);
+    session_api->set_application_data(p->ssnptr, PP_HTTPINSPECT, hsd, FreeHttpSessionData);
+
+    hsd->fd_state = (fd_session_p_t)NULL;
 
     return hsd;
 }
@@ -4431,13 +4506,11 @@ void FreeHttpSessionData(void *data)
     if (hsd == NULL)
         return;
 
-#ifdef ZLIB
     if (hsd->decomp_state != NULL)
     {
         inflateEnd(&(hsd->decomp_state->d_stream));
         mempool_free(hi_gzip_mempool, hsd->decomp_state->bkt);
     }
-#endif
 
     if (hsd->log_state != NULL)
     {
@@ -4449,6 +4522,12 @@ void FreeHttpSessionData(void *data)
         sfip_free(hsd->true_ip);
 
     file_api->free_mime_session(hsd->mime_ssn);
+
+    if( hsd->fd_state != 0 )
+    {
+        File_Decomp_StopFree(hsd->fd_state);   // Stop & Stop &  Free fd session object
+        hsd->fd_state = NULL;                  // ...just for good measure
+    }
 
     free(hsd);
 }
@@ -4483,7 +4562,7 @@ int IsGzipData(void *data)
 
     if (data == NULL)
         return -1;
-    hsd = (HttpSessionData *)stream_api->get_application_data(data, PP_HTTPINSPECT);
+    hsd = (HttpSessionData *)session_api->get_application_data(data, PP_HTTPINSPECT);
 
     if(hsd == NULL)
         return -1;
@@ -4515,7 +4594,7 @@ int IsJSNormData(void *data)
 
     if (data == NULL)
         return -1;
-    hsd = (HttpSessionData *)stream_api->get_application_data(data, PP_HTTPINSPECT);
+    hsd = (HttpSessionData *)session_api->get_application_data(data, PP_HTTPINSPECT);
 
     if(hsd == NULL)
         return -1;
@@ -4546,7 +4625,7 @@ int GetHttpUriData(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
         
     if (data == NULL)
         return 0;
-    hsd = (HttpSessionData *)stream_api->get_application_data(data, PP_HTTPINSPECT);
+    hsd = (HttpSessionData *)session_api->get_application_data(data, PP_HTTPINSPECT);
             
     if(hsd == NULL)
         return 0;
@@ -4569,7 +4648,7 @@ int GetHttpHostnameData(void *data, uint8_t **buf, uint32_t *len, uint32_t *type
         
     if (data == NULL)
         return 0;
-    hsd = (HttpSessionData *)stream_api->get_application_data(data, PP_HTTPINSPECT);
+    hsd = (HttpSessionData *)session_api->get_application_data(data, PP_HTTPINSPECT);
             
     if(hsd == NULL)
         return 0;

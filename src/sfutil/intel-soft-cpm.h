@@ -97,5 +97,6 @@ int IntelGetPatternCount(IntelPm *ipm);
 int IntelPmPrintInfo(IntelPm *ipm);
 void IntelPmPrintSummary(struct _SnortConfig *);
 void IntelPmPrintBufferStats(void);
+int IntelPmRelease(struct _IntelPmHandles *);
 
 #endif  /* _INTEL_H_ */

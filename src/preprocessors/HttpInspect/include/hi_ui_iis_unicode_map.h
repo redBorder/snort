@@ -39,7 +39,7 @@
 */
 #define HI_UI_NON_ASCII_CODEPOINT -1
 
-int hi_ui_parse_iis_unicode_map(int **iis_unicode_map, char *filename,
+int hi_ui_parse_iis_unicode_map(uint8_t **iis_unicode_map, char *filename,
                                 int iCodePage);
 
 #endif

@@ -24,7 +24,7 @@
  *
  * pop_config.h
  *
- * Author: Bhagyashree Bantwal <bbantwal@sourcefire.com>
+ * Author: Bhagyashree Bantwal <bbantwal@cisco.com>
  *
  ***************************************************************************/
 
@@ -32,6 +32,7 @@
 #define __POP_CONFIG_H__
 
 #include "sfPolicyUserData.h"
+#include "file_mail_common.h"
 #define CONF_SEPARATORS                  " \t\n\r"
 #define CONF_PORTS                       "ports"
 #define CONF_POP_MEMCAP                  "memcap"
@@ -47,7 +48,6 @@
 /*These are temporary values*/
 #define DEFAULT_MAX_MIME_MEM          838860
 #define DEFAULT_POP_MEMCAP            838860
-#define DEFAULT_DEPTH                 1464
 #define MAX_POP_MEMCAP                104857600
 #define MIN_POP_MEMCAP                3276
 #define MAX_MIME_MEM                  104857600
@@ -83,20 +83,15 @@ typedef struct _POPCmdConfig
 
 typedef struct _POPConfig
 {
-    char  ports[8192];
-    int  max_mime_mem;
+    uint8_t  ports[8192];
+
     uint32_t  memcap;
-    int max_depth;
-    int b64_depth;
-    int qp_depth;
-    int bitenc_depth;
-    int uu_depth;
-    int64_t file_depth;
     POPToken *cmds;
     POPSearch *cmd_search;
     void *cmd_search_mpse;
     int num_cmds;
     int disabled;
+    DecodeConfig decode_conf;
     MAIL_LogConfig log_config;
 
     int ref_count;
@@ -108,7 +103,6 @@ void POP_ParseArgs(POPConfig *, char *);
 void POP_PrintConfig(POPConfig *config);
 
 void POP_CheckConfig(POPConfig *, tSfPolicyUserContextId);
-int POP_IsDecodingEnabled(POPConfig *);
 
 #endif
 

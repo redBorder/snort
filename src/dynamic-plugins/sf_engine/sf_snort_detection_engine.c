@@ -96,7 +96,6 @@ ENGINE_LINKAGE int InitializeEngine(DynamicEngineData *ded)
 
 ENGINE_LINKAGE int LibVersion(DynamicPluginMeta *dpm)
 {
-
     dpm->type  = TYPE_ENGINE;
     dpm->major = MAJOR_VERSION;
     dpm->minor = MINOR_VERSION;
@@ -586,6 +585,91 @@ static int DecodeContentPattern(Rule *rule, ContentInfo *content)
     return 0;
 }
 
+static bool HexToNybble( char Chr, uint8_t *Val )
+{
+    if( !isxdigit( (int)Chr ) )
+    {
+        *Val = 0;
+        return( false );
+    }
+
+    if( isdigit( Chr ) )
+        *Val = (uint8_t)(Chr - '0');
+    else
+        *Val = (uint8_t)(((char)toupper(Chr) - 'A') + 10);
+
+    return( true );
+}
+
+static bool HexToByte( char *Str, uint8_t *Val )
+{
+    uint8_t nybble;
+
+    *Val = 0;
+
+    if( HexToNybble( *Str++, &nybble ) )
+    {
+        *Val = ((nybble & 0xf) << 4);
+        if( HexToNybble( *Str, &nybble ) )
+        {
+            *Val |= (nybble & 0xf);
+            return( true );
+        }
+    }
+
+    return( false );
+}
+
+static int DecodeProtectedContentPattern(Rule *rule, ProtectedContentInfo *content)
+{
+    unsigned int index;
+    const uint8_t *pat_idx = content->pattern;
+    uint8_t tmp_buf[2048];
+
+    /* First, setup the raw data by parsing content */
+
+    index = 0;
+
+    while((*pat_idx != '\0') && (index < 2048))
+    {
+        if( !HexToByte( (char *)pat_idx, &(tmp_buf[index]) ) )
+        {
+            DynamicEngineFatalMessage("Content argument has invalid "
+                                      "number of hex digits for dynamic rule [%d:%d].\n",
+                                      rule->info.genID, rule->info.sigID);
+        }
+
+        pat_idx += 2;
+        index += 1;
+    }
+
+    if( (*pat_idx == '\0') && (index == 0) )
+    {
+        DynamicEngineFatalMessage("ParseProtectedPattern() zero length pattern in "
+                                  "dynamic rule [%d:%d]!\n",
+                                  rule->info.genID, rule->info.sigID);
+    }
+
+
+    if( (*pat_idx != '\0') && (index == 2048) )
+    {
+        DynamicEngineFatalMessage("ParsePattern() buffer overflow in "
+                                  "dynamic rule [%d:%d]!\n",
+                                  rule->info.genID, rule->info.sigID);
+    }
+
+    /* Now, tmp_buf contains the decoded ascii & raw binary from the patter */
+    content->patternByteForm = (uint8_t *)calloc(index, sizeof(uint8_t));
+    if (content->patternByteForm == NULL)
+    {
+        DynamicEngineFatalMessage("Failed to allocate memory\n");
+    }
+
+    memcpy(content->patternByteForm, tmp_buf, index);
+    content->patternByteFormLength = index;
+
+    return 0;
+}
 static unsigned int getNonRepeatingLength(char *data, int data_len)
 {
     int i, j;
@@ -794,6 +878,19 @@ int RegisterOneRule(struct _SnortConfig *sc, Rule *rule, int registerRule)
 
                     if (content->flags & CONTENT_FAST_PATTERN)
                         fast_pattern = 1;
+                }
+                break;
+           case OPTION_TYPE_PROTECTED_CONTENT:
+                {
+                    ProtectedContentInfo *content = option->option_u.protectedContent;
+
+                    if (!content->patternByteForm)
+                        DecodeProtectedContentPattern(rule, content);
+
+                    if ( HTTP_CONTENT(content->flags) )
+                        contentFlags |= CONTENT_HTTP;
+                    else
+                        contentFlags |= CONTENT_NORMAL;
                 }
                 break;
             case OPTION_TYPE_PCRE:

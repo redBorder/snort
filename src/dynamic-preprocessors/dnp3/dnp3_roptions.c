@@ -300,7 +300,7 @@ int DNP3FuncEval(void *raw_packet, const uint8_t **cursor, void *data)
         return RULE_NOMATCH;
 
     tmp_bucket = (MemBucket *)
-        _dpd.streamAPI->get_application_data(packet->stream_session_ptr, PP_DNP3);
+        _dpd.sessionAPI->get_application_data(packet->stream_session, PP_DNP3);
 
     if ((packet->payload_size == 0) || (tmp_bucket == NULL))
     {
@@ -461,7 +461,7 @@ int DNP3ObjEval(void *raw_packet, const uint8_t **cursor, void *data)
         return RULE_NOMATCH;
 
     tmp_bucket = (MemBucket *)
-        _dpd.streamAPI->get_application_data(packet->stream_session_ptr, PP_DNP3);
+        _dpd.sessionAPI->get_application_data(packet->stream_session, PP_DNP3);
 
     if ((packet->payload_size == 0) || (tmp_bucket == NULL))
     {
@@ -521,7 +521,7 @@ int DNP3IndEval(void *raw_packet, const uint8_t **cursor, void *data)
         return RULE_NOMATCH;
 
     tmp_bucket = (MemBucket *)
-        _dpd.streamAPI->get_application_data(packet->stream_session_ptr, PP_DNP3);
+        _dpd.sessionAPI->get_application_data(packet->stream_session, PP_DNP3);
 
     if ((packet->payload_size == 0) || (tmp_bucket == NULL))
     {
@@ -564,7 +564,7 @@ int DNP3DataEval(void *raw_packet, const uint8_t **cursor, void *data)
         return RULE_NOMATCH;
 
     tmp_bucket = (MemBucket *)
-        _dpd.streamAPI->get_application_data(packet->stream_session_ptr, PP_DNP3);
+        _dpd.sessionAPI->get_application_data(packet->stream_session, PP_DNP3);
 
     if ((packet->payload_size == 0) || (tmp_bucket == NULL))
     {

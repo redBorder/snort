@@ -71,7 +71,7 @@ extern FileStats file_stats;
 
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
 void printFileContext (FileContext* context);
-void DumpHex(FILE *fp, const uint8_t *data, unsigned int len);
+void DumpHexFile(FILE *fp, const uint8_t *data, unsigned int len);
 #endif
 
 /*

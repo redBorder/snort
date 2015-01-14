@@ -24,7 +24,7 @@
  *
  * pop_log.h
  *
- * Author: Bhagyashree Bantwal <bbantwal@sourcefire.com>
+ * Author: Bhagyashree Bantwal <bbantwal@cisco.com>
  *
  **************************************************************************/
 
@@ -60,7 +60,7 @@
 
 /* Function prototypes  */
 void POP_GenerateAlert(int, char *, ...);
-void POP_DecodeAlert(void);
+void POP_DecodeAlert(void *);
 
 
 #endif

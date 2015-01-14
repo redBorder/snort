@@ -115,8 +115,8 @@ am__uninstall_files_from_dir = { \
     || { echo " ( cd '$$dir' && rm -f" $$files ")"; \
          $(am__cd) "$$dir" && rm -f $$files; }; \
   }
-am__installdirs = "$(DESTDIR)$(noinst_libdir)"
-LTLIBRARIES = $(noinst_lib_LTLIBRARIES)
+am__installdirs = "$(DESTDIR)$(noinst_dynamicpreprocessordir)"
+LTLIBRARIES = $(noinst_dynamicpreprocessor_LTLIBRARIES)
 lib_sfdynamic_preprocessor_example_la_LIBADD =
 nodist_lib_sfdynamic_preprocessor_example_la_OBJECTS =  \
 	sf_dynamic_preproc_lib.lo sfPolicyUserData.lo spp_example.lo
@@ -235,6 +235,8 @@ LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
+LUA_CFLAGS = @LUA_CFLAGS@
+LUA_LIBS = @LUA_LIBS@
 MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
@@ -257,8 +259,6 @@ PKG_CONFIG = @PKG_CONFIG@
 PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
 PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
-RAZORBACK_CFLAGS = @RAZORBACK_CFLAGS@
-RAZORBACK_LIBS = @RAZORBACK_LIBS@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
@@ -308,6 +308,8 @@ libdir = @libdir@
 libexecdir = @libexecdir@
 localedir = @localedir@
 localstatedir = @localstatedir@
+luajit_CFLAGS = @luajit_CFLAGS@
+luajit_LIBS = @luajit_LIBS@
 mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
@@ -324,8 +326,8 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign no-dependencies
-noinst_libdir = ${exec_prefix}/lib/snort_dynamicpreprocessor
-noinst_lib_LTLIBRARIES = lib_sfdynamic_preprocessor_example.la
+noinst_dynamicpreprocessordir = ${libdir}/snort_dynamicpreprocessor
+noinst_dynamicpreprocessor_LTLIBRARIES = lib_sfdynamic_preprocessor_example.la
 lib_sfdynamic_preprocessor_example_la_LDFLAGS = -export-dynamic
 BUILT_SOURCES = \
 sf_dynamic_preproc_lib.c  \
@@ -377,33 +379,33 @@ $(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
 
-install-noinst_libLTLIBRARIES: $(noinst_lib_LTLIBRARIES)
+install-noinst_dynamicpreprocessorLTLIBRARIES: $(noinst_dynamicpreprocessor_LTLIBRARIES)
 	@$(NORMAL_INSTALL)
-	@list='$(noinst_lib_LTLIBRARIES)'; test -n "$(noinst_libdir)" || list=; \
+	@list='$(noinst_dynamicpreprocessor_LTLIBRARIES)'; test -n "$(noinst_dynamicpreprocessordir)" || list=; \
 	list2=; for p in $$list; do \
 	  if test -f $$p; then \
 	    list2="$$list2 $$p"; \
 	  else :; fi; \
 	done; \
 	test -z "$$list2" || { \
-	  echo " $(MKDIR_P) '$(DESTDIR)$(noinst_libdir)'"; \
-	  $(MKDIR_P) "$(DESTDIR)$(noinst_libdir)" || exit 1; \
-	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$list2 '$(DESTDIR)$(noinst_libdir)'"; \
-	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$list2 "$(DESTDIR)$(noinst_libdir)"; \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(noinst_dynamicpreprocessordir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(noinst_dynamicpreprocessordir)" || exit 1; \
+	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$list2 '$(DESTDIR)$(noinst_dynamicpreprocessordir)'"; \
+	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$list2 "$(DESTDIR)$(noinst_dynamicpreprocessordir)"; \
 	}
 
-uninstall-noinst_libLTLIBRARIES:
+uninstall-noinst_dynamicpreprocessorLTLIBRARIES:
 	@$(NORMAL_UNINSTALL)
-	@list='$(noinst_lib_LTLIBRARIES)'; test -n "$(noinst_libdir)" || list=; \
+	@list='$(noinst_dynamicpreprocessor_LTLIBRARIES)'; test -n "$(noinst_dynamicpreprocessordir)" || list=; \
 	for p in $$list; do \
 	  $(am__strip_dir) \
-	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f '$(DESTDIR)$(noinst_libdir)/$$f'"; \
-	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f "$(DESTDIR)$(noinst_libdir)/$$f"; \
+	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f '$(DESTDIR)$(noinst_dynamicpreprocessordir)/$$f'"; \
+	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f "$(DESTDIR)$(noinst_dynamicpreprocessordir)/$$f"; \
 	done
 
-clean-noinst_libLTLIBRARIES:
-	-test -z "$(noinst_lib_LTLIBRARIES)" || rm -f $(noinst_lib_LTLIBRARIES)
-	@list='$(noinst_lib_LTLIBRARIES)'; \
+clean-noinst_dynamicpreprocessorLTLIBRARIES:
+	-test -z "$(noinst_dynamicpreprocessor_LTLIBRARIES)" || rm -f $(noinst_dynamicpreprocessor_LTLIBRARIES)
+	@list='$(noinst_dynamicpreprocessor_LTLIBRARIES)'; \
 	locs=`for p in $$list; do echo $$p; done | \
 	      sed 's|^[^/]*$$|.|; s|/[^/]*$$||; s|$$|/so_locations|' | \
 	      sort -u`; \
@@ -413,7 +415,7 @@ clean-noinst_libLTLIBRARIES:
 	}
 
 lib_sfdynamic_preprocessor_example.la: $(lib_sfdynamic_preprocessor_example_la_OBJECTS) $(lib_sfdynamic_preprocessor_example_la_DEPENDENCIES) $(EXTRA_lib_sfdynamic_preprocessor_example_la_DEPENDENCIES) 
-	$(AM_V_CCLD)$(lib_sfdynamic_preprocessor_example_la_LINK) -rpath $(noinst_libdir) $(lib_sfdynamic_preprocessor_example_la_OBJECTS) $(lib_sfdynamic_preprocessor_example_la_LIBADD) $(LIBS)
+	$(AM_V_CCLD)$(lib_sfdynamic_preprocessor_example_la_LINK) -rpath $(noinst_dynamicpreprocessordir) $(lib_sfdynamic_preprocessor_example_la_OBJECTS) $(lib_sfdynamic_preprocessor_example_la_LIBADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -523,7 +525,7 @@ check: $(BUILT_SOURCES)
 	$(MAKE) $(AM_MAKEFLAGS) check-am
 all-am: Makefile $(LTLIBRARIES)
 installdirs:
-	for dir in "$(DESTDIR)$(noinst_libdir)"; do \
+	for dir in "$(DESTDIR)$(noinst_dynamicpreprocessordir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: $(BUILT_SOURCES)
@@ -561,7 +563,7 @@ maintainer-clean-generic:
 clean: clean-am
 
 clean-am: clean-generic clean-libtool clean-local \
-	clean-noinst_libLTLIBRARIES mostlyclean-am
+	clean-noinst_dynamicpreprocessorLTLIBRARIES mostlyclean-am
 
 distclean: distclean-am
 	-rm -f Makefile
@@ -580,7 +582,7 @@ info: info-am
 
 info-am:
 
-install-data-am: install-noinst_libLTLIBRARIES
+install-data-am: install-noinst_dynamicpreprocessorLTLIBRARIES
 
 install-dvi: install-dvi-am
 
@@ -625,25 +627,26 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-noinst_libLTLIBRARIES
+uninstall-am: uninstall-noinst_dynamicpreprocessorLTLIBRARIES
 
 .MAKE: all check install install-am install-strip
 
 .PHONY: CTAGS GTAGS TAGS all all-am check check-am clean clean-generic \
-	clean-libtool clean-local clean-noinst_libLTLIBRARIES \
-	cscopelist-am ctags ctags-am distclean distclean-compile \
-	distclean-generic distclean-libtool distclean-tags distdir dvi \
-	dvi-am html html-am info info-am install install-am \
-	install-data install-data-am install-dvi install-dvi-am \
-	install-exec install-exec-am install-html install-html-am \
-	install-info install-info-am install-man \
-	install-noinst_libLTLIBRARIES install-pdf install-pdf-am \
-	install-ps install-ps-am install-strip installcheck \
-	installcheck-am installdirs maintainer-clean \
+	clean-libtool clean-local \
+	clean-noinst_dynamicpreprocessorLTLIBRARIES cscopelist-am \
+	ctags ctags-am distclean distclean-compile distclean-generic \
+	distclean-libtool distclean-tags distdir dvi dvi-am html \
+	html-am info info-am install install-am install-data \
+	install-data-am install-dvi install-dvi-am install-exec \
+	install-exec-am install-html install-html-am install-info \
+	install-info-am install-man \
+	install-noinst_dynamicpreprocessorLTLIBRARIES install-pdf \
+	install-pdf-am install-ps install-ps-am install-strip \
+	installcheck installcheck-am installdirs maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-compile \
 	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
 	tags tags-am uninstall uninstall-am \
-	uninstall-noinst_libLTLIBRARIES
+	uninstall-noinst_dynamicpreprocessorLTLIBRARIES
 
 
 sf_dynamic_preproc_lib.c: ../include/sf_dynamic_preproc_lib.c

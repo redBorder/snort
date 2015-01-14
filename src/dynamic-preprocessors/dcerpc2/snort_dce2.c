@@ -233,7 +233,7 @@ static DCE2_SsnData * DCE2_NewSession(SFSnortPacket *p, tSfPolicyId policy_id)
  *********************************************************************/
 DCE2_Ret DCE2_Process(SFSnortPacket *p)
 {
-    tSfPolicyId policy_id = _dpd.getRuntimePolicy();
+    tSfPolicyId policy_id = _dpd.getNapRuntimePolicy();
     DCE2_SsnData *sd = (DCE2_SsnData *)DCE2_SsnGetAppData(p);
     PROFILE_VARS;
 
@@ -593,9 +593,9 @@ static DCE2_TransType DCE2_GetTransport(SFSnortPacket *p, const DCE2_ServerConfi
     *autodetected = 0;
 
 #ifdef TARGET_BASED
-    if (_dpd.isAdaptiveConfigured(_dpd.getRuntimePolicy()))
+    if (_dpd.isAdaptiveConfigured())
     {
-        proto_id = _dpd.streamAPI->get_application_protocol_id(p->stream_session_ptr);
+        proto_id = _dpd.sessionAPI->get_application_protocol_id(p->stream_session);
 
         if (proto_id == SFTARGET_UNKNOWN_PROTOCOL)
             return DCE2_TRANS_TYPE__NONE;
@@ -929,7 +929,7 @@ SFSnortPacket * DCE2_GetRpkt(const SFSnortPacket *wire_pkt, DCE2_RpktType rpkt_t
         rpkt->flags |= FLAG_FROM_CLIENT;
     else
         rpkt->flags |= FLAG_FROM_SERVER;
-    rpkt->stream_session_ptr = wire_pkt->stream_session_ptr;
+    rpkt->stream_session = wire_pkt->stream_session;
 
     return rpkt;
 }

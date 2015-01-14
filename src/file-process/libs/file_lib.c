@@ -37,7 +37,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "file_sha256.h"
+#include "sf_sechash.h"
 
 #include "util.h"
 #include "file_capture.h"
@@ -292,7 +292,6 @@ char* file_type_name(void* conf, uint32_t id)
         return NULL;
 }
 
-#if defined(FEAT_FILE_INSPECT)
 bool file_IDs_from_type(const void *conf, const char *type,
      uint32_t **ids, uint32_t *count)
 {
@@ -319,7 +318,6 @@ bool file_IDs_from_group(const void *conf, const char *group,
 
     return get_ids_from_group(conf, group, ids, count);
 }
-#endif /* FEAT_FILE_INSPECT */
 
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
 /*

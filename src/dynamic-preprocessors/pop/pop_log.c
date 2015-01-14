@@ -24,7 +24,7 @@
  *
  * pop_log.c
  *
- * Author: Bhagyashree Bantwal <bbantwal@sourcefire.com>
+ * Author: Bhagyashree Bantwal <bbantwal@cisco.com>
  *
  * Description:
  *
@@ -88,20 +88,21 @@ void POP_GenerateAlert(int event, char *format, ...)
     va_end(ap);
 }
 
-void POP_DecodeAlert(void)
+void POP_DecodeAlert(void *ds)
 {
-    switch( pop_ssn->decode_state->decode_type )
+    Email_DecodeState *decode_state = (Email_DecodeState *)ds;
+    switch( decode_state->decode_type )
     {
     case DECODE_B64:
-        if (pop_eval_config->b64_depth > -1)
+        if (pop_eval_config->decode_conf.b64_depth > -1)
             POP_GenerateAlert(POP_B64_DECODING_FAILED, "%s", POP_B64_DECODING_FAILED_STR);
         break;
     case DECODE_QP:
-        if (pop_eval_config->qp_depth > -1)
+        if (pop_eval_config->decode_conf.qp_depth > -1)
             POP_GenerateAlert(POP_QP_DECODING_FAILED, "%s", POP_QP_DECODING_FAILED_STR);
         break;
     case DECODE_UU:
-        if (pop_eval_config->uu_depth > -1)
+        if (pop_eval_config->decode_conf.uu_depth > -1)
             POP_GenerateAlert(POP_UU_DECODING_FAILED, "%s", POP_UU_DECODING_FAILED_STR);
         break;
 

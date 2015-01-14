@@ -21,6 +21,8 @@
 #ifndef __STRLCPY_H__
 #define __STRLCPY_H__
 
+#ifndef HAVE_STRLCPY
 size_t strlcpy(char *, const char *, size_t);
+#endif
 
 #endif /* __STRLCPY_H__ */

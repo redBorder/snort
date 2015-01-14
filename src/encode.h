@@ -49,10 +49,15 @@ typedef enum {
 #define ENC_FLAG_NET 0x10000000  // stop after innermost network (ip4/6) layer
 #define ENC_FLAG_DEF 0x08000000  // stop before innermost ip4 opts or ip6 frag header
 #define ENC_FLAG_RAW 0x04000000  // don't encode outer eth header (this is raw ip)
-#define ENC_FLAG_RES 0x03000000  // bits reserved for future use
+#define ENC_FLAG_RST_CLNT 0x02000000  // finish with a client RST packet
+#define ENC_FLAG_RST_SRVR 0x01000000  // finish with a server RST packet
 #define ENC_FLAG_VAL 0x00FFFFFF  // bits for adjusting seq and/or ack
 
 typedef uint32_t EncodeFlags;
+
+// 255 is max pseudo-random flush point; eth mtu ensures that maximum flushes
+// are not trimmed which throws off the tracking total in stream5_paf.c
+#define MAXIMUM_PAF_MAX (IP_MAXPACKET - ETHERNET_MTU - 255)
 
 // ICMPv6 Reason codes...ones used by encode are defined here now, ICMP ones
 // are defind in header files from dnet, but none exist for ICMPv6, if these
@@ -60,7 +65,7 @@ typedef uint32_t EncodeFlags;
 #define ICMP6_UNREACH_NET  0x00
 #define ICMP6_UNREACH_HOST 0x03
 #define ICMP6_UNREACH_PORT 0x04
-#define ICMP6_UNREACH_FILTER_PROHIB 0x01    
+#define ICMP6_UNREACH_FILTER_PROHIB 0x01
 
 // orig must be the current packet from the interface to
 //   ensure proper encoding (not the reassembled packet).
@@ -78,6 +83,7 @@ Packet* Encode_New(void);
 
 // release the allocated Packet
 void Encode_Delete(Packet*);
+
 
 // orig is the wire pkt; clone was obtained with New()
 int Encode_Format(EncodeFlags, const Packet* orig, Packet* clone, PseudoPacketType);
@@ -124,7 +130,16 @@ static inline uint64_t GetRebuiltPktCount(void)
     return total_rebuilt_pkts;
 }
 
+static inline uint16_t Encode_GetMaxPayload(Packet* p)
+{
+    Layer l;
 
+    if(!p->next_layer)
+        return 0;
+
+    l = p->layers[p->next_layer - 1];
+    return ETHERNET_MTU - (l.start - p->layers[0].start) - l.length;
+}
 
 
 #endif // __ENCODE_H__

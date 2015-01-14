@@ -35,7 +35,7 @@ typedef enum {
 
 #ifdef SF_WCHAR
 #include <wchar.h>
-typedef void (*DebugWideMsgFunc)(uint64_t, wchar_t *, ...);
+typedef void (*DebugWideMsgFunc)(uint64_t, const wchar_t *, ...);
 #endif
 typedef uint32_t (*GetSnortInstance)(void);
 
@@ -43,7 +43,7 @@ typedef uint32_t (*GetSnortInstance)(void);
 
 #ifndef DECODE_BLEN
 #define DECODE_BLEN 65535
-// must be defined the same as in detection_util.h
+/* must be defined the same as in detection_util.h */
 typedef enum
 {
     HTTP_BUFFER_NONE,
@@ -72,7 +72,7 @@ typedef struct {
 } SFDataBuffer;
 
 typedef void (*LogMsgFunc)(const char *, ...);
-typedef void (*DebugMsgFunc)(uint64_t, char *, ...);
+typedef void (*DebugMsgFunc)(uint64_t, const char *, ...);
 typedef int (*GetAltDetectFunc)(uint8_t **, uint16_t *);
 typedef void (*SetAltDetectFunc)(uint8_t *,uint16_t );
 typedef int (*IsDetectFlagFunc)(SFDetectFlagType);

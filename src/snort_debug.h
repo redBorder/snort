@@ -33,7 +33,7 @@
 #include <wchar.h>
 #endif
 
-// this env var uses the lower 32 bits of the flags:
+/* this env var uses the lower 32 bits of the flags: */
 #define DEBUG_VARIABLE "SNORT_DEBUG"
 
 #define DEBUG_INIT            0x0000000000000001LL
@@ -56,7 +56,7 @@
 #define DEBUG_CONTROL         0x0000000000020000LL
 #define DEBUG_EXP             0x0000000080000000LL
 
-// this env var uses the upper 32 bits of the flags:
+/* this env var uses the upper 32 bits of the flags: */
 #define DEBUG_PP_VAR   "SNORT_PP_DEBUG"
 
 #define DEBUG_FRAG            0x0000000100000000LL
