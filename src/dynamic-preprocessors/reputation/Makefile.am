@@ -7,9 +7,20 @@ dynamicpreprocessordir = ${libdir}/snort_dynamicpreprocessor
 
 dynamicpreprocessor_LTLIBRARIES = libsf_reputation_preproc.la
 
-libsf_reputation_preproc_la_LDFLAGS = -export-dynamic -module -lGeoIP @XCCFLAGS@
+if HAVE_REPUTATIONGEOIP
+LGEOIP="-lGeoIP"
+CPPGEOIP=-DREPUTATION_GEOIP
+else
+LGEOIP=
+CPPGEOIP=
+endif
+
+libsf_reputation_preproc_la_LFLAGS = $(LGEOIP)
+libsf_reputation_preproc_la_LDFLAGS = -export-dynamic -module $(LGEOIP) @XCCFLAGS@
+libsf_reputation_preproc_la_CPPFLAGS = $(CPPGEOIP) $(AM_CPPFLAGS)
+
 if SO_WITH_STATIC_LIB
-libsf_reputation_preproc_la_LIBADD = ../libsf_dynamic_preproc.la -lGeoIP
+libsf_reputation_preproc_la_LIBADD = ../libsf_dynamic_preproc.la
 else
 nodist_libsf_reputation_preproc_la_SOURCES = \
 ../include/sf_dynamic_preproc_lib.c \
