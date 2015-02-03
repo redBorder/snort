@@ -877,6 +877,42 @@ if test "x$Z_LIB" = "xno"; then
  fi
 LIBS="$LIBS -lz"
 
+AC_ARG_ENABLE(reputationgeoip,
+[  --enable-reputationgeoip Enable Reputation GeoIP Support (adds GeoIP support implicitly)],
+       enable_reputationgeoip="$enableval", enable_reputationgeoip="no")
+
+AC_ARG_WITH(geoip_includes,
+    [  --with-geoip-includes=DIR      libgeoip include directory],
+    [with_geoip_includes="$withval"],[with_geoip_includes="no"])
+
+AC_ARG_WITH(geoip_libraries,
+    [  --with-geoip-libraries=DIR     libgeoip library directory],
+    [with_geoip_libraries="$withval"],[with_geoip_libraries="no"])
+
+AM_CONDITIONAL(HAVE_REPUTATIONGEOIP, test "x$enable_reputationgeoip" = "xyes")
+if test "x$enable_reputationgeoip" = "xyes"; then
+    if test "x$with_geoip_includes" != "xno"; then
+        CPPFLAGS="${CPPFLAGS} -I${with_geoip_includes}"
+        GEOIP_HEADERS="yes"
+    else
+        AC_CHECK_HEADERS(GeoIP.h, GEOIP_HEADERS="yes", GEOIP_HEADERS="no")
+    fi
+
+    if test "x$with_geoip_libraries" != "xno"; then
+        LDFLAGS="${LDFLAGS} -L${with_geoip_libraries}"
+        GEOIP_LIB="yes"
+    else
+        AC_CHECK_LIB(GeoIP, GeoIP_open, GEOIP_LIB="yes", GEOIP_LIB="no")
+    fi
+
+    if test "x$GEOIP_LIB" != "xno"; then
+        if test "x$GEOIP_HEADERS" != "xno"; then
+            CPPFLAGS="$CPPFLAGS -DREPUTATION_GEOIP"
+            LIBS="$LIBS -lGeoIP"
+        fi
+    fi
+fi
+
 AC_ARG_ENABLE(lzma,
 [  --disable-lzma           Disable LZMA Decompression],
        enable_lzma="$enableval", enable_lzma="yes")
