@@ -35,6 +35,11 @@
 #include "snort_bounds.h"
 #include "file_sha.h"
 
+#if HAVE_S3FILE
+#include <librdkafka/rdkafka.h>
+#include <libs3.h>
+#endif
+
 #define FILE_CAPTURE_QUEUE_SIZE_DEFAULT       3000 /*files*/
 #define FILE_CAPTURE_DISK_SIZE_DEFAULT        300  /*MB*/
 
@@ -60,6 +65,14 @@ typedef struct _fileInspectConfig
     ShaHash *sig_table;
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
     int verdict_delay; /* used for debug, mimic delay to get verdicts */
+#endif
+#if HAVE_S3FILE
+    struct s3_info {
+        char *bucket;
+        char *cluster;
+        char *access_key;
+        char *secret_key;
+    } s3;
 #endif
     uint32_t capture_disk_size;  /* In megabytes*/
 
