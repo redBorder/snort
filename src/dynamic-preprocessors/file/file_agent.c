@@ -326,6 +326,7 @@ static int file_agent_queue_file(void* ssnptr, void *file_mem)
 
     if (!sha256)
     {
+        free(finfo);
         return -1;
     }
 
