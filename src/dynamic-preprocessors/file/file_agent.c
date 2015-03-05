@@ -82,8 +82,17 @@ typedef struct _FILE_MESSAGE_HEADER
 #define FILE_HEADER_VERSION   0x0001
 #define FILE_HEADER_DATA      0x0009
 
+#ifdef HAVE_S3FILE
+#define KAFKA_MESSAGE_LEN 1024
+#define S3_PATH "incoming"
+#endif
+
 static int file_agent_save_file (FileInfo *, char *);
 static int file_agent_send_file (FileInfo *);
+#ifdef HAVE_S3FILE
+static int file_agent_send_kafka(rd_kafka_topic_t *rkt,int partition,FileInfo *);
+static int file_agent_send_s3(const struct s3_info *,const FileInfo *);
+#endif
 static FileInfo* file_agent_get_file(void);
 static FileInfo *file_agent_finish_file(void);
 static File_Verdict file_agent_type_callback(void*, void*, uint32_t, bool,uint32_t);
@@ -182,6 +191,18 @@ static inline void file_agent_process_files(CircularBuffer *file_list,
             /* Send to other host */
             if (conf->hostname)
                 file_agent_send_file(file);
+#ifdef HAVE_S3FILE
+            if (conf->kafka.rkt) {
+                file_agent_send_kafka(conf->kafka.rkt,conf->kafka.partition,
+                    file);
+                rd_kafka_poll(conf->kafka.rk,0);
+            }
+
+            if (conf->s3.cluster) {
+                file_agent_send_s3(&conf->s3,file);
+            }
+
+#endif
             /* Default, memory only */
         }
 
@@ -565,6 +586,148 @@ static int file_agent_send_file(FileInfo *file)
 
     return 0;
 }
+
+#ifdef HAVE_S3FILE
+/* Send file data to other host*/
+static int file_agent_send_kafka(rd_kafka_topic_t *rkt, int partition, 
+                                                    FileInfo *file)
+{
+    char kafka_buffer[KAFKA_MESSAGE_LEN];
+    char sha[FILE_NAME_LEN];
+
+    sha_to_str(file->sha256, sha, FILE_NAME_LEN);
+    const size_t buflen = snprintf(kafka_buffer,KAFKA_MESSAGE_LEN,
+        "{\"sha\":\"%s\",\"size\":%zu}",sha,file->file_size);
+
+    const int produce_rc = rd_kafka_produce(rkt,partition,RD_KAFKA_MSG_F_COPY,
+        kafka_buffer,buflen,NULL,0,NULL);
+
+    if (produce_rc == -1) {
+        _dpd.logMsg("File inspect: can't sent to kafka: %s!\n",
+            rd_kafka_err2str(rd_kafka_errno2err(errno)));
+        file_inspect_stats.file_transfer_kafka_failures++;
+    } else {
+        file_inspect_stats.file_transfer_kafka++;
+    }
+
+    return 0;
+}
+
+struct s3_transference {
+    S3Status status;
+    size_t bytes_remaining;
+    FileInfo *file;
+    char err[4096];
+};
+
+static size_t min_size(size_t a,size_t b){
+    return a>b?b:a;
+}
+
+static void responseCompleteCallback(S3Status status,
+    const S3ErrorDetails *error,void *callbackData) {
+
+    struct s3_transference *transference = (struct s3_transference *)callbackData;
+    transference->status = status;
+
+    int len = 0;
+    if (error && error->message) {
+        len += snprintf(&(transference->err[len]), sizeof(transference->err) - len,
+                        "  Message: %s\n", error->message);
+    }
+    if (error && error->resource) {
+        len += snprintf(&(transference->err[len]), sizeof(transference->err) - len,
+                        "  Resource: %s\n", error->resource);
+    }
+    if (error && error->furtherDetails) {
+        len += snprintf(&(transference->err[len]), sizeof(transference->err) - len,
+                        "  Further Details: %s\n", error->furtherDetails);
+    }
+    if (error && error->extraDetailsCount) {
+        len += snprintf(&(transference->err[len]), sizeof(transference->err) - len,
+                        "%s", "  Extra Details:\n");
+        int i;
+        for (i = 0; i < error->extraDetailsCount; i++) {
+            len += snprintf(&(transference->err[len]), 
+                            sizeof(transference->err) - len, "    %s: %s\n", 
+                            error->extraDetails[i].name,
+                            error->extraDetails[i].value);
+        }
+    }
+
+}
+
+static int putObjectDataCallback(int bufferSize, char *buffer, 
+                                 void *callbackData) {
+    struct s3_transference *transference = callbackData;
+    FileInfo *file = transference->file;
+
+    const size_t to_transfer = min_size(bufferSize,transference->bytes_remaining);
+    const char *cursor = file->file_mem + (file->file_size - transference->bytes_remaining);
+    memcpy(buffer,cursor,to_transfer);
+    return to_transfer;
+}
+
+static int file_agent_send_s3(const struct s3_info *s3,const FileInfo *file) {
+    struct s3_transference transference;
+    transference.bytes_remaining = file->file_size;
+    transference.file = file;
+    
+    char fsha[FILE_NAME_LEN];
+    char path[FILE_NAME_LEN];
+
+    sha_to_str(file->sha256, fsha, sizeof(fsha));
+    snprintf(path,sizeof(path),S3_PATH "/%s",fsha);
+
+    S3BucketContext bucketContext = {
+        0,
+        s3->bucket,
+        S3ProtocolHTTPS,
+        S3UriStylePath /* or S3UriStyleVirtualHost */,
+        s3->access_key,
+        s3->secret_key
+    };
+
+    S3PutProperties putProperties = {
+        NULL /* contentType */,
+        NULL /* md5 */,
+        NULL /* cacheControl */,
+        NULL /* contentDispositionFilename */,
+        NULL /* contentEncoding */,
+        0    /* expires */,
+        S3CannedAclPrivate /* cannedAcl */,
+        0    /* metaPropertiesCount */,
+        NULL /* metaPropertie */
+    };
+
+    S3PutObjectHandler putObjectHandler = {
+        { NULL /* responsePropertiesCallback */, &responseCompleteCallback },
+        &putObjectDataCallback
+    };
+
+    do {
+        S3_put_object(&bucketContext, path, file->file_size, &putProperties,
+                      0, &putObjectHandler, &transference );
+    }while(S3_status_is_retryable(transference.status));
+
+    if(transference.status != S3StatusOK)
+    {
+        /* Extracted directly from S3 example */
+        if (transference.status < S3StatusErrorAccessDenied)
+        {
+            _dpd.logMsg("File inspect: can't upload a file to S3: %s",
+                S3_get_status_name(transference.status));
+        }
+        else 
+        {
+            _dpd.logMsg("File inspect: can't upload a file to S3: %s,%s",
+                S3_get_status_name(transference.status),transference.err);
+        }
+    }
+    
+    return 0;
+}
+#endif
 
 /* Close file agent
  * 1) stop capture thread: waiting all files queued to be captured

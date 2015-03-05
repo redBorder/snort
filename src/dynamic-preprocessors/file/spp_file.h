@@ -52,6 +52,11 @@ typedef struct _File_Stats {
     uint64_t file_data_to_host;  /*file data sent */
     uint64_t file_transfer_failures; /*file transfer failures */
 
+#if HAVE_S3FILE
+    uint64_t file_transfer_kafka; /* file metadata sent to kafka */
+    uint64_t file_transfer_kafka_failures; /* file metadata sent to kafka failures*/
+#endif
+
 } File_Stats;
 
 /* Prototypes for public interface, initialzie file inspect functions */
