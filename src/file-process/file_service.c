@@ -63,11 +63,17 @@ static bool file_signature_enabled = false;
 static bool file_capture_enabled = false;
 static bool file_processing_initiated = false;
 static bool file_type_force = false;
+//rb:ini
+static bool xtra_sha256_enabled = false;
+//rb:fin
 
 static uint32_t file_config_version = 0;
 static File_policy_callback_func file_policy_cb = NULL;
 File_type_callback_func  file_type_cb = NULL;
 File_signature_callback_func file_signature_cb = NULL;
+//rb:ini
+File_xtra_sha256_callback_func file_xtra_sha256_cb = NULL;
+//rb:fin
 Log_file_action_func log_file_action = NULL;
 
 /*Main File Processing functions */
@@ -88,6 +94,9 @@ static void set_file_policy_callback(File_policy_callback_func);
 static void enable_file_type(File_type_callback_func );
 static void enable_file_signature (File_signature_callback_func);
 static void enable_file_capture(File_signature_callback_func );
+//rb:ini
+static void enable_xtra_sha256(File_xtra_sha256_callback_func);
+//rb:fin
 static void set_file_action_log_callback(Log_file_action_func);
 
 static int64_t get_max_file_depth(void);
@@ -137,6 +146,9 @@ void init_fileAPI(void)
     fileAPI.enable_file_type = &enable_file_type;
     fileAPI.enable_file_signature = &enable_file_signature;
     fileAPI.enable_file_capture = &enable_file_capture;
+//rb:ini
+    fileAPI.enable_xtra_sha256 = &enable_xtra_sha256;
+//rb:fin
     fileAPI.set_file_action_log_callback = &set_file_action_log_callback;
     fileAPI.get_max_file_depth = &get_max_file_depth;
     fileAPI.set_log_buffers = &set_log_buffers;
