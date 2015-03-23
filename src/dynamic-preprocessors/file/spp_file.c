@@ -42,6 +42,9 @@
 #include "spp_file.h"
 #include "sf_preproc_info.h"
 
+//rb:ini
+#include "stream_api.h"
+//rb:fin
 #include <stdio.h>
 #include <syslog.h>
 #include <string.h>
@@ -75,6 +78,10 @@ static int FileCheckConfig(struct _SnortConfig *);
 static void FileCleanExit(int, void *);
 static void FileUpdateConfig(FileInspectConf *, tSfPolicyUserContextId);
 
+//rb:ini
+static void FileRegisterXtraDataFuncs(FileInspectConf *);
+static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+//rb:fin
 
 /** File configuration per Policy
  */
@@ -161,6 +168,9 @@ static void FileInit(struct _SnortConfig *sc, char *argp)
     }
 
     sfPolicyUserDataSetCurrent(file_config, pPolicyConfig);
+//rb:ini
+    FileRegisterXtraDataFuncs(pPolicyConfig);
+//rb:fin
 
     file_config_parse(pPolicyConfig, (u_char *)argp);
     FileUpdateConfig(pPolicyConfig, file_config);
@@ -198,6 +208,38 @@ static void FileUpdateConfig(FileInspectConf *pPolicyConfig, tSfPolicyUserContex
 
     }
 }
+
+//rb:ini
+static void FileRegisterXtraDataFuncs(FileInspectConf *pFileConfig)
+{
+    if ((_dpd.streamAPI == NULL) || !pFileConfig)
+        return;
+    pFileConfig->xtra_sha256_id = _dpd.streamAPI->reg_xtra_data_cb(GetFileSHA256);
+    //_dpd.streamAPI->set_extra_data(p->stream_session, p, pFileConfig->xtra_sha256_id);
+}
+
+static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    /*HttpSessionData *hsd = NULL;
+        
+    if (data == NULL)
+        return 0;
+    hsd = (HttpSessionData *)session_api->get_application_data(data, PP_HTTPINSPECT);
+            
+    if(hsd == NULL)
+        return 0;
+    */
+    //if(hsd->log_state && hsd->log_state->uri_bytes > 0)
+    //{
+        *buf = "AaBbCcDdEeAaBbCcDdEeAaBbCcDdEeAaBbCcDdEeAaBbCcDdEeAaBbCcDdEe";
+        *len = 60;
+        *type = 20;
+        return 1;
+    //}
+
+    //return 0;
+}
+//rb:fin
 
 static int FileFreeConfigPolicy(
         tSfPolicyUserContextId config,
