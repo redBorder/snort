@@ -61,6 +61,9 @@ static volatile bool capture_thread_running = false;
 static bool file_type_enabled = false;
 static bool file_signature_enabled = false;
 static bool file_capture_enabled = false;
+//rb:ini
+static bool xtra_sha256_enabled = false;
+//rb:fin
 
 pthread_t capture_thread_tid;
 static pid_t capture_thread_pid;
@@ -89,6 +92,9 @@ static FileInfo *file_agent_finish_file(void);
 static File_Verdict file_agent_type_callback(void*, void*, uint32_t, bool,uint32_t);
 static File_Verdict file_agent_signature_callback(void*, void*, uint8_t*,
         uint64_t, FileState *, bool, uint32_t);
+//rb:ini
+static void file_agent_xtra_sha256_callback();
+//rb:fin
 static int file_agent_queue_file(void*, void *);
 static int file_agent_init_socket(char *hostname, int portno);
 
@@ -255,6 +261,14 @@ void file_agent_init(FileInspectConf* conf)
         _dpd.fileAPI->enable_file_capture(file_agent_signature_callback);
         file_capture_enabled = true;
     }
+
+//rb:ini
+    if (conf->file_capture_enabled)
+    {
+        _dpd.fileAPI->enable_xtra_sha256(file_agent_xtra_sha256_callback);
+        xtra_sha256_enabled = true;
+    }
+//rb:fin
 
     if (conf->hostname)
     {
@@ -607,6 +621,9 @@ static File_Verdict file_agent_type_callback(void* p, void* ssnptr,
         uint32_t file_type_id, bool upload, uint32_t file_id)
 {
     file_inspect_stats.file_types_total++;
+//rb:ini (this is the expected behavior)
+    return FILE_VERDICT_LOG;
+//rb:fin
     if (file_signature_enabled || file_capture_enabled)
         return FILE_VERDICT_UNKNOWN;
     else
@@ -713,3 +730,9 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
     return verdict;
 }
 
+//rb:ini
+static void file_agent_xtra_sha256_callback()
+{
+
+}
+//rb:fin

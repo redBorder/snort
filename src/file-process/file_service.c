@@ -695,6 +695,11 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
     Packet *pkt = (Packet *)p;
     void *ssnptr = pkt->ssnptr;
 
+//rb:ini    
+    //_dpd.streamAPI->set_extra_data(pkt->stream_session, pkt, conf->xtra_sha256_id);
+    pkt->xtradata_mask |= BIT(5);
+//rb:fin
+
     if (!context)
         return 0;
 
@@ -760,6 +765,9 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
 
         if (verdict == FILE_VERDICT_LOG )
         {
+//rb:ini
+            //_dpd.streamAPI->set_extra_data(pkt->stream_session, pkt, context->file_config->xtra_sha256_id);
+//rb:fin
             file_eventq_add(GENERATOR_FILE_TYPE, context->file_type_id,
                     file_type_name(context->file_config, context->file_type_id),
                     RULE_TYPE__ALERT);
@@ -980,6 +988,32 @@ static void enable_file_capture(File_signature_callback_func callback)
         enable_file_signature(callback);
     }
 }
+
+//rb:ini
+static void enable_xtra_sha256(File_xtra_sha256_callback_func callback)
+{
+    _update_file_sig_callback(callback);
+
+    if (!xtra_sha256_enabled)
+    {
+        xtra_sha256_enabled = true;
+#ifdef SNORT_RELOAD
+        file_sevice_reconfig_set(true);
+#endif
+        //start_file_processing();
+        LogMessage("File service: file extra data SHA256 enabled.\n");
+    }
+
+    if(!file_xtra_sha256_cb)
+    {
+        file_xtra_sha256_cb = callback;
+    }
+    else if (file_xtra_sha256_cb != callback)
+    {
+        WarningMessage("File service: extra data SHA256 callback redefined.\n");
+    }
+}
+//rb:fin
 
 static void set_file_action_log_callback(Log_file_action_func log_func)
 {
