@@ -90,6 +90,9 @@ typedef struct _FileContext
     FileState file_state;
     uint32_t file_id;
     uint32_t file_config_version;
+//rb:ini
+    uint32_t xtra_sha256_id;
+//rb:fin
 } FileContext;
 
 /*Main File Processing functions */
