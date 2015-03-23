@@ -52,6 +52,9 @@ typedef struct _fileInspectConfig
     bool file_type_enabled;
     bool file_signature_enabled;
     bool file_capture_enabled;
+//rb:ini
+    bool xtra_sha256_enabled;
+//rb:fin
     uint32_t file_capture_queue_size;
     char *capture_dir;
     int ref_count;
@@ -61,6 +64,9 @@ typedef struct _fileInspectConfig
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
     int verdict_delay; /* used for debug, mimic delay to get verdicts */
 #endif
+//rb:ini
+    uint32_t xtra_sha256_id;
+//rb:fin
     uint32_t capture_disk_size;  /* In megabytes*/
 
 } FileInspectConf;
