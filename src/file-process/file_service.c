@@ -94,8 +94,10 @@ static void set_file_policy_callback(File_policy_callback_func);
 static void enable_file_type(File_type_callback_func );
 static void enable_file_signature (File_signature_callback_func);
 static void enable_file_capture(File_signature_callback_func );
-//rb:ini
+//rb:ini (revisar la utilidad de enable_xtra_sha256())
+static void FileRegisterXtraDataFuncs(FileConfig *pFileConfig);
 static void enable_xtra_sha256(File_xtra_sha256_callback_func);
+static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 //rb:fin
 static void set_file_action_log_callback(Log_file_action_func);
 
@@ -206,6 +208,18 @@ void FileAPIPostInit (void)
         }
     }
 
+//rb:ini
+    if (1 || xtra_sha256_enabled)
+    {
+        if (!file_config)
+        {
+            file_config =  file_service_config_create();
+            snort_conf->file_config = file_config;
+        }
+        FileRegisterXtraDataFuncs(file_config);
+    }
+//rb:fin
+
     if ( file_capture_enabled)
         file_capture_init_mempool(file_config->file_capture_memcap,
                 file_config->file_capture_block_size);
@@ -218,6 +232,37 @@ void FileAPIPostInit (void)
 #endif
 
 }
+
+//rb:ini
+static void FileRegisterXtraDataFuncs(FileConfig *file_config)
+{
+    if ((stream_api == NULL) || !file_config)
+        return;
+    file_config->xtra_sha256_id = stream_api->reg_xtra_data_cb(GetFileSHA256);
+}
+
+static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    //HttpSessionData *hsd = NULL;
+    //
+    //if (data == NULL)
+    //    return 0;
+    //hsd = (HttpSessionData *)session_api->get_application_data(data, PP_HTTPINSPECT);
+    //
+    //if(hsd == NULL)
+    //    return 0;
+    //
+    //if(hsd->log_state && hsd->log_state->uri_bytes > 0)
+    //{
+        *buf = "AaBbCcDdEeAaBbCcDdEeAaBbCcDdEeAaBbCcDdEeAaBbCcDdEeAaBbCcDdEe";
+        *len = 60;
+        *type = 20;
+        return 1;
+    //}
+    //
+    //return 0;
+}
+//rb:fin
 
 static void start_file_processing(void)
 {
@@ -349,6 +394,11 @@ FileContext* create_file_context(void *ssnptr)
 {
     FileSession *file_session;
     FileContext *context = file_context_create();
+
+//rb:ini (to test)
+    if (snort_conf != NULL && snort_conf->file_config != NULL)
+        context->xtra_sha256_id = ((FileConfig *)(snort_conf->file_config))->xtra_sha256_id;
+//rb:fin
 
     /* Create file session if not yet*/
     file_session = get_file_session (ssnptr);
@@ -695,16 +745,18 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
     Packet *pkt = (Packet *)p;
     void *ssnptr = pkt->ssnptr;
 
-//rb:ini    
-    //_dpd.streamAPI->set_extra_data(pkt->stream_session, pkt, conf->xtra_sha256_id);
-    pkt->xtradata_mask |= BIT(5);
-//rb:fin
-
     if (!context)
         return 0;
 
     set_current_file_context(ssnptr, context);
     file_stats.file_data_total += data_size;
+
+//rb:ini (reubicar cuando funcione para que no recoja datos extra si no se pide LOG)
+    // (NO FUNCIONA: revisar. no funciona cuando se comenta la línea pkt->xtradata_mask |= BIT(10))
+    //pkt->xtradata_mask |= BIT(5);
+    stream_api->set_extra_data(ssnptr, pkt, context->/*file_config->*/xtra_sha256_id); //(to test. got it from snort_httpinspect.c -> OK)
+    pkt->xtradata_mask |= BIT(10);
+//rb:fin
 
     if ((!context->file_type_enabled) && (!context->file_signature_enabled))
     {

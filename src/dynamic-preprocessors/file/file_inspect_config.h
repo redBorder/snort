@@ -64,10 +64,10 @@ typedef struct _fileInspectConfig
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
     int verdict_delay; /* used for debug, mimic delay to get verdicts */
 #endif
+    uint32_t capture_disk_size;  /* In megabytes*/
 //rb:ini
     uint32_t xtra_sha256_id;
 //rb:fin
-    uint32_t capture_disk_size;  /* In megabytes*/
 
 } FileInspectConf;
 
