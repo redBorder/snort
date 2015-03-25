@@ -75,9 +75,9 @@ static uint32_t file_config_version = 0;
 static File_policy_callback_func file_policy_cb = NULL;
 File_type_callback_func  file_type_cb = NULL;
 File_signature_callback_func file_signature_cb = NULL;
-//rb:ini
-Xtra_file_sha256_callback_func xtra_file_sha256_cb = NULL;
-Xtra_file_size_callback_func xtra_file_size_cb = NULL;
+//rb:ini (probably a callback won't be used)
+//Xtra_file_sha256_callback_func xtra_file_sha256_cb = NULL;
+//Xtra_file_size_callback_func xtra_file_size_cb = NULL;
 //rb:fin
 Log_file_action_func log_file_action = NULL;
 
@@ -101,8 +101,12 @@ static void enable_file_signature (File_signature_callback_func);
 static void enable_file_capture(File_signature_callback_func );
 //rb:ini (revisar la utilidad de enable_xtra_file_sha256() y enable_xtra_file_size())
 static void FileRegisterXtraDataFuncs(FileConfig *pFileConfig);
-static void enable_xtra_file_sha256(Xtra_file_sha256_callback_func);
-static void enable_xtra_file_size(Xtra_file_size_callback_func);
+// (probably a callback won't be used)
+//static void enable_xtra_file_sha256(Xtra_file_sha256_callback_func);
+static void enable_xtra_file_sha256();
+// (probably a callback won't be used)
+//static void enable_xtra_file_size(Xtra_file_size_callback_func);
+static void enable_xtra_file_size();
 static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 static int GetFileSize(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 //rb:fin
@@ -1089,9 +1093,11 @@ static void enable_file_capture(File_signature_callback_func callback)
 }
 
 //rb:ini
-static void enable_xtra_file_sha256(Xtra_file_sha256_callback_func callback)
+// (probably a callback won't be used)
+//static void enable_xtra_file_sha256(Xtra_file_sha256_callback_func callback)
+static void enable_xtra_file_sha256()
 {
-    _update_file_sig_callback(callback);
+    //_update_file_sig_callback(callback);
 
     if (!xtra_file_sha256_enabled)
     {
@@ -1103,19 +1109,21 @@ static void enable_xtra_file_sha256(Xtra_file_sha256_callback_func callback)
         LogMessage("File service: extra data file SHA256 enabled.\n");
     }
 
-    if(!xtra_file_sha256_cb)
-    {
-        xtra_file_sha256_cb = callback;
-    }
-    else if (xtra_file_sha256_cb != callback)
-    {
-        WarningMessage("File service: extra data file SHA256 callback redefined.\n");
-    }
+    //if(!xtra_file_sha256_cb)
+    //{
+    //    xtra_file_sha256_cb = callback;
+    //}
+    //else if (xtra_file_sha256_cb != callback)
+    //{
+    //    WarningMessage("File service: extra data file SHA256 callback redefined.\n");
+    //}
 }
 
-static void enable_xtra_file_size(Xtra_file_size_callback_func callback)
+// (probably a callback won't be used)
+//static void enable_xtra_file_size(Xtra_file_size_callback_func callback)
+static void enable_xtra_file_size()
 {
-    _update_file_sig_callback(callback);
+    //_update_file_sig_callback(callback);
 
     if (!xtra_file_size_enabled)
     {
@@ -1127,14 +1135,14 @@ static void enable_xtra_file_size(Xtra_file_size_callback_func callback)
         LogMessage("File service: extra data file size enabled.\n");
     }
 
-    if(!xtra_file_size_cb)
-    {
-        xtra_file_size_cb = callback;
-    }
-    else if (xtra_file_size_cb != callback)
-    {
-        WarningMessage("File service: extra data file size callback redefined.\n");
-    }
+    //if(!xtra_file_size_cb)
+    //{
+    //    xtra_file_size_cb = callback;
+    //}
+    //else if (xtra_file_size_cb != callback)
+    //{
+    //    WarningMessage("File service: extra data file size callback redefined.\n");
+    //}
 }
 //rb:fin
 

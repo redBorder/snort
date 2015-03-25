@@ -61,9 +61,9 @@ static volatile bool capture_thread_running = false;
 static bool file_type_enabled = false;
 static bool file_signature_enabled = false;
 static bool file_capture_enabled = false;
-//rb:ini
-static bool xtra_file_sha256_enabled = false;
-static bool xtra_file_size_enabled = false;
+//rb:ini (probably a callback won't be used)
+//static bool xtra_file_sha256_enabled = false;
+//static bool xtra_file_size_enabled = false;
 //rb:fin
 
 pthread_t capture_thread_tid;
@@ -93,9 +93,11 @@ static FileInfo *file_agent_finish_file(void);
 static File_Verdict file_agent_type_callback(void*, void*, uint32_t, bool,uint32_t);
 static File_Verdict file_agent_signature_callback(void*, void*, uint8_t*,
         uint64_t, FileState *, bool, uint32_t);
-//rb:ini
+//rb:ini (probably won't be used, a callback is not necessary for now)
+/*
 static void file_agent_xtra_file_sha256_callback();
 static void file_agent_xtra_file_size_callback();
+*/
 //rb:fin
 static int file_agent_queue_file(void*, void *);
 static int file_agent_init_socket(char *hostname, int portno);
@@ -264,17 +266,21 @@ void file_agent_init(FileInspectConf* conf)
         file_capture_enabled = true;
     }
 
-//rb:ini
+//rb:ini (conf->xtra_file_*_enabled should be set in file_inspect_config.c (file_config_parse()))
     if (1 || conf->xtra_file_sha256_enabled)
     {
-        _dpd.fileAPI->enable_xtra_file_sha256(file_agent_xtra_file_sha256_callback);
-        xtra_file_sha256_enabled = true;
+        // (probably a callback won't be used)
+        //_dpd.fileAPI->enable_xtra_file_sha256(file_agent_xtra_file_sha256_callback);
+        _dpd.fileAPI->enable_xtra_file_sha256();
+        //xtra_file_sha256_enabled = true;
     }
 
     if (1 || conf->xtra_file_size_enabled)
     {
-        _dpd.fileAPI->enable_xtra_file_size(file_agent_xtra_file_size_callback);
-        xtra_file_size_enabled = true;
+        // (probably a callback won't be used)
+        //_dpd.fileAPI->enable_xtra_file_size(file_agent_xtra_file_size_callback);
+        _dpd.fileAPI->enable_xtra_file_size();
+        //xtra_file_size_enabled = true;
     }
 //rb:fin
 
@@ -738,7 +744,8 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
     return verdict;
 }
 
-//rb:ini
+//rb:ini (probably a callback won't be used)
+/*
 static void file_agent_xtra_file_sha256_callback()
 {
 
@@ -748,4 +755,5 @@ static void file_agent_xtra_file_size_callback()
 {
 
 }
+*/
 //rb:fin

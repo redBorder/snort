@@ -134,8 +134,9 @@ typedef File_Verdict (*File_signature_callback_func) (void* p, void* ssnptr,
         uint8_t* file_sig, uint64_t file_size, FileState *state, bool upload,
         uint32_t file_id);
 //rb:ini (ver file_agent_xtra_sha256_callback() en file_agent.c para modificar la de este fichero cuando se modifique la otra)
-typedef void (*Xtra_file_sha256_callback_func) ();
-typedef void (*Xtra_file_size_callback_func) ();
+// (probably a callback won't be used)
+//typedef void (*Xtra_file_sha256_callback_func) ();
+//typedef void (*Xtra_file_size_callback_func) ();
 //rb:fin
 typedef void (*Log_file_action_func) (void* ssnptr, int action);
 
@@ -155,9 +156,11 @@ typedef void (*Set_file_policy_func)(File_policy_callback_func);
 typedef void (*Enable_file_type_func)(File_type_callback_func);
 typedef void (*Enable_file_signature_func)(File_signature_callback_func);
 typedef void (*Enable_file_capture_func)(File_signature_callback_func);
-//rb:ini
-typedef void (*Enable_xtra_file_sha256_func)(Xtra_file_sha256_callback_func);
-typedef void (*Enable_xtra_file_size_func)(Xtra_file_size_callback_func);
+//rb:ini (probably a callback won't be used)
+//typedef void (*Enable_xtra_file_sha256_func)(Xtra_file_sha256_callback_func);
+typedef void (*Enable_xtra_file_sha256_func)();
+//typedef void (*Enable_xtra_file_size_func)(Xtra_file_size_callback_func);
+typedef void (*Enable_xtra_file_size_func)();
 //rb:fin
 typedef void (*Set_file_action_log_func)(Log_file_action_func);
 
@@ -377,22 +380,24 @@ typedef struct _file_api
 
 //rb:ini
     /* Enable extra data File SHA256.
-     * Extra Data File SHA256 callback is called when this option is enabled.
-     * Callback set a bit in xtradata_mask.
+     * //Extra Data File SHA256 callback is called when this option is enabled.
+     * //Callback set a bit in xtradata_mask.
      *
      * Arguments:
-     *    Xtra_file_sha256_callback_func
+     *    //Xtra_file_sha256_callback_func
+     *    None
      * Returns
      *    None
      */
     Enable_xtra_file_sha256_func enable_xtra_file_sha256;
 
     /* Enable extra data File Size.
-     * Extra Data File Size callback is called when this option is enabled.
-     * Callback set a bit in xtradata_mask.
+     * //Extra Data File Size callback is called when this option is enabled.
+     * //Callback set a bit in xtradata_mask.
      *
      * Arguments:
-     *    Xtra_file_size_callback_func
+     *    //Xtra_file_size_callback_func
+     *    None
      * Returns
      *    None
      */

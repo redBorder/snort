@@ -52,9 +52,11 @@ typedef struct _fileInspectConfig
     bool file_type_enabled;
     bool file_signature_enabled;
     bool file_capture_enabled;
-//rb:ini
+//rb:ini (conf->xtra_file_*_enabled should be set in file_inspect_config.c (file_config_parse()))
+///*
     bool xtra_file_sha256_enabled;
     bool xtra_file_size_enabled;
+//*/
 //rb:fin
     uint32_t file_capture_queue_size;
     char *capture_dir;
