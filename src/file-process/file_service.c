@@ -48,6 +48,9 @@
 #include "file_resume_block.h"
 #include "snort_httpinspect.h"
 #include "file_service.h"
+//rb:ini
+#include "Unified2_common.h"
+//rb:fin
 
 typedef struct _FileSession
 {
@@ -243,24 +246,10 @@ static void FileRegisterXtraDataFuncs(FileConfig *file_config)
 
 static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
 {
-    //HttpSessionData *hsd = NULL;
-    //
-    //if (data == NULL)
-    //    return 0;
-    //hsd = (HttpSessionData *)session_api->get_application_data(data, PP_HTTPINSPECT);
-    //
-    //if(hsd == NULL)
-    //    return 0;
-    //
-    //if(hsd->log_state && hsd->log_state->uri_bytes > 0)
-    //{
-        *buf = "AaBbCcDdEeAaBbCcDdEeAaBbCcDdEeAaBbCcDdEeAaBbCcDdEeAaBbCcDdEe";
-        *len = 60;
-        *type = 20;
-        return 1;
-    //}
-    //
-    //return 0;
+    *buf = get_file_sig_sha256(data);
+    *len = SHA256_HASH_SIZE;
+    *type = EVENT_INFO_FILE_SHA256;
+    return 1;
 }
 //rb:fin
 
@@ -751,11 +740,14 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
     set_current_file_context(ssnptr, context);
     file_stats.file_data_total += data_size;
 
-//rb:ini (reubicar cuando funcione para que no recoja datos extra si no se pide LOG)
-    // (NO FUNCIONA: revisar. no funciona cuando se comenta la línea pkt->xtradata_mask |= BIT(10))
-    //pkt->xtradata_mask |= BIT(5);
-    stream_api->set_extra_data(ssnptr, pkt, context->/*file_config->*/xtra_sha256_id); //(to test. got it from snort_httpinspect.c -> OK)
-    pkt->xtradata_mask |= BIT(10);
+//rb:ini (move to another proper location so that won't catch extra data if LOG is not requested)
+    // (NOT WORKING: Check it. This line below doesn't work because it modifies st->xtradata_mask instead of pkt->xtradata_mask. st distinguishes
+    //               between server and client connection.)
+    //stream_api->set_extra_data(ssnptr, pkt, context->/*file_config->*/xtra_sha256_id); //(to test. got it from snort_httpinspect.c -> OK)
+    // (SOLUTION: Instead of modifying xtradat_mask through set_extra_data() function, pkt->xtradata_mask is modified directly in here below
+    //            This comments will be keeped just in case problems will show up during the tests. Maybe we will must use the set_extra_data()
+    //            function in the future because to avoid problems when catching files and send extra data to unified2.)
+    pkt->xtradata_mask |= BIT(context->xtra_sha256_id);
 //rb:fin
 
     if ((!context->file_type_enabled) && (!context->file_signature_enabled))
@@ -884,6 +876,24 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
             _file_signature_lookup(context, p, false, suspend_block_verdict);
         }
     }
+//rb:ini
+    else if (context->xtra_sha256_id)
+    {
+        file_signature_sha256(context, file_data, data_size, position);
+        file_stats.data_processed[context->file_type_id][context->upload]
+                                                         += data_size;
+        updateFileSize(context, data_size, position);
+        // (During the tests, including the lines before should be considered)
+        //FILE_REG_DEBUG_WRAP(if (context->sha256) file_sha256_print(context->sha256);)
+        ///*Either get SHA or exceeding the SHA limit, need lookup*/
+        //if (context->file_state.sig_state != FILE_SIG_PROCESSING)
+        //{
+        //    if (context->file_state.sig_state == FILE_SIG_DEPTH_FAIL)
+        //        file_stats.files_sig_depth++;
+        //    _file_signature_lookup(context, p, false, suspend_block_verdict);
+        //}
+    }
+//rb:fin
     else
     {
         updateFileSize(context, data_size, position);
