@@ -72,6 +72,9 @@ typedef struct _FileContext
     uint8_t    *file_name;
     uint32_t   file_name_size;
     uint64_t   file_size;
+//rb:ini
+    char       file_size_str[32];
+//rb:fin
     bool       upload;
     uint64_t   processed_bytes;
     uint32_t   file_type_id;
@@ -91,7 +94,8 @@ typedef struct _FileContext
     uint32_t file_id;
     uint32_t file_config_version;
 //rb:ini
-    uint32_t xtra_sha256_id;
+    uint32_t xtra_file_sha256_id;
+    uint32_t xtra_file_size_id;
 //rb:fin
 } FileContext;
 

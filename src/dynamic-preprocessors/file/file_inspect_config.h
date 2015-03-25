@@ -53,7 +53,8 @@ typedef struct _fileInspectConfig
     bool file_signature_enabled;
     bool file_capture_enabled;
 //rb:ini
-    bool xtra_sha256_enabled;
+    bool xtra_file_sha256_enabled;
+    bool xtra_file_size_enabled;
 //rb:fin
     uint32_t file_capture_queue_size;
     char *capture_dir;
@@ -66,7 +67,8 @@ typedef struct _fileInspectConfig
 #endif
     uint32_t capture_disk_size;  /* In megabytes*/
 //rb:ini
-    uint32_t xtra_sha256_id;
+    uint32_t xtra_file_sha256_id;
+    uint32_t xtra_file_size_id;
 //rb:fin
 
 } FileInspectConf;

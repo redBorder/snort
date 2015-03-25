@@ -67,7 +67,8 @@ static bool file_capture_enabled = false;
 static bool file_processing_initiated = false;
 static bool file_type_force = false;
 //rb:ini
-static bool xtra_sha256_enabled = false;
+static bool xtra_file_sha256_enabled = false;
+static bool xtra_file_size_enabled = false;
 //rb:fin
 
 static uint32_t file_config_version = 0;
@@ -75,7 +76,8 @@ static File_policy_callback_func file_policy_cb = NULL;
 File_type_callback_func  file_type_cb = NULL;
 File_signature_callback_func file_signature_cb = NULL;
 //rb:ini
-File_xtra_sha256_callback_func file_xtra_sha256_cb = NULL;
+Xtra_file_sha256_callback_func xtra_file_sha256_cb = NULL;
+Xtra_file_size_callback_func xtra_file_size_cb = NULL;
 //rb:fin
 Log_file_action_func log_file_action = NULL;
 
@@ -97,10 +99,12 @@ static void set_file_policy_callback(File_policy_callback_func);
 static void enable_file_type(File_type_callback_func );
 static void enable_file_signature (File_signature_callback_func);
 static void enable_file_capture(File_signature_callback_func );
-//rb:ini (revisar la utilidad de enable_xtra_sha256())
+//rb:ini (revisar la utilidad de enable_xtra_file_sha256() y enable_xtra_file_size())
 static void FileRegisterXtraDataFuncs(FileConfig *pFileConfig);
-static void enable_xtra_sha256(File_xtra_sha256_callback_func);
+static void enable_xtra_file_sha256(Xtra_file_sha256_callback_func);
+static void enable_xtra_file_size(Xtra_file_size_callback_func);
 static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileSize(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 //rb:fin
 static void set_file_action_log_callback(Log_file_action_func);
 
@@ -152,7 +156,8 @@ void init_fileAPI(void)
     fileAPI.enable_file_signature = &enable_file_signature;
     fileAPI.enable_file_capture = &enable_file_capture;
 //rb:ini
-    fileAPI.enable_xtra_sha256 = &enable_xtra_sha256;
+    fileAPI.enable_xtra_file_sha256 = &enable_xtra_file_sha256;
+    fileAPI.enable_xtra_file_size = &enable_xtra_file_size;
 //rb:fin
     fileAPI.set_file_action_log_callback = &set_file_action_log_callback;
     fileAPI.get_max_file_depth = &get_max_file_depth;
@@ -211,8 +216,8 @@ void FileAPIPostInit (void)
         }
     }
 
-//rb:ini
-    if (1 || xtra_sha256_enabled)
+//rb:ini (Maybe we should include this condition in the previous if (file_type_id_enabled || file_signature_enabled || file_capture_enabled))
+    if (1 || xtra_file_sha256_enabled || xtra_file_size_enabled)
     {
         if (!file_config)
         {
@@ -241,15 +246,42 @@ static void FileRegisterXtraDataFuncs(FileConfig *file_config)
 {
     if ((stream_api == NULL) || !file_config)
         return;
-    file_config->xtra_sha256_id = stream_api->reg_xtra_data_cb(GetFileSHA256);
+    file_config->xtra_file_sha256_id = stream_api->reg_xtra_data_cb(GetFileSHA256);
+    file_config->xtra_file_size_id = stream_api->reg_xtra_data_cb(GetFileSize);
 }
 
 static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
 {
+    if (data == NULL)
+        return 0;
+
     *buf = get_file_sig_sha256(data);
     *len = SHA256_HASH_SIZE;
     *type = EVENT_INFO_FILE_SHA256;
     return 1;
+}
+
+static int GetFileSize(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->file_size > 0)
+    {
+        *buf = (uint8_t *) (context->file_size_str);
+        *len = snprintf(context->file_size_str, sizeof(context->file_size_str), "%lu", context->file_size);
+        *type = EVENT_INFO_FILE_SIZE;
+        return 1;
+    }
+
+    return 0;
 }
 //rb:fin
 
@@ -386,7 +418,10 @@ FileContext* create_file_context(void *ssnptr)
 
 //rb:ini (to test)
     if (snort_conf != NULL && snort_conf->file_config != NULL)
-        context->xtra_sha256_id = ((FileConfig *)(snort_conf->file_config))->xtra_sha256_id;
+    {
+        context->xtra_file_sha256_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_sha256_id;
+        context->xtra_file_size_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_size_id;
+    }
 //rb:fin
 
     /* Create file session if not yet*/
@@ -743,11 +778,12 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
 //rb:ini (move to another proper location so that won't catch extra data if LOG is not requested)
     // (NOT WORKING: Check it. This line below doesn't work because it modifies st->xtradata_mask instead of pkt->xtradata_mask. st distinguishes
     //               between server and client connection.)
-    //stream_api->set_extra_data(ssnptr, pkt, context->/*file_config->*/xtra_sha256_id); //(to test. got it from snort_httpinspect.c -> OK)
+    //stream_api->set_extra_data(ssnptr, pkt, context->xtra_file_sha256_id (OR xtra_file_size_id)); //(to test. got it from snort_httpinspect.c -> OK)
     // (SOLUTION: Instead of modifying xtradat_mask through set_extra_data() function, pkt->xtradata_mask is modified directly in here below
     //            This comments will be keeped just in case problems will show up during the tests. Maybe we will must use the set_extra_data()
     //            function in the future because to avoid problems when catching files and send extra data to unified2.)
-    pkt->xtradata_mask |= BIT(context->xtra_sha256_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_sha256_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_size_id);
 //rb:fin
 
     if ((!context->file_type_enabled) && (!context->file_signature_enabled))
@@ -810,7 +846,8 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
         if (verdict == FILE_VERDICT_LOG )
         {
 //rb:ini
-            //_dpd.streamAPI->set_extra_data(pkt->stream_session, pkt, context->file_config->xtra_sha256_id);
+            //_dpd.streamAPI->set_extra_data(pkt->stream_session, pkt, context->file_config->xtra_file_sha256_id);
+            //_dpd.streamAPI->set_extra_data(pkt->stream_session, pkt, context->file_config->xtra_file_size_id);
 //rb:fin
             file_eventq_add(GENERATOR_FILE_TYPE, context->file_type_id,
                     file_type_name(context->file_config, context->file_type_id),
@@ -877,7 +914,7 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
         }
     }
 //rb:ini
-    else if (context->xtra_sha256_id)
+    else if (context->xtra_file_sha256_id)
     {
         file_signature_sha256(context, file_data, data_size, position);
         file_stats.data_processed[context->file_type_id][context->upload]
@@ -1052,27 +1089,51 @@ static void enable_file_capture(File_signature_callback_func callback)
 }
 
 //rb:ini
-static void enable_xtra_sha256(File_xtra_sha256_callback_func callback)
+static void enable_xtra_file_sha256(Xtra_file_sha256_callback_func callback)
 {
     _update_file_sig_callback(callback);
 
-    if (!xtra_sha256_enabled)
+    if (!xtra_file_sha256_enabled)
     {
-        xtra_sha256_enabled = true;
+        xtra_file_sha256_enabled = true;
 #ifdef SNORT_RELOAD
         file_sevice_reconfig_set(true);
 #endif
         //start_file_processing();
-        LogMessage("File service: file extra data SHA256 enabled.\n");
+        LogMessage("File service: extra data file SHA256 enabled.\n");
     }
 
-    if(!file_xtra_sha256_cb)
+    if(!xtra_file_sha256_cb)
     {
-        file_xtra_sha256_cb = callback;
+        xtra_file_sha256_cb = callback;
     }
-    else if (file_xtra_sha256_cb != callback)
+    else if (xtra_file_sha256_cb != callback)
     {
-        WarningMessage("File service: extra data SHA256 callback redefined.\n");
+        WarningMessage("File service: extra data file SHA256 callback redefined.\n");
+    }
+}
+
+static void enable_xtra_file_size(Xtra_file_size_callback_func callback)
+{
+    _update_file_sig_callback(callback);
+
+    if (!xtra_file_size_enabled)
+    {
+        xtra_file_size_enabled = true;
+#ifdef SNORT_RELOAD
+        file_sevice_reconfig_set(true);
+#endif
+        //start_file_processing();
+        LogMessage("File service: extra data file size enabled.\n");
+    }
+
+    if(!xtra_file_size_cb)
+    {
+        xtra_file_size_cb = callback;
+    }
+    else if (xtra_file_size_cb != callback)
+    {
+        WarningMessage("File service: extra data file size callback redefined.\n");
     }
 }
 //rb:fin
