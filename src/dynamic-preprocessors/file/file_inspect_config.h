@@ -71,6 +71,8 @@ typedef struct _fileInspectConfig
 //rb:ini
     uint32_t xtra_file_sha256_id;
     uint32_t xtra_file_size_id;
+    uint32_t xtra_file_uri_id;
+    uint32_t xtra_file_hostname_id;
 //rb:fin
 
 } FileInspectConf;

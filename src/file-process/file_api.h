@@ -143,11 +143,17 @@ typedef void (*Log_file_action_func) (void* ssnptr, int action);
 typedef int (*File_process_func)( void* p, uint8_t* file_data, int data_size, FilePosition position,
         bool upload, bool suspend_block_verdict);
 typedef int (*Get_file_name_func) (void* ssnptr, uint8_t **file_name, uint32_t *name_len);
+//rb:ini
+typedef int (*Get_file_hostname_func) (void* ssnptr, uint8_t **file_hostname, uint32_t *hostname_len);
+//rb:fin
 typedef uint64_t (*Get_file_size_func) (void* ssnptr);
 typedef bool (*Get_file_direction_func) (void* ssnptr);
 typedef uint8_t *(*Get_file_sig_sha256_func) (void* ssnptr);
 
 typedef void (*Set_file_name_func) (void* ssnptr, uint8_t *, uint32_t);
+//rb:ini
+typedef void (*Set_file_hostname_func) (void* ssnptr, uint8_t *, uint32_t);
+//rb:fin
 typedef void (*Set_file_direction_func) (void* ssnptr, bool);
 
 typedef int64_t (*Get_file_depth_func) (void);
@@ -257,6 +263,24 @@ typedef struct _file_api
      */
     Get_file_name_func get_file_name;
 
+//rb:ini
+    /* Get file hostname and the length of file hostname
+     * Note: this is updated after file processing. It will be available
+     * for file event logging, but might not be available during file type
+     * callback or file signature callback, because those callbacks are called
+     * during file processing.
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     *    uint8_t **file_hostname: address for file hostname to be saved
+     *    uint32_t *hostname_len: address to save file hostname length
+     * Returns
+     *    1: file hostname available,
+     *    0: file hostname is unavailable
+     */
+    Get_file_hostname_func get_file_hostname;
+//rb:fin
+
     /* Get file size
      * Note: this is updated after file processing. It will be available
      * for file event logging, but might not be available during file type
@@ -314,6 +338,19 @@ typedef struct _file_api
      *    None
      */
     Set_file_name_func set_file_name;
+
+//rb:ini
+    /* Set file hostname and the length of file hostname
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     *    uint8_t *file_name: file hostname to be saved
+     *    uint32_t name_len: file hostname length
+     * Returns
+     *    None
+     */
+    Set_file_hostname_func set_file_hostname;
+//rb:fin
 
     /* Get file direction
      *

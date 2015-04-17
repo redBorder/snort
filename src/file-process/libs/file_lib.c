@@ -233,6 +233,31 @@ int file_name_get (FileContext *context, uint8_t **file_name, uint32_t *name_siz
     return 1;
 }
 
+//rb:ini
+void file_hostname_set (FileContext *context, uint8_t *file_hostname, uint32_t hostname_size)
+{
+    if (!context)
+        return;
+    context->hostname = file_hostname;
+    context->hostname_size = hostname_size;
+}
+
+int file_hostname_get (FileContext *context, uint8_t **file_hostname, uint32_t *hostname_size)
+{
+    if (!context)
+        return 0;
+    if (file_hostname)
+        *file_hostname = context->hostname;
+    else
+        return 0;
+    if (hostname_size)
+        *hostname_size = context->hostname_size;
+    else
+        return 0;
+    return 1;
+}
+//rb:fin
+
 void file_size_set (FileContext *context, uint64_t file_size)
 {
     if (!context)

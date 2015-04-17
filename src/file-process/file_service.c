@@ -87,12 +87,18 @@ static int file_process(void* ssnptr, uint8_t* file_data, int data_size,
 
 /*File properties*/
 static int get_file_name(void* ssnptr, uint8_t **fname, uint32_t *name_size);
+//rb:ini
+static int get_file_hostname(void* ssnptr, uint8_t **fname, uint32_t *name_size);
+//rb:fin
 static uint64_t get_file_size(void* ssnptr);
 static uint64_t get_file_processed_size(void* ssnptr);
 static bool get_file_direction(void* ssnptr);
 static uint8_t *get_file_sig_sha256(void* ssnptr);
 
 static void set_file_name(void* ssnptr, uint8_t * fname, uint32_t name_size);
+//rb:ini
+static void set_file_hostname(void* ssnptr, uint8_t * fname, uint32_t name_size);
+//rb:fin
 static void set_file_direction(void* ssnptr, bool upload);
 
 static void set_file_policy_callback(File_policy_callback_func);
@@ -109,6 +115,8 @@ static void enable_xtra_file_sha256();
 static void enable_xtra_file_size();
 static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 static int GetFileSize(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileURI(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileHostname(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 //rb:fin
 static void set_file_action_log_callback(Log_file_action_func);
 
@@ -149,11 +157,17 @@ void init_fileAPI(void)
     fileAPI.is_file_service_enabled = &is_file_service_enabled;
     fileAPI.file_process = &file_process;
     fileAPI.get_file_name = &get_file_name;
+//rb:ini
+    fileAPI.get_file_hostname = &get_file_hostname;
+//rb:fin
     fileAPI.get_file_size = &get_file_size;
     fileAPI.get_file_processed_size = &get_file_processed_size;
     fileAPI.get_file_direction = &get_file_direction;
     fileAPI.get_sig_sha256 = &get_file_sig_sha256;
     fileAPI.set_file_name = &set_file_name;
+//rb:ini
+    fileAPI.set_file_hostname = &set_file_hostname;
+//rb:fin
     fileAPI.set_file_direction = &set_file_direction;
     fileAPI.set_file_policy_callback = &set_file_policy_callback;
     fileAPI.enable_file_type = &enable_file_type;
@@ -252,6 +266,8 @@ static void FileRegisterXtraDataFuncs(FileConfig *file_config)
         return;
     file_config->xtra_file_sha256_id = stream_api->reg_xtra_data_cb(GetFileSHA256);
     file_config->xtra_file_size_id = stream_api->reg_xtra_data_cb(GetFileSize);
+    file_config->xtra_file_uri_id = stream_api->reg_xtra_data_cb(GetFileURI);
+    file_config->xtra_file_hostname_id = stream_api->reg_xtra_data_cb(GetFileHostname);
 }
 
 static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
@@ -282,6 +298,52 @@ static int GetFileSize(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
         *buf = (uint8_t *) (context->file_size_str);
         *len = snprintf(context->file_size_str, sizeof(context->file_size_str), "%lu", context->file_size);
         *type = EVENT_INFO_FILE_SIZE;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int GetFileURI(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->file_name_size > 0)
+    {
+        *buf = context->file_name;
+        *len = context->file_name_size;
+        *type = EVENT_INFO_FILE_URI;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int GetFileHostname(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->hostname_size > 0)
+    {
+        *buf = context->hostname;
+        *len = context->hostname_size;
+        *type = EVENT_INFO_FILE_HOSTNAME;
         return 1;
     }
 
@@ -425,6 +487,8 @@ FileContext* create_file_context(void *ssnptr)
     {
         context->xtra_file_sha256_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_sha256_id;
         context->xtra_file_size_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_size_id;
+        context->xtra_file_uri_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_uri_id;
+        context->xtra_file_hostname_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_hostname_id;
     }
 //rb:fin
 
@@ -788,6 +852,8 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
     //            function in the future because to avoid problems when catching files and send extra data to unified2.)
     pkt->xtradata_mask |= BIT(context->xtra_file_sha256_id);
     pkt->xtradata_mask |= BIT(context->xtra_file_size_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_uri_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_hostname_id);
 //rb:fin
 
     if ((!context->file_type_enabled) && (!context->file_signature_enabled))
@@ -980,6 +1046,20 @@ static int get_file_name (void* ssnptr, uint8_t **fname, uint32_t *name_size)
 {
     return file_name_get(get_current_file_context(ssnptr), fname, name_size);
 }
+
+//rb:ini
+static void set_file_hostname (void* ssnptr, uint8_t* fhostname, uint32_t hostname_size)
+{
+    FileContext* context = get_current_file_context(ssnptr);
+    file_hostname_set(context, fhostname, hostname_size);
+    FILE_REG_DEBUG_WRAP(printFileContext(context);)
+}
+
+static int get_file_hostname (void* ssnptr, uint8_t **fhostname, uint32_t *hostname_size)
+{
+    return file_hostname_get(get_current_file_context(ssnptr), fhostname, hostname_size);
+}
+//rb:fin
 
 static uint64_t  get_file_size(void* ssnptr)
 {

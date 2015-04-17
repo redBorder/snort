@@ -626,6 +626,7 @@ void file_agent_close(void)
     }
 }
 
+//rb:comment (Possible bug to fix by the cisco side: When signature or capture enabled there's no logging)
 /*
  * File type callback when file type is identified
  *
@@ -635,9 +636,6 @@ static File_Verdict file_agent_type_callback(void* p, void* ssnptr,
         uint32_t file_type_id, bool upload, uint32_t file_id)
 {
     file_inspect_stats.file_types_total++;
-//rb:ini (this is the expected behavior)
-    return FILE_VERDICT_LOG;
-//rb:fin
     if (file_signature_enabled || file_capture_enabled)
         return FILE_VERDICT_UNKNOWN;
     else
