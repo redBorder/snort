@@ -84,7 +84,7 @@ typedef struct _FILE_MESSAGE_HEADER
 
 #ifdef HAVE_S3FILE
 #define KAFKA_MESSAGE_LEN 1024
-#define S3_PATH "malware/mdata/input"
+#define S3_PATH "mdata/input"
 #endif
 
 static int file_agent_save_file (FileInfo *, char *);
