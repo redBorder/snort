@@ -603,6 +603,8 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
         }
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_S3_CLUSTER) )
         {
+            config->file_capture_enabled = true;
+
             cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
             if( NULL == cur_tokenp )
             {
