@@ -249,6 +249,11 @@ static void* FileCaptureThread(void *arg)
     return NULL;
 }
 
+static void file_agent_init0() {
+    FileInspectConf *conf = sfPolicyUserDataGetDefault(file_config);
+    file_agent_init(conf);
+}
+
 /* Add another thread for file capture to disk or network
  * When settings are changed, snort must be restarted to get it applied
  */
@@ -257,6 +262,8 @@ void file_agent_init(FileInspectConf* conf)
     int rval;
     const struct timespec thread_sleep = { 0, 100 };
     sigset_t mask;
+
+    stop_file_capturing = capture_thread_running = false;
 
     /*Need to check configuration to decide whether to enable them*/
 
@@ -319,6 +326,10 @@ void file_agent_init(FileInspectConf* conf)
     pthread_sigmask(SIG_SETMASK, &mask, NULL);
     _dpd.logMsg("File capture thread started tid=%p (pid=%u)\n",
             (void *) capture_thread_tid, capture_thread_pid);
+#ifndef WIN32
+    /* In daemon mode we need to re-create cbuffer consumer thread */
+    pthread_atfork(file_agent_close,NULL,file_agent_init0);
+#endif
 
 }
 
