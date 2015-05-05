@@ -648,8 +648,12 @@ static int file_agent_send_kafka(rd_kafka_topic_t *rkt, int partition,
 
 struct s3_transference {
     S3Status status;
-    size_t bytes_remaining;
-    FileInfo *file;
+    
+    uint8_t *cur_buf;
+    int cur_buf_size;
+    int cur_buf_remaining;
+
+    void *file_mem;
     char err[4096];
 };
 
@@ -693,23 +697,59 @@ static void responseCompleteCallback(S3Status status,
 static int putObjectDataCallback(int bufferSize, char *buffer, 
                                  void *callbackData) {
     struct s3_transference *transference = callbackData;
-    FileInfo *file = transference->file;
 
-    const size_t to_transfer = min_size(bufferSize,transference->bytes_remaining);
-    const char *cursor = file->file_mem + (file->file_size - transference->bytes_remaining);
+    if(!transference->cur_buf && transference->file_mem)
+    {
+        /* First call, need to load first file_mem */
+        transference->file_mem = _dpd.fileAPI->read_file(
+                        transference->file_mem, 
+                        &transference->cur_buf, &transference->cur_buf_size);
+        transference->cur_buf_remaining = transference->cur_buf_size;
+    }
+
+    if(!transference->cur_buf && !transference->file_mem)
+    {
+        /* Last call, returning 0 to indicate all data transferred */
+        return 0;
+    }
+
+    const size_t to_transfer = min_size(bufferSize,
+                                              transference->cur_buf_remaining);
+    const uint8_t *cursor = transference->cur_buf 
+              + (transference->cur_buf_size - transference->cur_buf_remaining);
     memcpy(buffer,cursor,to_transfer);
+    transference->cur_buf_remaining -= transference->cur_buf_size;
+
+    /* Need to load next file info? */
+    if(transference->cur_buf_remaining == 0)
+    {
+        if(transference->file_mem)
+        {
+            transference->file_mem = _dpd.fileAPI->read_file(
+                        transference->file_mem, 
+                        &transference->cur_buf, &transference->cur_buf_size);
+            transference->cur_buf_remaining = transference->cur_buf_size;
+        }
+        else
+        {
+            transference->cur_buf = NULL;
+            transference->cur_buf_size = 0;
+        }
+    }
+
     return to_transfer;
 }
 
 static int file_agent_send_s3(const struct s3_info *s3,const FileInfo *file) {
-    struct s3_transference transference;
-    transference.bytes_remaining = file->file_size;
-    transference.file = file;
-    
+    char sha256[SHA256_HASH_SIZE];
     char fsha[FILE_NAME_LEN];
     char path[FILE_NAME_LEN];
 
-    sha_to_str(file->sha256, fsha, sizeof(fsha));
+    struct s3_transference transference;
+    transference.file_mem = file->file_mem;
+
+    memcpy(sha256,file->sha256,sizeof(sha256));
+    sha_to_str(sha256, fsha, sizeof(fsha));
     snprintf(path,sizeof(path),S3_PATH "/%s",fsha);
 
     S3BucketContext bucketContext = {
