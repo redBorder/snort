@@ -751,6 +751,7 @@ static int file_agent_send_s3(const struct s3_info *s3,const FileInfo *file) {
     char path[FILE_NAME_LEN];
 
     struct s3_transference transference;
+    memset(&transference,0,sizeof(transference));
     transference.file_mem = file->file_mem;
 
     memcpy(sha256,file->sha256,sizeof(sha256));
