@@ -740,6 +740,11 @@ static int putObjectDataCallback(int bufferSize, char *buffer,
     return to_transfer;
 }
 
+static void str_tolower(char *str,size_t str_len) {
+    for(;*str;++str)
+        *str = tolower(*str);
+}
+
 static int file_agent_send_s3(const struct s3_info *s3,const FileInfo *file) {
     char sha256[SHA256_HASH_SIZE];
     char fsha[FILE_NAME_LEN];
@@ -750,6 +755,7 @@ static int file_agent_send_s3(const struct s3_info *s3,const FileInfo *file) {
 
     memcpy(sha256,file->sha256,sizeof(sha256));
     sha_to_str(sha256, fsha, sizeof(fsha));
+    str_tolower(fsha,sizeof(fsha));
     snprintf(path,sizeof(path),S3_PATH "/%s",fsha);
 
     S3BucketContext bucketContext = {
