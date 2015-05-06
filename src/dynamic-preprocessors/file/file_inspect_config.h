@@ -67,15 +67,6 @@ typedef struct _fileInspectConfig
     int verdict_delay; /* used for debug, mimic delay to get verdicts */
 #endif
 #if HAVE_S3FILE
-    struct {
-        char *brokers;
-        char *topic;
-        int partition;
-        rd_kafka_t *rk;
-        rd_kafka_topic_t *rkt;
-        rd_kafka_conf_t *conf;
-        rd_kafka_topic_conf_t *tconf;
-    } kafka;
     struct s3_info {
         char *bucket;
         char *cluster;
