@@ -909,16 +909,8 @@ if test "x$enable_reputationgeoip" = "xyes"; then
 fi
 
 AC_ARG_ENABLE(remote-file-s3,
-[  --enable-remote-file-s3  Enable S3 file saving (implies rdkafka and s3 libs)],
+[  --enable-remote-file-s3  Enable S3 file saving (implies s3 libs)],
        enable_file_s3="$enableval", enable_file_s3="no")
-
-AC_ARG_WITH(librdkafka-includes,
-    [  --with-librdkafka-includes=DIR librdkafka include directory],
-    [with_rdkafka_includes="$withval"],[with_rdkafka_includes="no"])
-
-AC_ARG_WITH(librdkafka-libraries,
-    [  --with-librdkafka-libraries=DIR librdkafka library directory],
-    [with_librdkafka_libraries="$withval"],[with_librdkafka_libraries="no"])
 
 AC_ARG_WITH(libs3-includes,
     [  --with-libs3-includes=DIR      libs3 include directory],
@@ -930,22 +922,6 @@ AC_ARG_WITH(libs3-libraries,
 
 AM_CONDITIONAL(HAVE_S3FILE, test "x$enable_file_s3" = "xyes")
 if test "x$enable_file_s3" = "xyes"; then
-    if test "x$with_rdkafka_includes" != "xno"; then
-        CPPFLAGS="${CPPFLAGS} -I${with_rdkafka_includes}"
-        LIBRDKAFKA_HEADERS="yes"
-    else
-        AC_CHECK_HEADERS(librdkafka/rdkafka.h, LIBRDKAFKA_HEADERS="yes", LIBRDKAFKA_HEADERS="no")
-    fi
-
-    if test "x$with_librdkafka_libraries" != "xno"; then
-        LDFLAGS="${LDFLAGS} -L${with_librdkafka_libraries}"
-        LIBRDKAFKA_LIB="yes"
-    else
-        LIBS_BAK=$LIBS
-        AC_CHECK_LIB(rdkafka, rd_kafka_new, LIBRDKAFKA_LIB="yes", LIBRDKAFKA_LIB="no")
-        LIBS="$LIBS_BAK"
-    fi
-
     if test "x$with_libs3_includes" != "xno"; then
         CPPFLAGS="${CPPFLAGS} -I${with_libs3_includes}"
         LIBS3_HEADERS="yes"
@@ -961,14 +937,6 @@ if test "x$enable_file_s3" = "xyes"; then
         LIBS="$LIBS -lxml2"
         AC_CHECK_LIB(s3, S3_initialize, LIBS3_LIB="yes", LIBS3_LIB="no")
         LIBS="$LIBS_BAK"
-    fi
-
-    if test "x$LIBRDKAFKA_LIB" == "xno" -o "x$LIBRDKAFKA_HEADERS" == "xno"; then
-      echo
-      echo "   ERROR!  librdkafka not found."
-      echo "   Get it from https://github.com/edenhill/librdkafka"
-      echo
-      exit 1
     fi
 
     if test "x$LIBS3_LIB" == "xno" -o "x$LIBS3_HEADERS" == "xno"; then

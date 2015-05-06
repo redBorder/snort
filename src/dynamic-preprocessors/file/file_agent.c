@@ -91,7 +91,6 @@ typedef struct _FILE_MESSAGE_HEADER
 static int file_agent_save_file (FileInfo *, char *);
 static int file_agent_send_file (FileInfo *);
 #ifdef HAVE_S3FILE
-static int file_agent_send_kafka(rd_kafka_topic_t *rkt,int partition,FileInfo *);
 static int file_agent_send_s3(const struct s3_info *,const FileInfo *);
 #endif
 static FileInfo* file_agent_get_file(void);
@@ -193,16 +192,10 @@ static inline void file_agent_process_files(CircularBuffer *file_list,
             if (conf->hostname)
                 file_agent_send_file(file);
 #ifdef HAVE_S3FILE
-            if (conf->kafka.rkt) {
-                file_agent_send_kafka(conf->kafka.rkt,conf->kafka.partition,
-                    file);
-                rd_kafka_poll(conf->kafka.rk,0);
-            }
-
+            /* Send to S3 */
             if (conf->s3.cluster) {
                 file_agent_send_s3(&conf->s3,file);
             }
-
 #endif
             /* Default, memory only */
         }
@@ -621,31 +614,6 @@ static int file_agent_send_file(FileInfo *file)
 }
 
 #ifdef HAVE_S3FILE
-/* Send file data to other host*/
-static int file_agent_send_kafka(rd_kafka_topic_t *rkt, int partition, 
-                                                    FileInfo *file)
-{
-    char kafka_buffer[KAFKA_MESSAGE_LEN];
-    char sha[FILE_NAME_LEN];
-
-    sha_to_str(file->sha256, sha, FILE_NAME_LEN);
-    const size_t buflen = snprintf(kafka_buffer,KAFKA_MESSAGE_LEN,
-        "{\"sha\":\"%s\",\"size\":%zu}",sha,file->file_size);
-
-    const int produce_rc = rd_kafka_produce(rkt,partition,RD_KAFKA_MSG_F_COPY,
-        kafka_buffer,buflen,NULL,0,NULL);
-
-    if (produce_rc == -1) {
-        _dpd.logMsg("File inspect: can't sent to kafka: %s!\n",
-            rd_kafka_err2str(rd_kafka_errno2err(errno)));
-        file_inspect_stats.file_transfer_kafka_failures++;
-    } else {
-        file_inspect_stats.file_transfer_kafka++;
-    }
-
-    return 0;
-}
-
 struct s3_transference {
     S3Status status;
     

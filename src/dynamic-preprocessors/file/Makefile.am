@@ -9,17 +9,15 @@ dynamicpreprocessor_LTLIBRARIES = libsf_file_preproc.la
 
 if HAVE_S3FILE
 LS3="-ls3"
-LKAFKA="-lrdkafka"
 LXML2="-lxml2"
 HAVE_S3FILE="-DHAVE_S3FILE"
 else
 LS3=
-LKAFKA=
 LXML2=
 HAVE_S3FILE=
 endif
 
-libsf_file_preproc_la_LDFLAGS = -export-dynamic -module $(LS3) $(LKAFKA) $(LXML2)  @XCCFLAGS@
+libsf_file_preproc_la_LDFLAGS = -export-dynamic -module $(LS3) $(LXML2)  @XCCFLAGS@
 if SO_WITH_STATIC_LIB
 libsf_file_preproc_la_LIBADD = ../libsf_dynamic_preproc.la 
 else

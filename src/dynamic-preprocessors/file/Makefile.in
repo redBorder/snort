@@ -338,13 +338,11 @@ dynamicpreprocessordir = ${libdir}/snort_dynamicpreprocessor
 dynamicpreprocessor_LTLIBRARIES = libsf_file_preproc.la
 @HAVE_S3FILE_FALSE@LS3 = 
 @HAVE_S3FILE_TRUE@LS3 = "-ls3"
-@HAVE_S3FILE_FALSE@LKAFKA = 
-@HAVE_S3FILE_TRUE@LKAFKA = "-lrdkafka"
 @HAVE_S3FILE_FALSE@LXML2 = 
 @HAVE_S3FILE_TRUE@LXML2 = "-lxml2"
 @HAVE_S3FILE_FALSE@HAVE_S3FILE = 
 @HAVE_S3FILE_TRUE@HAVE_S3FILE = "-DHAVE_S3FILE"
-libsf_file_preproc_la_LDFLAGS = -export-dynamic -module $(LS3) $(LKAFKA) $(LXML2)  @XCCFLAGS@
+libsf_file_preproc_la_LDFLAGS = -export-dynamic -module $(LS3) $(LXML2)  @XCCFLAGS@
 @SO_WITH_STATIC_LIB_TRUE@libsf_file_preproc_la_LIBADD = ../libsf_dynamic_preproc.la 
 @SO_WITH_STATIC_LIB_FALSE@nodist_libsf_file_preproc_la_SOURCES = \
 @SO_WITH_STATIC_LIB_FALSE@../include/sf_dynamic_preproc_lib.c \

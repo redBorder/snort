@@ -51,11 +51,6 @@
 #define FILE_INSPECT_GREYLIST            "greylist"
 
 #ifdef HAVE_S3FILE
-#define FILE_INSPECT_KAFKA_BROKERS       "kafka_brokers"
-#define FILE_INSPECT_KAFKA_TOPIC         "kafka_topic"
-#define FILE_INSPECT_KAFKA_PARTITION     "kafka_partition"
-#define FILE_INSPECT_RDKAFKA_CONFIG      "rdkafka_config"
-
 #define FILE_INSPECT_S3_BUCKET           "s3_bucket"
 #define FILE_INSPECT_S3_CLUSTER          "s3_cluster"
 #define FILE_INSPECT_S3_ACCESS_KEY       "s3_access_key"
@@ -296,98 +291,6 @@ static void DisplayFileConfig(FileInspectConf *config)
     _dpd.logMsg("\n");
 }
 
-#ifdef HAVE_S3FILE
-static int parse_rdkafka_config(const char *_config,
-    rd_kafka_conf_t *conf,rd_kafka_topic_conf_t *topic_conf)
-{
-    char errstr[512];
-    if ( NULL == _config )
-        FILE_FATAL_ERROR("%s function called with NULL _config",__FUNCTION__);
-    if ( NULL == topic_conf )
-        FILE_FATAL_ERROR("%s function called with NULL topic_conf",__FUNCTION__);
-    if ( NULL == conf )
-        FILE_FATAL_ERROR("%s function called with NULL conf",__FUNCTION__);
-
-    char *name = strdup(_config);
-    if ( NULL == name )
-        FILE_FATAL_ERROR("Not enough memory to strdup config");
-
-    char *val = strchr(name, '=');
-    if ( NULL == val ) {
-        FILE_FATAL_ERROR("%s(%d) Expected rdkafka_conf property=value, not "
-            "rdkafka_conf %s\n", *(_dpd.config_file), *(_dpd.config_line), 
-            _config);
-        exit(1);
-    }
-
-    *val = '\0';
-    val++;
-
-    rd_kafka_conf_res_t res = RD_KAFKA_CONF_UNKNOWN;
-    /* Try "topic." prefixed properties on topic
-     * conf first, and then fall through to global if
-     * it didnt match a topic configuration property. */
-    if (!strncmp(name, "topic.", strlen("topic.")))
-        res = rd_kafka_topic_conf_set(topic_conf,
-                          name+
-                          strlen("topic."),
-                          val,
-                          errstr,
-                          sizeof(errstr));
-
-    if (res == RD_KAFKA_CONF_UNKNOWN)
-        res = rd_kafka_conf_set(conf, name, val,
-                    errstr, sizeof(errstr));
-
-    if (res != RD_KAFKA_CONF_OK) {
-        FILE_FATAL_ERROR("%s(%d) Error setting rdkafka conf: %s\n",
-            *(_dpd.config_file), *(_dpd.config_line), errstr);
-        exit(1);
-    }
-
-    free(name);
-
-    return 0;
-}
-
-static void kafka_log_callback(const rd_kafka_t *rk, int level,
-                                const char *fac, const char *buf)
-{
-    _dpd.logMsg("File capture kafka: %s, %s\n",fac,buf);
-}
-
-static void dr_callback(rd_kafka_t *rk, void *payload, size_t len,
-                                    rd_kafka_resp_err_t err,
-                                    void *opaque, void *msg_opaque)
-{
-    if(err)
-        kafka_log_callback(rk,4 /* LOG_ERR*/,"Message delivery failed",
-            rd_kafka_err2str(err));
-}
-
-static int create_rdkafka_config_if_not_exists(FileInspectConf *config) {
-    if(NULL == config->kafka.conf)
-        config->kafka.conf = rd_kafka_conf_new();
-        rd_kafka_conf_set_dr_cb(config->kafka.conf, dr_callback);
-    if(NULL == config->kafka.conf) {
-        FILE_FATAL_ERROR("%s(%d) Error creating default rdkafka conf"
-            "(out of memory?)\n",*(_dpd.config_file), *(_dpd.config_line));
-    }
-
-
-
-    if(NULL == config->kafka.tconf)
-        config->kafka.tconf = rd_kafka_topic_conf_new();
-    if(NULL == config->kafka.conf) {
-        FILE_FATAL_ERROR("%s(%d) Error creating default rdkafka topic conf"
-            "(out of memory?)\n",*(_dpd.config_file), *(_dpd.config_line));
-    }
-
-    return 1;
-}
-
-#endif
-
 /* Parses and processes the configuration arguments
  * supplied in the File preprocessor rule.
  *
@@ -408,9 +311,6 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
         return;
 
     config->capture_disk_size = FILE_CAPTURE_DISK_SIZE_DEFAULT;
-#if HAVE_S3FILE
-    config->kafka.partition = RD_KAFKA_PARTITION_UA;
-#endif
 
     /* Sanity check(s) */
     if (!argp)
@@ -560,38 +460,6 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
         }
 #endif
 #if HAVE_S3FILE
-        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_KAFKA_BROKERS))
-        {
-            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
-            if (NULL == cur_tokenp)
-            {
-                FILE_FATAL_ERROR("%s(%d) => Please specify kafka brokers!\n",
-                        *(_dpd.config_file), *(_dpd.config_line));
-            }
-            config->kafka.brokers = strdup(cur_tokenp);
-        }
-        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_KAFKA_TOPIC))
-        {
-            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
-            if (NULL == cur_tokenp)            
-            {
-                FILE_FATAL_ERROR("%s(%d) => Please specify kafka topic!\n",
-                        *(_dpd.config_file), *(_dpd.config_line));
-            }
-            config->kafka.topic = strdup(cur_tokenp);
-        }
-        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_RDKAFKA_CONFIG))
-        {
-            create_rdkafka_config_if_not_exists(config);
-
-            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
-            if( NULL == cur_tokenp ) 
-            {
-                FILE_FATAL_ERROR("%s(%d) => Please specify kafka configuration!\n",
-                        *(_dpd.config_file), *(_dpd.config_line));
-            }
-            parse_rdkafka_config(cur_tokenp,config->kafka.conf,config->kafka.tconf);
-        }
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_S3_BUCKET) )
         {
             cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
@@ -649,48 +517,6 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
         DEBUG_WRAP(DebugMessage(DEBUG_FILE, "Arguments token: %s\n",
                 cur_sectionp ););
     }
-
-#ifdef HAVE_S3FILE
-    if( config->kafka.brokers && NULL == config->kafka.topic ) {
-        FILE_FATAL_ERROR("%s(%d) => Broker given but no topic given",
-            *(_dpd.config_file),*(_dpd.config_line));
-    }
-
-    if( NULL == config->kafka.brokers && config->kafka.topic ) {
-        FILE_FATAL_ERROR("%s(%d) => Broker given but no topic given",
-            *(_dpd.config_file),*(_dpd.config_line));
-    }
-
-    if( config->kafka.brokers && config->kafka.topic ) {
-        config->file_capture_enabled = true;
-        char errstr[512];
-        create_rdkafka_config_if_not_exists(config);
-
-        config->kafka.rk = rd_kafka_new(RD_KAFKA_PRODUCER, 
-                    config->kafka.conf,errstr, sizeof(errstr));
-        if ( NULL == config->kafka.rk ) {
-            FILE_FATAL_ERROR("%s(%d) => Can't create kafka handler: %s",
-                *(_dpd.config_file),*(_dpd.config_line),errstr);
-        }
-        rd_kafka_set_logger(config->kafka.rk, kafka_log_callback);
-
-        const int brokers_added = rd_kafka_brokers_add(config->kafka.rk, 
-                                                config->kafka.brokers);
-        if ( brokers_added == 0 ) {
-            FILE_FATAL_ERROR("%s(%d) => No valid kafka brokers specified\n",
-                *(_dpd.config_file),*(_dpd.config_line));
-        }
-
-        config->kafka.rkt = rd_kafka_topic_new(config->kafka.rk, 
-                                            config->kafka.topic, 
-                                            config->kafka.tconf);
-        if( NULL == config->kafka.rkt ) {
-            FILE_FATAL_ERROR("%s(%d) => Can't create topic %s",
-                *(_dpd.config_file),*(_dpd.config_line),config->kafka.topic);
-        }
-    }
-
-#endif
 
     DisplayFileConfig(config);
     free(argcpyp);
@@ -752,42 +578,5 @@ void file_config_free(FileInspectConf* config)
         sha_table_delete(config->sig_table);
         config->sig_table  = NULL;
     }
-
-#if HAVE_S3FILE
-    if (config->kafka.rkt)
-    {
-        rd_kafka_topic_destroy(config->kafka.rkt);
-    }
-
-    if (config->kafka.rk)
-    {
-        rd_kafka_destroy(config->kafka.rk);
-        // rd_kafka_wait_destroyed(2000);
-    }
-
-#if 0
-    if (config->kafka.tconf)
-    {
-        rd_kafka_topic_conf_destroy(config->kafka.tconf);
-    }
-
-    if (config->kafka.conf)
-    {
-        rd_kafka_conf_destroy(config->kafka.conf);
-    }
-#endif
-
-
-    if (config->kafka.brokers)
-    {
-        free(config->kafka.brokers);
-    }
-
-    if (config->kafka.topic)
-    {
-        free(config->kafka.topic);
-    }
-#endif
-    
 }
 
