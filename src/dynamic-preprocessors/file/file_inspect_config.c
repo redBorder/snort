@@ -690,23 +690,6 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
         }
     }
 
-    if( config->s3.cluster && 
-        (config->s3.bucket== NULL || config->s3.access_key == NULL
-            || config->s3.secret_key == NULL) ) {
-        FILE_FATAL_ERROR("%s(%d) S3 cluster specified but no %s specified",
-            config->s3.bucket == NULL     ? "bucket" :
-            config->s3.access_key == NULL ? "access key" : "secret key");
-    }
-
-    if ( config->s3.cluster ) {
-        const S3Status init_rc = S3_initialize("s3", S3_INIT_ALL,
-            config->s3.cluster);
-        if (init_rc != S3StatusOK) {
-            FILE_FATAL_ERROR("Can't initialize libs3: %s",
-                S3_get_status_name(init_rc));
-        }
-    }
-
 #endif
 
     DisplayFileConfig(config);
