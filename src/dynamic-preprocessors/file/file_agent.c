@@ -51,6 +51,7 @@
 #include "sfPolicy.h"
 
 int sockfd = 0;
+int using_s3 = 0;
 
 /*Use circular buffer to synchronize writer/reader threads*/
 static CircularBuffer* file_list;
@@ -302,6 +303,27 @@ void file_agent_init(FileInspectConf* conf)
     sigaddset(&mask, SIGVTALRM);
 
     pthread_sigmask(SIG_SETMASK, &mask, NULL);
+
+#ifdef HAVE_S3FILE
+    if( conf->s3.cluster && 
+        (conf->s3.bucket== NULL || conf->s3.access_key == NULL
+            || conf->s3.secret_key == NULL) ) {
+        FILE_FATAL_ERROR("%s(%d) S3 cluster specified but no %s specified",
+            conf->s3.bucket == NULL     ? "bucket" :
+            conf->s3.access_key == NULL ? "access key" : "secret key");
+    }
+
+    if ( conf->s3.cluster ) {
+        const S3Status init_rc = S3_initialize("s3", S3_INIT_ALL,
+            conf->s3.cluster);
+        if (init_rc != S3StatusOK) {
+            FILE_FATAL_ERROR("Can't initialize libs3: %s",
+                S3_get_status_name(init_rc));
+        }
+
+        using_s3 = 1;
+    }
+#endif
 
     file_list = cbuffer_init(conf->file_capture_queue_size);
 
@@ -716,10 +738,10 @@ static int file_agent_send_s3(const struct s3_info *s3,const FileInfo *file) {
         &putObjectDataCallback
     };
 
-    do {
+    //do {
         S3_put_object(&bucketContext, path, file->file_size, &putProperties,
                       0, &putObjectHandler, &transference );
-    }while(S3_status_is_retryable(transference.status));
+    //}while(S3_status_is_retryable(transference.status));
 
     if(transference.status != S3StatusOK)
     {
@@ -771,6 +793,11 @@ void file_agent_close(void)
         close(sockfd);
         sockfd = 0;
     }
+
+#ifdef HAVE_S3FILE
+    if ( using_s3 )
+        S3_deinitialize();
+#endif
 }
 
 /*
