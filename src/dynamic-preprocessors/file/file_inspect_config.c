@@ -46,6 +46,10 @@
 #define FILE_INSPECT_BLACKLIST           "blacklist"
 #define FILE_INSPECT_GREYLIST            "greylist"
 
+//rb:ini
+#define FILE_INSPECT_TRACK_EXTRADATA     "track_extradata"
+//rb:fin
+
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
 #define FILE_INSPECT_VERDICT_DELAY       "verdict_delay"
 #endif
@@ -346,6 +350,13 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
         {
             config->file_signature_enabled = true;
         }
+//rb:ini
+        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_TRACK_EXTRADATA))
+        {
+            config->xtra_file_sha256_enabled = true;
+            config->xtra_file_size_enabled = true;
+        }
+//rb:fin
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_BLACKLIST))
         {
             cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
