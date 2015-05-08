@@ -50,6 +50,8 @@
 #include "file_service.h"
 //rb:ini
 #include "Unified2_common.h"
+#include "sf_dynamic_preprocessor.h"
+//#include "sf_snort_packet.h"
 //rb:fin
 
 typedef struct _FileSession
@@ -844,16 +846,10 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
     file_stats.file_data_total += data_size;
 
 //rb:ini (move to another proper location so that won't catch extra data if LOG is not requested)
-    // (NOT WORKING: Check it. This line below doesn't work because it modifies st->xtradata_mask instead of pkt->xtradata_mask. st distinguishes
-    //               between server and client connection.)
-    //stream_api->set_extra_data(ssnptr, pkt, context->xtra_file_sha256_id (OR xtra_file_size_id)); //(to test. got it from snort_httpinspect.c -> OK)
-    // (SOLUTION: Instead of modifying xtradat_mask through set_extra_data() function, pkt->xtradata_mask is modified directly in here below
-    //            This comments will be keeped just in case problems will show up during the tests. Maybe we will must use the set_extra_data()
-    //            function in the future because to avoid problems when catching files and send extra data to unified2.)
-    pkt->xtradata_mask |= BIT(context->xtra_file_sha256_id);
-    pkt->xtradata_mask |= BIT(context->xtra_file_size_id);
-    pkt->xtradata_mask |= BIT(context->xtra_file_uri_id);
-    pkt->xtradata_mask |= BIT(context->xtra_file_hostname_id);
+    stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_sha256_id);
+    stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_size_id);
+    stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_uri_id);
+    stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_hostname_id);
 //rb:fin
 
     if ((!context->file_type_enabled) && (!context->file_signature_enabled))
@@ -915,10 +911,6 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
 
         if (verdict == FILE_VERDICT_LOG )
         {
-//rb:ini
-            //_dpd.streamAPI->set_extra_data(pkt->stream_session, pkt, context->file_config->xtra_file_sha256_id);
-            //_dpd.streamAPI->set_extra_data(pkt->stream_session, pkt, context->file_config->xtra_file_size_id);
-//rb:fin
             file_eventq_add(GENERATOR_FILE_TYPE, context->file_type_id,
                     file_type_name(context->file_config, context->file_type_id),
                     RULE_TYPE__ALERT);
