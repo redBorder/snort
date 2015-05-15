@@ -69,8 +69,7 @@ static bool file_capture_enabled = false;
 static bool file_processing_initiated = false;
 static bool file_type_force = false;
 //rb:ini
-static bool xtra_file_sha256_enabled = false;
-static bool xtra_file_size_enabled = false;
+static bool file_extradata_enabled = false;
 //rb:fin
 
 static uint32_t file_config_version = 0;
@@ -107,14 +106,11 @@ static void set_file_policy_callback(File_policy_callback_func);
 static void enable_file_type(File_type_callback_func );
 static void enable_file_signature (File_signature_callback_func);
 static void enable_file_capture(File_signature_callback_func );
-//rb:ini (revisar la utilidad de enable_xtra_file_sha256() y enable_xtra_file_size())
+//rb:ini (revisar la utilidad de enable_file_extradata())
 static void FileRegisterXtraDataFuncs(FileConfig *pFileConfig);
 // (probably a callback won't be used)
-//static void enable_xtra_file_sha256(Xtra_file_sha256_callback_func);
-static void enable_xtra_file_sha256();
-// (probably a callback won't be used)
-//static void enable_xtra_file_size(Xtra_file_size_callback_func);
-static void enable_xtra_file_size();
+//static void enable_file_extradata(Xtra_file_sha256_callback_func);
+static void enable_file_extradata();
 static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 static int GetFileSize(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 static int GetFileURI(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
@@ -176,8 +172,7 @@ void init_fileAPI(void)
     fileAPI.enable_file_signature = &enable_file_signature;
     fileAPI.enable_file_capture = &enable_file_capture;
 //rb:ini
-    fileAPI.enable_xtra_file_sha256 = &enable_xtra_file_sha256;
-    fileAPI.enable_xtra_file_size = &enable_xtra_file_size;
+    fileAPI.enable_file_extradata = &enable_file_extradata;
 //rb:fin
     fileAPI.set_file_action_log_callback = &set_file_action_log_callback;
     fileAPI.get_max_file_depth = &get_max_file_depth;
@@ -237,7 +232,7 @@ void FileAPIPostInit (void)
     }
 
 //rb:ini (Maybe we should include this condition in the previous if (file_type_id_enabled || file_signature_enabled || file_capture_enabled))
-    if (1 || xtra_file_sha256_enabled || xtra_file_size_enabled)
+    if (1 || file_extradata_enabled)
     {
         if (!file_config)
         {
@@ -1166,19 +1161,19 @@ static void enable_file_capture(File_signature_callback_func callback)
 
 //rb:ini
 // (probably a callback won't be used)
-//static void enable_xtra_file_sha256(Xtra_file_sha256_callback_func callback)
-static void enable_xtra_file_sha256()
+//static void enable_file_extradata(Xtra_file_sha256_callback_func callback)
+static void enable_file_extradata()
 {
     //_update_file_sig_callback(callback);
 
-    if (!xtra_file_sha256_enabled)
+    if (!file_extradata_enabled)
     {
-        xtra_file_sha256_enabled = true;
+        file_extradata_enabled = true;
 #ifdef SNORT_RELOAD
         file_sevice_reconfig_set(true);
 #endif
         //start_file_processing();
-        LogMessage("File service: extra data file SHA256 enabled.\n");
+        LogMessage("File service: file extra data enabled.\n");
     }
 
     //if(!xtra_file_sha256_cb)
@@ -1188,32 +1183,6 @@ static void enable_xtra_file_sha256()
     //else if (xtra_file_sha256_cb != callback)
     //{
     //    WarningMessage("File service: extra data file SHA256 callback redefined.\n");
-    //}
-}
-
-// (probably a callback won't be used)
-//static void enable_xtra_file_size(Xtra_file_size_callback_func callback)
-static void enable_xtra_file_size()
-{
-    //_update_file_sig_callback(callback);
-
-    if (!xtra_file_size_enabled)
-    {
-        xtra_file_size_enabled = true;
-#ifdef SNORT_RELOAD
-        file_sevice_reconfig_set(true);
-#endif
-        //start_file_processing();
-        LogMessage("File service: extra data file size enabled.\n");
-    }
-
-    //if(!xtra_file_size_cb)
-    //{
-    //    xtra_file_size_cb = callback;
-    //}
-    //else if (xtra_file_size_cb != callback)
-    //{
-    //    WarningMessage("File service: extra data file size callback redefined.\n");
     //}
 }
 //rb:fin

@@ -353,8 +353,7 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
 //rb:ini
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_TRACK_EXTRADATA))
         {
-            config->xtra_file_sha256_enabled = true;
-            config->xtra_file_size_enabled = true;
+            config->file_extradata_enabled = true;
         }
 //rb:fin
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_BLACKLIST))

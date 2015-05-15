@@ -62,8 +62,7 @@ static bool file_type_enabled = false;
 static bool file_signature_enabled = false;
 static bool file_capture_enabled = false;
 //rb:ini (probably a callback won't be used)
-//static bool xtra_file_sha256_enabled = false;
-//static bool xtra_file_size_enabled = false;
+static bool file_extradata_enabled = false;
 //rb:fin
 
 pthread_t capture_thread_tid;
@@ -267,20 +266,12 @@ void file_agent_init(FileInspectConf* conf)
     }
 
 //rb:ini (conf->xtra_file_*_enabled should be set in file_inspect_config.c (file_config_parse()))
-    if (1 || conf->xtra_file_sha256_enabled)
+    if (conf->file_extradata_enabled)
     {
         // (probably a callback won't be used)
-        //_dpd.fileAPI->enable_xtra_file_sha256(file_agent_xtra_file_sha256_callback);
-        _dpd.fileAPI->enable_xtra_file_sha256();
-        //xtra_file_sha256_enabled = true;
-    }
-
-    if (1 || conf->xtra_file_size_enabled)
-    {
-        // (probably a callback won't be used)
-        //_dpd.fileAPI->enable_xtra_file_size(file_agent_xtra_file_size_callback);
-        _dpd.fileAPI->enable_xtra_file_size();
-        //xtra_file_size_enabled = true;
+        //_dpd.fileAPI->enable_file_extradata(file_agent_file_extradata_callback);
+        _dpd.fileAPI->enable_file_extradata();
+        //file_extradata_enabled = true;
     }
 //rb:fin
 

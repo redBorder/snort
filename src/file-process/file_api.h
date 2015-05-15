@@ -163,10 +163,8 @@ typedef void (*Enable_file_type_func)(File_type_callback_func);
 typedef void (*Enable_file_signature_func)(File_signature_callback_func);
 typedef void (*Enable_file_capture_func)(File_signature_callback_func);
 //rb:ini (probably a callback won't be used)
-//typedef void (*Enable_xtra_file_sha256_func)(Xtra_file_sha256_callback_func);
-typedef void (*Enable_xtra_file_sha256_func)();
-//typedef void (*Enable_xtra_file_size_func)(Xtra_file_size_callback_func);
-typedef void (*Enable_xtra_file_size_func)();
+//typedef void (*Enable_file_extradata_func)(file_agent_file_extradata_callback);
+typedef void (*Enable_file_extradata_func)();
 //rb:fin
 typedef void (*Set_file_action_log_func)(Log_file_action_func);
 
@@ -416,29 +414,17 @@ typedef struct _file_api
     Enable_file_signature_func enable_file_capture;
 
 //rb:ini
-    /* Enable extra data File SHA256.
-     * //Extra Data File SHA256 callback is called when this option is enabled.
+    /* Enable file extra.
+     * //Extra Data File callback functions are called when this option is enabled.
      * //Callback set a bit in xtradata_mask.
      *
      * Arguments:
-     *    //Xtra_file_sha256_callback_func
+     *    //file_extradata_callback_func
      *    None
      * Returns
      *    None
      */
-    Enable_xtra_file_sha256_func enable_xtra_file_sha256;
-
-    /* Enable extra data File Size.
-     * //Extra Data File Size callback is called when this option is enabled.
-     * //Callback set a bit in xtradata_mask.
-     *
-     * Arguments:
-     *    //Xtra_file_size_callback_func
-     *    None
-     * Returns
-     *    None
-     */
-    Enable_xtra_file_size_func enable_xtra_file_size;
+    Enable_file_extradata_func enable_file_extradata;
 //rb:fin
 
     /* Set file action log callback.
