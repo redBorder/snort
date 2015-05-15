@@ -1173,7 +1173,7 @@ static void enable_file_extradata()
         file_sevice_reconfig_set(true);
 #endif
         //start_file_processing();
-        LogMessage("File service: file extra data enabled.\n");
+        LogMessage("File service: file extradata enabled.\n");
     }
 
     //if(!xtra_file_sha256_cb)

@@ -281,6 +281,10 @@ static void DisplayFileConfig(FileInspectConf *config)
     _dpd.logMsg("    file sent to host: %s, port number: %d\n",
             config->hostname ? config->hostname:"DISABLED (Default)",
                     config->portno);
+//rb:ini
+    _dpd.logMsg("    file extradata: %s\n",
+            config->file_extradata_enabled ? "ENABLED":"DISABLED (Default)");
+//rb:fin
     _dpd.logMsg("\n");
 }
 
