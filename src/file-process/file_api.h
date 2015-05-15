@@ -133,11 +133,6 @@ typedef File_Verdict (*File_type_callback_func) (void* p, void* ssnptr,
 typedef File_Verdict (*File_signature_callback_func) (void* p, void* ssnptr,
         uint8_t* file_sig, uint64_t file_size, FileState *state, bool upload,
         uint32_t file_id);
-//rb:ini (ver file_agent_xtra_sha256_callback() en file_agent.c para modificar la de este fichero cuando se modifique la otra)
-// (probably a callback won't be used)
-//typedef void (*Xtra_file_sha256_callback_func) ();
-//typedef void (*Xtra_file_size_callback_func) ();
-//rb:fin
 typedef void (*Log_file_action_func) (void* ssnptr, int action);
 
 typedef int (*File_process_func)( void* p, uint8_t* file_data, int data_size, FilePosition position,
@@ -162,8 +157,7 @@ typedef void (*Set_file_policy_func)(File_policy_callback_func);
 typedef void (*Enable_file_type_func)(File_type_callback_func);
 typedef void (*Enable_file_signature_func)(File_signature_callback_func);
 typedef void (*Enable_file_capture_func)(File_signature_callback_func);
-//rb:ini (probably a callback won't be used)
-//typedef void (*Enable_file_extradata_func)(file_agent_file_extradata_callback);
+//rb:ini
 typedef void (*Enable_file_extradata_func)();
 //rb:fin
 typedef void (*Set_file_action_log_func)(Log_file_action_func);

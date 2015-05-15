@@ -48,10 +48,9 @@
 #include "file_resume_block.h"
 #include "snort_httpinspect.h"
 #include "file_service.h"
+
 //rb:ini
 #include "Unified2_common.h"
-#include "sf_dynamic_preprocessor.h"
-//#include "sf_snort_packet.h"
 //rb:fin
 
 typedef struct _FileSession
@@ -76,10 +75,6 @@ static uint32_t file_config_version = 0;
 static File_policy_callback_func file_policy_cb = NULL;
 File_type_callback_func  file_type_cb = NULL;
 File_signature_callback_func file_signature_cb = NULL;
-//rb:ini (probably a callback won't be used)
-//Xtra_file_sha256_callback_func xtra_file_sha256_cb = NULL;
-//Xtra_file_size_callback_func xtra_file_size_cb = NULL;
-//rb:fin
 Log_file_action_func log_file_action = NULL;
 
 /*Main File Processing functions */
@@ -106,10 +101,8 @@ static void set_file_policy_callback(File_policy_callback_func);
 static void enable_file_type(File_type_callback_func );
 static void enable_file_signature (File_signature_callback_func);
 static void enable_file_capture(File_signature_callback_func );
-//rb:ini (revisar la utilidad de enable_file_extradata())
+//rb:ini
 static void FileRegisterXtraDataFuncs(FileConfig *pFileConfig);
-// (probably a callback won't be used)
-//static void enable_file_extradata(Xtra_file_sha256_callback_func);
 static void enable_file_extradata();
 static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 static int GetFileSize(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
@@ -229,19 +222,11 @@ void FileAPIPostInit (void)
             file_config =  file_service_config_create();
             snort_conf->file_config = file_config;
         }
-    }
-
-//rb:ini (Maybe we should include this condition in the previous if (file_type_id_enabled || file_signature_enabled || file_capture_enabled))
-    if (1 || file_extradata_enabled)
-    {
-        if (!file_config)
-        {
-            file_config =  file_service_config_create();
-            snort_conf->file_config = file_config;
-        }
-        FileRegisterXtraDataFuncs(file_config);
-    }
+//rb:ini
+        if (file_extradata_enabled)
+            FileRegisterXtraDataFuncs(file_config);
 //rb:fin
+    }
 
     if ( file_capture_enabled)
         file_capture_init_mempool(file_config->file_capture_memcap,
@@ -479,7 +464,7 @@ FileContext* create_file_context(void *ssnptr)
     FileSession *file_session;
     FileContext *context = file_context_create();
 
-//rb:ini (to test)
+//rb:ini
     if (snort_conf != NULL && snort_conf->file_config != NULL)
     {
         context->xtra_file_sha256_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_sha256_id;
@@ -840,7 +825,7 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
     set_current_file_context(ssnptr, context);
     file_stats.file_data_total += data_size;
 
-//rb:ini (move to another proper location so that won't catch extra data if LOG is not requested)
+//rb:ini
     stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_sha256_id);
     stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_size_id);
     stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_uri_id);
@@ -970,7 +955,7 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
             _file_signature_lookup(context, p, false, suspend_block_verdict);
         }
     }
-//rb:ini
+//rb:ini (check to delete this piece of code since it will be mandatory enable signature from conf is sha256 is wanted in extradata)
     else if (context->xtra_file_sha256_id)
     {
         file_signature_sha256(context, file_data, data_size, position);
@@ -979,7 +964,7 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
         updateFileSize(context, data_size, position);
         // (During the tests, including the lines before should be considered)
         //FILE_REG_DEBUG_WRAP(if (context->sha256) file_sha256_print(context->sha256);)
-        ///*Either get SHA or exceeding the SHA limit, need lookup*/
+        //Either get SHA or exceeding the SHA limit, need lookup
         //if (context->file_state.sig_state != FILE_SIG_PROCESSING)
         //{
         //    if (context->file_state.sig_state == FILE_SIG_DEPTH_FAIL)
@@ -1160,30 +1145,16 @@ static void enable_file_capture(File_signature_callback_func callback)
 }
 
 //rb:ini
-// (probably a callback won't be used)
-//static void enable_file_extradata(Xtra_file_sha256_callback_func callback)
 static void enable_file_extradata()
 {
-    //_update_file_sig_callback(callback);
-
     if (!file_extradata_enabled)
     {
         file_extradata_enabled = true;
 #ifdef SNORT_RELOAD
         file_sevice_reconfig_set(true);
 #endif
-        //start_file_processing();
         LogMessage("File service: file extradata enabled.\n");
     }
-
-    //if(!xtra_file_sha256_cb)
-    //{
-    //    xtra_file_sha256_cb = callback;
-    //}
-    //else if (xtra_file_sha256_cb != callback)
-    //{
-    //    WarningMessage("File service: extra data file SHA256 callback redefined.\n");
-    //}
 }
 //rb:fin
 

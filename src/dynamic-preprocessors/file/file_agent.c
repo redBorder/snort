@@ -61,9 +61,6 @@ static volatile bool capture_thread_running = false;
 static bool file_type_enabled = false;
 static bool file_signature_enabled = false;
 static bool file_capture_enabled = false;
-//rb:ini (probably a callback won't be used)
-static bool file_extradata_enabled = false;
-//rb:fin
 
 pthread_t capture_thread_tid;
 static pid_t capture_thread_pid;
@@ -92,12 +89,6 @@ static FileInfo *file_agent_finish_file(void);
 static File_Verdict file_agent_type_callback(void*, void*, uint32_t, bool,uint32_t);
 static File_Verdict file_agent_signature_callback(void*, void*, uint8_t*,
         uint64_t, FileState *, bool, uint32_t);
-//rb:ini (probably won't be used, a callback is not necessary for now)
-/*
-static void file_agent_xtra_file_sha256_callback();
-static void file_agent_xtra_file_size_callback();
-*/
-//rb:fin
 static int file_agent_queue_file(void*, void *);
 static int file_agent_init_socket(char *hostname, int portno);
 
@@ -265,14 +256,9 @@ void file_agent_init(FileInspectConf* conf)
         file_capture_enabled = true;
     }
 
-//rb:ini (conf->xtra_file_*_enabled should be set in file_inspect_config.c (file_config_parse()))
+//rb:ini
     if (conf->file_extradata_enabled)
-    {
-        // (probably a callback won't be used)
-        //_dpd.fileAPI->enable_file_extradata(file_agent_file_extradata_callback);
         _dpd.fileAPI->enable_file_extradata();
-        //file_extradata_enabled = true;
-    }
 //rb:fin
 
     if (conf->hostname)
@@ -732,17 +718,3 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
 
     return verdict;
 }
-
-//rb:ini (probably a callback won't be used)
-/*
-static void file_agent_xtra_file_sha256_callback()
-{
-
-}
-
-static void file_agent_xtra_file_size_callback()
-{
-
-}
-*/
-//rb:fin

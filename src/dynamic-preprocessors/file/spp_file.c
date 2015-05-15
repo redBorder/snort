@@ -42,9 +42,6 @@
 #include "spp_file.h"
 #include "sf_preproc_info.h"
 
-//rb:ini (finally not used)
-//#include "stream_api.h"
-//rb:fin
 #include <stdio.h>
 #include <syslog.h>
 #include <string.h>
