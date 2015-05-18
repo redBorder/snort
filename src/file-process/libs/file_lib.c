@@ -233,7 +233,7 @@ int file_name_get (FileContext *context, uint8_t **file_name, uint32_t *name_siz
     return 1;
 }
 
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
 void file_hostname_set (FileContext *context, uint8_t *file_hostname, uint32_t hostname_size)
 {
     if (!context)
@@ -256,7 +256,7 @@ int file_hostname_get (FileContext *context, uint8_t **file_hostname, uint32_t *
         return 0;
     return 1;
 }
-//rb:fin
+#endif
 
 void file_size_set (FileContext *context, uint64_t file_size)
 {

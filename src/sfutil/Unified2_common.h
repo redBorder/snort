@@ -194,12 +194,12 @@ typedef enum _EventInfoEnum
     EVENT_INFO_IPV6_SRC,
     EVENT_INFO_IPV6_DST,
     EVENT_INFO_JSNORM_DATA,
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
     EVENT_INFO_FILE_SHA256,
     EVENT_INFO_FILE_SIZE,
     EVENT_INFO_FILE_URI,
     EVENT_INFO_FILE_HOSTNAME
-//rb:fin
+#endif
 }EventInfoEnum;
 
 typedef enum _EventDataType

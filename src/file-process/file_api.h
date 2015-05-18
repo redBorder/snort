@@ -138,17 +138,17 @@ typedef void (*Log_file_action_func) (void* ssnptr, int action);
 typedef int (*File_process_func)( void* p, uint8_t* file_data, int data_size, FilePosition position,
         bool upload, bool suspend_block_verdict);
 typedef int (*Get_file_name_func) (void* ssnptr, uint8_t **file_name, uint32_t *name_len);
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
 typedef int (*Get_file_hostname_func) (void* ssnptr, uint8_t **file_hostname, uint32_t *hostname_len);
-//rb:fin
+#endif
 typedef uint64_t (*Get_file_size_func) (void* ssnptr);
 typedef bool (*Get_file_direction_func) (void* ssnptr);
 typedef uint8_t *(*Get_file_sig_sha256_func) (void* ssnptr);
 
 typedef void (*Set_file_name_func) (void* ssnptr, uint8_t *, uint32_t);
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
 typedef void (*Set_file_hostname_func) (void* ssnptr, uint8_t *, uint32_t);
-//rb:fin
+#endif
 typedef void (*Set_file_direction_func) (void* ssnptr, bool);
 
 typedef int64_t (*Get_file_depth_func) (void);
@@ -157,9 +157,9 @@ typedef void (*Set_file_policy_func)(File_policy_callback_func);
 typedef void (*Enable_file_type_func)(File_type_callback_func);
 typedef void (*Enable_file_signature_func)(File_signature_callback_func);
 typedef void (*Enable_file_capture_func)(File_signature_callback_func);
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
 typedef void (*Enable_file_extradata_func)();
-//rb:fin
+#endif
 typedef void (*Set_file_action_log_func)(Log_file_action_func);
 
 typedef int (*Set_log_buffers_func)(struct s_MAIL_LogState **log_state, struct s_MAIL_LogConfig *conf, void *mempool);
@@ -255,7 +255,7 @@ typedef struct _file_api
      */
     Get_file_name_func get_file_name;
 
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
     /* Get file hostname and the length of file hostname
      * Note: this is updated after file processing. It will be available
      * for file event logging, but might not be available during file type
@@ -271,7 +271,7 @@ typedef struct _file_api
      *    0: file hostname is unavailable
      */
     Get_file_hostname_func get_file_hostname;
-//rb:fin
+#endif
 
     /* Get file size
      * Note: this is updated after file processing. It will be available
@@ -331,7 +331,7 @@ typedef struct _file_api
      */
     Set_file_name_func set_file_name;
 
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
     /* Set file hostname and the length of file hostname
      *
      * Arguments:
@@ -342,7 +342,7 @@ typedef struct _file_api
      *    None
      */
     Set_file_hostname_func set_file_hostname;
-//rb:fin
+#endif
 
     /* Get file direction
      *
@@ -407,7 +407,7 @@ typedef struct _file_api
      */
     Enable_file_signature_func enable_file_capture;
 
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
     /* Enable file extra.
      * //Extra Data File callback functions are called when this option is enabled.
      * //Callback set a bit in xtradata_mask.
@@ -419,7 +419,7 @@ typedef struct _file_api
      *    None
      */
     Enable_file_extradata_func enable_file_extradata;
-//rb:fin
+#endif
 
     /* Set file action log callback.
      * File action log callback is called when file resume is detected.

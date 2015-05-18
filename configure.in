@@ -877,6 +877,17 @@ if test "x$Z_LIB" = "xno"; then
  fi
 LIBS="$LIBS -lz"
 
+AC_ARG_ENABLE(extradata-file,
+[  --enable-extradata-file       Enable ExtraData File collection.],
+       enable_extradata_file="$enableval", enable_extradata_file="no")
+
+if test "x$enable_extradata_file" = "xyes"; then
+    AC_MSG_RESULT(yes)
+    AC_DEFINE_UNQUOTED([HAVE_EXTRADATA_FILE],[],[ExtraData File collection])
+else
+    AC_MSG_RESULT(no)
+fi
+
 AC_ARG_ENABLE(lzma,
 [  --disable-lzma           Disable LZMA Decompression],
        enable_lzma="$enableval", enable_lzma="yes")

@@ -71,14 +71,14 @@ typedef struct _FileContext
     bool file_signature_enabled;
     uint8_t    *file_name;
     uint32_t   file_name_size;
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
     uint8_t    *hostname;
     uint32_t   hostname_size;
-//rb:fin
+#endif
     uint64_t   file_size;
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
     char       file_size_str[32];
-//rb:fin
+#endif
     bool       upload;
     uint64_t   processed_bytes;
     uint32_t   file_type_id;
@@ -97,12 +97,12 @@ typedef struct _FileContext
     FileState file_state;
     uint32_t file_id;
     uint32_t file_config_version;
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
     uint32_t xtra_file_sha256_id;
     uint32_t xtra_file_size_id;
     uint32_t xtra_file_uri_id;
     uint32_t xtra_file_hostname_id;
-//rb:fin
+#endif
 } FileContext;
 
 /*Main File Processing functions */
@@ -116,10 +116,10 @@ void file_context_free(void *context);
 /*File properties*/
 void file_name_set (FileContext *context, uint8_t *file_name, uint32_t name_size);
 int file_name_get (FileContext *context, uint8_t **file_name, uint32_t *name_size);
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
 void file_hostname_set (FileContext *context, uint8_t *file_hostname, uint32_t hostname_size);
 int file_hostname_get (FileContext *context, uint8_t **file_hostname, uint32_t *hostname_size);
-//rb:fin
+#endif
 void file_size_set (FileContext *context, uint64_t file_size);
 uint64_t file_size_get (FileContext *context);
 void file_direction_set (FileContext *context, bool upload);

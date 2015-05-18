@@ -256,10 +256,10 @@ void file_agent_init(FileInspectConf* conf)
         file_capture_enabled = true;
     }
 
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
     if (conf->file_extradata_enabled)
         _dpd.fileAPI->enable_file_extradata();
-//rb:fin
+#endif
 
     if (conf->hostname)
     {

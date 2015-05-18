@@ -46,9 +46,9 @@
 #define FILE_INSPECT_BLACKLIST           "blacklist"
 #define FILE_INSPECT_GREYLIST            "greylist"
 
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
 #define FILE_INSPECT_TRACK_EXTRADATA     "track_extradata"
-//rb:fin
+#endif
 
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
 #define FILE_INSPECT_VERDICT_DELAY       "verdict_delay"
@@ -281,10 +281,10 @@ static void DisplayFileConfig(FileInspectConf *config)
     _dpd.logMsg("    file sent to host: %s, port number: %d\n",
             config->hostname ? config->hostname:"DISABLED (Default)",
                     config->portno);
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
     _dpd.logMsg("    file extradata: %s\n",
             config->file_extradata_enabled ? "ENABLED":"DISABLED (Default)");
-//rb:fin
+#endif
     _dpd.logMsg("\n");
 }
 
@@ -354,12 +354,12 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
         {
             config->file_signature_enabled = true;
         }
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_TRACK_EXTRADATA))
         {
             config->file_extradata_enabled = true;
         }
-//rb:fin
+#endif
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_BLACKLIST))
         {
             cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);

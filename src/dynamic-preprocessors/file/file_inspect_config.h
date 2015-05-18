@@ -52,9 +52,9 @@ typedef struct _fileInspectConfig
     bool file_type_enabled;
     bool file_signature_enabled;
     bool file_capture_enabled;
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
     bool file_extradata_enabled;
-//rb:fin
+#endif
     uint32_t file_capture_queue_size;
     char *capture_dir;
     int ref_count;
@@ -65,12 +65,12 @@ typedef struct _fileInspectConfig
     int verdict_delay; /* used for debug, mimic delay to get verdicts */
 #endif
     uint32_t capture_disk_size;  /* In megabytes*/
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
     uint32_t xtra_file_sha256_id;
     uint32_t xtra_file_size_id;
     uint32_t xtra_file_uri_id;
     uint32_t xtra_file_hostname_id;
-//rb:fin
+#endif
 
 } FileInspectConf;
 

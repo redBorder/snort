@@ -3750,7 +3750,7 @@ static inline void setFileName(Packet *p)
     file_api->set_file_name (p->ssnptr, buf, len);
 }
 
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
 static inline void setFileHostname(Packet *p)
 {
     uint8_t *buf = NULL;
@@ -3759,7 +3759,7 @@ static inline void setFileHostname(Packet *p)
     GetHttpHostnameData(p->ssnptr, &buf, &len, &type);
     file_api->set_file_hostname (p->ssnptr, buf, len);
 }
-//rb:fin
+#endif
 
 static inline void processFileData(Packet *p, HttpSessionData *hsd, bool *fileProcessed)
 {
@@ -4103,9 +4103,9 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                                     file_api->get_file_position(p), true, false))
                         {
                             setFileName(p);
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
                             setFileHostname(p);
-//rb:fin
+#endif
                         }
                     }
 
@@ -4392,9 +4392,9 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                                                 file_api->get_file_position( p ), false, false ) )
                  {
                      setFileName(p);
-//rb:ini
+#ifdef HAVE_EXTRADATA_FILE
                      setFileHostname(p);
-//rb:fin
+#endif
                  }
              }
 
