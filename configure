@@ -833,6 +833,7 @@ with_dnet_libraries
 enable_static_daq
 enable_build_dynamic_examples
 enable_dlclose
+enable_extradata_file
 enable_lzma
 with_lzma_includes
 with_lzma_libraries
@@ -1522,6 +1523,7 @@ Optional Features:
   --disable-static-daq     Link static DAQ modules.
   --enable-build-dynamic-examples   Enable building of example dynamically loaded preprocessor and rule (off by default)
   --disable-dlclose        Only use if you are developing dynamic preprocessors or shared object rules.  Disable (--disable-dlclose) for testing valgrind leaks in dynamic libraries so a usable backtrace is reported.  Enabled by default.
+  --enable-extradata-file  Enable ExtraData File collection.
   --disable-lzma           Disable LZMA Decompression
   --disable-gre            Disable GRE and IP in IP encapsulation support
   --disable-mpls           Disable MPLS support
@@ -16063,6 +16065,30 @@ if test "x$Z_LIB" = "xno"; then
      exit
  fi
 LIBS="$LIBS -lz"
+
+
+
+# Check whether --enable-extradata-file was given.
+if test "${enable_extradata_file+set}" = set; then :
+  enableval=$enable_extradata_file; enable_extradata_file="$enableval"
+else
+  enable_extradata_file="no"
+fi
+
+if test "x$enable_extradata_file" = "xyes"; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+
+cat >>confdefs.h <<_ACEOF
+#define HAVE_EXTRADATA_FILE /**/
+_ACEOF
+
+else
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+fi
+
+
 
 # Check whether --enable-lzma was given.
 if test "${enable_lzma+set}" = set; then :
