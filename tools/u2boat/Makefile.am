@@ -3,7 +3,7 @@ bin_PROGRAMS = u2boat
 
 docdir = ${datadir}/doc/${PACKAGE}
 
-u2boat_SOURCES = u2boat.c u2boat.h
+u2boat_SOURCES = u2boat.c u2boat.h u2spewfoo.c u2spewfoo.h 
 u2boat_CFLAGS = @CFLAGS@ $(AM_CFLAGS)
 u2boat_LDADD = -lpcap
 

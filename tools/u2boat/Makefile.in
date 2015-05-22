@@ -93,7 +93,7 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(docdir)"
 PROGRAMS = $(bin_PROGRAMS)
-am_u2boat_OBJECTS = u2boat-u2boat.$(OBJEXT)
+am_u2boat_OBJECTS = u2boat-u2boat.$(OBJEXT) u2boat-u2spewfoo.$(OBJEXT)
 u2boat_OBJECTS = $(am_u2boat_OBJECTS)
 u2boat_DEPENDENCIES =
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -327,7 +327,7 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign
-u2boat_SOURCES = u2boat.c u2boat.h
+u2boat_SOURCES = u2boat.c u2boat.h u2spewfoo.c u2spewfoo.h 
 u2boat_CFLAGS = @CFLAGS@ $(AM_CFLAGS)
 u2boat_LDADD = -lpcap
 dist_doc_DATA = README.u2boat
@@ -426,6 +426,7 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/u2boat-u2boat.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/u2boat-u2spewfoo.Po@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
@@ -461,6 +462,20 @@ u2boat-u2boat.obj: u2boat.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='u2boat.c' object='u2boat-u2boat.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(u2boat_CFLAGS) $(CFLAGS) -c -o u2boat-u2boat.obj `if test -f 'u2boat.c'; then $(CYGPATH_W) 'u2boat.c'; else $(CYGPATH_W) '$(srcdir)/u2boat.c'; fi`
+
+u2boat-u2spewfoo.o: u2spewfoo.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(u2boat_CFLAGS) $(CFLAGS) -MT u2boat-u2spewfoo.o -MD -MP -MF $(DEPDIR)/u2boat-u2spewfoo.Tpo -c -o u2boat-u2spewfoo.o `test -f 'u2spewfoo.c' || echo '$(srcdir)/'`u2spewfoo.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/u2boat-u2spewfoo.Tpo $(DEPDIR)/u2boat-u2spewfoo.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='u2spewfoo.c' object='u2boat-u2spewfoo.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(u2boat_CFLAGS) $(CFLAGS) -c -o u2boat-u2spewfoo.o `test -f 'u2spewfoo.c' || echo '$(srcdir)/'`u2spewfoo.c
+
+u2boat-u2spewfoo.obj: u2spewfoo.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(u2boat_CFLAGS) $(CFLAGS) -MT u2boat-u2spewfoo.obj -MD -MP -MF $(DEPDIR)/u2boat-u2spewfoo.Tpo -c -o u2boat-u2spewfoo.obj `if test -f 'u2spewfoo.c'; then $(CYGPATH_W) 'u2spewfoo.c'; else $(CYGPATH_W) '$(srcdir)/u2spewfoo.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/u2boat-u2spewfoo.Tpo $(DEPDIR)/u2boat-u2spewfoo.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='u2spewfoo.c' object='u2boat-u2spewfoo.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(u2boat_CFLAGS) $(CFLAGS) -c -o u2boat-u2spewfoo.obj `if test -f 'u2spewfoo.c'; then $(CYGPATH_W) 'u2spewfoo.c'; else $(CYGPATH_W) '$(srcdir)/u2spewfoo.c'; fi`
 
 mostlyclean-libtool:
 	-rm -f *.lo
