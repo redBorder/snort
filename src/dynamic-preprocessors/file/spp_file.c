@@ -163,7 +163,7 @@ static void FileInit(struct _SnortConfig *sc, char *argp)
     sfPolicyUserDataSetCurrent(file_config, pPolicyConfig);
 
     file_config_parse(pPolicyConfig, (u_char *)argp);
-    FileUpdateConfig(pPolicyConfig, file_config);
+    //FileUpdateConfig(pPolicyConfig, file_config);
 
     file_agent_init(pPolicyConfig);
 

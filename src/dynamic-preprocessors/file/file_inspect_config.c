@@ -27,6 +27,10 @@
 #include "spp_file.h"
 #include <errno.h>
 
+#ifdef HAVE_S3FILE
+#include <libs3.h>
+#endif
+
 /*
  * File preprocessor configurations
  * Author: Hui Cao
@@ -45,6 +49,13 @@
 #define FILE_INSPECT_CAPTURE_QUEUE_SIZE  "capture_queue_size"
 #define FILE_INSPECT_BLACKLIST           "blacklist"
 #define FILE_INSPECT_GREYLIST            "greylist"
+
+#ifdef HAVE_S3FILE
+#define FILE_INSPECT_S3_BUCKET           "s3_bucket"
+#define FILE_INSPECT_S3_CLUSTER          "s3_cluster"
+#define FILE_INSPECT_S3_ACCESS_KEY       "s3_access_key"
+#define FILE_INSPECT_S3_SECRET_KEY       "s3_secret_key"
+#endif
 
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
 #define FILE_INSPECT_VERDICT_DELAY       "verdict_delay"
@@ -446,6 +457,46 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
             _dpd.checkValueInRange(cur_tokenp, FILE_INSPECT_VERDICT_DELAY,
                     0, UINT32_MAX, &value);
             config->verdict_delay = (uint32_t) value;
+        }
+#endif
+#if HAVE_S3FILE
+        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_S3_BUCKET) )
+        {
+            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
+            if( NULL == cur_tokenp )
+            {
+                FILE_FATAL_ERROR("%s(%d) => Please specify s3 bucket!\n");
+            }
+            config->s3.bucket = strdup(cur_tokenp);
+        }
+        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_S3_CLUSTER) )
+        {
+            config->file_capture_enabled = true;
+
+            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
+            if( NULL == cur_tokenp )
+            {
+                FILE_FATAL_ERROR("%s(%d) => Please specify s3 cluster!\n");
+            }
+            config->s3.cluster = strdup(cur_tokenp);
+        }
+        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_S3_ACCESS_KEY) )
+        {
+            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
+            if( NULL == cur_tokenp )
+            {
+                FILE_FATAL_ERROR("%s(%d) => Please specify s3 access_key!\n");
+            }
+            config->s3.access_key = strdup(cur_tokenp);
+        }
+        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_S3_SECRET_KEY) )
+        {
+            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
+            if( NULL == cur_tokenp )
+            {
+                FILE_FATAL_ERROR("%s(%d) => Please specify s3 secret_key!\n");
+            }
+            config->s3.secret_key = strdup(cur_tokenp);
         }
 #endif
         else
