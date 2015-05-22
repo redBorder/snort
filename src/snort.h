@@ -710,6 +710,7 @@ typedef struct _SnortConfig
 #endif
 
     char pid_path[STD_BUF];  /* --pid-path or config pidpath */
+    pid_t parent_pid;
 
 #ifdef EXIT_CHECK
     uint64_t exit_check;        /* --exit-check */
