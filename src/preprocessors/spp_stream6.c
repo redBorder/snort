@@ -1,7 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -439,7 +439,7 @@ static void StreamPrintSessionConfig( SessionConfiguration *config )
 #endif
 
 #ifdef REG_TEST
-    LogMessage("    Session Control Block Size: %lu\n",sizeof(SessionControlBlock));
+    LogMessage("    Session Control Block Size: %lu\n", (long unsigned int)sizeof(SessionControlBlock));
 #endif
 
 }

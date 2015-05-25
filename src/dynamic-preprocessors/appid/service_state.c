@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -195,7 +195,7 @@ AppIdServiceIDState* AppIdAddServiceIDState(snort_ip *ip, uint16_t proto, uint16
     ipstr[0] = 0;
     inet_ntop(ip->family, (void *)ip->ip32, ipstr, sizeof(ipstr));
 #endif
-    if (sfxhash_add_return_data_ptr(cache, &k, (void **)&ss))
+    if ((sfxhash_add_return_data_ptr(cache, &k, (void **)&ss) < 0) || !ss)
     {
         ipstr[0] = 0;
         inet_ntop(ip->family, (void *)ip->ip32, ipstr, sizeof(ipstr));

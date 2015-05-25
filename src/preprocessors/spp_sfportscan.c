@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -172,7 +172,7 @@ static void PortscanResetStatsFunction(int signal, void *foo)
 **  @retval -1 buffer not large enough
 **  @retval  0 successful
 */
-static int MakeProtoInfo(PS_PROTO *proto, u_char *buffer, u_int *total_size)
+static int MakeProtoInfo(PS_PROTO *proto, const u_char *buffer, u_int *total_size)
 {
     int             dsize;
     sfip_t          *ip1, *ip2;
@@ -255,7 +255,7 @@ static int MakeProtoInfo(PS_PROTO *proto, u_char *buffer, u_int *total_size)
     return 0;
 }
 
-static int LogPortscanAlert(Packet *p, char *msg, uint32_t event_id,
+static int LogPortscanAlert(Packet *p, const char *msg, uint32_t event_id,
         uint32_t event_ref, uint32_t gen_id, uint32_t sig_id)
 {
     char timebuf[TIMEBUF_SIZE];
@@ -293,7 +293,7 @@ static int LogPortscanAlert(Packet *p, char *msg, uint32_t event_id,
 }
 
 static int GeneratePSSnortEvent(Packet *p,uint32_t gen_id,uint32_t sig_id,
-        uint32_t sig_rev, uint32_t class, uint32_t priority, char *msg)
+        uint32_t sig_rev, uint32_t class, uint32_t priority, const char *msg)
 {
     unsigned int event_id;
 
@@ -319,7 +319,7 @@ static int GeneratePSSnortEvent(Packet *p,uint32_t gen_id,uint32_t sig_id,
 */
 static int GenerateOpenPortEvent(Packet *p, uint32_t gen_id, uint32_t sig_id,
         uint32_t sig_rev, uint32_t class, uint32_t pri,
-        uint32_t event_ref, struct timeval *event_time, char *msg)
+        uint32_t event_ref, struct timeval *event_time, const char *msg)
 {
     Event event;
 
@@ -379,7 +379,7 @@ static int GenerateOpenPortEvent(Packet *p, uint32_t gen_id, uint32_t sig_id,
 **
 **  @return integer
 */
-static int MakeOpenPortInfo(PS_PROTO *proto, u_char *buffer, u_int *total_size,
+static int MakeOpenPortInfo(PS_PROTO *proto, const u_char *buffer, u_int *total_size,
          void *user)
 {
     int dsize;
@@ -476,13 +476,13 @@ static int MakePortscanPkt(PS_PKT *ps_pkt, PS_PROTO *proto, int proto_type,
         case PS_PROTO_UDP:
         case PS_PROTO_ICMP:
         case PS_PROTO_IP:
-            if(MakeProtoInfo(proto, (u_char *)g_tmp_pkt->data, &ip_size))
+            if(MakeProtoInfo(proto, g_tmp_pkt->data, &ip_size))
                 return -1;
 
             break;
 
         case PS_PROTO_OPEN_PORT:
-            if(MakeOpenPortInfo(proto, (u_char *)g_tmp_pkt->data, &ip_size, user))
+            if(MakeOpenPortInfo(proto, g_tmp_pkt->data, &ip_size, user))
                 return -1;
 
             break;

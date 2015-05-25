@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -3674,7 +3674,7 @@ char * PortObjectParseError( POParser * pop )
     {
     case POPERR_NO_NAME:            return "no name";
     case POPERR_NO_ENDLIST_BRACKET: return "no end of list bracket."
-                                           " Elements must be comma seperated,"
+                                           " Elements must be comma separated,"
                                            " and no spaces may appear between"
                                            " brackets.";
     case POPERR_NOT_A_NUMBER:       return "not a number";
@@ -3853,7 +3853,7 @@ int main( int argc, char ** argv )
         //LogMessage("PortObject : '%s' \n",portlist);
 
         /*
-        This is seperate fom PortVar's since some rules may declare these inline
+        This is separate from PortVar's since some rules may declare these inline
         */
         po = PortObjectParseString ( pvTable, &pop, argv[i], PORTLISTS, names/* bool 0/1 - name required in parse */);
         if( !po )

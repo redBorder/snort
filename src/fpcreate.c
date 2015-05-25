@@ -3,7 +3,7 @@
 **
 **  fpcreate.c
 **
-**  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+**  Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 **  Copyright (C) 2002-2013 Sourcefire, Inc.
 **  Dan Roelker <droelker@sourcefire.com>
 **  Marc Norton <mnorton@sourcefire.com>
@@ -2744,7 +2744,7 @@ static int fpCreateServiceMaps(SnortConfig *sc)
 *       ...could use a service id instead (bytes, fixed length,etc...)
 * list- list of otns for this service
 */
-void fpBuildServicePortGroupByServiceOtnList(SnortConfig *sc, SFGHASH *p, char *srvc, SF_LIST *list, FastPatternConfig *fp)
+void fpBuildServicePortGroupByServiceOtnList(SnortConfig *sc, SFGHASH *p, const char *srvc, SF_LIST *list, FastPatternConfig *fp)
 {
     OptTreeNode * otn;
     PORT_GROUP *pg = (PORT_GROUP *)SnortAlloc(sizeof(PORT_GROUP));
@@ -2802,7 +2802,7 @@ void fpBuildServicePortGroupByServiceOtnList(SnortConfig *sc, SFGHASH *p, char *
 void fpBuildServicePortGroups(SnortConfig *sc, SFGHASH *spg, PORT_GROUP **sopg, SFGHASH *srm, FastPatternConfig *fp)
 {
     SFGHASH_NODE * n;
-    char * srvc;
+    const char * srvc;
     SF_LIST * list;
     PORT_GROUP * pg;
 
