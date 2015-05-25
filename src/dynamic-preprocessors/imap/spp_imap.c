@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -612,7 +612,7 @@ static int IMAPReloadVerify(struct _SnortConfig *sc, void *swap_config)
     if ((rval = sfPolicyUserDataIterate( sc, imap_swap_config, IMAPCheckPolicyConfig )))
         return rval;
 
-    if ( rval = sfPolicyUserDataIterate( sc, imap_swap_config, CheckFilePolicyConfig ) )
+    if ((rval = sfPolicyUserDataIterate( sc, imap_swap_config, CheckFilePolicyConfig )))
         return rval;
 
     if (imap_mime_mempool != NULL)

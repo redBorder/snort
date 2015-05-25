@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -25,6 +25,7 @@
 
 #include "decode.h"
 #include "sfutil/sfeventq.h"
+#include "treenodes.h"
 
 #define SNORT_EVENTQ_PRIORITY    1
 #define SNORT_EVENTQ_CONTENT_LEN 2
@@ -54,8 +55,8 @@ typedef struct _EventNode
     unsigned int rev;
     unsigned int classification;
     unsigned int priority;
-    char        *msg;
-    void        *rule_info;
+    const char  *msg;
+    OptTreeNode *rule_info;
 
 } EventNode;
 
@@ -70,7 +71,9 @@ void SnortEventqResetCounts(void);
 
 int SnortEventqLog(SF_EVENTQ *[], Packet *);
 int SnortEventqAdd(uint32_t, uint32_t, uint32_t,
-        uint32_t, uint32_t,char *, void *);
+                   uint32_t, uint32_t, const char *, void *);
+int SnortEventqAddBypass(uint32_t, uint32_t, uint32_t,
+                         uint32_t, uint32_t, const char *, void *);
 
 void SnortEventqPush(void);
 void SnortEventqPop(void);

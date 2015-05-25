@@ -2,7 +2,7 @@
 **
 **  spp_perfmonitor.c
 **
-**  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+**  Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 **  Copyright (C) 2002-2013 Sourcefire, Inc.
 **  Marc Norton <mnorton@sourcefire.com>
 **  Dan Roelker <droelker@sourcefire.com>
@@ -161,8 +161,13 @@ static void PerfMonitorInit(struct _SnortConfig *sc, char *args)
     //configuration file.
     if( ( perfmon_config != NULL ) || getParserPolicy( sc ) != 0 )
     {
-        ParseError("Perfmonitor can only be configured in default policy and only once.");
-        return;
+#if 0
+        // TBD-EDM
+         ParseError("Perfmonitor can only be configured in default policy and only once.\n");
+#else
+        WarningMessage( "Perfmonitor can only be configured in default policy and only once.\n");
+#endif
+         return;
     }
 
     perfmon_config = (SFPERF *)SnortAlloc(sizeof(SFPERF));
@@ -189,7 +194,7 @@ static void PerfMonitorInit(struct _SnortConfig *sc, char *args)
 /*
  * Function: ParsePerfMonitorArgs(struct _SnortConfig *, char *)
  *
- * Purpose: Process the preprocessor arguements from the rules file and
+ * Purpose: Process the preprocessor arguments from the rules file and
  *          initialize the preprocessor's data struct.  This function doesn't
  *          have to exist if it makes sense to parse the args in the init
  *          function.
@@ -803,7 +808,12 @@ static void PerfMonitorReload(struct _SnortConfig *sc, char *args, void **new_co
     // Perf monitor configuration must be defined in the default configuration file only.
     if( ( perfmon_swap_config != NULL ) || getParserPolicy( sc ) != 0 )
     {
-        ParseError("Perfmonitor can only be configured in default policy and only once.");
+#if 0
+        // TBD-EDM
+         ParseError("Perfmonitor can only be configured in default policy and only once.\n");
+#else
+        WarningMessage( "Perfmonitor can only be configured in default policy and only once.\n");
+#endif
         return;
     }
 

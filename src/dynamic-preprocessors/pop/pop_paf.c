@@ -1,5 +1,5 @@
 /****************************************************************************
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -223,7 +223,7 @@ static inline void set_server_state(void *ssn, PopExpectedResp state)
  */
 static inline void reset_client_cmd_info(PopPafData *pfdata)
 {
-    pfdata->cmd_state.next_letter = '\0';
+    pfdata->cmd_state.next_letter = NULL;
     pfdata->cmd_state.status = POP_CMD_SEARCH;
 }
 
