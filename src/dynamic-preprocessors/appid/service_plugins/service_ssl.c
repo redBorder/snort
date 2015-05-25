@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -640,23 +640,18 @@ MakeRNAServiceValidationPrototype(ssl_validate)
     /* Start off with a Client Hello from client to server. */
     if (ss->state == SSL_STATE_INITIATE)
     {
+        ss->state = SSL_STATE_CONNECTION;
+        
         if (dir == APP_ID_FROM_INITIATOR)
         {
             parse_client_initiation(data, size, ss);
-            ss->state = SSL_STATE_CONNECTION;
             goto inprocess;
-        }
-        else
-        {
-            goto fail;
         }
     }
-    else
+
+    if (dir != APP_ID_FROM_RESPONDER)
     {
-        if (dir != APP_ID_FROM_RESPONDER)
-        {
             goto inprocess;
-        }
     }
 
     switch (ss->state)
@@ -881,20 +876,54 @@ success:
     flow_mark(flowp, FLOW_SSL_SESSION);
     if (ss->host_name || ss->common_name || ss->org_name)
     {
-        if (!(flowp->tsession = calloc(1, sizeof(*flowp->tsession))))
+        if (!flowp->tsession)
         {
-            goto fail;
+            if (!(flowp->tsession = calloc(1, sizeof(*flowp->tsession))))
+            {
+                goto fail;
+            }
         }
+
+        /* TLS Host */
         if (ss->host_name)
         {
+            if (flowp->tsession->tls_host)
+                free(flowp->tsession->tls_host);
+            flowp->tsession->tls_host = ss->host_name;
+            flowp->tsession->tls_host_strlen = ss->host_name_strlen;
             flowp->scan_flags |= SCAN_SSL_HOST_FLAG;
         }
-        flowp->tsession->tls_host           = ss->host_name;
-        flowp->tsession->tls_host_strlen    = ss->host_name_strlen;
-        flowp->tsession->tls_cname          = ss->common_name;
-        flowp->tsession->tls_cname_strlen   = ss->common_name_strlen;
-        flowp->tsession->tls_orgUnit        = ss->org_name;
-        flowp->tsession->tls_orgUnit_strlen = ss->org_name_strlen;
+        else if (ss->common_name)    // use common name (from server) if we didn't see host name (from client)
+        {
+            char *common_name = strdup(ss->common_name);
+            if (common_name)
+            {
+                if (flowp->tsession->tls_host)
+                    free(flowp->tsession->tls_host);
+                flowp->tsession->tls_host = common_name;
+                flowp->tsession->tls_host_strlen = ss->common_name_strlen;
+                flowp->scan_flags |= SCAN_SSL_HOST_FLAG;
+            }
+        }
+
+        /* TLS Common Name */
+        if (ss->common_name)
+        {
+            if (flowp->tsession->tls_cname)
+                free(flowp->tsession->tls_cname);
+            flowp->tsession->tls_cname = ss->common_name;
+            flowp->tsession->tls_cname_strlen = ss->common_name_strlen;
+        }
+
+        /* TLS Org Unit */
+        if (ss->org_name)
+        {
+            if (flowp->tsession->tls_orgUnit)
+                free(flowp->tsession->tls_orgUnit);
+            flowp->tsession->tls_orgUnit = ss->org_name;
+            flowp->tsession->tls_orgUnit_strlen = ss->org_name_strlen;
+        }
+
         ss->host_name = ss->common_name = ss->org_name = NULL;
     }
     ssl_service_mod.api->add_service(flowp, pkt, dir, &svc_element,

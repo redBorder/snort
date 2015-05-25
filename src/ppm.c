@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2006-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -423,7 +423,7 @@ void ppm_pkt_log(ppm_cfg_t *ppm_cfg, Packet* p)
 #define PPM_FMT_SUSPENDED "PPM: Rule-Event Pkt[" STDi64 "] address=0x%p used=%g usecs suspended %s\n"
 #define PPM_FMT_REENABLED "PPM: Rule-Event Pkt[" STDi64 "] address=0x%p re-enabled %s\n"
 
-static inline OptTreeNode * PPMGetOTN(uint32_t sid, char *msg)
+static inline OptTreeNode * PPMGetOTN(uint32_t sid, const char *msg)
 {
     OptTreeNode *otn = OtnLookup(snort_conf->otn_map, GENERATOR_PPM, sid);
 
@@ -469,7 +469,7 @@ void ppm_rule_log(ppm_cfg_t *ppm_cfg, uint64_t pktcnt, Packet *p)
 
             if (otn != NULL)
             {
-                char *tmp = otn->sigInfo.message;
+                const char *tmp = otn->sigInfo.message;
 
                 SetEvent(&ev,
                         otn->sigInfo.generator, /* GID */
@@ -543,7 +543,7 @@ void ppm_rule_log(ppm_cfg_t *ppm_cfg, uint64_t pktcnt, Packet *p)
 
             if (otn != NULL)
             {
-                char *tmp = otn->sigInfo.message;
+                const char *tmp = otn->sigInfo.message;
 
                 SetEvent(&ev,
                         otn->sigInfo.generator, /* GID */

@@ -2,7 +2,7 @@
 /*
 ** file_decomp.c
 **
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License Version 2 as
@@ -57,7 +57,7 @@ static const char SWF_Uncomp_Sig[3] = { 'F', 'W', 'S' };
 
 static struct sig_map_s
 {
-    char *Sig;
+    const char *Sig;
     size_t Sig_Length;
     bool Enabled;
     file_type_t File_Type;
@@ -93,7 +93,7 @@ static uint8_t File_Decomp_Buffer[DECODE_BLEN];
    Do NOT beyond the current location (initial Next_In). */
 static fd_status_t Locate_Sig_Here( fd_session_p_t SessionPtr )
 {
-    int Sig_Index, Char_Index;
+    unsigned int Sig_Index, Char_Index;
 
     /* If there's no new input, we don't change state */
     if( (SessionPtr->Avail_In == 0) ||

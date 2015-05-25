@@ -1,7 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2012-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -387,7 +387,7 @@ int RegisterSessionHAFuncs(uint32_t preproc_id, uint8_t subcode, uint8_t size,
             if (preproc_id == node->preproc_id && subcode == node->subcode)
             {
                 FatalError("Duplicate Stream HA registration attempt for preprocessor %hu with subcode %hu\n",
-                           node->preproc_id, node->subcode);
+                           (unsigned short)node->preproc_id, (unsigned short)node->subcode);
             }
         }
         else if (idx == n_stream_ha_funcs)

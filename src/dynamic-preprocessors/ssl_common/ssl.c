@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 1998-2013 Sourcefire, Inc.
  * 
  * This program is free software; you can redistribute it and/or modify
@@ -268,7 +268,7 @@ static uint32_t SSL_decode_v3(const uint8_t *pkt, int size, uint32_t pkt_flags, 
             case SSL_HEARTBEAT_REC:
                 retval |= SSL_HEARTBEAT_SEEN;
                 ccs = 0;
-                if((size < sizeof(SSL_heartbeat)) || !max_hb_len || !alert_flags)
+                if((size < 0) || ((unsigned int)size < sizeof(SSL_heartbeat)) || !max_hb_len || !alert_flags)
                     break;
                 heartbeat = (SSL_heartbeat*)pkt;
                 if((heartbeat->type) == SSL_HEARTBEAT_REQUEST)
