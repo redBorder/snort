@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -134,15 +134,6 @@ static int InitServerConf(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
     //structure copy
     sip = SiInput->sip;
     dip = SiInput->dip;
-
-    if (sip.family == AF_INET)
-    {
-        sip.ip.u6_addr32[0] = ntohl(sip.ip.u6_addr32[0]);
-    }
-    if (dip.family == AF_INET)
-    {
-        dip.ip.u6_addr32[0] = ntohl(dip.ip.u6_addr32[0]);
-    }
 
     /*
     **  We find the server configurations for both the source and dest. IPs.

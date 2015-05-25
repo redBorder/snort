@@ -1,7 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -74,7 +74,7 @@ typedef enum {
 typedef enum {
     ACTIVE_SSN_ALLOW,       // don't drop
     ACTIVE_SSN_DROP,        // can drop and reset
-    ACTIVE_SSN_DROP_WITHOUT_RESET,  // can drop but without reset
+    ACTIVE_SSN_DROP_WITHOUT_RESET  // can drop but without reset
 } tActiveSsnDrop;
 
 extern tActiveDrop active_drop_pkt;
