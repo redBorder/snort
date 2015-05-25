@@ -1,6 +1,6 @@
 /* $Id$ */
 /*
- ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2002-2013 Sourcefire, Inc.
  ** Author: Martin Roesch
  **
@@ -536,9 +536,8 @@ int CheckFlow(void *option_data, Packet *p)
     /* ...only_reassembled */
     if (csd->only_reassembled & ONLY_STREAM)
     {
-        if ( !(p->packet_flags & PKT_REBUILT_STREAM)
-            && !PacketHasFullPDU(p)
-        ) {
+        if ( !PacketHasPAFPayload(p)) 
+        {
             PREPROC_PROFILE_END(flowCheckPerfStats);
             return DETECTION_OPTION_NO_MATCH;
         }

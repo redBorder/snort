@@ -1,7 +1,7 @@
 /* $Id */
 
 /*
- ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2011-2013 Sourcefire, Inc.
  **
  **
@@ -509,7 +509,7 @@ static void ReputationInit(struct _SnortConfig *sc, char *argp)
         IPtables = &pPolicyConfig->localSegment;
 
 #ifdef SHARED_REP
-    if (pPolicyConfig->sharedMem.path)
+    if (pPolicyConfig->sharedMem.path && (!_dpd.isTestMode()))
         _dpd.addPostConfigFunc(sc, initShareMemory, pPolicyConfig);
 #endif
 

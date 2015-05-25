@@ -1,7 +1,7 @@
 /*
  * ftpp_si.c
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  * Steven A. Sturges <ssturges@sourcefire.com>
  * Daniel J. Roelker <droelker@sourcefire.com>
@@ -451,15 +451,6 @@ static int FTPInitConf(SFSnortPacket *p, FTPTELNET_GLOBAL_CONF *GlobalConf,
     sip = SiInput->sip;
     dip = SiInput->dip;
 
-    if (sip.family == AF_INET)
-    {
-        sip.ip.u6_addr32[0] = ntohl(sip.ip.u6_addr32[0]);
-    }
-    if (dip.family == AF_INET)
-    {
-        dip.ip.u6_addr32[0] = ntohl(dip.ip.u6_addr32[0]);
-    }
-
     /*
      * We find the client configurations for both the source and dest IPs.
      * There should be a check on the global configuration to see if there
@@ -726,7 +717,7 @@ FTP_DATA_SESSION * FTPDataSessionNew(SFSnortPacket *p)
     return ftpdata;
 }
 
-/* 
+/*
  * Function: FTPDataSessionFree
  *
  * Free an ftp-data session
@@ -760,7 +751,7 @@ void FTPDataSessionFree(void *p_ssn)
 bool FTPDataDirection(SFSnortPacket *p, FTP_DATA_SESSION *ftpdata)
 {
     uint32_t direction;
-    uint32_t pktdir = _dpd.sessionAPI->get_packet_direction(p); 
+    uint32_t pktdir = _dpd.sessionAPI->get_packet_direction(p);
 
     if (ftpdata->mode == FTPP_XFER_ACTIVE)
         direction = ftpdata->direction ?  FLAG_FROM_SERVER : FLAG_FROM_CLIENT;

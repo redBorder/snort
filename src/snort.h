@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2005 Martin Roesch <roesch@sourcefire.com>
 **
@@ -1224,13 +1224,13 @@ static inline int ScCheckInternalLogLevel(int level)
     return internal_log_level >= level;
 }
 
-static inline int ScSetInternalLogLevel(int level)
+static inline void ScSetInternalLogLevel(int level)
 {
     if (!ScLogQuiet())
         internal_log_level = level;
 }
 
-static inline int ScRestoreInternalLogLevel(void)
+static inline void ScRestoreInternalLogLevel(void)
 {
     internal_log_level = snort_conf->internal_log_level;
 }
