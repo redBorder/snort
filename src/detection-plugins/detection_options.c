@@ -1,6 +1,6 @@
 /* $Id$ */
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2007-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -930,7 +930,7 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
              * Alt Detect will take precedence over the Alt Decode and/or packet data.
              */
             if(Is_DetectFlag(FLAG_ALT_DETECT))
-                dp = (uint8_t *)DetectBuffer.data;
+                dp = DetectBuffer.data;
             else if(Is_DetectFlag(FLAG_ALT_DECODE))
                 dp = (uint8_t *)DecodeBuffer.data;
             else
@@ -959,7 +959,7 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
              * Alt Detect will take precedence over the Alt Decode and/or packet data.
              */
             if(Is_DetectFlag(FLAG_ALT_DETECT))
-                dp = (uint8_t *)DetectBuffer.data;
+                dp = DetectBuffer.data;
             else if(Is_DetectFlag(FLAG_ALT_DECODE))
                 dp = (uint8_t *)DecodeBuffer.data;
             else
@@ -1252,8 +1252,12 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
 
                             /* Check for an unbounded relative search.  If this
                              * failed before, it's going to fail again so don't
-                             * go down this path again */
-                            if (pmd->within == PMD_WITHIN_UNDEFINED)
+                             * go down this path again 
+                             * Check for protected pattern because in this case 
+                             * we had checked for 'n'bytes only where 'n' is the 
+                             * length of protected pattern.
+                             * */
+                            if (pmd->within == PMD_WITHIN_UNDEFINED && !pmd->protected_pattern)
                             {
                                 /* Only increment result once. Should hit this
                                  * condition on first loop iteration. */

@@ -1,7 +1,7 @@
 /* $Id */
 
 /*
- ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2011-2013 Sourcefire, Inc.
  **
  **
@@ -47,6 +47,7 @@
 #include "sip_roptions.h"
 #include "sip_parser.h"
 #include "sip_dialog.h"
+#include "sip_paf.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -83,7 +84,7 @@ int16_t sip_app_id = SFTARGET_UNKNOWN_PROTOCOL;
  */
 
 #define SIP_FLG_MISSED_PACKETS        (0x10000)
-#define SIP_FLG_REASSEMBLY_SET        (0x20000)
+
 /*
  * Function prototype(s)
  */
@@ -120,6 +121,7 @@ static void * SIPReloadSwap(struct _SnortConfig *, void *);
 static void SIPReloadSwapFree(void *);
 #endif
 
+static SIPMsg sipMsg;
 
 /* Called at preprocessor setup time. Links preprocessor keyword
  * to corresponding preprocessor initialization function.
@@ -256,7 +258,6 @@ static inline int SIP_Process(SFSnortPacket *p, SIPData* sessp)
     char* sip_buff = (char*) p->payload;
     char* end;
     SIP_Roptions *pRopts;
-    SIPMsg sipMsg;
 
     memset(&sipMsg, 0, SIPMSG_ZERO_LEN);
 
@@ -329,8 +330,12 @@ static void SIPmain( void* ipacketp, void* contextp )
     assert((IsUDP(packetp) || IsTCP(packetp)) &&
         packetp->payload && packetp->payload_size);
 
-    if ( packetp->flags & FLAG_STREAM_INSERT )
+    if (IsTCP(packetp) && (!_dpd.readyForProcess(packetp)))
+    {
+        /* Packet will be rebuilt, so wait for it */
+        DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Packet will be reassembled\n"));
         return;
+    }
 
     PREPROC_PROFILE_START(sipPerfStats);
 
@@ -429,13 +434,6 @@ static void SIPmain( void* ipacketp, void* contextp )
         }
     }
 
-    /* We're interested in this session. Turn on stream reassembly. */
-    if ( !(sessp->state_flags & SIP_FLG_REASSEMBLY_SET ))
-    {
-        _dpd.streamAPI->set_reassembly(packetp->stream_session,
-                STREAM_FLPOLICY_FOOTPRINT, SSN_DIR_BOTH, STREAM_FLPOLICY_SET_ABSOLUTE);
-        sessp->state_flags |= SIP_FLG_REASSEMBLY_SET;
-    }
     /*
      * Start process PAYLOAD
      */
@@ -489,6 +487,13 @@ SIPData * SIPGetNewSession(SFSnortPacket *packetp, tSfPolicyId policy_id)
     _dpd.sessionAPI->set_application_data(
             packetp->stream_session,
             PP_SIP, datap, FreeSIPData );
+            
+    /* We're interested in this session. Turn on stream reassembly. */
+    if ( !(_dpd.streamAPI->get_reassembly_direction(packetp->stream_session) & SSN_DIR_BOTH ))
+    {
+        _dpd.streamAPI->set_reassembly(packetp->stream_session,
+                STREAM_FLPOLICY_FOOTPRINT, SSN_DIR_BOTH, STREAM_FLPOLICY_SET_ABSOLUTE);
+    }
 
     datap->policy_id = policy_id;
     datap->config = sip_config;
@@ -621,6 +626,7 @@ static void _addPortsToStreamFilter(struct _SnortConfig *sc, SIPConfig *config, 
             //Add port the port
             _dpd.streamAPI->set_port_filter_status(sc, IPPROTO_UDP, (uint16_t)portNum, PORT_MONITOR_SESSION, policy_id, 1);
             _dpd.streamAPI->set_port_filter_status(sc, IPPROTO_TCP, (uint16_t)portNum, PORT_MONITOR_SESSION, policy_id, 1);
+            register_sip_paf_port(sc, portNum, policy_id);
         }
     }
 }
@@ -630,6 +636,7 @@ static void _addPortsToStreamFilter(struct _SnortConfig *sc, SIPConfig *config, 
 static void _addServicesToStreamFilter(struct _SnortConfig *sc, tSfPolicyId policy_id)
 {
     _dpd.streamAPI->set_service_filter_status(sc, sip_app_id, PORT_MONITOR_SESSION, policy_id, 1);
+    register_sip_paf_service(sc, sip_app_id, policy_id);
 }
 #endif
 

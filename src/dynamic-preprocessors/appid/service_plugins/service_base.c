@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -1330,7 +1330,7 @@ int AppIdServiceInProcess(FLOW *flow, const SFSnortPacket *pkt, int dir,
 
         if (!(id_state = AppIdAddServiceIDState(ip, flow->proto, port)))
         {
-            _dpd.errMsg( "Add service failed to create state");
+            _dpd.errMsg( "In-process service failed to create state");
             return SERVICE_ENOMEM;
         }
         flow->id_state = id_state;
@@ -1426,7 +1426,7 @@ int AppIdServiceIncompatibleData(FLOW *flow, const SFSnortPacket *pkt, int dir,
 
         if (!(id_state = AppIdAddServiceIDState(ip, flow->proto, port)))
         {
-            _dpd.errMsg( "Add service failed to create state");
+            _dpd.errMsg( "Incompatible service failed to create state");
             return SERVICE_ENOMEM;
         }
         flow->id_state = id_state;
