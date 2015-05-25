@@ -1,6 +1,6 @@
 /* $Id$ */
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -108,6 +108,31 @@ void LogPriorityData(TextLog* log, bool doNewLine)
     if (doNewLine)
         TextLog_NewLine(log);
 }
+
+#if defined(FEAT_OPEN_APPID)
+/*--------------------------------------------------------------------
+ * Function: LogAppID()
+ *
+ * Purpose: Prints out AppID data associated with an alert
+ *
+ * Arguments: log => pointer to TextLog to write the data to
+ *            appName => name of app ID detected (if any)
+ *            doNewLine => tack a \n to the end of the line or not (bool)
+ *
+ * Returns: void function
+ *--------------------------------------------------------------------
+ */
+void LogAppID(TextLog* log, const char* appName, bool doNewLine)
+{
+    if (!appName || !appName[0])
+        return;
+
+    TextLog_Print(log, "[AppID: %s] ", appName);
+
+    if (doNewLine)
+        TextLog_NewLine(log);
+}
+#endif
 
 /*--------------------------------------------------------------------
  * Layer 2 header stuff cloned from log.c
@@ -1388,7 +1413,7 @@ void LogXrefs(TextLog* log, bool doNewLine)
  * Returns: void function
  *--------------------------------------------------------------------
  */
-static void LogCharData(TextLog* log, char *data, int len)
+static void LogCharData(TextLog* log, const char *data, int len)
 {
     const char* pb = data;
     const char* end = data + len;
@@ -1711,12 +1736,12 @@ void LogIPPkt(TextLog* log, int type, Packet * p)
             if(!IsJSNormData(p->ssnptr))
             {
                 TextLog_Print(log, "%s\n", "Normalized JavaScript for this packet");
-                LogCharData(log, (char *)file_data_ptr.data, file_data_ptr.len);
+                LogCharData(log, (const char*)file_data_ptr.data, file_data_ptr.len);
             }
             else if(!IsGzipData(p->ssnptr))
             {
                 TextLog_Print(log, "%s\n", "Decompressed Data for this packet");
-                LogCharData(log, (char *)file_data_ptr.data, file_data_ptr.len);
+                LogCharData(log, (const char *)file_data_ptr.data, file_data_ptr.len);
             }
         }
         else

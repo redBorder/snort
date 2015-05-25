@@ -17,7 +17,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * Author: Steven Sturges
@@ -1608,7 +1608,7 @@ void DynamicSetParserPolicy(SnortConfig *sc, tSfPolicyId id)
 
 void DynamicSetFileDataPtr(uint8_t *ptr, uint16_t decode_size)
 {
-    setFileDataPtr(ptr, decode_size);
+    setFileDataPtr((const uint8_t*)ptr, decode_size);
 }
 
 void DynamicDetectResetPtr(uint8_t *ptr, uint16_t decode_size)
@@ -1797,6 +1797,7 @@ static UserGroupIdGetFunc userGroupIdGetFnPtr;
 static GeoIpAddressLookupFunc geoIpAddressLookupFnPtr;
 static UpdateSSLSSnLogDataFunc updateSSLSSnLogDataFnPtr;
 static EndSSLSSnLogDataFunc endSSLSSnLogDataFnPtr;
+static GetSSLActualActionFunc getSSLActualActionFnPtr;
 static GetIntfDataFunc getIntfDataFnPtr;
 
 void registerUrlQuery(UrlQueryCreateFunc createFn, UrlQueryDestroyFunc destroyFn, UrlQueryMatchFunc matchFn)
@@ -1868,7 +1869,7 @@ static void registerUpdateSSLSSnLogData(UpdateSSLSSnLogDataFunc fn)
 }
 
 static void updateSSLSSnLogData(void *ssnptr, uint8_t logging_on, uint8_t action_is_block, const char *ssl_cert_fingerprint,
-    uint32_t ssl_cert_fingerprint_len, uint16_t ssl_cert_status, uint8_t *ssl_policy_id,
+    uint32_t ssl_cert_fingerprint_len, uint32_t ssl_cert_status, uint8_t *ssl_policy_id,
     uint32_t ssl_policy_id_len, uint32_t ssl_rule_id, uint16_t ssl_cipher_suite, uint8_t ssl_version,
     uint16_t ssl_actual_action, uint16_t ssl_expected_action, uint32_t ssl_url_category,
     uint16_t ssl_flow_status, uint32_t ssl_flow_error, uint32_t ssl_flow_messages,
@@ -1884,6 +1885,21 @@ static void updateSSLSSnLogData(void *ssnptr, uint8_t logging_on, uint8_t action
                 ssl_flow_status, ssl_flow_error, ssl_flow_messages,
                 ssl_flow_flags, ssl_server_name, ssl_session_id, session_id_len, ssl_ticket_id, ticket_id_len);
     }
+}
+
+static void registerGetSSLActualAction(GetSSLActualActionFunc fn)
+{
+    getSSLActualActionFnPtr = fn;
+}
+
+static int getSSLActualAction(void *ssnptr, uint16_t *action)
+{
+    if (getSSLActualActionFnPtr)
+    {
+        return (getSSLActualActionFnPtr)(ssnptr, action);
+    }
+    
+    return -1;
 }
 
 
@@ -1918,15 +1934,29 @@ void *DynamicGetSSLCallback(void)
 {
     return GetSSLCallback();
 }
-bool DynamicIsSSLPolicyEnabled(void)
+
+bool DynamicIsSSLPolicyEnabled(struct _SnortConfig *sc)
 {
-    tSfPolicyId policy = getNapRuntimePolicy();
-    return (snort_conf->targeted_policies[policy]->ssl_policy_enabled );
+    tSfPolicyId policy;
+
+    if (sc)
+    {
+        policy = getParserPolicy(sc);
+        return (sc->targeted_policies[ policy ]->ssl_policy_enabled);
+    }
+
+    policy = getNapRuntimePolicy();
+    return (snort_conf->targeted_policies[ policy ]->ssl_policy_enabled);
 }
 
 void DynamicSetSSLPolicyEnabled(struct _SnortConfig *sc, tSfPolicyId policy, bool value)
 {
     sc->targeted_policies[policy]->ssl_policy_enabled = value;
+}
+
+static bool DynamicIsTestMode(void)
+{
+    return (ScTestMode()!= 0);
 }
 
 int InitDynamicPreprocessors(void)
@@ -2138,10 +2168,13 @@ int InitDynamicPreprocessors(void)
     preprocData.registerUpdateSSLSSnLogData = &registerUpdateSSLSSnLogData;
     preprocData.endSSLSSnLogData = &endSSLSSnLogData;
     preprocData.registerEndSSLSSnLogData = &registerEndSSLSSnLogData;
+    preprocData.registerGetSSLActualAction = &registerGetSSLActualAction;
+    preprocData.getSSLActualAction = &getSSLActualAction;
     preprocData.getIntfData = &getIntfData;
     preprocData.registerGetIntfData = &registerGetIntfData;
     preprocData.isSSLPolicyEnabled = &DynamicIsSSLPolicyEnabled;
     preprocData.setSSLPolicyEnabled = &DynamicSetSSLPolicyEnabled;
+    preprocData.isTestMode = &DynamicIsTestMode;
     return InitDynamicPreprocessorPlugins(&preprocData);
 }
 

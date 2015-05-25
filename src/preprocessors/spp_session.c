@@ -1,7 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -417,7 +417,14 @@ void initializeSessionPreproc(struct _SnortConfig *sc, char *args)
         sc->run_flags |= RUN_FLAG__STATEFUL;
     }
     else
+    {
+#if 0
+        // EDM-TBD
         FatalError("stream5_global must only be configured once.\n");
+#else
+        WarningMessage("stream5_global must only be configured once. Ignoring this configuration element\n");
+#endif
+    }
 }
 
 static void parseSessionConfiguration( SessionConfiguration *config, char *args )
@@ -1799,7 +1806,7 @@ static int deleteSession(void *sessionCache, void *session, char *delete_reason)
 
     if( ( session_cache == NULL ) || ( scb == NULL ) )
     {
-        LogMessage("Session Cache: %p and SCB: %p must not be NULL", session_cache, scb );
+        LogMessage("Session Cache: %p and SCB: %p must not be NULL", (void*)session_cache, (void*)scb );
         return 0;
     }
     
@@ -3466,7 +3473,15 @@ static void reloadSessionConfiguration( struct _SnortConfig *sc, char *args, voi
         sc->run_flags |= RUN_FLAG__STATEFUL;
     }
     else
+    {
+#if 0
+        // EDM-TBD
         FatalError("stream5_global must only be configured once.\n");
+#else
+        WarningMessage("stream5_global must only be configured once. Ignoring this configuration element\n");
+        *new_config = NULL;
+#endif
+    }
 }
 
 static bool verifyConfigOptionUnchanged( uint32_t new, uint32_t old, char *name, SessionConfiguration *config )
@@ -3558,7 +3573,7 @@ static int verifyReloadedSessionConfiguration( struct _SnortConfig *sc, void *sw
 static void *activateSessionConfiguration( struct _SnortConfig *sc, void *data )
 {
     SessionConfiguration *old_config = NULL;
-    int i;
+    unsigned int i;
 
     if( data == NULL )
         return NULL;

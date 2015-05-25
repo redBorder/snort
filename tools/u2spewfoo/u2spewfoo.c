@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2002-2013 Sourcefire, Inc.
  * Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
  * Author: Adam Keeton
@@ -801,7 +801,7 @@ static int u2dump(char *file) {
 
 int main(int argc, char **argv) {
     if(argc != 2) {
-        puts("usage: u2eventdump <file>");
+        printf("usage: %s <file>\n",argv[0]);
         return 1;
     }
 

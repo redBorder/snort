@@ -16,7 +16,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * Author: Steve Sturges
@@ -337,7 +337,7 @@ static int checkFlowInternal(void *p, FlowFlags *flowFlags)
     /* check if this rule only applies to reassembled */
     if (flowFlags->flags & FLOW_ONLY_REASSEMBLED)
     {
-        if ( !(sp->flags & FLAG_REBUILT_STREAM) && !PacketHasFullPDU(sp))
+        if ( !(PacketHasPAFPayload(sp)) )
             return RULE_NOMATCH;
     }
     /* check if this rule only applies to non-reassembled */
@@ -429,7 +429,7 @@ static int fileDataInternal(void *p, CursorInfo* cursorInfo, const uint8_t **cur
     {
         return RULE_NOMATCH;
     }
-    _ded.SetAltDetect(_ded.fileDataBuf->data, _ded.fileDataBuf->len);
+    _ded.SetAltDetect((uint8_t*)_ded.fileDataBuf->data, _ded.fileDataBuf->len);
     retVal = setCursorInternal(p, cursorInfo->flags, cursorInfo->offset, cursor);
 
     if( retVal > RULE_NOMATCH)
