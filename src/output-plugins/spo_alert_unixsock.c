@@ -1,6 +1,6 @@
 /* $Id$ */
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 ** Copyright (C) 2000,2001 Andrew R. Baker <andrewb@uab.edu>
@@ -87,7 +87,7 @@ static struct sockaddr_in alertaddr;
 #endif
 
 static void AlertUnixSockInit(struct _SnortConfig *, char *);
-static void AlertUnixSock(Packet *, char *, void *, Event *);
+static void AlertUnixSock(Packet *, const char *, void *, Event *);
 static void ParseAlertUnixSockArgs(char *);
 static void AlertUnixSockCleanExit(int, void *);
 static void OpenAlertSock(void);
@@ -144,7 +144,7 @@ static void AlertUnixSockInit(struct _SnortConfig *sc, char *args)
 /*
  * Function: ParseAlertUnixSockArgs(char *)
  *
- * Purpose: Process the preprocessor arguements from the rules file and
+ * Purpose: Process the preprocessor arguments from the rules file and
  *          initialize the preprocessor's data struct.  This function doesn't
  *          have to exist if it makes sense to parse the args in the init
  *          function.
@@ -170,7 +170,7 @@ static void ParseAlertUnixSockArgs(char *args)
  * Returns: void function
  *
  ***************************************************************************/
-static void AlertUnixSock(Packet *p, char *msg, void *arg, Event *event)
+static void AlertUnixSock(Packet *p, const char *msg, void *arg, Event *event)
 {
     static Alertpkt alertpkt;
 

@@ -1,7 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -169,7 +169,7 @@ static bool s5_paf_callback (
     PAF_State* ps, void* ssn,
     const uint8_t* data, uint32_t len, uint32_t flags) 
 {
-    PAF_Status paf;
+    PAF_Status paf = PAF_ABORT;
     uint16_t mask = ps->cb_mask;
     bool update = false;
     int i = 0;

@@ -1,5 +1,5 @@
 /*
- ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 1998-2013 Sourcefire, Inc.
  **
  ** This program is free software; you can redistribute it and/or modify
@@ -219,7 +219,7 @@ void FileDataParse(char *data, FileData *idx, OptTreeNode *otn)
 int FileDataEval(void *option_data, Packet *p)
 {
     int rval = DETECTION_OPTION_NO_MATCH;
-    uint8_t *data;
+    const uint8_t *data;
     uint16_t len;
     FileData *idx;
     PROFILE_VARS;
@@ -230,10 +230,16 @@ int FileDataEval(void *option_data, Packet *p)
     data = file_data_ptr.data;
     len = file_data_ptr.len;
 
-    if ((p->dsize == 0) || (data == NULL)|| (len == 0) || !idx)
+    if ((p->dsize == 0) || !idx)
     {
         PREPROC_PROFILE_END(fileDataPerfStats);
         return rval;
+    }
+
+    if ((data == NULL)|| (len == 0))
+    {
+        data = p->data;
+        len = p->dsize;
     }
 
     if(idx->mime_decode_flag)

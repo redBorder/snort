@@ -1,7 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -458,14 +458,20 @@ static void React_Send (Packet* p,  void* pv)
 {
     ReactData* rd = (ReactData*)pv;
     EncodeFlags df = (p->packet_flags & PKT_FROM_SERVER) ? ENC_FLAG_FWD : 0;
-    EncodeFlags rf = ENC_FLAG_SEQ | (ENC_FLAG_VAL & rd->buf_len);
+    EncodeFlags sent = rd->buf_len;
+    EncodeFlags rf;
     PROFILE_VARS;
 
     PREPROC_PROFILE_START(reactPerfStats);
     Active_IgnoreSession(p);
 
     if (p->packet_flags & PKT_STREAM_EST)
+    {
         Active_SendData(p, df, (uint8_t*)rd->resp_buf, rd->buf_len);
+        // Active_SendData sends a FIN, so need to bump seq by 1.
+        sent++;
+    }
+    rf = ENC_FLAG_SEQ | (ENC_FLAG_VAL & sent);
     Active_SendReset(p, rf);
     Active_SendReset(p, ENC_FLAG_FWD);
 
