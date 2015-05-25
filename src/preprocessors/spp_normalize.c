@@ -1,6 +1,6 @@
 /* $Id$ */
 /*
- ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2010-2013 Sourcefire, Inc.
  **
  ** This program is free software; you can redistribute it and/or modify
@@ -680,8 +680,10 @@ static void Preproc_Execute (Packet *p, void *context)
 
     PREPROC_PROFILE_START(norm_perf_stats);
 
-    if ( !Active_PacketWasDropped() )
-        Norm_Packet(pc, p);
+    if ( DAQ_GetInterfaceMode(p->pkth) == DAQ_MODE_INLINE )
+        if ( !Active_PacketWasDropped() )
+            if ( pc->normMode == NORM_MODE_ON || pc->normMode == NORM_MODE_WOULDA )
+                Norm_Packet(pc, p);
 
     PREPROC_PROFILE_END(norm_perf_stats);
     return;

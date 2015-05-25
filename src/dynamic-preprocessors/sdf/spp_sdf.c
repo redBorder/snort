@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2009-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -478,7 +478,7 @@ static void ProcessSDF(void *p, void *context)
         packet->payload && packet->payload_size);
 
     /* Check if we should be working on this packet */
-    if ( packet->flags & FLAG_STREAM_INSERT && !PacketHasFullPDU(p) )
+    if ( packet->flags & FLAG_STREAM_INSERT && (!(packet->flags & FLAG_PDU_TAIL)) )
         return;  // Waiting on stream reassembly
 
     /* Retrieve the corresponding config for this packet */
@@ -844,7 +844,7 @@ static void SDFReloadSwapFree(void *data)
 *  blen - byte length
 *
 */
-static inline unsigned short in_chksum_ip(  unsigned short * w, int blen )
+static inline unsigned short in_chksum_ip(  const unsigned short * w, int blen )
 {
    unsigned int cksum;
 
@@ -945,7 +945,7 @@ static void SDFFillPacket(sdf_tree_node *node, SDFSessionData *session,
             if (counter > 0)
             {
                 /* Print line */
-                char *sigmessage = option_data->otn->sigInfo.message;
+                const char *sigmessage = option_data->otn->sigInfo.message;
                 uint8_t *dest = (uint8_t*)p->payload + *dlen;
                 size_t siglen = strlen(sigmessage);
                 uint16_t space_left = p->max_payload - *dlen;

@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -49,7 +49,7 @@ typedef enum _OutputTypeFlag
 
 /***************************** Output Plugin API  *****************************/
 typedef void (*OutputConfigFunc)(struct _SnortConfig *, char *);
-typedef void (*OutputFunc)(Packet *, char *, void *, Event *);
+typedef void (*OutputFunc)(Packet *, const char *, void *, Event *);
 
 typedef struct _OutputConfigFuncNode
 {

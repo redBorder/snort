@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -238,7 +238,7 @@ static int port_parse(char *portstr, PORTSET *portset)
     char *port1;
     char *port_begin;
     char *port_end;
-    char *port2 = '\0';
+    char *port2 = NULL;
 
     port_begin = strdup(portstr);
 

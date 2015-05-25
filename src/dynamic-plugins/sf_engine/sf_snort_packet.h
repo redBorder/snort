@@ -16,7 +16,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * Author: Steve Sturges
@@ -731,7 +731,7 @@ static inline int PacketHasStartOfPDU (const SFSnortPacket* p)
 
 static inline int PacketHasPAFPayload (const SFSnortPacket* p)
 {
-    return ( (p->flags & FLAG_REBUILT_STREAM) || PacketHasFullPDU(p) );
+    return ( (p->flags & FLAG_REBUILT_STREAM) || (p->flags & FLAG_PDU_TAIL) );
 }
 
 static inline void SetExtraData (SFSnortPacket* p, uint32_t xid)

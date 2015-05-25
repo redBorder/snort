@@ -3,7 +3,7 @@
 **
 **  fpdetect.c
 **
-**  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+**  Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 **  Copyright (C) 2002-2013 Sourcefire, Inc.
 **  Author(s):  Dan Roelker <droelker@sourcefire.com>
 **              Marc Norton <mnorton@sourcefire.com>
@@ -1764,7 +1764,7 @@ void fpEvalIpProtoOnlyRules(SF_LIST **ip_proto_only_lists, Packet *p)
 }
 
 OptTreeNode * GetOTN(uint32_t gid, uint32_t sid,
-        uint32_t rev, uint32_t classification, uint32_t priority, char *msg)
+        uint32_t rev, uint32_t classification, uint32_t priority, const char *msg)
 {
     OptTreeNode *otn = OtnLookup(snort_conf->otn_map, gid, sid);
 

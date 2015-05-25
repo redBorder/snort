@@ -1,6 +1,6 @@
 /* $Id$ */
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -228,6 +228,7 @@ extern int opterr;
 extern int optopt;
 
 extern ListHead *head_tmp;
+
 
 /* Globals/Public *************************************************************/
 PacketCount pc;  /* packet count information */
@@ -1344,12 +1345,6 @@ static const char* GetPacketSource (char** sptr)
 
 static void InitPidChrootAndPrivs(pid_t pid)
 {
-    /* create the PID file */
-    if ( !ScReadMode() &&
-        (ScDaemonMode() || *snort_conf->pidfile_suffix || ScCreatePidFile()))
-    {
-        CreatePidFile(DAQ_GetInterfaceSpec(), pid);
-    }
 
 #ifndef WIN32
     /* Drop the Chrooted Settings */
@@ -1361,6 +1356,12 @@ static void InitPidChrootAndPrivs(pid_t pid)
     /* Drop privileges if requested, when initialization is done */
     SetUidGid(ScUid(), ScGid());
 #endif
+    /* create the PID file */
+    if ( !ScReadMode() &&
+       (ScDaemonMode() || *snort_conf->pidfile_suffix || ScCreatePidFile()))
+    {
+       CreatePidFile(DAQ_GetInterfaceSpec(), pid);
+    }
 }
 
 static void LoadDynamicPlugins(SnortConfig *sc)
@@ -1727,8 +1728,7 @@ static DAQ_Verdict PacketCallback(
         if ( verdict == DAQ_VERDICT_PASS ) 
         {
 #ifdef HAVE_DAQ_VERDICT_RETRY
-            FileContext *file_context = get_current_file_context(s_packet.ssnptr);
-            if(file_context && file_context->verdict == FILE_VERDICT_PENDING) 
+            if (file_api->get_file_verdict(s_packet.ssnptr) == FILE_VERDICT_PENDING)
             {
                 //  File module is waiting for a response from the cloud.
                 verdict = DAQ_VERDICT_RETRY;
@@ -3258,7 +3258,7 @@ static void SnortIdle(void)
 
 void PacketLoop (void)
 {
-    int error;
+    int error = 0;
     int pkts_to_read = (int)snort_conf->pkt_cnt;
 
     TimeStart();
@@ -3889,6 +3889,7 @@ static void SnortCleanup(int exit_val)
 #endif
 
     SynToMulticastDstIpDestroy();
+    MulticastReservedIpDestroy();
 
     FreeVarList(cmd_line_var_list);
 
@@ -5016,6 +5017,7 @@ void SnortInit(int argc, char **argv)
         snort_conf = MergeSnortConfs(snort_cmd_line_conf, sc);
 
         InitSynToMulticastDstIp(snort_conf);
+        InitMulticastReservedIp(snort_conf);
 
 #ifdef TARGET_BASED
         /* Parse attribute table stuff here since config max_attribute_hosts
@@ -5636,13 +5638,9 @@ static void * ReloadConfigThread(void *data)
                 LogMessage("        --== Reloading Snort ==--\n");
                 LogMessage("\n");
 
-                if (ScSuppressConfigLog())
-                    ScSetInternalLogLevel(INTERNAL_LOG_LEVEL__ERROR);
-
                 snort_conf_new = ReloadConfig();
 
                 // Restore Log level if we suppressed it earlier
-                ScRestoreInternalLogLevel();
 
                 if (snort_conf_new == NULL)
                     reload_failed = 1;
@@ -5703,6 +5701,9 @@ static void * ReloadConfigThread(void *data)
 static SnortConfig * ReloadConfig(void)
 {
     SnortConfig *sc;
+
+    if (ScSuppressConfigLog())
+        ScSetInternalLogLevel(INTERNAL_LOG_LEVEL__ERROR);
 
 #ifdef HAVE_MALLOC_TRIM
     malloc_trim(0);
@@ -5834,6 +5835,9 @@ static SnortConfig * ReloadConfig(void)
 #ifdef PPM_MGR
     PPM_PRINT_CFG(&sc->ppm_cfg);
 #endif
+
+    // Restores the configured logging level, if it was suppressed earlier
+    ScRestoreInternalLogLevel();
 
     return sc;
 }
