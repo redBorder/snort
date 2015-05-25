@@ -1,7 +1,7 @@
 /* $Id$ */
 /*
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 **    Dan Roelker <droelker@sourcefire.com>
 **    Marc Norton <mnorton@sourcefire.com>
@@ -228,7 +228,7 @@ int Preprocess(Packet * p)
         */
         ClearHttpBuffers();
         p->alt_dsize = 0;
-        DetectReset((uint8_t *)p->data, p->dsize);
+        DetectReset(p->data, p->dsize);
 
         // ok, dispatch all preprocs enabled for this packet/session
         DispatchPreprocessors( p, policy_id, policy );
@@ -374,7 +374,7 @@ static void updateEventAppName (Packet *p, OptTreeNode *otn, Event *event)
     }
 }
 #endif /* defined(FEAT_OPEN_APPID) */
-void CallLogFuncs(Packet *p, char *message, ListHead *head, Event *event)
+void CallLogFuncs(Packet *p, const char *message, ListHead *head, Event *event)
 {
     OutputFuncNode *idx = NULL;
 
@@ -404,7 +404,7 @@ void CallLogFuncs(Packet *p, char *message, ListHead *head, Event *event)
     }
 }
 
-void CallLogPlugins(Packet * p, char *message, Event *event)
+void CallLogPlugins(Packet * p, const char *message, Event *event)
 {
     OutputFuncNode *idx = LogList;
 
@@ -429,7 +429,7 @@ void CallSigOutputFuncs(Packet *p, OptTreeNode *otn, Event *event)
     }
 }
 
-void CallAlertFuncs(Packet * p, char *message, ListHead * head, Event *event)
+void CallAlertFuncs(Packet * p, const char *message, ListHead * head, Event *event)
 {
     OutputFuncNode *idx = NULL;
 
@@ -464,7 +464,7 @@ void CallAlertFuncs(Packet * p, char *message, ListHead * head, Event *event)
 }
 
 
-void CallAlertPlugins(Packet * p, char *message, Event *event)
+void CallAlertPlugins(Packet * p, const char *message, Event *event)
 {
     OutputFuncNode *idx = AlertList;
 

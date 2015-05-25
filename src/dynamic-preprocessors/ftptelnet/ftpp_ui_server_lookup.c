@@ -1,7 +1,7 @@
 /*
  * ftpp_ui_server_lookup.c
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  * Steven A. Sturges <ssturges@sourcefire.com>
  * Kevin Liu <kliu@sourcefire.com>
@@ -130,7 +130,7 @@ int ftpp_ui_server_lookup_add(
         return FTPP_INVALID_ARG;
     }
 
-    iRet = sfrt_insert((void *)Ip, (unsigned char)Ip->bits, (void *)ServerConf, RT_FAVOR_SPECIFIC, ServerLookup);
+    iRet = sfrt_insert(Ip, (unsigned char)Ip->bits, (void *)ServerConf, RT_FAVOR_SPECIFIC, ServerLookup);
 
     if (iRet)
     {
@@ -177,7 +177,7 @@ FTP_SERVER_PROTO_CONF *ftpp_ui_server_lookup_find(
 
     *iError = FTPP_SUCCESS;
 
-    ServerConf = (FTP_SERVER_PROTO_CONF *)sfrt_lookup((void *)Ip, ServerLookup);
+    ServerConf = (FTP_SERVER_PROTO_CONF *)sfrt_lookup(Ip, ServerLookup);
     if (!ServerConf)
     {
         *iError = FTPP_NOT_FOUND;

@@ -30,7 +30,9 @@ sip_roptions.c \
 sip_roptions.h \
 sip_utils.c \
 sip_utils.h \
-sip_debug.h
+sip_debug.h \
+sip_paf.c \
+sip_paf.h
 
 EXTRA_DIST = \
 sf_sip.dsp

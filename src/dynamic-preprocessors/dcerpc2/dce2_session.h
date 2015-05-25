@@ -1,5 +1,5 @@
 /****************************************************************************
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -241,7 +241,7 @@ static inline void DCE2_SsnSetReassembly(const SFSnortPacket *p)
  ********************************************************************/
 static inline int DCE2_SsnIsRebuilt(const SFSnortPacket *p)
 {
-    return PacketHasFullPDU(p) || (p->flags & FLAG_REBUILT_STREAM);
+    return (PacketHasPAFPayload(p));
 }
 
 /********************************************************************

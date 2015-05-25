@@ -15,7 +15,6 @@
 # Other useful bits
 %define SnortRulesDir %{_sysconfdir}/snort/rules
 %define noShell /bin/false
-%global debug_package %{nil}
 
 # Handle the options noted above.
 # Default of no openAppId, but --with openappid will enable it
@@ -55,13 +54,13 @@ Name: %{realname}
 Summary: An open source Network Intrusion Detection System (NIDS)
 Conflicts: %{realname}-openappid
 %endif
-Version: 2.9.7.0
+Version: 2.9.7.3
 Epoch: 1
 Release: %{release}
 Group: Applications/Internet
 License: GPL
 Url: http://www.snort.org/
-Source0: http://www.snort.org/downloads/snort/%{realname}-%{version}.tar.gz
+Source0: https://www.snort.org/downloads/snort/%{realname}-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 Packager: Official Snort.org %{for_distro}
