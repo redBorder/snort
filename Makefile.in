@@ -89,11 +89,22 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 subdir = .
+<<<<<<< HEAD
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(top_srcdir)/configure $(am__configure_deps) \
 	$(srcdir)/config.h.in $(srcdir)/snort.pc.in COPYING ChangeLog \
 	config.guess config.sub depcomp install-sh missing ylwrap \
 	ltmain.sh
+||||||| merged common ancestors
+<<<<<<< Temporary merge branch 1
+DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
+	$(top_srcdir)/configure $(am__configure_deps) \
+	$(srcdir)/config.h.in $(srcdir)/snort.pc.in COPYING ChangeLog \
+	config.guess config.sub depcomp install-sh missing ylwrap \
+	ltmain.sh
+||||||| merged common ancestors
+=======
+>>>>>>> feature/file_s3
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(top_srcdir)/configure $(am__configure_deps) \
 	$(srcdir)/config.h.in $(srcdir)/snort.pc.in COPYING ChangeLog \
