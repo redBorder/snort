@@ -691,7 +691,7 @@ static int putObjectDataCallback(int bufferSize, char *buffer,
     const uint8_t *cursor = transference->cur_buf 
               + (transference->cur_buf_size - transference->cur_buf_remaining);
     memcpy(buffer,cursor,to_transfer);
-    transference->cur_buf_remaining -= transference->cur_buf_size;
+    transference->cur_buf_remaining -= to_transfer;
 
     /* Need to load next file info? */
     if(transference->cur_buf_remaining == 0)
