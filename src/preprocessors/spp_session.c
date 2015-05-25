@@ -1,7 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1806,7 +1806,7 @@ static int deleteSession(void *sessionCache, void *session, char *delete_reason)
 
     if( ( session_cache == NULL ) || ( scb == NULL ) )
     {
-        LogMessage("Session Cache: %p and SCB: %p must not be NULL", session_cache, scb );
+        LogMessage("Session Cache: %p and SCB: %p must not be NULL", (void*)session_cache, (void*)scb );
         return 0;
     }
     
@@ -3573,7 +3573,7 @@ static int verifyReloadedSessionConfiguration( struct _SnortConfig *sc, void *sw
 static void *activateSessionConfiguration( struct _SnortConfig *sc, void *data )
 {
     SessionConfiguration *old_config = NULL;
-    int i;
+    unsigned int i;
 
     if( data == NULL )
         return NULL;

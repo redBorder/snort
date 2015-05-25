@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -1940,6 +1940,8 @@ typedef struct _PortList
 
 void InitSynToMulticastDstIp( struct _SnortConfig * );
 void SynToMulticastDstIpDestroy( void );
+void InitMulticastReservedIp( struct _SnortConfig * );
+void MulticastReservedIpDestroy( void );
 
 #define SFTARGET_UNKNOWN_PROTOCOL -1
 
@@ -1972,7 +1974,7 @@ static inline bool PacketHasStartOfPDU (const Packet* p)
 
 static inline bool PacketHasPAFPayload (const Packet* p)
 {
-    return ( (p->packet_flags & PKT_REBUILT_STREAM) || PacketHasFullPDU(p) );
+    return ( (p->packet_flags & PKT_REBUILT_STREAM) || (p->packet_flags & PKT_PDU_TAIL) );
 }
 
 static inline bool PacketIsRebuilt (const Packet* p)

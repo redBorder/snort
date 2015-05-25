@@ -1,6 +1,6 @@
 /* $Id$ */
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -228,6 +228,7 @@ extern int opterr;
 extern int optopt;
 
 extern ListHead *head_tmp;
+
 
 /* Globals/Public *************************************************************/
 PacketCount pc;  /* packet count information */
@@ -1344,12 +1345,6 @@ static const char* GetPacketSource (char** sptr)
 
 static void InitPidChrootAndPrivs(pid_t pid)
 {
-    /* create the PID file */
-    if ( !ScReadMode() &&
-        (ScDaemonMode() || *snort_conf->pidfile_suffix || ScCreatePidFile()))
-    {
-        CreatePidFile(DAQ_GetInterfaceSpec(), pid);
-    }
 
 #ifndef WIN32
     /* Drop the Chrooted Settings */
@@ -1361,6 +1356,12 @@ static void InitPidChrootAndPrivs(pid_t pid)
     /* Drop privileges if requested, when initialization is done */
     SetUidGid(ScUid(), ScGid());
 #endif
+    /* create the PID file */
+    if ( !ScReadMode() &&
+       (ScDaemonMode() || *snort_conf->pidfile_suffix || ScCreatePidFile()))
+    {
+       CreatePidFile(DAQ_GetInterfaceSpec(), pid);
+    }
 }
 
 static void LoadDynamicPlugins(SnortConfig *sc)
@@ -1727,8 +1728,7 @@ static DAQ_Verdict PacketCallback(
         if ( verdict == DAQ_VERDICT_PASS ) 
         {
 #ifdef HAVE_DAQ_VERDICT_RETRY
-            FileContext *file_context = get_current_file_context(s_packet.ssnptr);
-            if(file_context && file_context->verdict == FILE_VERDICT_PENDING) 
+            if (file_api->get_file_verdict(s_packet.ssnptr) == FILE_VERDICT_PENDING)
             {
                 //  File module is waiting for a response from the cloud.
                 verdict = DAQ_VERDICT_RETRY;
@@ -3258,7 +3258,7 @@ static void SnortIdle(void)
 
 void PacketLoop (void)
 {
-    int error;
+    int error = 0;
     int pkts_to_read = (int)snort_conf->pkt_cnt;
 
     TimeStart();

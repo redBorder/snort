@@ -1,7 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -807,7 +807,7 @@ static ENC_STATUS IP4_Encode (EncState* enc, Buffer* in, Buffer* out)
 
     /* IPv4 encoded header is hardcoded 20 bytes, we save some
      * cycles and use the literal header size for checksum */
-    ho->ip_csum = in_chksum_ip((uint16_t *)ho, sizeof *ho);
+    ho->ip_csum = in_chksum_ip((const uint16_t *)ho, sizeof *ho);
 
     return ENC_OK;
 }
@@ -828,7 +828,7 @@ static ENC_STATUS IP4_Update (Packet* p, Layer* lyr, uint32_t* len)
     if ( !PacketWasCooked(p) || (p->packet_flags & PKT_REBUILT_FRAG) )
     {
         h->ip_csum = 0;
-        h->ip_csum = in_chksum_ip((uint16_t *)h, GET_IP_HDR_LEN(h));
+        h->ip_csum = in_chksum_ip((const uint16_t *)h, GET_IP_HDR_LEN(h));
     }
 
     return ENC_OK;

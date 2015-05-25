@@ -54,13 +54,13 @@ Name: %{realname}
 Summary: An open source Network Intrusion Detection System (NIDS)
 Conflicts: %{realname}-openappid
 %endif
-Version: 2.9.7.2
+Version: 2.9.7.3
 Epoch: 1
 Release: %{release}
 Group: Applications/Internet
 License: GPL
 Url: http://www.snort.org/
-Source0: http://www.snort.org/snort-downloads/2.9.7.2/%{realname}-%{version}.tar.gz
+Source0: https://www.snort.org/downloads/snort/%{realname}-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 Packager: Official Snort.org %{for_distro}
@@ -138,8 +138,6 @@ SNORT_BASE_CONFIG="--prefix=%{_prefix} \
   BuildSnort plain
 %endif
 
-%define debug_package %{nil}
-%define debug %{nil}
 %install
 
 # Remove leftover CVS files in the tarball, if any...

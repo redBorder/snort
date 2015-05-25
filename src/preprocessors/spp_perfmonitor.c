@@ -2,7 +2,7 @@
 **
 **  spp_perfmonitor.c
 **
-**  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+**  Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 **  Copyright (C) 2002-2013 Sourcefire, Inc.
 **  Marc Norton <mnorton@sourcefire.com>
 **  Dan Roelker <droelker@sourcefire.com>
@@ -194,7 +194,7 @@ static void PerfMonitorInit(struct _SnortConfig *sc, char *args)
 /*
  * Function: ParsePerfMonitorArgs(struct _SnortConfig *, char *)
  *
- * Purpose: Process the preprocessor arguements from the rules file and
+ * Purpose: Process the preprocessor arguments from the rules file and
  *          initialize the preprocessor's data struct.  This function doesn't
  *          have to exist if it makes sense to parse the args in the init
  *          function.

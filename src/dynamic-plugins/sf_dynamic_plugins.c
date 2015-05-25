@@ -17,7 +17,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * Author: Steven Sturges
@@ -1608,7 +1608,7 @@ void DynamicSetParserPolicy(SnortConfig *sc, tSfPolicyId id)
 
 void DynamicSetFileDataPtr(uint8_t *ptr, uint16_t decode_size)
 {
-    setFileDataPtr(ptr, decode_size);
+    setFileDataPtr((const uint8_t*)ptr, decode_size);
 }
 
 void DynamicDetectResetPtr(uint8_t *ptr, uint16_t decode_size)
@@ -1934,15 +1934,29 @@ void *DynamicGetSSLCallback(void)
 {
     return GetSSLCallback();
 }
-bool DynamicIsSSLPolicyEnabled(void)
+
+bool DynamicIsSSLPolicyEnabled(struct _SnortConfig *sc)
 {
-    tSfPolicyId policy = getNapRuntimePolicy();
-    return (snort_conf->targeted_policies[policy]->ssl_policy_enabled );
+    tSfPolicyId policy;
+
+    if (sc)
+    {
+        policy = getParserPolicy(sc);
+        return (sc->targeted_policies[ policy ]->ssl_policy_enabled);
+    }
+
+    policy = getNapRuntimePolicy();
+    return (snort_conf->targeted_policies[ policy ]->ssl_policy_enabled);
 }
 
 void DynamicSetSSLPolicyEnabled(struct _SnortConfig *sc, tSfPolicyId policy, bool value)
 {
     sc->targeted_policies[policy]->ssl_policy_enabled = value;
+}
+
+static bool DynamicIsTestMode(void)
+{
+    return (ScTestMode()!= 0);
 }
 
 int InitDynamicPreprocessors(void)
@@ -2160,6 +2174,7 @@ int InitDynamicPreprocessors(void)
     preprocData.registerGetIntfData = &registerGetIntfData;
     preprocData.isSSLPolicyEnabled = &DynamicIsSSLPolicyEnabled;
     preprocData.setSSLPolicyEnabled = &DynamicSetSSLPolicyEnabled;
+    preprocData.isTestMode = &DynamicIsTestMode;
     return InitDynamicPreprocessorPlugins(&preprocData);
 }
 

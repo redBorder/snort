@@ -1,6 +1,6 @@
 /* $Id$ */
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -2423,7 +2423,7 @@ int CheckANDPatternMatch(void *option_data, Packet *p)
     int rval = DETECTION_OPTION_NO_MATCH;
     int found = 0;
     int dsize;
-    char *dp;
+    const char *dp = NULL;
 #if 0
     int origUseDoe;
     char *orig_doe;
@@ -2445,14 +2445,14 @@ int CheckANDPatternMatch(void *option_data, Packet *p)
         if(Is_DetectFlag(FLAG_ALT_DETECT))
         {
             dsize = DetectBuffer.len;
-            dp = (char *) DetectBuffer.data;
+            dp = (const char*) DetectBuffer.data;
             DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
                         "Using Alternative Detect buffer!\n"););
         }
         else if(Is_DetectFlag(FLAG_ALT_DECODE))
         {
             dsize = DecodeBuffer.len;
-            dp = (char *) DecodeBuffer.data;
+            dp = (const char *) DecodeBuffer.data;
             DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
                         "Using Alternative Decode buffer!\n"););
         }
@@ -2470,13 +2470,13 @@ int CheckANDPatternMatch(void *option_data, Packet *p)
                 DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
                     "Using Full Packet Data!\n"););
             }
-            dp = (char *) p->data;
+            dp = (const char *) p->data;
         }
     }
     else
     {
         dsize = p->dsize;
-        dp = (char *) p->data;
+        dp = (const char *) p->data;
         DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
             "Using Full Packet Data!\n"););
     }

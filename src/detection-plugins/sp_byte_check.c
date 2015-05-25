@@ -1,6 +1,6 @@
 /* $Id$ */
 /*
- ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2002-2013 Sourcefire, Inc.
  ** Author: Martin Roesch
  **
@@ -638,7 +638,7 @@ int ByteTest(void *option_data, Packet *p)
     if (Is_DetectFlag(FLAG_ALT_DETECT))
     {
         dsize = DetectBuffer.len;
-        start_ptr = (char *)DetectBuffer.data;
+        start_ptr = (const char*)DetectBuffer.data;
         DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
                 "Using Alternative Detect buffer!\n"););
     }

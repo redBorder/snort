@@ -1,7 +1,7 @@
 /* $Id$ */
 
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -272,7 +272,7 @@ void queueDecoderEvent(
     unsigned int rev,
     unsigned int classification,
     unsigned int pri,
-    char        *msg,
+    const char  *msg,
     void        *rule_info)
 {
     MemBucket *alertBucket;
@@ -290,7 +290,7 @@ void queueDecoderEvent(
     en->classification = classification;
     en->priority = pri;
     en->msg = msg;
-    en->rule_info = rule_info;
+    en->rule_info = (OptTreeNode *) rule_info;
 
     ret = sfActionQueueAdd( decoderActionQ, execDecoderEvent, alertBucket);
     if (ret == -1)
@@ -301,7 +301,7 @@ void queueDecoderEvent(
 }
 
 static inline void DecoderEvent (
-    Packet *p, int sid, char *str, int event_flag, int drop_flag)
+    Packet *p, int sid, const char *str, int event_flag, int drop_flag)
 {
     if ( ScLogVerbose() )
         ErrorMessage("%s\n", str);
@@ -358,7 +358,7 @@ static inline void DecoderEventDrop (
 void DecoderAlertEncapsulated(
     Packet *p, int type, const char *str, const uint8_t *pkt, uint32_t len)
 {
-    DecoderEvent(p, type, (char*)str, 1, 1);
+    DecoderEvent(p, type, str, 1, 1);
 
     p->data = pkt;
     p->dsize = (uint16_t)len;
@@ -2146,10 +2146,10 @@ static inline void IPMiscTests(Packet *p)
 //--------------------------------------------------------------------
 
 /* This PGM NAK function started off as an SO rule, sid 8351. */
-static inline int pgm_nak_detect (uint8_t *data, uint16_t length) {
+static inline int pgm_nak_detect (const uint8_t *data, uint16_t length) {
     uint16_t data_left;
     uint16_t  checksum;
-    PGM_HEADER *header;
+    const PGM_HEADER *header;
 
     if (NULL == data) {
         return PGM_NAK_ERR;
@@ -2182,7 +2182,7 @@ static inline int pgm_nak_detect (uint8_t *data, uint16_t length) {
 
         /* checksum is expensive... do that only if the length is bad */
         if (header->checksum != 0) {
-            checksum = in_chksum_ip((unsigned short*)data, (int)length);
+            checksum = in_chksum_ip((const unsigned short*)data, (int)length);
             if (checksum != 0)
                 return PGM_NAK_ERR;
         }
@@ -2195,7 +2195,7 @@ static inline int pgm_nak_detect (uint8_t *data, uint16_t length) {
 
 static inline void CheckPGMVuln(Packet *p)
 {
-    if ( pgm_nak_detect((uint8_t *)p->data, p->dsize) == PGM_NAK_VULN )
+    if ( pgm_nak_detect(p->data, p->dsize) == PGM_NAK_VULN )
         DecoderEvent(p, EVARGS(PGM_NAK_OVERFLOW), 1, 1);
 }
 
@@ -2518,7 +2518,7 @@ void DecodeIP(const uint8_t * pkt, const uint32_t len, Packet * p)
          * need to check them (should make this a command line/config
          * option
          */
-        int16_t csum = in_chksum_ip((u_short *)p->iph, hlen);
+        int16_t csum = in_chksum_ip((const unsigned short *)p->iph, hlen);
 
         if(csum)
         {
@@ -3583,8 +3583,6 @@ void DecodeIPV6Options(int type, const uint8_t *pkt, uint32_t len, Packet *p)
                          IPV6ExtensionOrder(IPPROTO_FRAGMENT) )
                         DecoderEvent(p, EVARGS(IPV6_UNORDERED_EXTENSIONS), 1, 1);
                 }
-                // check header ordering up thru frag header
-                CheckIPv6ExtensionOrder(p);
             }
             hdrlen = sizeof(IP6Frag);
             p->ip_frag_len = (uint16_t)(len - hdrlen);
@@ -3592,12 +3590,15 @@ void DecodeIPV6Options(int type, const uint8_t *pkt, uint32_t len, Packet *p)
             if ( p->frag_flag && ((p->frag_offset > 0) ||
                  (exthdr->ip6e_nxt != IPPROTO_UDP)) )
             {
+                //check header order up thru frag header
+                p->ip6_extension_count++;
+                CheckIPv6ExtensionOrder(p);
+
                 /* For non-zero offset frags, we stop decoding after the
                    Frag header. According to RFC 2460, the "Next Header"
                    value may differ from that of the offset zero frag,
                    but only the Next Header of the original frag is used. */
                 // check DecodeIP(); we handle frags the same way here
-                p->ip6_extension_count++;
                 return;
             }
             break;
@@ -3710,6 +3711,7 @@ void DecodeIPV6Extensions(uint8_t next, const uint8_t *pkt, uint32_t len, Packet
             return;
 #endif
         default:
+            CheckIPv6ExtensionOrder(p);
             // There may be valid headers after this unsupported one,
             // need to decode this header, set "next" and continue
             // looping.

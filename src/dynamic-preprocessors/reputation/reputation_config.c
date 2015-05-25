@@ -1,5 +1,5 @@
 /****************************************************************************
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -235,7 +235,8 @@ int LoadFileIntoShmem(void* ptrSegment, ShmemDataFileList** file_list, int num_f
     table = sfrt_flat_new(DIR_8x16, IPv6, reputation_shmem_config->numEntries, reputation_shmem_config->memcap);
     if (table == NULL)
     {
-        DynamicPreprocessorFatalMessage("Reputation preprocessor: Failed to create IP list.\n");
+        _dpd.errMsg("Reputation preprocessor: Failed to create IP list.\n");
+        return -1;
     }
 
     reputation_shmem_config->iplist = table;
@@ -246,7 +247,8 @@ int LoadFileIntoShmem(void* ptrSegment, ShmemDataFileList** file_list, int num_f
 
     if (list_ptr == 0)
     {
-        DynamicPreprocessorFatalMessage("Reputation preprocessor:: Failed to create IP list table.\n");
+        _dpd.errMsg("Reputation preprocessor:: Failed to create IP list table.\n");
+        return -1;
     }
 
     listInfo = (ListInfo *)&base[list_ptr];
@@ -933,7 +935,7 @@ static int snort_pton( char const * src, sfip_t * dest )
 {
     char ipbuf[INET6_ADDRSTRLEN];
     char cidrbuf[sizeof("128")];
-    char *out;
+    char *out = ipbuf;
     enum {
         BEGIN, IP, CIDR1, CIDR2, END, INVALID
     } state;
@@ -957,7 +959,6 @@ static int snort_pton( char const * src, sfip_t * dest )
             if ( isident((int)ch) )
             {
                 // Set the first ipbuff byte and change state 
-                out = ipbuf;
                 *out++ = ch;
                 state = IP;
             }

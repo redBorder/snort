@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -536,7 +536,7 @@ static int ProcessMaxGzipMem(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
         char *ErrorString, int ErrStrLen)
 {
     char *pcToken, *pcEnd;
-    int max_gzip_mem;
+    unsigned int max_gzip_mem;
 
     pcToken = strtok(NULL, CONF_SEPARATORS);
     if(pcToken == NULL)
@@ -546,7 +546,7 @@ static int ProcessMaxGzipMem(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
         return -1;
     }
 
-    max_gzip_mem = SnortStrtolRange(pcToken, &pcEnd, 10, 0, INT_MAX);
+    max_gzip_mem = SnortStrtoulRange(pcToken, &pcEnd, 10, 0, UINT_MAX);
     if ((pcEnd == pcToken) || *pcEnd || (errno == ERANGE))
     {
         SnortSnprintf(ErrorString, ErrStrLen,
@@ -1724,7 +1724,7 @@ static int Add_XFF_Field( HTTPINSPECT_CONF *ServerConf, uint8_t *Prec_Array, uin
     size_t Length;
     int i;
     char **Builtin_Fields;
-    char *cp;
+    unsigned char *cp;
     const char *Special_Chars = { "_-" };
 
     if( (Length = strlen( (char *)Field_Name )) > UINT8_MAX )
@@ -3882,7 +3882,7 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
 
     if ( ScPafEnabled() &&
         (p->packet_flags & PKT_STREAM_INSERT) &&
-        !PacketHasFullPDU(p) )
+        (!(p->packet_flags & PKT_PDU_TAIL)) )
     {
         int flow_depth;
 
@@ -4330,10 +4330,10 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                      fd_status_t Ret_Code;
 
                      uint16_t Data_Len;
-                     uint8_t *Data;
+                     const uint8_t *Data;
 
-                     hsd->fd_state->Next_In = (Data = Session->server.response.body);
-                     hsd->fd_state->Avail_In = (Data_Len = (uint16_t)detect_data_size);
+                     hsd->fd_state->Next_In = (uint8_t *) (Data = Session->server.response.body);
+                     hsd->fd_state->Avail_In = (Data_Len = (uint16_t) detect_data_size);
 
                      (void)File_Decomp_SetBuf( hsd->fd_state );
 
@@ -4364,11 +4364,11 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                          Session->server.response.body_size = hsd->fd_state->Total_Out;
                      }
 
-                     setFileDataPtr((uint8_t *)Session->server.response.body, (uint16_t)Session->server.response.body_size);
+                     setFileDataPtr(Session->server.response.body, (uint16_t)Session->server.response.body_size);
                  }
                  else
                  {
-                     setFileDataPtr((uint8_t *)Session->server.response.body, (uint16_t)detect_data_size);
+                     setFileDataPtr(Session->server.response.body, (uint16_t)detect_data_size);
                  }
 
                  if( ScPafEnabled() && PacketHasPAFPayload( p )
@@ -4577,7 +4577,7 @@ int GetHttpGzipData(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
 {
     if(!IsGzipData(data))
     {
-        *buf = file_data_ptr.data;
+        *buf = (uint8_t*)file_data_ptr.data;
         *len = file_data_ptr.len;
         *type = EVENT_INFO_GZIP_DATA;
         return 1;
@@ -4605,11 +4605,11 @@ int IsJSNormData(void *data)
 
 }
 
-int GetHttpJSNormData(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+int GetHttpJSNormData(void *data,  uint8_t **buf, uint32_t *len, uint32_t *type)
 {
     if(!IsJSNormData(data))
     {
-        *buf = file_data_ptr.data;
+        *buf = (uint8_t*) file_data_ptr.data;
         *len = file_data_ptr.len;
         *type = EVENT_INFO_JSNORM_DATA;
         return 1;

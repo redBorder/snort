@@ -14,7 +14,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * Author: Steven Sturges
@@ -81,9 +81,9 @@ typedef void (*AddPreprocUnused)(void (*pp_unused_func) (int, void *), void *arg
 typedef void (*AddPreprocConfCheck)(struct _SnortConfig *, int (*pp_conf_chk_func) (struct _SnortConfig *));
 typedef void (*AddToPostConfList)(struct _SnortConfig *sc, void (*post_config_func)(struct _SnortConfig *, int , void *), void *arg);
 typedef int (*AlertQueueAdd)(uint32_t, uint32_t, uint32_t,
-                             uint32_t, uint32_t, char *, void *);
+                             uint32_t, uint32_t, const char *, void *);
 typedef uint32_t (*GenSnortEvent)(Packet *p, uint32_t gid, uint32_t sid, uint32_t rev,
-                                  uint32_t classification, uint32_t priority, char *msg);
+                                  uint32_t classification, uint32_t priority, const char *msg);
 #ifdef SNORT_RELOAD
 typedef void (*PreprocessorReloadFunc)(struct _SnortConfig *, char *, void **);
 typedef int (*PreprocessorReloadVerifyFunc)(struct _SnortConfig *, void *);
@@ -244,10 +244,12 @@ typedef void (*GetIntfDataFunc)(void *ssnptr,int32_t *ingressIntfIndex, int32_t 
                 int32_t *ingressZoneIndex, int32_t *egressZoneIndex) ;
 typedef void (*RegisterGetIntfDataFunc)(GetIntfDataFunc);
 
-typedef bool (*DynamicIsSSLPolicyEnabledFunc)(void);
+typedef bool (*DynamicIsSSLPolicyEnabledFunc)(struct _SnortConfig *sc);
 typedef void (*DynamicSetSSLPolicyEnabledFunc)(struct _SnortConfig *sc, tSfPolicyId policy, bool value);
 typedef void (*SetSSLCallbackFunc)(void *);
 typedef void* (*GetSSLCallbackFunc)(void);
+
+typedef bool (*IsTestModeFunc)(void);
 
 #define ENC_DYN_FWD 0x80000000
 #define ENC_DYN_NET 0x10000000
@@ -462,6 +464,7 @@ typedef struct _DynamicPreprocessorData
     DynamicReadyForProcessFunc readyForProcess;
     DynamicIsSSLPolicyEnabledFunc isSSLPolicyEnabled;
     DynamicSetSSLPolicyEnabledFunc setSSLPolicyEnabled;
+    IsTestModeFunc isTestMode;
 } DynamicPreprocessorData;
 
 /* Function prototypes for Dynamic Preprocessor Plugins */

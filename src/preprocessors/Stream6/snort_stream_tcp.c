@@ -1,7 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1421,7 +1421,7 @@ void StreamTcpPolicyInit(struct _SnortConfig *sc, StreamTcpConfig *config, char 
     StreamPrintTcpConfig(s5TcpPolicy);
 
 #ifdef REG_TEST
-    LogMessage("    TCP Session Size: %lu\n",sizeof(TcpSession));
+    LogMessage("    TCP Session Size: %lu\n", (long unsigned int)sizeof(TcpSession));
 #endif
 }
 
@@ -2983,13 +2983,15 @@ static inline void EventInternal (uint32_t eventSid)
     STREAM_DEBUG_WRAP(DebugMessage(DEBUG_STREAM_STATE,
                 "Stream raised internal event %d\n", eventSid););
 
-    SnortEventqAdd(GENERATOR_INTERNAL,          /* GID */
-            eventSid,                           /* SID */
-            1,                                  /* rev */
-            0,                                  /* class */
-            3,                                  /* priority */
-            STREAM_INTERNAL_EVENT_STR,         /* event msg*/
-            NULL);                              /* rule info ptr */
+    SnortEventqAddBypass(
+        GENERATOR_INTERNAL,             /* GID */
+        eventSid,                       /* SID */
+        1,                              /* rev */
+        0,                              /* class */
+        3,                              /* priority */
+        STREAM_INTERNAL_EVENT_STR,      /* event msg*/
+        NULL                            /* rule info ptr */
+        );
 }
 
 static inline void EventWindowSlam (StreamTcpPolicy *s5TcpPolicy)
@@ -3201,7 +3203,7 @@ static inline bool NormalTrimPayloadIfMss ( Packet *p, uint32_t max, TcpDataBloc
     return false;
 }
 
-static inline void NormalTrackECN (TcpSession* s, TCPHdr* tcph, int req3way)
+static inline void NormalTrackECN (TcpSession* s, const TCPHdr* tcph, int req3way)
 {
     if ( !s )
         return;
@@ -4349,7 +4351,7 @@ static inline int _flush_to_seq (
             SnortEventqPush();
             Preprocess(s5_pkt);
             SnortEventqPop();
-            DetectReset((uint8_t *)s5_pkt->data, s5_pkt->dsize);
+            DetectReset(s5_pkt->data, s5_pkt->dsize);
 
             do_detect = tmp_do_detect;
             do_detect_content = tmp_do_detect_content;
@@ -6736,8 +6738,11 @@ static int StreamQueue(StreamTracker *st, Packet *p, TcpDataBlock *tdb,
                         memcpy((uint8_t*)p->data+offset, right->payload, length);
                         p->packet_flags |= PKT_MODIFIED;
                     }
-                    normStats[PC_TCP_IPS_DATA][ips_data]++;
-                    sfBase.iPegs[PERF_COUNT_TCP_IPS_DATA][ips_data]++;
+                    if ( ips_data != NORM_MODE_OFF )
+                    {
+                        normStats[PC_TCP_IPS_DATA][ips_data]++;
+                        sfBase.iPegs[PERF_COUNT_TCP_IPS_DATA][ips_data]++;
+                    }
 #endif
                     trunc = overlap;
                     break;
@@ -6842,8 +6847,11 @@ static int StreamQueue(StreamTracker *st, Packet *p, TcpDataBlock *tdb,
                         memcpy((uint8_t*)p->data+offset, right->payload, right->size);
                         p->packet_flags |= PKT_MODIFIED;
                     }
-                    normStats[PC_TCP_IPS_DATA][ips_data]++;
-                    sfBase.iPegs[PERF_COUNT_TCP_IPS_DATA][ips_data]++;
+                    if ( ips_data != NORM_MODE_OFF )
+                    {
+                        normStats[PC_TCP_IPS_DATA][ips_data]++;
+                        sfBase.iPegs[PERF_COUNT_TCP_IPS_DATA][ips_data]++;
+                    }
 #endif
                     if (SEQ_EQ(right->seq, seq))
                     {
@@ -8104,7 +8112,7 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
                 NewTcpSession(p, scb, tdb, s5TcpPolicy);
                 tcpssn = (TcpSession *)scb->proto_specific_data->data;
                 new_ssn = 1;
-                NormalTrackECN(tcpssn, (TCPHdr*)p->tcph, require3Way);
+                NormalTrackECN(tcpssn, p->tcph, require3Way);
             }
 
             /* Nothing left todo here */
@@ -8118,7 +8126,7 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
                 tcpssn = (TcpSession *)scb->proto_specific_data->data;
                 new_ssn = 1;
             }
-            NormalTrackECN(tcpssn, (TCPHdr*)p->tcph, require3Way);
+            NormalTrackECN(tcpssn, p->tcph, require3Way);
             /* Nothing left todo here */
         }
         else if( TCP_ISFLAGSET( p->tcph, TH_ACK ) && !TCP_ISFLAGSET( p->tcph, TH_RST )
@@ -8133,7 +8141,7 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
             tcpssn = (TcpSession *)scb->proto_specific_data->data;
             new_ssn = 1;
 
-            NormalTrackECN(tcpssn, (TCPHdr*)p->tcph, require3Way);
+            NormalTrackECN(tcpssn, p->tcph, require3Way);
             StreamUpdatePerfBaseState(&sfBase, scb, TCP_STATE_ESTABLISHED);
         }
         else if ((p->dsize > 0) && (!require3Way || midstream_allowed))
@@ -8196,7 +8204,7 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
             NewTcpSession(p, scb, tdb, s5TcpPolicy);
             tcpssn = (TcpSession *)scb->proto_specific_data->data;
             new_ssn = 1;
-            NormalTrackECN(tcpssn, (TCPHdr*)p->tcph, require3Way);
+            NormalTrackECN(tcpssn, p->tcph, require3Way);
 
             if (scb->session_state & STREAM_STATE_ESTABLISHED)
                 StreamUpdatePerfBaseState(&sfBase, scb, TCP_STATE_ESTABLISHED);
@@ -8255,7 +8263,7 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
         }
 #ifdef NORMALIZER
         if (TCP_ISFLAGSET(p->tcph, TH_SYN))
-            NormalTrackECN(tcpssn, (TCPHdr*)p->tcph, require3Way);
+            NormalTrackECN(tcpssn, p->tcph, require3Way);
 #endif
     }
 
@@ -8381,7 +8389,7 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
 
                 tcpssn = (TcpSession *)scb->proto_specific_data->data;
                 new_ssn = 1;
-                NormalTrackECN(tcpssn, (TCPHdr*)p->tcph, require3Way);
+                NormalTrackECN(tcpssn, p->tcph, require3Way);
 
                 if (tcpssn)
                 {
@@ -8404,7 +8412,7 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
                 NewTcpSession(p, scb, tdb, s5TcpPolicy);
                 tcpssn = (TcpSession *)scb->proto_specific_data->data;
                 new_ssn = 1;
-                NormalTrackECN(tcpssn, (TCPHdr*)p->tcph, require3Way);
+                NormalTrackECN(tcpssn, p->tcph, require3Way);
 
                 if (tcpssn)
                 {
@@ -9479,15 +9487,15 @@ static inline int CheckFlushPolicyOnData( StreamTcpConfig *config, TcpSession *t
                 {
                     // if this payload is exactly one pdu, don't
                     // actually flush, just use the raw packet
-                    if ( (tdb->seq == listener->seglist->seq) &&
-                            (flush_amt == listener->seglist->size) &&
-                            (flush_amt == p->dsize) &&
-                            (listener->paf_state.paf == PAF_FLUSH))
+                    if ( listener->seglist_next &&
+                        (tdb->seq == listener->seglist_next->seq) &&
+                        (flush_amt == listener->seglist_next->size) &&
+                        (flush_amt == p->dsize) )
                     {
                         this_flush = flush_amt;
-                        listener->seglist->buffered = SL_BUF_FLUSHED;
+                        listener->seglist_next->buffered = SL_BUF_FLUSHED;
                         listener->flush_count++;
-                        p->packet_flags |= PKT_PDU_FULL;
+                        p->packet_flags |=  flags & PKT_PDU_FULL;
                         ShowRebuiltPacket(p);
                     }
                     else

@@ -1,5 +1,5 @@
 /****************************************************************************
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1255,7 +1255,7 @@ int sip_parse(SIPMsg *msg, const char *buff, char *end)
 	/*Parse the body*/
 	start = nextIndex;
 	msg->bodyLen = end - start;
-	/*Disable this check for TCP. Revisit this again when PAF enabled for SIP*/
+	/* Disable this check for TCP. */
 	if((!msg->isTcp)&&(msg->content_len > msg->bodyLen))
 		ALERT(SIP_EVENT_MISMATCH_CONTENT_LEN,SIP_EVENT_MISMATCH_CONTENT_LEN_STR);
 
@@ -1270,7 +1270,7 @@ int sip_parse(SIPMsg *msg, const char *buff, char *end)
 	}
 
 	// Find out whether multiple SIP messages in this packet
-	/*Disable this check for TCP. Revisit this again when PAF enabled for SIP*/
+	/* Disable this check for TCP. */
     if ((!msg->isTcp) && (msg->content_len < msg->bodyLen))
     {
     	if (SIP_SUCCESS == sip_startline_parse(msg, start + msg->content_len, end, &nextIndex))

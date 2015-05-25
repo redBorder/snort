@@ -1,7 +1,7 @@
 /*
  * snort_ftptelnet.c
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  * Steven A. Sturges <ssturges@sourcefire.com>
  * Daniel J. Roelker <droelker@sourcefire.com>
@@ -4371,11 +4371,11 @@ void SnortFTPData_EOF(SFSnortPacket *p)
     FTP_DATA_SESSION *data_ssn = (FTP_DATA_SESSION *)
                 _dpd.sessionAPI->get_application_data(p->stream_session, PP_FTPTELNET);
 
-    initFilePosition(&data_ssn->position, _dpd.fileAPI->get_file_processed_size(p->stream_session));
-    finalFilePosition(&data_ssn->position);
-
     if (!PROTO_IS_FTP_DATA(data_ssn) || !FTPDataDirection(p, data_ssn))
         return;
+
+    initFilePosition(&data_ssn->position, _dpd.fileAPI->get_file_processed_size(p->stream_session));
+    finalFilePosition(&data_ssn->position);
 
     _dpd.streamAPI->request_flush_stream(p);
     if (!(data_ssn->flags & FTPDATA_FLG_STOP))
@@ -4460,6 +4460,9 @@ int SnortFTPData(SFSnortPacket *p)
     {
         initFilePosition(&data_ssn->position,
                 _dpd.fileAPI->get_file_processed_size(p->stream_session));
+
+        if (p->tcp_header && (p->tcp_header->flags & TCPHEADER_FIN))
+            finalFilePosition(&data_ssn->position);
     }
 
     FTPDataProcess(p, data_ssn, (uint8_t *)p->payload, (uint16_t)p->payload_size);
@@ -4520,14 +4523,14 @@ int FTPPBounceEval(void *pkt, const uint8_t **cursor, void *dataPtr)
     if(_dpd.Is_DetectFlag(SF_FLAG_ALT_DETECT))
     {
         dsize = _dpd.altDetect->len;
-        start_ptr = (char *) _dpd.altDetect->data;
+        start_ptr = (const char*) _dpd.altDetect->data;
         DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
                     "Using Alternative Detect buffer!\n"););
     }
     else if(_dpd.Is_DetectFlag(SF_FLAG_ALT_DECODE))
     {
         dsize = _dpd.altBuffer->len;
-        start_ptr = (char *) _dpd.altBuffer->data;
+        start_ptr = (const char *) _dpd.altBuffer->data;
         DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
                     "Using Alternative Decode buffer!\n"););
 
