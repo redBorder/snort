@@ -1,6 +1,6 @@
 /* $Id$ */
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -199,7 +199,7 @@ int DisplayBanner(void)
                BUILD,
                info);
     LogMessage("   ''''    By Martin Roesch & The Snort Team: http://www.snort.org/contact#team\n");
-    LogMessage("           Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.\n");
+    LogMessage("           Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.\n");
     LogMessage("           Copyright (C) 1998-2013 Sourcefire, Inc., et al.\n");
 #ifdef HAVE_PCAP_LIB_VERSION
     LogMessage("           Using %s\n", pcap_lib_version());
@@ -440,9 +440,6 @@ void ErrorMessage(const char *format,...)
     if (snort_conf == NULL)
         return;
 
-    if (!ScCheckInternalLogLevel(INTERNAL_LOG_LEVEL__ERROR))
-        return;
-
     va_start(ap, format);
 
     if (ScDaemonMode() || ScLogSyslog())
@@ -529,7 +526,7 @@ void LogMessage(const char *format,...)
     if (snort_conf == NULL)
         return;
 
-    if (!ScCheckInternalLogLevel(INTERNAL_LOG_LEVEL__MESSAGE) && !ScDaemonMode() && !ScLogSyslog())
+    if (!ScCheckInternalLogLevel(INTERNAL_LOG_LEVEL__MESSAGE))
         return;
 
     va_start(ap, format);
@@ -566,7 +563,7 @@ void WarningMessage(const char *format,...)
     if (snort_conf == NULL)
         return;
 
-    if (!ScCheckInternalLogLevel(INTERNAL_LOG_LEVEL__WARNING) && !ScDaemonMode() && !ScLogSyslog())
+    if (!ScCheckInternalLogLevel(INTERNAL_LOG_LEVEL__WARNING))
         return;
 
     va_start(ap, format);

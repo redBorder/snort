@@ -1,5 +1,5 @@
 /*
- ** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2012-2013 Sourcefire, Inc.
  **
  ** This program is free software; you can redistribute it and/or modify
@@ -940,7 +940,7 @@ const uint8_t * process_mime_data_paf(void *packet, const uint8_t *start, const 
     }
 
     if ( mime_ssn->decode_conf && !mime_ssn->decode_conf->ignore_data)
-        setFileDataPtr((uint8_t*)start, (uint16_t)(end - start));
+        setFileDataPtr(start, (uint16_t)(end - start));
 
     if ((mime_ssn->data_state == STATE_DATA_HEADER) ||
             (mime_ssn->data_state == STATE_DATA_UNKNOWN))
@@ -998,7 +998,7 @@ const uint8_t * process_mime_data_paf(void *packet, const uint8_t *start, const 
         {
             int detection_size = getDetectionSize(conf->b64_depth, conf->qp_depth,
                     conf->uu_depth, conf->bitenc_depth, ds );
-            setFileDataPtr(ds->decodePtr, (uint16_t)detection_size);
+            setFileDataPtr((const uint8_t*)ds->decodePtr, (uint16_t)detection_size);
         }
 
         if (file_api->file_process(p,(uint8_t *)ds->decodePtr,
@@ -1155,7 +1155,7 @@ static inline bool store_boundary(MimeDataPafInfo *data_info,  uint8_t val)
         return 0;
     }
 
-    if ((*(data_info->boundary_search) == '='))
+    if (*(data_info->boundary_search) == '=')
     {
         /*Skip spaces for the end of boundary*/
         if (val == '=')
