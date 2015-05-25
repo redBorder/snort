@@ -57,6 +57,13 @@ typedef struct _fileConfig
     int64_t show_data_depth;
 #endif
     int64_t file_depth;
+#ifdef HAVE_EXTRADATA_FILE
+    uint32_t xtra_file_sha256_id;
+    uint32_t xtra_file_size_id;
+    uint32_t xtra_file_uri_id;
+    uint32_t xtra_file_hostname_id;
+#endif
+
 } FileConfig;
 
 /* Return all rule id's that match a a given "type" string.  */

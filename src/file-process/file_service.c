@@ -49,6 +49,10 @@
 #include "snort_httpinspect.h"
 #include "file_service.h"
 
+#ifdef HAVE_EXTRADATA_FILE
+#include "Unified2_common.h"
+#endif
+
 typedef struct _FileSession
 {
     FileContext *current_context;
@@ -63,6 +67,9 @@ static bool file_signature_enabled = false;
 static bool file_capture_enabled = false;
 static bool file_processing_initiated = false;
 static bool file_type_force = false;
+#ifdef HAVE_EXTRADATA_FILE
+static bool file_extradata_enabled = false;
+#endif
 
 static uint32_t file_config_version = 0;
 static File_policy_callback_func file_policy_cb = NULL;
@@ -76,18 +83,32 @@ static int file_process(void* ssnptr, uint8_t* file_data, int data_size,
 
 /*File properties*/
 static int get_file_name(void* ssnptr, uint8_t **fname, uint32_t *name_size);
+#ifdef HAVE_EXTRADATA_FILE
+static int get_file_hostname(void* ssnptr, uint8_t **fname, uint32_t *name_size);
+#endif
 static uint64_t get_file_size(void* ssnptr);
 static uint64_t get_file_processed_size(void* ssnptr);
 static bool get_file_direction(void* ssnptr);
 static uint8_t *get_file_sig_sha256(void* ssnptr);
 
 static void set_file_name(void* ssnptr, uint8_t * fname, uint32_t name_size);
+#ifdef HAVE_EXTRADATA_FILE
+static void set_file_hostname(void* ssnptr, uint8_t * fname, uint32_t name_size);
+#endif
 static void set_file_direction(void* ssnptr, bool upload);
 
 static void set_file_policy_callback(File_policy_callback_func);
 static void enable_file_type(File_type_callback_func );
 static void enable_file_signature (File_signature_callback_func);
 static void enable_file_capture(File_signature_callback_func );
+#ifdef HAVE_EXTRADATA_FILE
+static void FileRegisterXtraDataFuncs(FileConfig *pFileConfig);
+static void enable_file_extradata();
+static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileSize(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileURI(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileHostname(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+#endif
 static void set_file_action_log_callback(Log_file_action_func);
 
 static int64_t get_max_file_depth(void);
@@ -127,16 +148,25 @@ void init_fileAPI(void)
     fileAPI.is_file_service_enabled = &is_file_service_enabled;
     fileAPI.file_process = &file_process;
     fileAPI.get_file_name = &get_file_name;
+#ifdef HAVE_EXTRADATA_FILE
+    fileAPI.get_file_hostname = &get_file_hostname;
+#endif
     fileAPI.get_file_size = &get_file_size;
     fileAPI.get_file_processed_size = &get_file_processed_size;
     fileAPI.get_file_direction = &get_file_direction;
     fileAPI.get_sig_sha256 = &get_file_sig_sha256;
     fileAPI.set_file_name = &set_file_name;
+#ifdef HAVE_EXTRADATA_FILE
+    fileAPI.set_file_hostname = &set_file_hostname;
+#endif
     fileAPI.set_file_direction = &set_file_direction;
     fileAPI.set_file_policy_callback = &set_file_policy_callback;
     fileAPI.enable_file_type = &enable_file_type;
     fileAPI.enable_file_signature = &enable_file_signature;
     fileAPI.enable_file_capture = &enable_file_capture;
+#ifdef HAVE_EXTRADATA_FILE
+    fileAPI.enable_file_extradata = &enable_file_extradata;
+#endif
     fileAPI.set_file_action_log_callback = &set_file_action_log_callback;
     fileAPI.get_max_file_depth = &get_max_file_depth;
     fileAPI.set_log_buffers = &set_log_buffers;
@@ -192,6 +222,10 @@ void FileAPIPostInit (void)
             file_config =  file_service_config_create();
             snort_conf->file_config = file_config;
         }
+#ifdef HAVE_EXTRADATA_FILE
+        if (file_extradata_enabled)
+            FileRegisterXtraDataFuncs(file_config);
+#endif
     }
 
     if ( file_capture_enabled)
@@ -206,6 +240,98 @@ void FileAPIPostInit (void)
 #endif
 
 }
+
+#ifdef HAVE_EXTRADATA_FILE
+static void FileRegisterXtraDataFuncs(FileConfig *file_config)
+{
+    if ((stream_api == NULL) || !file_config)
+        return;
+    file_config->xtra_file_sha256_id = stream_api->reg_xtra_data_cb(GetFileSHA256);
+    file_config->xtra_file_size_id = stream_api->reg_xtra_data_cb(GetFileSize);
+    file_config->xtra_file_uri_id = stream_api->reg_xtra_data_cb(GetFileURI);
+    file_config->xtra_file_hostname_id = stream_api->reg_xtra_data_cb(GetFileHostname);
+}
+
+static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    if (data == NULL)
+        return 0;
+
+    *buf = get_file_sig_sha256(data);
+    *len = SHA256_HASH_SIZE;
+    *type = EVENT_INFO_FILE_SHA256;
+    return 1;
+}
+
+static int GetFileSize(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->file_size > 0)
+    {
+        *buf = (uint8_t *) (context->file_size_str);
+        *len = snprintf(context->file_size_str, sizeof(context->file_size_str), "%lu", context->file_size);
+        *type = EVENT_INFO_FILE_SIZE;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int GetFileURI(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->file_name_size > 0)
+    {
+        *buf = context->file_name;
+        *len = context->file_name_size;
+        *type = EVENT_INFO_FILE_URI;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int GetFileHostname(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->hostname_size > 0)
+    {
+        *buf = context->hostname;
+        *len = context->hostname_size;
+        *type = EVENT_INFO_FILE_HOSTNAME;
+        return 1;
+    }
+
+    return 0;
+}
+#endif
 
 static void start_file_processing(void)
 {
@@ -337,6 +463,16 @@ FileContext* create_file_context(void *ssnptr)
 {
     FileSession *file_session;
     FileContext *context = file_context_create();
+
+#ifdef HAVE_EXTRADATA_FILE
+    if (snort_conf != NULL && snort_conf->file_config != NULL)
+    {
+        context->xtra_file_sha256_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_sha256_id;
+        context->xtra_file_size_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_size_id;
+        context->xtra_file_uri_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_uri_id;
+        context->xtra_file_hostname_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_hostname_id;
+    }
+#endif
 
     /* Create file session if not yet*/
     file_session = get_file_session (ssnptr);
@@ -689,6 +825,17 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
     set_current_file_context(ssnptr, context);
     file_stats.file_data_total += data_size;
 
+#ifdef HAVE_EXTRADATA_FILE
+    pkt->xtradata_mask |= BIT(context->xtra_file_sha256_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_size_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_uri_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_hostname_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_sha256_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_size_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_uri_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_hostname_id);
+#endif
+
     if ((!context->file_type_enabled) && (!context->file_signature_enabled))
     {
         updateFileSize(context, data_size, position);
@@ -810,8 +957,41 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
             if (context->file_state.sig_state == FILE_SIG_DEPTH_FAIL)
                 file_stats.files_sig_depth++;
             _file_signature_lookup(context, p, false, suspend_block_verdict);
+#ifdef HAVE_EXTRADATA_FILE
+            /* Add the event with the File Type after signature process finishes,
+               no matter if sig_state is either DONE or DEPTH_FAIL. If it is DONE,
+               the event will include the SHA256 file as ExtraData. If it is DEPTH_FAIL,
+               the event won't include it. */
+            if (!(pkt->packet_flags & PKT_FILE_EVENT_SET) &&
+                context->file_type_id != SNORT_FILE_TYPE_CONTINUE &&
+                context->file_type_id != SNORT_FILE_TYPE_UNKNOWN)
+            {
+                file_eventq_add(GENERATOR_FILE_TYPE, context->file_type_id,
+                        file_type_name(context->file_config, context->file_type_id),
+                        RULE_TYPE__ALERT);
+                pkt->packet_flags |= PKT_FILE_EVENT_SET;
+            }
+#endif
         }
     }
+#ifdef HAVE_EXTRADATA_FILE //(check to delete this piece of code since it will be mandatory enable signature from conf is sha256 is wanted in extradata)
+    else if (context->xtra_file_sha256_id)
+    {
+        file_signature_sha256(context, file_data, data_size, position);
+        file_stats.data_processed[context->file_type_id][context->upload]
+                                                         += data_size;
+        updateFileSize(context, data_size, position);
+        // (During the tests, including the lines before should be considered)
+        //FILE_REG_DEBUG_WRAP(if (context->sha256) file_sha256_print(context->sha256);)
+        //Either get SHA or exceeding the SHA limit, need lookup
+        //if (context->file_state.sig_state != FILE_SIG_PROCESSING)
+        //{
+        //    if (context->file_state.sig_state == FILE_SIG_DEPTH_FAIL)
+        //        file_stats.files_sig_depth++;
+        //    _file_signature_lookup(context, p, false, suspend_block_verdict);
+        //}
+    }
+#endif
     else
     {
         updateFileSize(context, data_size, position);
@@ -857,6 +1037,20 @@ static int get_file_name (void* ssnptr, uint8_t **fname, uint32_t *name_size)
 {
     return file_name_get(get_current_file_context(ssnptr), fname, name_size);
 }
+
+#ifdef HAVE_EXTRADATA_FILE
+static void set_file_hostname (void* ssnptr, uint8_t* fhostname, uint32_t hostname_size)
+{
+    FileContext* context = get_current_file_context(ssnptr);
+    file_hostname_set(context, fhostname, hostname_size);
+    FILE_REG_DEBUG_WRAP(printFileContext(context);)
+}
+
+static int get_file_hostname (void* ssnptr, uint8_t **fhostname, uint32_t *hostname_size)
+{
+    return file_hostname_get(get_current_file_context(ssnptr), fhostname, hostname_size);
+}
+#endif
 
 static uint64_t  get_file_size(void* ssnptr)
 {
@@ -968,6 +1162,20 @@ static void enable_file_capture(File_signature_callback_func callback)
         enable_file_signature(callback);
     }
 }
+
+#ifdef HAVE_EXTRADATA_FILE
+static void enable_file_extradata()
+{
+    if (!file_extradata_enabled)
+    {
+        file_extradata_enabled = true;
+#ifdef SNORT_RELOAD
+        file_sevice_reconfig_set(true);
+#endif
+        LogMessage("File service: file extradata enabled.\n");
+    }
+}
+#endif
 
 static void set_file_action_log_callback(Log_file_action_func log_func)
 {

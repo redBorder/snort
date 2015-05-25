@@ -278,6 +278,11 @@ void file_agent_init(FileInspectConf* conf)
         file_capture_enabled = true;
     }
 
+#ifdef HAVE_EXTRADATA_FILE
+    if (conf->file_extradata_enabled)
+        _dpd.fileAPI->enable_file_extradata();
+#endif
+
     if (conf->hostname)
     {
         file_agent_init_socket(conf->hostname, conf->portno);
@@ -815,6 +820,7 @@ void file_agent_close(void)
 #endif
 }
 
+//rb:comment (Possible bug to fix by the cisco side: When signature or capture enabled there's no logging)
 /*
  * File type callback when file type is identified
  *
@@ -929,4 +935,3 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
 
     return verdict;
 }
-

@@ -55,6 +55,9 @@
 #define FILE_INSPECT_S3_CLUSTER          "s3_cluster"
 #define FILE_INSPECT_S3_ACCESS_KEY       "s3_access_key"
 #define FILE_INSPECT_S3_SECRET_KEY       "s3_secret_key"
+
+#ifdef HAVE_EXTRADATA_FILE
+#define FILE_INSPECT_TRACK_EXTRADATA     "track_extradata"
 #endif
 
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
@@ -288,6 +291,10 @@ static void DisplayFileConfig(FileInspectConf *config)
     _dpd.logMsg("    file sent to host: %s, port number: %d\n",
             config->hostname ? config->hostname:"DISABLED (Default)",
                     config->portno);
+#ifdef HAVE_EXTRADATA_FILE
+    _dpd.logMsg("    file extradata: %s\n",
+            config->file_extradata_enabled ? "ENABLED":"DISABLED (Default)");
+#endif
     _dpd.logMsg("\n");
 }
 
@@ -357,6 +364,12 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
         {
             config->file_signature_enabled = true;
         }
+#ifdef HAVE_EXTRADATA_FILE
+        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_TRACK_EXTRADATA))
+        {
+            config->file_extradata_enabled = true;
+        }
+#endif
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_BLACKLIST))
         {
             cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);

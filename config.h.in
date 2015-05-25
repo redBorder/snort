@@ -61,6 +61,9 @@
 /* Define to 1 if you have the <GeoIP.h> header file. */
 #undef HAVE_GEOIP_H
 
+/* ExtraData File collection */
+#undef HAVE_EXTRADATA_FILE
+
 /* Define to 1 if you have the `inet_ntop' function. */
 #undef HAVE_INET_NTOP
 

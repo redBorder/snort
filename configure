@@ -847,6 +847,7 @@ with_librdkafka_includes
 with_librdkafka_libraries
 with_libs3_includes
 with_libs3_libraries
+enable_extradata_file
 enable_lzma
 with_lzma_includes
 with_lzma_libraries
@@ -1540,6 +1541,7 @@ Optional Features:
   --disable-dlclose        Only use if you are developing dynamic preprocessors or shared object rules.  Disable (--disable-dlclose) for testing valgrind leaks in dynamic libraries so a usable backtrace is reported.  Enabled by default.
   --enable-reputationgeoip Enable Reputation GeoIP Support (adds GeoIP support implicitly)
   --enable-remote-file-s3  Enable S3 file saving (implies s3 libs)
+  --enable-extradata-file  Enable ExtraData File collection.
   --disable-lzma           Disable LZMA Decompression
   --disable-gre            Disable GRE and IP in IP encapsulation support
   --disable-mpls           Disable MPLS support
@@ -16718,6 +16720,8 @@ if test "x$Z_LIB" = "xno"; then
  fi
 LIBS="$LIBS -lz"
 
+
+
 # Check whether --enable-reputationgeoip was given.
 if test "${enable_reputationgeoip+set}" = set; then :
   enableval=$enable_reputationgeoip; enable_reputationgeoip="$enableval"
@@ -16858,6 +16862,27 @@ if test "${with_libs3_includes+set}" = set; then :
   withval=$with_libs3_includes; with_libs3_includes="$withval"
 else
   with_libs3_includes="no"
+
+
+
+# Check whether --enable-extradata-file was given.
+if test "${enable_extradata_file+set}" = set; then :
+  enableval=$enable_extradata_file; enable_extradata_file="$enableval"
+else
+  enable_extradata_file="no"
+fi
+
+if test "x$enable_extradata_file" = "xyes"; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+
+cat >>confdefs.h <<_ACEOF
+#define HAVE_EXTRADATA_FILE /**/
+_ACEOF
+
+else
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
 fi
 
 
@@ -17035,6 +17060,8 @@ fi
       exit 1
     fi
 fi
+
+
 
 # Check whether --enable-lzma was given.
 if test "${enable_lzma+set}" = set; then :
