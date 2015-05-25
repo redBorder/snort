@@ -1,3 +1,90 @@
+2015-22-04 Joel Cornett <jocornet@cisco.com>
+Snort 2.9.7.3
+    * src/build.h:
+      updating build number to 217
+
+    * src/: decode.h, detection-plugins/sp_clientserver.c,
+      dynamic-plugins/sf_engine/sf_snort_packet.h,
+      dynamic-plugins/sf_engine/sf_snort_plugin_api.c,
+      dynamic-preprocessors/dcerpc2/dce2_session.h,
+      dynamic-preprocessors/sdf/spp_sdf.c,
+      preprocessors/HttpInspect/server/hi_server.c,
+      preprocessors/Stream6/snort_stream_tcp.c,
+      preprocessors/snort_httpinspect.c, preprocessors/spp_normalize.c:
+      Added mode safety checks to normalization.
+      Fixed an issue in PAF where the start of the PDU after flushing was not
+      being set correctly in some case.
+      Improved Stream reassembly of HTTPS sessions
+
+    * src/dynamic-preprocessors/ftptelnet/snort_ftptelnet.c:
+      Stability improvements for ftp_telnet preprocessor
+
+    * doc/snort_manual.pdf, doc/snort_manual.tex,
+      src/detection-plugins/sp_base64_decode.c,
+      src/detection-plugins/sp_base64_decode.h,
+      src/detection-plugins/sp_file_data.c:
+      Improved performance for file preprocessor
+      Documentation changes
+
+    * src/dynamic-preprocessors/appid/: service_plugins/service_base.c,
+      service_state.c:
+      Various OpenAppId improvements
+
+    * configure.in:
+      Fixed issue with configure script handling of -Werror compiler flags
+
+    * src/decode.c:
+      Improved decoding of IPv6 extensions
+
+    * src/detection-plugins/detection_options.c:
+      Fixed an issue where the protected_content rule option was not
+      backtracking correctly in some cases
+
+    * src/snort.c:
+      Fixed snort handling of PID files
+
+    * tools/: u2openappid/u2openappid.c, u2spewfoo/u2spewfoo.c:
+      Fixed usage info.
+
+    * src/dynamic-preprocessors/sip/: Makefile.am, sf_sip.dsp, sip_dialog.c,
+      sip_parser.c, spp_sip.c:
+      Added PAF support for TCP traffic
+
+    * src/: log_text.c, log_text.h, output-plugins/spo_alert_fast.c,
+      output-plugins/spo_alert_full.c:
+      Extended support for OpenAppId logging to cmg and console output loggers
+
+    * src/dynamic-preprocessors/appid/service_plugins/service_ssl.c:
+      Improved SSLv3 handling for OpenAppId
+
+2014-24-12 Victor Roemer <viroemer@cisco.com>
+Snort 2.9.7.2
+    * src/build.h:
+      updating build number to 177
+
+    * src/preprocessors/Stream6/snort_stream_tcp.c:
+	  Resolved an issue where the inline normalization preprocessor
+	  incorrectly resized packets when 'preprocessor normalize_tcp: trim'
+	  was enabled.
+
+    * src/decode.c, src/encode.c:
+      Added support for Cisco FabricPath decoding/encoding.
+      Ensure flow_id is copied into the DAQ_PktHdr_t.
+
+    * src/snort.h, src/sfutil/sfrt.c, src/sfutil/sfrt.h
+      src/target-based/sftarget_reader.c:
+      Moved ntohl conversion inside of the sfrt api for both IPv4 and IPv6.
+
+    * src/target-based/sftarget_protocol_reference.c
+      Lookup application protocol id only after the session is established.
+      Assign application protocol id to the session when using host attribute table.
+
+    * src/util.c:
+      Changes for suppressing configuration logging.
+
+    * src/file-process/file_service.c:
+      Assign the file config to a file context prior to checking if HTTP continuation.
+
 2014-10-10 Carter Waxman <cwaxman@cisco.com>
 Snort 2.9.7.0
     * src/build.h: updating build number to 149

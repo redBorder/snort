@@ -1,5 +1,5 @@
 /****************************************************************************
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -202,18 +202,18 @@ static bool check_imap_data_end(ImapDataEnd *data_end_state,  uint8_t val)
     
     case IMAP_PAF_DATA_END_UNKNOWN:
         if (val == ')')
-            *data_end_state = IMAP_PAF_DATA_END_PAREN;
+            *data_end_state = (ImapDataEnd) IMAP_PAF_DATA_END_PAREN;
         break;
 
     case IMAP_PAF_DATA_END_PAREN:
         if (val == '\n')
         {
-            *data_end_state = PAF_DATA_END_UNKNOWN;
+            *data_end_state = (ImapDataEnd) PAF_DATA_END_UNKNOWN;
             return true;
         }
         else if (val != '\r')
         {
-            *data_end_state = PAF_DATA_END_UNKNOWN;
+            *data_end_state = (ImapDataEnd) PAF_DATA_END_UNKNOWN;
         }
         break;
     

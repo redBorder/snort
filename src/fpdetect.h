@@ -3,7 +3,7 @@
 **
 ** fpfuncs.h
 **
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Dan Roelker <droelker@sourcefire.com>
 ** Marc Norton <mnorton@sourcefire.com>
@@ -98,7 +98,7 @@ void OtnxMatchDataFree(OTNX_MATCH_DATA *);
 
 int fpAddMatch( OTNX_MATCH_DATA *omd_local, int pLen, OptTreeNode *otn);
 void fpEvalIpProtoOnlyRules(SF_LIST **, Packet *);
-OptTreeNode * GetOTN(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, char *);
+OptTreeNode * GetOTN(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, const char *);
 
 #define TO_SERVER 1
 #define TO_CLIENT 0
