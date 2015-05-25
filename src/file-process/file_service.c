@@ -957,7 +957,7 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
             if (context->file_state.sig_state == FILE_SIG_DEPTH_FAIL)
                 file_stats.files_sig_depth++;
             _file_signature_lookup(context, p, false, suspend_block_verdict);
-#ifdef HAVE_EXTRADATA_FILE
+
             /* Add the event with the File Type after signature process finishes,
                no matter if sig_state is either DONE or DEPTH_FAIL. If it is DONE,
                the event will include the SHA256 file as ExtraData. If it is DEPTH_FAIL,
@@ -971,7 +971,6 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
                         RULE_TYPE__ALERT);
                 pkt->packet_flags |= PKT_FILE_EVENT_SET;
             }
-#endif
         }
     }
 #ifdef HAVE_EXTRADATA_FILE //(check to delete this piece of code since it will be mandatory enable signature from conf is sha256 is wanted in extradata)
