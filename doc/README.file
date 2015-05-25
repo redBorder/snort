@@ -138,6 +138,13 @@ capture_network    <hostname portno> No        DISABLED
 capture_queue_size <size>            No        3000
 blacklist          <file>            No        NULL
 greylist           <file>            No        NULL
+### redBorder: feature/file_s3
+s3_bucket          <bucket>          No        DISABLED
+s3_cluster         <S3 server>       No        DISABLED
+s3_access_key      <access key>      No        DISABLED
+s3_secret_key      <secret key>      No        DISABLED
+* All these four S3 options above must be included if you want to enable this feature
+###
 
 portno         = 0 - 65535
 size           = 0 - 4G files
@@ -152,6 +159,12 @@ preprocessor file_inspect:\
             < capture_queue_size  size >, \
             < blacklist file>, \  
             < greylist file>     
+### redBorder: feature/file_s3
+            < s3_bucket bucket >, \
+            < s3_cluster S3 server >, \
+            < s3_access_key access key >, \
+            < s3_secret_key secret key >, \
+###
 Options:
  
   < type_id  >: 
@@ -181,6 +194,20 @@ Options:
       
   < greylist file >: 
       Specify a SHA256 list file. Files match SHA256 will be alerted.
+
+### redBorder: feature/file_s3
+  < s3_bucket bucket >:
+      Enable capture of file in S3 and specifies the bucket
+
+  < s3_cluster S3 server >:
+      Enable capture of file in S3 and specifies the server
+
+  < s3_access_key access key >:
+      Enable capture of file in S3 and specifies the access key
+
+  < s3_secret_key secret key >:
+      Enable capture of file in S3 and specifies the secret key
+###
    
 SHA list file format
     one SHA per line. 
