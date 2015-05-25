@@ -1,6 +1,6 @@
 /* $Id$ */
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Author(s):   Andrew R. Baker <andrewb@sourcefire.com>
 **
@@ -111,7 +111,7 @@ typedef struct _SigInfo
     uint32_t   class_id;
     ClassType   *classType;
     uint32_t   priority;
-    char        *message;
+    const char        *message;
     ReferenceNode *refs;
     char          shared; /* shared object rule */
     char          dup_opt_func; /* has soid, and refers to another shared object rule */

@@ -1,7 +1,7 @@
 /*
  * ftpp_ui_client_lookup.c
  *
- * Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  * Steven A. Sturges <ssturges@sourcefire.com>
  * Daniel J. Roelker <droelker@sourcefire.com>
@@ -105,7 +105,7 @@ int ftpp_ui_client_lookup_cleanup(CLIENT_LOOKUP **ClientLookup)
 
 /*
  * Function: ftpp_ui_client_lookup_add(CLIENT_LOOKUP *ClientLookup,
- *                                 sfip_t* Ip, 
+ *                                 sfip_t* Ip,
  *                                 FTP_CLIENT_PROTO_CONF *ClientConf)
  *
  * Purpose: Add a client configuration to the list.
@@ -133,7 +133,7 @@ int ftpp_ui_client_lookup_add(
         return FTPP_INVALID_ARG;
     }
 
-    iRet = sfrt_insert((void *)Ip, (unsigned char)Ip->bits,
+    iRet = sfrt_insert(Ip, (unsigned char)Ip->bits,
         (void *)ClientConf, RT_FAVOR_SPECIFIC, ClientLookup);
 
     if (iRet)
@@ -191,7 +191,7 @@ FTP_CLIENT_PROTO_CONF *ftpp_ui_client_lookup_find(CLIENT_LOOKUP *ClientLookup,
 
     *iError = FTPP_SUCCESS;
 
-    ClientConf = (FTP_CLIENT_PROTO_CONF *)sfrt_lookup((void *)Ip, ClientLookup);
+    ClientConf = (FTP_CLIENT_PROTO_CONF *)sfrt_lookup(Ip, ClientLookup);
     if (!ClientConf)
     {
         *iError = FTPP_NOT_FOUND;

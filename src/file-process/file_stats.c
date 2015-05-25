@@ -1,7 +1,7 @@
 /*
  **
  **
- **  Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+ **  Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  **  Copyright (C) 2013-2013 Sourcefire, Inc.
  **
  **  This program is free software; you can redistribute it and/or modify
@@ -104,11 +104,6 @@ void printFileContext (FileContext* context)
 
 void DumpHexFile(FILE *fp, const uint8_t *data, unsigned len)
 {
-    char str[18];
-    unsigned i;
-    unsigned pos;
-    char c;
-
     FileConfig *file_config =  (FileConfig *)(snort_conf->file_config);
 
     if (file_config->show_data_depth < (int64_t)len)

@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2006-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -235,10 +235,10 @@ int16_t GetProtocolReference(Packet *p)
     do /* Simple do loop to break out of quickly, not really a loop */
     {
         HostAttributeEntry *host_entry;
-        if (p->ssnptr && session_api)
+        if ( session_api && session_api->is_session_verified( p->ssnptr ) )
         {
             /* Use session information */
-            protocol = session_api->get_application_protocol_id(p->ssnptr);
+            protocol = session_api->get_application_protocol_id( p->ssnptr );
             if (protocol != 0)
             {
                 break;
@@ -282,7 +282,7 @@ int16_t GetProtocolReference(Packet *p)
 
         if (protocol != 0)
         {
-
+            session_api->set_application_protocol_id( p->ssnptr, protocol );
             break;
         }
 
@@ -297,6 +297,7 @@ int16_t GetProtocolReference(Packet *p)
         }
         if (protocol != 0)
         {
+            session_api->set_application_protocol_id( p->ssnptr, protocol );
             break;
         }
 
