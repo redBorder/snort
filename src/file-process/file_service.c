@@ -810,7 +810,7 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
             if (context->file_state.sig_state == FILE_SIG_DEPTH_FAIL)
                 file_stats.files_sig_depth++;
             _file_signature_lookup(context, p, false, suspend_block_verdict);
-//rb:ini
+
             /* Add the event with the File Type after signature process finishes,
                no matter if sig_state is either DONE or DEPTH_FAIL. If it is DONE,
                the event will include the SHA256 file as ExtraData. If it is DEPTH_FAIL,
@@ -824,7 +824,6 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
                         RULE_TYPE__ALERT);
                 pkt->packet_flags |= PKT_FILE_EVENT_SET;
             }
-//rb:fin
         }
     }
     else
