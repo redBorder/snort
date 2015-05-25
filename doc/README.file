@@ -138,6 +138,9 @@ capture_network    <hostname portno> No        DISABLED
 capture_queue_size <size>            No        3000
 blacklist          <file>            No        NULL
 greylist           <file>            No        NULL
+### redBorder: feature/file_extradata
+track_extradata    NONE              No        DISABLED
+###
 
 portno         = 0 - 65535
 size           = 0 - 4G files
@@ -152,6 +155,9 @@ preprocessor file_inspect:\
             < capture_queue_size  size >, \
             < blacklist file>, \  
             < greylist file>     
+### redBorder: feature/file_extradata
+            < track_extradata >, \
+###
 Options:
  
   < type_id  >: 
@@ -181,6 +187,11 @@ Options:
       
   < greylist file >: 
       Specify a SHA256 list file. Files match SHA256 will be alerted.
+
+### redBorder: feature/file_extradata
+  < track_extradata >:
+      Enable inclusion of further information in file events as ExtraData fields
+###
    
 SHA list file format
     one SHA per line. 
