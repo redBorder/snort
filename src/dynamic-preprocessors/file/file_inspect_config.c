@@ -55,6 +55,7 @@
 #define FILE_INSPECT_S3_CLUSTER          "s3_cluster"
 #define FILE_INSPECT_S3_ACCESS_KEY       "s3_access_key"
 #define FILE_INSPECT_S3_SECRET_KEY       "s3_secret_key"
+#endif
 
 #ifdef HAVE_EXTRADATA_FILE
 #define FILE_INSPECT_TRACK_EXTRADATA     "track_extradata"
