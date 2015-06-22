@@ -763,12 +763,12 @@ static int file_agent_send_s3(const struct s3_info *s3,const FileInfo *file) {
         /* Extracted directly from S3 example */
         if (transference.status < S3StatusErrorAccessDenied)
         {
-            _dpd.logMsg("File inspect: can't upload a file to S3: %s",
+            _dpd.logMsg("File inspect: can't upload a file to S3: %s\n",
                 S3_get_status_name(transference.status));
         }
         else 
         {
-            _dpd.logMsg("File inspect: can't upload a file to S3: %s,%s",
+            _dpd.logMsg("File inspect: can't upload a file to S3: %s,%s\n",
                 S3_get_status_name(transference.status),transference.err);
         }
     }
