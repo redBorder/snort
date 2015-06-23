@@ -20,7 +20,7 @@
  ** along with this program; if not, write to the Free Software
  ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
-
+#include "src/sfutil/sfxhash.h"
 #include "sf_types.h"
 #include "file_inspect_config.h"
 #include "file_agent.h"
@@ -55,6 +55,7 @@
 #define FILE_INSPECT_S3_CLUSTER          "s3_cluster"
 #define FILE_INSPECT_S3_ACCESS_KEY       "s3_access_key"
 #define FILE_INSPECT_S3_SECRET_KEY       "s3_secret_key"
+#define FILE_INSPECT_S3_CACHE            "s3_cache"
 #endif
 
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
@@ -497,6 +498,21 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
                 FILE_FATAL_ERROR("%s(%d) => Please specify s3 secret_key!\n");
             }
             config->s3.secret_key = strdup(cur_tokenp);
+        }
+        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_S3_CACHE))
+        {
+            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
+            if( NULL == cur_tokenp )
+            {
+                config->sha256_bytes_in_hash_table =
+                    (uint32_t) SHA256_BYTES_IN_HASH_TABLE_DEFAULT;
+            }
+            else
+            {
+                _dpd.checkValueInRange(cur_tokenp, FILE_INSPECT_S3_CACHE,
+                        1, 32, &value);
+                config->sha256_bytes_in_hash_table = (uint32_t) value;
+            }
         }
 #endif
         else

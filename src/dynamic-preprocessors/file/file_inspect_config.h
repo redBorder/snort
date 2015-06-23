@@ -36,12 +36,16 @@
 #include "file_sha.h"
 
 #if HAVE_S3FILE
+#include "src/sfutil/sfxhash.h"
 #include <librdkafka/rdkafka.h>
 #include <libs3.h>
 #endif
 
 #define FILE_CAPTURE_QUEUE_SIZE_DEFAULT       3000 /*files*/
 #define FILE_CAPTURE_DISK_SIZE_DEFAULT        300  /*MB*/
+#if HAVE_S3FILE
+#define SHA256_BYTES_IN_HASH_TABLE_DEFAULT    8 /*bytes*/
+#endif
 
 typedef struct _FileSigInfo
 {
@@ -73,6 +77,9 @@ typedef struct _fileInspectConfig
         char *access_key;
         char *secret_key;
     } s3;
+    /* cache sha256 hashtable (& AVL tree (librd)) */
+    SFXHASH *sha256_hash_table_s3_cache;
+    uint32_t sha256_bytes_in_hash_table;
 #endif
     uint32_t capture_disk_size;  /* In megabytes*/
 

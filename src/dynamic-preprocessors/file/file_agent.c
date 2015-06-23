@@ -41,6 +41,9 @@
 #include <signal.h>
 #include <errno.h>
 
+#if HAVE_S3FILE
+#include "src/sfutil/sfxhash.h"
+#endif
 #include "sf_types.h"
 #include "spp_file.h"
 #include "file_agent.h"
@@ -91,7 +94,7 @@ typedef struct _FILE_MESSAGE_HEADER
 static int file_agent_save_file (FileInfo *, char *);
 static int file_agent_send_file (FileInfo *);
 #ifdef HAVE_S3FILE
-static int file_agent_send_s3(const struct s3_info *,const FileInfo *);
+static int file_agent_send_s3(FileInspectConf* conf,const FileInfo *);
 #endif
 static FileInfo* file_agent_get_file(void);
 static FileInfo *file_agent_finish_file(void);
@@ -194,7 +197,7 @@ static inline void file_agent_process_files(CircularBuffer *file_list,
 #ifdef HAVE_S3FILE
             /* Send to S3 */
             if (conf->s3.cluster) {
-                file_agent_send_s3(&conf->s3,file);
+                file_agent_send_s3(conf, file);
             }
 #endif
             /* Default, memory only */
@@ -713,11 +716,46 @@ static void str_tolower(char *str,size_t str_len) {
         *str = tolower(*str);
 }
 
-static int file_agent_send_s3(const struct s3_info *s3,const FileInfo *file) {
+/* This is called when the user releases a node or kills the table */
+int hash_table_s3_cache_usrfree(void *key, void *data )
+{
+    /* Release any data you need to */
+    return 0;
+}
+
+SFXHASH * hash_table_s3_cache_new(FileInspectConf *conf, const FileInfo *file)
+{
+    SFXHASH *hts3cache = NULL;
+
+    hts3cache = sfxhash_new(16384/*number of rows in hash table*/,
+                            conf->sha256_bytes_in_hash_table
+                            /*key size in bytes, same for all keys*/,
+                            conf->sha256_bytes_in_hash_table
+                            /*datasize in bytes, zero indicates user manages data*/,
+                                /* Data size == 0, just store the ptr */
+                            0/*maximum memory to use in bytes*/,
+                                /* Memcap */
+                            0/*Automatic Node Recovery boolean flag*/,
+                                /* Auto node recovery */
+                            NULL/*users Automatic Node Recovery memory release function*/,
+                                /* Auto free function */
+                            hash_table_s3_cache_usrfree,
+                                /* User free function */
+                            1/*users standard memory release function*/
+                                /* Recycle nodes */
+                            );
+    if (hts3cache == NULL)
+        FatalError("Failed to create rule detection option hash table");
+
+    return hts3cache;
+}
+
+static int file_agent_send_s3(FileInspectConf* conf,const FileInfo *file) {
     char sha256[SHA256_HASH_SIZE];
     char fsha[FILE_NAME_LEN];
     char path[FILE_NAME_LEN];
 
+    const struct s3_info *s3 = &conf->s3;
     struct s3_transference transference;
     memset(&transference,0,sizeof(transference));
     transference.file_mem = file->file_mem;
@@ -753,6 +791,10 @@ static int file_agent_send_s3(const struct s3_info *s3,const FileInfo *file) {
         &putObjectDataCallback
     };
 
+    /* Check if sha256 is in cache */
+    if (conf->sha256_hash_table_s3_cache == NULL)
+        hash_table_s3_cache_new(conf, file);
+
     //do {
         S3_put_object(&bucketContext, path, file->file_size, &putProperties,
                       0, &putObjectHandler, &transference );
@@ -772,6 +814,9 @@ static int file_agent_send_s3(const struct s3_info *s3,const FileInfo *file) {
                 S3_get_status_name(transference.status),transference.err);
         }
     }
+    /* Include sha256 in cache */
+    //else
+        //
     
     return 0;
 }
