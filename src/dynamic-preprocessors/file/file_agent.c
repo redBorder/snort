@@ -726,11 +726,11 @@ int hash_table_s3_cache_usrfree(void *key, void *data )
 SFXHASH * hash_table_s3_cache_new(FileInspectConf *conf, const FileInfo *file)
 {
     SFXHASH *hts3cache = NULL;
-
+#if 1
     hts3cache = sfxhash_new(16384/*number of rows in hash table*/,
-                            conf->sha256_bytes_in_hash_table
+                            8//conf->sha256_bytes_in_hash_table
                             /*key size in bytes, same for all keys*/,
-                            conf->sha256_bytes_in_hash_table
+                            8//conf->sha256_bytes_in_hash_table
                             /*datasize in bytes, zero indicates user manages data*/,
                                 /* Data size == 0, just store the ptr */
                             0/*maximum memory to use in bytes*/,
@@ -745,8 +745,8 @@ SFXHASH * hash_table_s3_cache_new(FileInspectConf *conf, const FileInfo *file)
                                 /* Recycle nodes */
                             );
     if (hts3cache == NULL)
-        FatalError("Failed to create rule detection option hash table");
-
+        _dpd.logMsg("File inspect: Failed to create s3 cache hash table \n");
+#endif
     return hts3cache;
 }
 
@@ -792,8 +792,8 @@ static int file_agent_send_s3(FileInspectConf* conf,const FileInfo *file) {
     };
 
     /* Check if sha256 is in cache */
-    if (conf->sha256_hash_table_s3_cache == NULL)
-        hash_table_s3_cache_new(conf, file);
+    //if (conf->sha256_hash_table_s3_cache == NULL)
+        //hash_table_s3_cache_new(conf, file);
 
     //do {
         S3_put_object(&bucketContext, path, file->file_size, &putProperties,

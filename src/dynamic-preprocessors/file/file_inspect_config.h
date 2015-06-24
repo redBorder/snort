@@ -36,7 +36,7 @@
 #include "file_sha.h"
 
 #if HAVE_S3FILE
-#include "src/sfutil/sfxhash.h"
+//#include "src/sfutil/sfxhash.h"
 #include <librdkafka/rdkafka.h>
 #include <libs3.h>
 #endif
@@ -78,8 +78,8 @@ typedef struct _fileInspectConfig
         char *secret_key;
     } s3;
     /* cache sha256 hashtable (& AVL tree (librd)) */
-    SFXHASH *sha256_hash_table_s3_cache;
-    uint32_t sha256_bytes_in_hash_table;
+    //SFXHASH *sha256_hash_table_s3_cache;
+    //uint32_t sha256_bytes_in_hash_table;
 #endif
     uint32_t capture_disk_size;  /* In megabytes*/
 
