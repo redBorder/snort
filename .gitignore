@@ -86,3 +86,4 @@ stamp-h1
 tools/control/snort_control
 tools/control/snort_dump_packets_control
 tools/file_server/file_server
+tools/control/snort_iplist
