@@ -933,7 +933,7 @@ SnortConfig * ParseSnortConf(void)
     /* If snort is not run with root privileges, no interfaces will be defined,
      * so user beware if an iface_ADDRESS variable is used in snort.conf and
      * snort is not run as root (even if just in read mode) */
-    DefineAllIfaceVars(sc);
+    //DefineAllIfaceVars(sc);
 #endif
 
     /* Add command line defined variables - duplicates will already
