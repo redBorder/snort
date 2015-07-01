@@ -24,6 +24,9 @@
 *.x86_64
 *.hex
 
+# Automake
+autom4te.cache/
+
 Makefile
 config.h
 config.log
@@ -43,3 +46,43 @@ stamp-h1
 /tools/u2spewfoo/u2spewfoo
 /tools/u2spewfoo/u2spewfoo-u2spewfoo.o
 
+# Generated sources
+/src/detection-plugins/sf_decompression.h
+/src/detection-plugins/sf_snort_packet.h
+/src/detection-plugins/sf_snort_plugin_api.h
+/src/detection-plugins/sf_snort_plugin_hdropts.c
+/src/dynamic-plugins/sf_engine/ipv6_port.h
+/src/dynamic-plugins/sf_engine/ipv6_port.h.new
+/src/dynamic-plugins/sf_engine/sf_ip.c
+/src/dynamic-plugins/sf_engine/sf_ip.h
+/src/dynamic-plugins/sf_engine/sf_iph.h
+/src/dynamic-plugins/sf_engine/sf_protocols.h
+/src/dynamic-plugins/sf_engine/sf_sechash.c
+/src/dynamic-plugins/sf_engine/sf_sechash.h
+/src/dynamic-plugins/sf_engine/sf_types.h
+/src/dynamic-plugins/sf_engine/sfghash.c
+/src/dynamic-plugins/sf_engine/sfghash.h
+/src/dynamic-plugins/sf_engine/sfhashfcn.c
+/src/dynamic-plugins/sf_engine/sfhashfcn.c.new
+/src/dynamic-plugins/sf_engine/sfhashfcn.h
+/src/dynamic-plugins/sf_engine/sfprimetable.c
+/src/dynamic-plugins/sf_engine/sfprimetable.h
+/src/dynamic-plugins/sf_engine/snort_debug.h
+/src/dynamic-plugins/sf_engine/snort_debug.h.new
+/src/dynamic-preprocessors/file/Makefile.in.bak
+/src/dynamic-preprocessors/file/include/circular_buffer.h
+/src/dynamic-preprocessors/file/include/output_api.h
+/src/dynamic-preprocessors/file/include/output_common.h
+/src/dynamic-preprocessors/file/include/output_lib.h
+/src/dynamic-preprocessors/file/include/sf_textlog.h
+/src/target-based/sf_attribute_table.c
+/src/target-based/sf_attribute_table.h
+/src/target-based/sf_attribute_table_parser.c
+/src/dynamic-preprocessors/include/
+/src/target-based/y.tab.c
+
+# Generated binaries
+/src/snort
+tools/control/snort_control
+tools/control/snort_dump_packets_control
+tools/file_server/file_server
