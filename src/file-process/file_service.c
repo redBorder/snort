@@ -106,7 +106,7 @@ static void FileRegisterXtraDataFuncs(FileConfig *pFileConfig);
 static void enable_file_extradata();
 static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 static int GetFileSize(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
-static int GetFileURI(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileName(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 static int GetFileHostname(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 #endif
 static void set_file_action_log_callback(Log_file_action_func);
@@ -248,7 +248,7 @@ static void FileRegisterXtraDataFuncs(FileConfig *file_config)
         return;
     file_config->xtra_file_sha256_id = stream_api->reg_xtra_data_cb(GetFileSHA256);
     file_config->xtra_file_size_id = stream_api->reg_xtra_data_cb(GetFileSize);
-    file_config->xtra_file_uri_id = stream_api->reg_xtra_data_cb(GetFileURI);
+    file_config->xtra_file_name_id = stream_api->reg_xtra_data_cb(GetFileName);
     file_config->xtra_file_hostname_id = stream_api->reg_xtra_data_cb(GetFileHostname);
 }
 
@@ -286,7 +286,7 @@ static int GetFileSize(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
     return 0;
 }
 
-static int GetFileURI(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+static int GetFileName(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
 {
     FileContext * context = NULL;
 
@@ -302,7 +302,7 @@ static int GetFileURI(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
     {
         *buf = context->file_name;
         *len = context->file_name_size;
-        *type = EVENT_INFO_FILE_URI;
+        *type = EVENT_INFO_FILE_NAME;
         return 1;
     }
 
@@ -469,7 +469,7 @@ FileContext* create_file_context(void *ssnptr)
     {
         context->xtra_file_sha256_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_sha256_id;
         context->xtra_file_size_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_size_id;
-        context->xtra_file_uri_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_uri_id;
+        context->xtra_file_name_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_name_id;
         context->xtra_file_hostname_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_hostname_id;
     }
 #endif
@@ -828,11 +828,11 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
 #ifdef HAVE_EXTRADATA_FILE
     pkt->xtradata_mask |= BIT(context->xtra_file_sha256_id);
     pkt->xtradata_mask |= BIT(context->xtra_file_size_id);
-    pkt->xtradata_mask |= BIT(context->xtra_file_uri_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_name_id);
     pkt->xtradata_mask |= BIT(context->xtra_file_hostname_id);
     //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_sha256_id);
     //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_size_id);
-    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_uri_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_name_id);
     //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_hostname_id);
 #endif
 
