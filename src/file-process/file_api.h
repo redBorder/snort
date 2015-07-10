@@ -141,6 +141,8 @@ typedef int (*Get_file_name_func) (void* ssnptr, uint8_t **file_name, uint32_t *
 #ifdef HAVE_EXTRADATA_FILE
 typedef int (*Get_file_hostname_func) (void* ssnptr, uint8_t **file_hostname, uint32_t *hostname_len);
 typedef int (*Get_file_mailfrom_func) (void* ssnptr, uint8_t **file_mailfrom, uint32_t *mailfrom_len);
+typedef int (*Get_file_rcptto_func) (void* ssnptr, uint8_t **file_rcptto, uint32_t *rcptto_len);
+typedef int (*Get_file_headers_func) (void* ssnptr, uint8_t **file_headers, uint32_t *headers_len);
 #endif
 typedef uint64_t (*Get_file_size_func) (void* ssnptr);
 typedef bool (*Get_file_direction_func) (void* ssnptr);
@@ -150,6 +152,8 @@ typedef void (*Set_file_name_func) (void* ssnptr, uint8_t *, uint32_t);
 #ifdef HAVE_EXTRADATA_FILE
 typedef void (*Set_file_hostname_func) (void* ssnptr, uint8_t *, uint32_t);
 typedef void (*Set_file_mailfrom_func) (void* ssnptr, uint8_t *, uint32_t);
+typedef void (*Set_file_rcptto_func) (void* ssnptr, uint8_t *, uint32_t);
+typedef void (*Set_file_headers_func) (void* ssnptr, uint8_t *, uint32_t);
 #endif
 typedef void (*Set_file_direction_func) (void* ssnptr, bool);
 
@@ -289,6 +293,38 @@ typedef struct _file_api
      *    0: file mailfrom is unavailable
      */
     Get_file_mailfrom_func get_file_mailfrom;
+
+    /* Get file rcptto and the length of file rcptto
+     * Note: this is updated after file processing. It will be available
+     * for file event logging, but might not be available during file type
+     * callback or file signature callback, because those callbacks are called
+     * during file processing.
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     *    uint8_t **file_rcptto: address for file rcptto to be saved
+     *    uint32_t *rcptto_len: address to save file rcptto length
+     * Returns
+     *    1: file rcptto available,
+     *    0: file rcptto is unavailable
+     */
+    Get_file_rcptto_func get_file_rcptto;
+
+    /* Get file headers and the length of file headers
+     * Note: this is updated after file processing. It will be available
+     * for file event logging, but might not be available during file type
+     * callback or file signature callback, because those callbacks are called
+     * during file processing.
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     *    uint8_t **file_headers: address for file headers to be saved
+     *    uint32_t *headers_len: address to save file headers length
+     * Returns
+     *    1: file headers available,
+     *    0: file headers is unavailable
+     */
+    Get_file_headers_func get_file_headers;
 #endif
 
     /* Get file size
@@ -371,6 +407,28 @@ typedef struct _file_api
      *    None
      */
     Set_file_mailfrom_func set_file_mailfrom;
+
+    /* Set file rcptto and the length of file rcptto
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     *    uint8_t *file_name: file rcptto to be saved
+     *    uint32_t name_len: file rcptto length
+     * Returns
+     *    None
+     */
+    Set_file_rcptto_func set_file_rcptto;
+
+    /* Set file headers and the length of file headers
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     *    uint8_t *file_name: file headers to be saved
+     *    uint32_t name_len: file headers length
+     * Returns
+     *    None
+     */
+    Set_file_headers_func set_file_headers;
 #endif
 
     /* Get file direction
