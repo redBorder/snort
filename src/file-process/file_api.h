@@ -140,6 +140,7 @@ typedef int (*File_process_func)( void* p, uint8_t* file_data, int data_size, Fi
 typedef int (*Get_file_name_func) (void* ssnptr, uint8_t **file_name, uint32_t *name_len);
 #ifdef HAVE_EXTRADATA_FILE
 typedef int (*Get_file_hostname_func) (void* ssnptr, uint8_t **file_hostname, uint32_t *hostname_len);
+typedef int (*Get_file_mailfrom_func) (void* ssnptr, uint8_t **file_mailfrom, uint32_t *mailfrom_len);
 #endif
 typedef uint64_t (*Get_file_size_func) (void* ssnptr);
 typedef bool (*Get_file_direction_func) (void* ssnptr);
@@ -148,6 +149,7 @@ typedef uint8_t *(*Get_file_sig_sha256_func) (void* ssnptr);
 typedef void (*Set_file_name_func) (void* ssnptr, uint8_t *, uint32_t);
 #ifdef HAVE_EXTRADATA_FILE
 typedef void (*Set_file_hostname_func) (void* ssnptr, uint8_t *, uint32_t);
+typedef void (*Set_file_mailfrom_func) (void* ssnptr, uint8_t *, uint32_t);
 #endif
 typedef void (*Set_file_direction_func) (void* ssnptr, bool);
 
@@ -271,6 +273,22 @@ typedef struct _file_api
      *    0: file hostname is unavailable
      */
     Get_file_hostname_func get_file_hostname;
+
+    /* Get file mailfrom and the length of file mailfrom
+     * Note: this is updated after file processing. It will be available
+     * for file event logging, but might not be available during file type
+     * callback or file signature callback, because those callbacks are called
+     * during file processing.
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     *    uint8_t **file_mailfrom: address for file mailfrom to be saved
+     *    uint32_t *mailfrom_len: address to save file mailfrom length
+     * Returns
+     *    1: file mailfrom available,
+     *    0: file mailfrom is unavailable
+     */
+    Get_file_mailfrom_func get_file_mailfrom;
 #endif
 
     /* Get file size
@@ -342,6 +360,17 @@ typedef struct _file_api
      *    None
      */
     Set_file_hostname_func set_file_hostname;
+
+    /* Set file mailfrom and the length of file mailfrom
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     *    uint8_t *file_name: file mailfrom to be saved
+     *    uint32_t name_len: file mailfrom length
+     * Returns
+     *    None
+     */
+    Set_file_mailfrom_func set_file_mailfrom;
 #endif
 
     /* Get file direction

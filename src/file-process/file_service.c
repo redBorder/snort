@@ -85,6 +85,7 @@ static int file_process(void* ssnptr, uint8_t* file_data, int data_size,
 static int get_file_name(void* ssnptr, uint8_t **fname, uint32_t *name_size);
 #ifdef HAVE_EXTRADATA_FILE
 static int get_file_hostname(void* ssnptr, uint8_t **fname, uint32_t *name_size);
+static int get_file_mailfrom(void* ssnptr, uint8_t **fname, uint32_t *name_size);
 #endif
 static uint64_t get_file_size(void* ssnptr);
 static uint64_t get_file_processed_size(void* ssnptr);
@@ -94,6 +95,7 @@ static uint8_t *get_file_sig_sha256(void* ssnptr);
 static void set_file_name(void* ssnptr, uint8_t * fname, uint32_t name_size);
 #ifdef HAVE_EXTRADATA_FILE
 static void set_file_hostname(void* ssnptr, uint8_t * fname, uint32_t name_size);
+static void set_file_mailfrom(void* ssnptr, uint8_t * fname, uint32_t name_size);
 #endif
 static void set_file_direction(void* ssnptr, bool upload);
 
@@ -108,6 +110,7 @@ static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *typ
 static int GetFileSize(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 static int GetFileName(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 static int GetFileHostname(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileMailFrom(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 #endif
 static void set_file_action_log_callback(Log_file_action_func);
 
@@ -150,6 +153,7 @@ void init_fileAPI(void)
     fileAPI.get_file_name = &get_file_name;
 #ifdef HAVE_EXTRADATA_FILE
     fileAPI.get_file_hostname = &get_file_hostname;
+    fileAPI.get_file_mailfrom = &get_file_mailfrom;
 #endif
     fileAPI.get_file_size = &get_file_size;
     fileAPI.get_file_processed_size = &get_file_processed_size;
@@ -158,6 +162,7 @@ void init_fileAPI(void)
     fileAPI.set_file_name = &set_file_name;
 #ifdef HAVE_EXTRADATA_FILE
     fileAPI.set_file_hostname = &set_file_hostname;
+    fileAPI.set_file_mailfrom = &set_file_mailfrom;
 #endif
     fileAPI.set_file_direction = &set_file_direction;
     fileAPI.set_file_policy_callback = &set_file_policy_callback;
@@ -250,6 +255,7 @@ static void FileRegisterXtraDataFuncs(FileConfig *file_config)
     file_config->xtra_file_size_id = stream_api->reg_xtra_data_cb(GetFileSize);
     file_config->xtra_file_name_id = stream_api->reg_xtra_data_cb(GetFileName);
     file_config->xtra_file_hostname_id = stream_api->reg_xtra_data_cb(GetFileHostname);
+    file_config->xtra_file_mailfrom_id = stream_api->reg_xtra_data_cb(GetFileMailFrom);
 }
 
 static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
@@ -326,6 +332,29 @@ static int GetFileHostname(void *data, uint8_t **buf, uint32_t *len, uint32_t *t
         *buf = context->hostname;
         *len = context->hostname_size;
         *type = EVENT_INFO_FILE_HOSTNAME;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int GetFileMailFrom(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->file_mailfrom_size > 0)
+    {
+        *buf = context->file_mailfrom;
+        *len = context->file_mailfrom_size;
+        *type = EVENT_INFO_FILE_MAILFROM;
         return 1;
     }
 
@@ -471,6 +500,7 @@ FileContext* create_file_context(void *ssnptr)
         context->xtra_file_size_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_size_id;
         context->xtra_file_name_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_name_id;
         context->xtra_file_hostname_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_hostname_id;
+        context->xtra_file_mailfrom_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_mailfrom_id;
     }
 #endif
 
@@ -515,6 +545,16 @@ static inline FileContext* find_main_file_context(void* p, FilePosition position
         {
             /* Reuse the same context */
             file_context_reset(context);
+#ifdef HAVE_EXTRADATA_FILE
+            if (snort_conf != NULL && snort_conf->file_config != NULL)
+            {
+                context->xtra_file_sha256_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_sha256_id;
+                context->xtra_file_size_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_size_id;
+                context->xtra_file_name_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_name_id;
+                context->xtra_file_hostname_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_hostname_id;
+                context->xtra_file_mailfrom_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_mailfrom_id;
+            }
+#endif
             file_stats.files_total++;
             init_file_context(ssnptr, upload, context);
             context->file_id = file_session->max_file_id++;
@@ -830,10 +870,12 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
     pkt->xtradata_mask |= BIT(context->xtra_file_size_id);
     pkt->xtradata_mask |= BIT(context->xtra_file_name_id);
     pkt->xtradata_mask |= BIT(context->xtra_file_hostname_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_mailfrom_id);
     //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_sha256_id);
     //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_size_id);
     //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_name_id);
     //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_hostname_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_mailfrom_id);
 #endif
 
     if ((!context->file_type_enabled) && (!context->file_signature_enabled))
@@ -1048,6 +1090,18 @@ static void set_file_hostname (void* ssnptr, uint8_t* fhostname, uint32_t hostna
 static int get_file_hostname (void* ssnptr, uint8_t **fhostname, uint32_t *hostname_size)
 {
     return file_hostname_get(get_current_file_context(ssnptr), fhostname, hostname_size);
+}
+
+static void set_file_mailfrom (void* ssnptr, uint8_t* fmailfrom, uint32_t mailfrom_size)
+{
+    FileContext* context = get_current_file_context(ssnptr);
+    file_mailfrom_set(context, fmailfrom, mailfrom_size);
+    FILE_REG_DEBUG_WRAP(printFileContext(context);)
+}
+
+static int get_file_mailfrom (void* ssnptr, uint8_t **fmailfrom, uint32_t *mailfrom_size)
+{
+    return file_mailfrom_get(get_current_file_context(ssnptr), fmailfrom, mailfrom_size);
 }
 #endif
 

@@ -74,6 +74,8 @@ typedef struct _FileContext
 #ifdef HAVE_EXTRADATA_FILE
     uint8_t    *hostname;
     uint32_t   hostname_size;
+    uint8_t    *file_mailfrom;
+    uint32_t   file_mailfrom_size;
 #endif
     uint64_t   file_size;
 #ifdef HAVE_EXTRADATA_FILE
@@ -102,6 +104,7 @@ typedef struct _FileContext
     uint32_t xtra_file_size_id;
     uint32_t xtra_file_name_id;
     uint32_t xtra_file_hostname_id;
+    uint32_t xtra_file_mailfrom_id;
 #endif
 } FileContext;
 
@@ -119,6 +122,8 @@ int file_name_get (FileContext *context, uint8_t **file_name, uint32_t *name_siz
 #ifdef HAVE_EXTRADATA_FILE
 void file_hostname_set (FileContext *context, uint8_t *file_hostname, uint32_t hostname_size);
 int file_hostname_get (FileContext *context, uint8_t **file_hostname, uint32_t *hostname_size);
+void file_mailfrom_set (FileContext *context, uint8_t *file_hostname, uint32_t hostname_size);
+int file_mailfrom_get (FileContext *context, uint8_t **file_hostname, uint32_t *hostname_size);
 #endif
 void file_size_set (FileContext *context, uint64_t file_size);
 uint64_t file_size_get (FileContext *context);

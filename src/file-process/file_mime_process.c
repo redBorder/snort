@@ -31,6 +31,9 @@
 #include "file_mail_common.h"
 #include "file_mime_process.h"
 #include "mempool.h"
+#ifdef HAVE_EXTRADATA_FILE
+#include "Unified2_common.h"
+#endif
 #include "file_api.h"
 #include "snort_bounds.h"
 #include "util.h"
@@ -880,6 +883,33 @@ static void reset_mime_state(MimeState *mime_ssn)
     ClearEmailDecodeState(decode_state);
 }
 
+#ifdef HAVE_EXTRADATA_FILE
+int GetSMTPMailFrom(MimeState *mime_ssn, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    if (mime_ssn == NULL)
+        return 0;
+
+    if (mime_ssn->log_state && mime_ssn->log_state->snds_logged > 0)
+    {
+        *buf = mime_ssn->log_state->senders;
+        *len = mime_ssn->log_state->snds_logged;
+        *type = EVENT_INFO_FILE_MAILFROM;
+        return 1;
+    }
+
+    return 0;
+}
+
+static inline void setFileMailFrom(MimeState *mime_ssn, Packet *p)
+{
+    uint8_t *buf = NULL;
+    uint32_t len = 0;
+    uint32_t type = 0;
+    GetSMTPMailFrom(mime_ssn, &buf, &len, &type);
+    file_api->set_file_mailfrom (p->ssnptr, buf, len);
+}
+#endif
+
 /*
  * Assume PAF is enabled
  */
@@ -1006,6 +1036,9 @@ const uint8_t * process_mime_data_paf(void *packet, const uint8_t *start, const 
                 && (isFileStart(position))&& mime_ssn->log_state)
         {
             set_file_name_from_log(&(mime_ssn->log_state->file_log), p->ssnptr);
+#ifdef HAVE_EXTRADATA_FILE
+            setFileMailFrom(mime_ssn, p);
+#endif
         }
         if (mime_ssn->mime_stats)
             ((MimeStats *)mime_ssn->mime_stats)->decoded_bytes[ds->decode_type] += ds->decoded_bytes;
