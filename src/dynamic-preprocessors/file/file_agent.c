@@ -246,6 +246,40 @@ static void* FileCaptureThread(void *arg)
     return NULL;
 }
 
+/* This is called when the user releases a node or kills the table */
+static int hash_table_s3_cache_usrfree(void *key, void *data )
+{
+    /* Release any data you need to */
+    return 0;
+}
+
+static SFXHASH * hash_table_s3_cache_new(FileInspectConf *conf, const FileInfo *file)
+{
+    SFXHASH *hts3cache = NULL;
+#if 1
+    hts3cache = sfxhash_new(16384/*number of rows in hash table*/,
+                            8//conf->sha256_bytes_in_hash_table
+                            /*key size in bytes, same for all keys*/,
+                            8//conf->sha256_bytes_in_hash_table
+                            /*datasize in bytes, zero indicates user manages data*/,
+                                /* Data size == 0, just store the ptr */
+                            0/*maximum memory to use in bytes*/,
+                                /* Memcap */
+                            0/*Automatic Node Recovery boolean flag*/,
+                                /* Auto node recovery */
+                            NULL/*users Automatic Node Recovery memory release function*/,
+                                /* Auto free function */
+                            hash_table_s3_cache_usrfree,
+                                /* User free function */
+                            1/*users standard memory release function*/
+                                /* Recycle nodes */
+                            );
+    if (hts3cache == NULL)
+        _dpd.logMsg("File inspect: Failed to create s3 cache hash table \n");
+#endif
+    return hts3cache;
+}
+
 static void file_agent_init0() {
     FileInspectConf *conf = sfPolicyUserDataGetDefault(file_config);
     file_agent_init(conf);
@@ -348,6 +382,10 @@ void file_agent_init(FileInspectConf* conf)
     /* In daemon mode we need to re-create cbuffer consumer thread */
     pthread_atfork(file_agent_close,NULL,file_agent_init0);
 #endif
+
+    if(1 /* TODO :make configurable */) {
+        hash_table_s3_cache_new(conf, file);
+    }
 
 }
 
@@ -716,40 +754,6 @@ static void str_tolower(char *str,size_t str_len) {
         *str = tolower(*str);
 }
 
-/* This is called when the user releases a node or kills the table */
-static int hash_table_s3_cache_usrfree(void *key, void *data )
-{
-    /* Release any data you need to */
-    return 0;
-}
-
-static SFXHASH * hash_table_s3_cache_new(FileInspectConf *conf, const FileInfo *file)
-{
-    SFXHASH *hts3cache = NULL;
-#if 1
-    hts3cache = sfxhash_new(16384/*number of rows in hash table*/,
-                            8//conf->sha256_bytes_in_hash_table
-                            /*key size in bytes, same for all keys*/,
-                            8//conf->sha256_bytes_in_hash_table
-                            /*datasize in bytes, zero indicates user manages data*/,
-                                /* Data size == 0, just store the ptr */
-                            0/*maximum memory to use in bytes*/,
-                                /* Memcap */
-                            0/*Automatic Node Recovery boolean flag*/,
-                                /* Auto node recovery */
-                            NULL/*users Automatic Node Recovery memory release function*/,
-                                /* Auto free function */
-                            hash_table_s3_cache_usrfree,
-                                /* User free function */
-                            1/*users standard memory release function*/
-                                /* Recycle nodes */
-                            );
-    if (hts3cache == NULL)
-        _dpd.logMsg("File inspect: Failed to create s3 cache hash table \n");
-#endif
-    return hts3cache;
-}
-
 static int file_agent_send_s3(FileInspectConf* conf,const FileInfo *file) {
     char sha256[SHA256_HASH_SIZE];
     char fsha[FILE_NAME_LEN];
@@ -790,10 +794,6 @@ static int file_agent_send_s3(FileInspectConf* conf,const FileInfo *file) {
         { NULL /* responsePropertiesCallback */, &responseCompleteCallback },
         &putObjectDataCallback
     };
-
-    /* Check if sha256 is in cache */
-    //if (conf->sha256_hash_table_s3_cache == NULL)
-        //hash_table_s3_cache_new(conf, file);
 
     //do {
         S3_put_object(&bucketContext, path, file->file_size, &putProperties,
