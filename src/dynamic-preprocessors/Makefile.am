@@ -90,13 +90,25 @@ include/sfdebug.h \
 include/sip_common.h \
 include/appId.h
 
-if FEAT_OPEN_APPID
-nodist_libsf_dynamic_preproc_la_SOURCES += include/sfprimetable.c include/sfxhash.c include/sfmemcap.c include/sfghash.c \
+SFXHASH_SRC_DEF = include/sfprimetable.c include/sfxhash.c include/sfmemcap.c include/sfghash.c \
 						  include/sfhashfcn.c include/sflsq.c include/md5.c
-
-nodist_preproc_HEADERS += include/sfprimetable.h include/sfxhash.h include/sfmemcap.h include/sfghash.h \
+SFXHASH_HDR_DEF = include/sfprimetable.h include/sfxhash.h include/sfmemcap.h include/sfghash.h \
 						  include/sfhashfcn.h include/sflsq.h include/md5.h
+
+if FEAT_OPEN_APPID 
+SFXHASH_SRC = $(SFXHASH_SRC_DEF)
+SFXHASH_HDR = $(SFXHASH_HDR_DEF)
 endif
+
+if FEAT_FILE_INSPECT
+SFXHASH_SRC = $(SFXHASH_SRC_DEF)
+SFXHASH_HDR = $(SFXHASH_HDR_DEF)
+endif
+
+nodist_libsf_dynamic_preproc_la_SOURCES += $(SFXHASH_SRC)
+
+nodist_preproc_HEADERS += $(SFXHASH_HDR)
+
 all-local: $(LTLIBRARIES)
 	$(MAKE) DESTDIR=`pwd`/build install-preproclibLTLIBRARIES
 
@@ -190,11 +202,8 @@ BUILT_SOURCES = \
 	libs/sfparser.c \
 	libs/sfcommon.h
 
-if FEAT_OPEN_APPID
-BUILT_SOURCES += include/sfprimetable.h include/sfprimetable.c include/sfxhash.h include/sfxhash.c include/sfmemcap.h include/sfmemcap.c \
-				 include/sfghash.c include/sfhashfcn.c include/sflsq.h include/sflsq.c \
-				 include/md5.h include/md5.c 
-endif
+BUILT_SOURCES += $(SFXHASH_HDR) $(SFXHASH_SRC)
+
 sed_ipv6_headers = \
 	sed -e "s/->iph->ip_src/->ip4_header->source/" \
 	    -e "s/->iph->ip_dst/->ip4_header->destination/" \
@@ -562,7 +571,6 @@ include/sip_common.h: $(srcdir)/../preprocessors/sip_common.h
 include/appId.h: $(srcdir)/appid/appId.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
-if FEAT_OPEN_APPID
 include/md5.c: $(srcdir)/../sfutil/md5.c
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
@@ -598,8 +606,6 @@ include/sflsq.h: $(srcdir)/../sfutil/sflsq.h
 
 include/sflsq.c: $(srcdir)/../sfutil/sflsq.c
 	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
-
-endif
 
 if FEAT_FILE_INSPECT
 FILE_INSPECT_DIR = file
@@ -683,10 +689,18 @@ ssl_common/ssl_ha.h \
 ssl_common/ssl_ha.c \
 libs/sfparser.c 
 
-if FEAT_OPEN_APPID
-exported_files += include/sfprimetable.h include/sfxhash.h include/sfmemcap.h include/sfhashfcn.h \
+SFXHASH_EXPORTED_FILES_DEF = include/sfprimetable.h include/sfxhash.h include/sfmemcap.h include/sfhashfcn.h \
 				  include/md5.h 
+
+if FEAT_OPEN_APPID
+SFXHASH_EXPORTED_FILES = SFXHASH_EXPORTED_FILES_DEF
+else
+if FEAT_FILE_INSPECT
+SFXHASH_EXPORTED_FILES = SFXHASH_EXPORTED_FILES_DEF
 endif
+endif
+
+exported_files += $(SFXHASH_EXPORTED_FILES)
 
 install-data-local:
 	@for f in $(exported_files); do \
