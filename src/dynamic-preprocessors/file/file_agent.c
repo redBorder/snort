@@ -717,13 +717,13 @@ static void str_tolower(char *str,size_t str_len) {
 }
 
 /* This is called when the user releases a node or kills the table */
-int hash_table_s3_cache_usrfree(void *key, void *data )
+static int hash_table_s3_cache_usrfree(void *key, void *data )
 {
     /* Release any data you need to */
     return 0;
 }
 
-SFXHASH * hash_table_s3_cache_new(FileInspectConf *conf, const FileInfo *file)
+static SFXHASH * hash_table_s3_cache_new(FileInspectConf *conf, const FileInfo *file)
 {
     SFXHASH *hts3cache = NULL;
 #if 1
