@@ -41,9 +41,7 @@
 #include <signal.h>
 #include <errno.h>
 
-#if HAVE_S3FILE
-#include "src/sfutil/sfxhash.h"
-#endif
+#include "sfxhash.h"
 #include "sf_types.h"
 #include "spp_file.h"
 #include "file_agent.h"
@@ -58,6 +56,7 @@ int using_s3 = 0;
 
 /*Use circular buffer to synchronize writer/reader threads*/
 static CircularBuffer* file_list;
+static SFXHASH* sha256_cache;
 
 static volatile bool stop_file_capturing = false;
 static volatile bool capture_thread_running = false;
@@ -246,33 +245,18 @@ static void* FileCaptureThread(void *arg)
     return NULL;
 }
 
-/* This is called when the user releases a node or kills the table */
-static int hash_table_s3_cache_usrfree(void *key, void *data )
-{
-    /* Release any data you need to */
-    return 0;
-}
-
-static SFXHASH * hash_table_s3_cache_new(FileInspectConf *conf, const FileInfo *file)
+static SFXHASH * hash_table_s3_cache_new(const int rows)
 {
     SFXHASH *hts3cache = NULL;
 #if 1
-    hts3cache = sfxhash_new(16384/*number of rows in hash table*/,
-                            8//conf->sha256_bytes_in_hash_table
-                            /*key size in bytes, same for all keys*/,
-                            8//conf->sha256_bytes_in_hash_table
-                            /*datasize in bytes, zero indicates user manages data*/,
-                                /* Data size == 0, just store the ptr */
-                            0/*maximum memory to use in bytes*/,
-                                /* Memcap */
-                            0/*Automatic Node Recovery boolean flag*/,
-                                /* Auto node recovery */
-                            NULL/*users Automatic Node Recovery memory release function*/,
-                                /* Auto free function */
-                            hash_table_s3_cache_usrfree,
-                                /* User free function */
-                            1/*users standard memory release function*/
-                                /* Recycle nodes */
+    hts3cache = sfxhash_new(/*number of rows in hash table*/ rows,
+                            /*key size in bytes, same for all keys*/ SHA256_HASH_SIZE,
+                            /*datasize in bytes, zero indicates user manages data*/ 0,
+                            /*maximum memory to use in bytes*/ 0,
+                            /*Automatic Node Recovery boolean flag*/ 0,
+                            /*users Automatic Node Recovery memory release function*/ NULL,
+                            /* Auto free function */ NULL,
+                            /* Recycle nodes */ 1
                             );
     if (hts3cache == NULL)
         _dpd.logMsg("File inspect: Failed to create s3 cache hash table \n");
@@ -384,9 +368,8 @@ void file_agent_init(FileInspectConf* conf)
 #endif
 
     if(1 /* TODO :make configurable */) {
-        hash_table_s3_cache_new(conf, file);
+        sha256_cache = hash_table_s3_cache_new(16384);
     }
-
 }
 
 /*
@@ -416,6 +399,13 @@ static int file_agent_queue_file(void* ssnptr, void *file_mem)
     {
         free(finfo);
         return -1;
+    }
+
+    const int sfxhash_add_rc = sfxhash_add(sha256_cache, sha256, NULL);
+    if(SFXHASH_INTABLE == sfxhash_add_rc)
+    {
+        free(finfo);
+        return 0;
     }
 
     memcpy(finfo->sha256, sha256, SHA256_HASH_SIZE);
@@ -847,6 +837,8 @@ void file_agent_close(void)
         sleep(1);
 
     cbuffer_free(file_list);
+    sfxhash_delete(sha256_cache);
+    sha256_cache = NULL;
 
     if (sockfd)
     {

@@ -77,9 +77,6 @@ typedef struct _fileInspectConfig
         char *access_key;
         char *secret_key;
     } s3;
-    /* cache sha256 hashtable (& AVL tree (librd)) */
-    //SFXHASH *sha256_hash_table_s3_cache;
-    //uint32_t sha256_bytes_in_hash_table;
 #endif
     uint32_t capture_disk_size;  /* In megabytes*/
 
