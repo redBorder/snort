@@ -423,6 +423,12 @@ static void print_file_stats(int exiting)
             file_inspect_stats.file_data_to_host);
     _dpd.logMsg("  Total file transfer failures:         "FMTu64("-10")" \n",
             file_inspect_stats.file_transfer_failures);
+#if HAVE_S3FILE
+    _dpd.logMsg("  Total file s3 transfer failures:      "FMTu64("-10")" \n",
+        file_inspect_stats.files_to_s3_failures);
+    _dpd.logMsg("  Total file s3 transfer:               "FMTu64("-10")" \n",
+        file_inspect_stats.files_to_s3);
+#endif
 
 
 }

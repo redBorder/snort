@@ -803,10 +803,13 @@ static int file_agent_send_s3(FileInspectConf* conf,const FileInfo *file) {
             _dpd.logMsg("File inspect: can't upload a file to S3: %s,%s\n",
                 S3_get_status_name(transference.status),transference.err);
         }
+
+        file_inspect_stats.files_to_s3_failures++;
     }
-    /* Include sha256 in cache */
-    //else
-        //
+    else
+    {
+        file_inspect_stats.files_to_s3++;
+    }
     
     return 0;
 }
