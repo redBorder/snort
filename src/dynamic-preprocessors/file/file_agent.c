@@ -404,6 +404,7 @@ static int file_agent_queue_file(void* ssnptr, void *file_mem)
     const int sfxhash_add_rc = sfxhash_add(sha256_cache, sha256, NULL);
     if(SFXHASH_INTABLE == sfxhash_add_rc)
     {
+        file_inspect_stats.file_cbuffer_duplicates_total++;
         free(finfo);
         return 0;
     }

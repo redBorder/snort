@@ -40,6 +40,7 @@ typedef struct _File_Stats {
     uint64_t file_signatures_total;  /* Total number of file signature callbacks */
     uint64_t files_to_disk_total;  /* Files needed to be saved on disk */
     uint64_t file_duplicates_total; /* Files already on disk */
+    uint64_t file_cbuffer_duplicates_total; /* Files already sent to cbuffer by cache */
     uint64_t files_saved;          /* Files saved on disk */
     uint64_t file_reserve_failures;
     uint64_t file_capture_min;
