@@ -595,5 +595,31 @@ void file_config_free(FileInspectConf* config)
         sha_table_delete(config->sig_table);
         config->sig_table  = NULL;
     }
+
+#if HAVE_S3FILE
+    if(config->s3.bucket)
+    {
+        free(config->s3.bucket);
+        config->s3.bucket = NULL;
+    }
+
+    if(config->s3.cluster)
+    {
+        free(config->s3.cluster);
+        config->s3.cluster = NULL;
+    }
+
+    if(config->s3.access_key)
+    {
+        free(config->s3.access_key);
+        config->s3.access_key = NULL;
+    }
+
+    if(config->s3.secret_key)
+    {
+        free(config->s3.secret_key);
+        config->s3.secret_key = NULL;
+    }
+#endif
 }
 
