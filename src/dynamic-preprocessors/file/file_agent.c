@@ -245,15 +245,15 @@ static void* FileCaptureThread(void *arg)
     return NULL;
 }
 
-static SFXHASH * hash_table_s3_cache_new(const int rows)
+static SFXHASH * hash_table_s3_cache_new(const int rows,const size_t mem_m)
 {
     SFXHASH *hts3cache = NULL;
 #if 1
     hts3cache = sfxhash_new(/*number of rows in hash table*/ rows,
                             /*key size in bytes, same for all keys*/ SHA256_HASH_SIZE,
                             /*datasize in bytes, zero indicates user manages data*/ 0,
-                            /*maximum memory to use in bytes*/ 0,
-                            /*Automatic Node Recovery boolean flag*/ 0,
+                            /*maximum memory to use in bytes*/ /* mem_m*1024*1024 */ 1024,
+                            /*Automatic Node Recovery boolean flag*/ 1,
                             /*users Automatic Node Recovery memory release function*/ NULL,
                             /* Auto free function */ NULL,
                             /* Recycle nodes */ 1
@@ -367,8 +367,9 @@ void file_agent_init(FileInspectConf* conf)
     pthread_atfork(file_agent_close,NULL,file_agent_init0);
 #endif
 
-    if(1 /* TODO :make configurable */) {
-        sha256_cache = hash_table_s3_cache_new(16384);
+    if(conf->sha256_cache_table_maxmem_m > 0) {
+        sha256_cache = hash_table_s3_cache_new(conf->sha256_cache_table_rows,
+            conf->sha256_cache_table_maxmem_m);
     }
 }
 
@@ -401,12 +402,20 @@ static int file_agent_queue_file(void* ssnptr, void *file_mem)
         return -1;
     }
 
-    const int sfxhash_add_rc = sfxhash_add(sha256_cache, sha256, NULL);
-    if(SFXHASH_INTABLE == sfxhash_add_rc)
+    if(NULL != sha256_cache)
     {
-        file_inspect_stats.file_cbuffer_duplicates_total++;
-        free(finfo);
-        return 0;
+        const unsigned before_find_success = sfxhash_find_success(sha256_cache);
+        const void *sfxhash_get_rc = sfxhash_get_node(sha256_cache, sha256);
+        if(NULL == sfxhash_get_rc)
+        {
+            _dpd.errMsg("File inspect: Can't get a node from cache!\n");
+        }
+        else if(sfxhash_find_success(sha256_cache) == before_find_success + 1)
+        {
+            file_inspect_stats.file_cbuffer_duplicates_total++;
+            free(finfo);
+            return 0;
+        }
     }
 
     memcpy(finfo->sha256, sha256, SHA256_HASH_SIZE);
@@ -841,8 +850,12 @@ void file_agent_close(void)
         sleep(1);
 
     cbuffer_free(file_list);
-    sfxhash_delete(sha256_cache);
-    sha256_cache = NULL;
+    
+    if(sha256_cache)
+    {
+        sfxhash_delete(sha256_cache);
+        sha256_cache = NULL;
+    }
 
     if (sockfd)
     {

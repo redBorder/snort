@@ -50,13 +50,14 @@
 #define FILE_INSPECT_CAPTURE_QUEUE_SIZE  "capture_queue_size"
 #define FILE_INSPECT_BLACKLIST           "blacklist"
 #define FILE_INSPECT_GREYLIST            "greylist"
+#define FILE_INSPECT_SHA_CACHE_MIN_ROWS  "sha_cache_min_rows"
+#define FILE_INSPECT_SHA_CACHE_MAX_SIZE_M "sha_cache_max_size_m"
 
 #ifdef HAVE_S3FILE
 #define FILE_INSPECT_S3_BUCKET           "s3_bucket"
 #define FILE_INSPECT_S3_CLUSTER          "s3_cluster"
 #define FILE_INSPECT_S3_ACCESS_KEY       "s3_access_key"
 #define FILE_INSPECT_S3_SECRET_KEY       "s3_secret_key"
-#define FILE_INSPECT_S3_CACHE            "s3_cache"
 #endif
 
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
@@ -313,6 +314,7 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
         return;
 
     config->capture_disk_size = FILE_CAPTURE_DISK_SIZE_DEFAULT;
+    config->sha256_cache_table_rows = SHA256_CACHE_TABLE_ROWS_DEFAULT;
 
     /* Sanity check(s) */
     if (!argp)
@@ -452,6 +454,36 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
                     0, UINT32_MAX, &value);
             config->file_capture_queue_size = (uint32_t) value;
         }
+        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_SHA_CACHE_MIN_ROWS))
+        {
+            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
+            if( NULL == cur_tokenp )
+            {
+                FILE_FATAL_ERROR("%s(%d) => Please specify cache min rows!\n",
+                        *(_dpd.config_file), *(_dpd.config_line));
+            }
+            else
+            {
+                _dpd.checkValueInRange(cur_tokenp, FILE_INSPECT_SHA_CACHE_MIN_ROWS,
+                        1, SHA256_CACHE_TABLE_ROWS_MAX, &value);
+                config->sha256_cache_table_rows = (uint32_t) value;
+            }
+        }
+        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_SHA_CACHE_MAX_SIZE_M))
+        {
+            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
+            if( NULL == cur_tokenp )
+            {
+                FILE_FATAL_ERROR("%s(%d) => Please specify cache max memory size!\n",
+                        *(_dpd.config_file), *(_dpd.config_line));
+            }
+            else
+            {
+                _dpd.checkValueInRange(cur_tokenp, FILE_INSPECT_SHA_CACHE_MIN_ROWS,
+                        1, SHA256_CACHE_TABLE_MAXMEM_M_MAX, &value);
+                config->sha256_cache_table_maxmem_m = (uint32_t) value;
+            }
+        }
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_VERDICT_DELAY))
         {
@@ -499,22 +531,7 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
                 FILE_FATAL_ERROR("%s(%d) => Please specify s3 secret_key!\n");
             }
             config->s3.secret_key = strdup(cur_tokenp);
-        }/*
-        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_S3_CACHE))
-        {
-            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
-            if( NULL == cur_tokenp )
-            {
-                config->sha256_bytes_in_hash_table =
-                    (uint32_t) SHA256_BYTES_IN_HASH_TABLE_DEFAULT;
-            }
-            else
-            {
-                _dpd.checkValueInRange(cur_tokenp, FILE_INSPECT_S3_CACHE,
-                        1, 32, &value);
-                config->sha256_bytes_in_hash_table = (uint32_t) value;
-            }
-        }*/
+        }
 #endif
         else
         {

@@ -43,9 +43,9 @@
 
 #define FILE_CAPTURE_QUEUE_SIZE_DEFAULT       3000 /*files*/
 #define FILE_CAPTURE_DISK_SIZE_DEFAULT        300  /*MB*/
-#if HAVE_S3FILE
-#define SHA256_BYTES_IN_HASH_TABLE_DEFAULT    8 /*bytes*/
-#endif
+#define SHA256_CACHE_TABLE_ROWS_DEFAULT     65536
+#define SHA256_CACHE_TABLE_ROWS_MAX        262144
+#define SHA256_CACHE_TABLE_MAXMEM_M_MAX (16*1024) /* MB */
 
 typedef struct _FileSigInfo
 {
@@ -79,7 +79,8 @@ typedef struct _fileInspectConfig
     } s3;
 #endif
     uint32_t capture_disk_size;  /* In megabytes*/
-
+    uint32_t sha256_cache_table_rows;
+    uint32_t sha256_cache_table_maxmem_m;
 } FileInspectConf;
 
 
