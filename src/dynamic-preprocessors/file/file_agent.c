@@ -41,6 +41,7 @@
 #include <signal.h>
 #include <errno.h>
 
+#include "sfxhash.h"
 #include "sf_types.h"
 #include "spp_file.h"
 #include "file_agent.h"
@@ -55,6 +56,7 @@ int using_s3 = 0;
 
 /*Use circular buffer to synchronize writer/reader threads*/
 static CircularBuffer* file_list;
+static SFXHASH* sha256_cache;
 
 static volatile bool stop_file_capturing = false;
 static volatile bool capture_thread_running = false;
@@ -91,7 +93,7 @@ typedef struct _FILE_MESSAGE_HEADER
 static int file_agent_save_file (FileInfo *, char *);
 static int file_agent_send_file (FileInfo *);
 #ifdef HAVE_S3FILE
-static int file_agent_send_s3(const struct s3_info *,const FileInfo *);
+static int file_agent_send_s3(FileInspectConf* conf,const FileInfo *);
 #endif
 static FileInfo* file_agent_get_file(void);
 static FileInfo *file_agent_finish_file(void);
@@ -194,7 +196,7 @@ static inline void file_agent_process_files(CircularBuffer *file_list,
 #ifdef HAVE_S3FILE
             /* Send to S3 */
             if (conf->s3.cluster) {
-                file_agent_send_s3(&conf->s3,file);
+                file_agent_send_s3(conf, file);
             }
 #endif
             /* Default, memory only */
@@ -241,6 +243,25 @@ static void* FileCaptureThread(void *arg)
 
     capture_thread_running = false;
     return NULL;
+}
+
+static SFXHASH * hash_table_s3_cache_new(const int rows,const size_t mem_m)
+{
+    SFXHASH *hts3cache = NULL;
+#if 1
+    hts3cache = sfxhash_new(/*number of rows in hash table*/ rows,
+                            /*key size in bytes, same for all keys*/ SHA256_HASH_SIZE,
+                            /*datasize in bytes, zero indicates user manages data*/ 0,
+                            /*maximum memory to use in bytes*/ /* mem_m*1024*1024 */ 1024,
+                            /*Automatic Node Recovery boolean flag*/ 1,
+                            /*users Automatic Node Recovery memory release function*/ NULL,
+                            /* Auto free function */ NULL,
+                            /* Recycle nodes */ 1
+                            );
+    if (hts3cache == NULL)
+        _dpd.logMsg("File inspect: Failed to create s3 cache hash table \n");
+#endif
+    return hts3cache;
 }
 
 static void file_agent_init0() {
@@ -351,6 +372,10 @@ void file_agent_init(FileInspectConf* conf)
     pthread_atfork(file_agent_close,NULL,file_agent_init0);
 #endif
 
+    if(conf->sha256_cache_table_maxmem_m > 0) {
+        sha256_cache = hash_table_s3_cache_new(conf->sha256_cache_table_rows,
+            conf->sha256_cache_table_maxmem_m);
+    }
 }
 
 /*
@@ -380,6 +405,22 @@ static int file_agent_queue_file(void* ssnptr, void *file_mem)
     {
         free(finfo);
         return -1;
+    }
+
+    if(NULL != sha256_cache)
+    {
+        const unsigned before_find_success = sfxhash_find_success(sha256_cache);
+        const void *sfxhash_get_rc = sfxhash_get_node(sha256_cache, sha256);
+        if(NULL == sfxhash_get_rc)
+        {
+            _dpd.errMsg("File inspect: Can't get a node from cache!\n");
+        }
+        else if(sfxhash_find_success(sha256_cache) == before_find_success + 1)
+        {
+            file_inspect_stats.file_cbuffer_duplicates_total++;
+            free(finfo);
+            return 0;
+        }
     }
 
     memcpy(finfo->sha256, sha256, SHA256_HASH_SIZE);
@@ -718,11 +759,12 @@ static void str_tolower(char *str,size_t str_len) {
         *str = tolower(*str);
 }
 
-static int file_agent_send_s3(const struct s3_info *s3,const FileInfo *file) {
+static int file_agent_send_s3(FileInspectConf* conf,const FileInfo *file) {
     char sha256[SHA256_HASH_SIZE];
     char fsha[FILE_NAME_LEN];
     char path[FILE_NAME_LEN];
 
+    const struct s3_info *s3 = &conf->s3;
     struct s3_transference transference;
     memset(&transference,0,sizeof(transference));
     transference.file_mem = file->file_mem;
@@ -768,14 +810,20 @@ static int file_agent_send_s3(const struct s3_info *s3,const FileInfo *file) {
         /* Extracted directly from S3 example */
         if (transference.status < S3StatusErrorAccessDenied)
         {
-            _dpd.logMsg("File inspect: can't upload a file to S3: %s",
+            _dpd.logMsg("File inspect: can't upload a file to S3: %s\n",
                 S3_get_status_name(transference.status));
         }
         else 
         {
-            _dpd.logMsg("File inspect: can't upload a file to S3: %s,%s",
+            _dpd.logMsg("File inspect: can't upload a file to S3: %s,%s\n",
                 S3_get_status_name(transference.status),transference.err);
         }
+
+        file_inspect_stats.files_to_s3_failures++;
+    }
+    else
+    {
+        file_inspect_stats.files_to_s3++;
     }
     
     return 0;
@@ -785,7 +833,9 @@ static int file_agent_send_s3(const struct s3_info *s3,const FileInfo *file) {
 /* Close file agent
  * 1) stop capture thread: waiting all files queued to be captured
  * 2) free file queue
- * 3) close socket
+ * 3) free sha256 cache
+ * 4) close socket
+ * 5) close s3
  */
 void file_agent_close(void)
 {
@@ -807,6 +857,12 @@ void file_agent_close(void)
         sleep(1);
 
     cbuffer_free(file_list);
+    
+    if(sha256_cache)
+    {
+        sfxhash_delete(sha256_cache);
+        sha256_cache = NULL;
+    }
 
     if (sockfd)
     {

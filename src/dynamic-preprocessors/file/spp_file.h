@@ -40,6 +40,7 @@ typedef struct _File_Stats {
     uint64_t file_signatures_total;  /* Total number of file signature callbacks */
     uint64_t files_to_disk_total;  /* Files needed to be saved on disk */
     uint64_t file_duplicates_total; /* Files already on disk */
+    uint64_t file_cbuffer_duplicates_total; /* Files already sent to cbuffer by cache */
     uint64_t files_saved;          /* Files saved on disk */
     uint64_t file_reserve_failures;
     uint64_t file_capture_min;
@@ -53,8 +54,8 @@ typedef struct _File_Stats {
     uint64_t file_transfer_failures; /*file transfer failures */
 
 #if HAVE_S3FILE
-    uint64_t file_transfer_kafka; /* file metadata sent to kafka */
-    uint64_t file_transfer_kafka_failures; /* file metadata sent to kafka failures*/
+    uint64_t files_to_s3_failures; /* Files that would sent to s3 if not duplicated */
+    uint64_t files_to_s3;          /* Files actually sent to s3 */
 #endif
 
 } File_Stats;
