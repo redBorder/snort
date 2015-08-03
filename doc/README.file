@@ -144,6 +144,9 @@ s3_cluster         <S3 server>       No        DISABLED
 s3_access_key      <access key>      No        DISABLED
 s3_secret_key      <secret key>      No        DISABLED
 * All these four S3 options above must be included if you want to enable this feature
+### redBorder: feature/file_sha256_cache
+sha_cache_min_rows <rows>            No        65536
+sha_cache_max_size_m <size>          No        0 (DISABLED)
 ###
 
 portno         = 0 - 65535
@@ -163,8 +166,11 @@ preprocessor file_inspect:\
             < s3_bucket bucket >, \
             < s3_cluster S3 server >, \
             < s3_access_key access key >, \
-            < s3_secret_key secret key >, \
-###
+            < s3_secret_key secret key >
+### redBorder: feature/file_sha256_cache
+            < sha_cache_min_rows rows >,
+            < sha_cache_max_size_m size >
+
 Options:
  
   < type_id  >: 
@@ -194,6 +200,15 @@ Options:
       
   < greylist file >: 
       Specify a SHA256 list file. Files match SHA256 will be alerted.
+
+  < sha_cache_min_rows rows >:
+      Number of rows that the sha256 hashtable will have. More row imples
+      faster searchs, but more memory usage.
+
+  < sha_cache_max_size_m size >:
+      Maximum memory that sha256 hasthable cache can hold. If memory is filled up,
+      old/unused sha256 will be recycled and forgotten.
+
 
 ### redBorder: feature/file_s3
   < s3_bucket bucket >:
