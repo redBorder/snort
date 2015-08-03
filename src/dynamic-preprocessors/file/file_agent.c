@@ -828,7 +828,9 @@ static int file_agent_send_s3(FileInspectConf* conf,const FileInfo *file) {
 /* Close file agent
  * 1) stop capture thread: waiting all files queued to be captured
  * 2) free file queue
- * 3) close socket
+ * 3) free sha256 cache
+ * 4) close socket
+ * 5) close s3
  */
 void file_agent_close(void)
 {
