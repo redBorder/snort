@@ -460,6 +460,23 @@ static void LogBuffer (const uint8_t* p, unsigned n,FILE *out_file)
     }
 }
 
+static void LogContinuousBuffer (const uint8_t* p, unsigned n,FILE *out_file)
+{
+    size_t len = n+1;
+    char * txt = (char *) calloc (len , sizeof(char));
+    unsigned odx = 0, idx = 0;
+
+    for ( idx = 0; idx < n; idx++)
+    {
+        uint8_t byte = p[idx];
+        txt[odx++] = isprint(byte) ? byte : '.';
+    }
+
+    txt[odx] = '\0';
+    fprintf(out_file,"%s\n", txt);
+    free(txt);
+}
+
 static void packet_dump(const u2record *record,FILE *out_file) {
     uint32_t counter;
     uint8_t *field;
@@ -486,7 +503,7 @@ static void packet_dump(const u2record *record,FILE *out_file) {
             packet.packet_second, packet.packet_microsecond, packet.linktype,
             packet.packet_length);
 
-    
+
     if ( record->length <= offset )
         return;
 
@@ -502,6 +519,8 @@ static void packet_dump(const u2record *record,FILE *out_file) {
         }
     }
     LogBuffer(record->data+offset, reclen,out_file);
+    fprintf(out_file,"\n");
+    LogContinuousBuffer(record->data+offset, reclen,out_file);
 }
 
 int u2dump(const u2record *record, FILE *out_file) {
