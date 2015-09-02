@@ -464,17 +464,19 @@ static void LogContinuousBuffer (const uint8_t* p, unsigned n,FILE *out_file)
 {
     size_t len = n+1;
     char * txt = (char *) calloc (len , sizeof(char));
-    unsigned odx = 0, idx = 0;
+    if (txt != NULL) {
+        unsigned odx = 0, idx = 0;
 
-    for ( idx = 0; idx < n; idx++)
-    {
-        uint8_t byte = p[idx];
-        txt[odx++] = isprint(byte) ? byte : '.';
+        for ( idx = 0; idx < n; idx++)
+        {
+            uint8_t byte = p[idx];
+            txt[odx++] = isprint(byte) ? byte : '.';
+        }
+
+        txt[odx] = '\0';
+        fprintf(out_file,"%s\n", txt);
+        free(txt);
     }
-
-    txt[odx] = '\0';
-    fprintf(out_file,"%s\n", txt);
-    free(txt);
 }
 
 static void packet_dump(const u2record *record,FILE *out_file) {
