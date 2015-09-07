@@ -256,6 +256,75 @@ int file_hostname_get (FileContext *context, uint8_t **file_hostname, uint32_t *
         return 0;
     return 1;
 }
+
+void file_mailfrom_set (FileContext *context, uint8_t *file_mailfrom, uint32_t file_mailfrom_size)
+{
+    if (!context)
+        return;
+    context->file_mailfrom = file_mailfrom;
+    context->file_mailfrom_size = file_mailfrom_size;
+}
+
+int file_mailfrom_get (FileContext *context, uint8_t **file_mailfrom, uint32_t *file_mailfrom_size)
+{
+    if (!context)
+        return 0;
+    if (file_mailfrom)
+        *file_mailfrom = context->file_mailfrom;
+    else
+        return 0;
+    if (file_mailfrom_size)
+        *file_mailfrom_size = context->file_mailfrom_size;
+    else
+        return 0;
+    return 1;
+}
+
+void file_rcptto_set (FileContext *context, uint8_t *file_rcptto, uint32_t file_rcptto_size)
+{
+    if (!context)
+        return;
+    context->file_rcptto = file_rcptto;
+    context->file_rcptto_size = file_rcptto_size;
+}
+
+int file_rcptto_get (FileContext *context, uint8_t **file_rcptto, uint32_t *file_rcptto_size)
+{
+    if (!context)
+        return 0;
+    if (file_rcptto)
+        *file_rcptto = context->file_rcptto;
+    else
+        return 0;
+    if (file_rcptto_size)
+        *file_rcptto_size = context->file_rcptto_size;
+    else
+        return 0;
+    return 1;
+}
+
+void file_headers_set (FileContext *context, uint8_t *file_headers, uint32_t file_headers_size)
+{
+    if (!context)
+        return;
+    context->file_headers = file_headers;
+    context->file_headers_size = file_headers_size;
+}
+
+int file_headers_get (FileContext *context, uint8_t **file_headers, uint32_t *file_headers_size)
+{
+    if (!context)
+        return 0;
+    if (file_headers)
+        *file_headers = context->file_headers;
+    else
+        return 0;
+    if (file_headers_size)
+        *file_headers_size = context->file_headers_size;
+    else
+        return 0;
+    return 1;
+}
 #endif
 
 void file_size_set (FileContext *context, uint64_t file_size)

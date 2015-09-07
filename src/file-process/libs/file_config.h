@@ -60,8 +60,11 @@ typedef struct _fileConfig
 #ifdef HAVE_EXTRADATA_FILE
     uint32_t xtra_file_sha256_id;
     uint32_t xtra_file_size_id;
-    uint32_t xtra_file_uri_id;
+    uint32_t xtra_file_name_id;
     uint32_t xtra_file_hostname_id;
+    uint32_t xtra_file_mailfrom_id;
+    uint32_t xtra_file_rcptto_id;
+    uint32_t xtra_file_headers_id;
 #endif
 
 } FileConfig;
