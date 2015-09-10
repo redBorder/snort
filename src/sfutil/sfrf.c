@@ -487,7 +487,6 @@ int SFRF_TestThreshold(
     int newStatus = -1;
     int status = -1;
     tSFRFGenHashKey key;
-    tSfPolicyId policy_id = getIpsRuntimePolicy();
 
 #ifdef SFRF_DEBUG
     printf("--%d-%d-%d: %s() entering\n", 0, gid, sid, __func__);
@@ -519,7 +518,7 @@ int SFRF_TestThreshold(
      * Check for any Permanent sid objects for this gid
      */
     key.sid = sid;
-    key.policyId = policy_id;
+    key.policyId = getApplicableRuntimePolicy(gid);
 
     pSidNode = (tSFRFSidNode*)sfghash_find( genHash, (void*)&key );
     if ( !pSidNode )

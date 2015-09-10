@@ -412,9 +412,8 @@ int file_eventq_add(uint32_t gid, uint32_t sid, char *msg, RuleType type)
 {
     OptTreeNode *otn;
     RuleTreeNode *rtn;
-    int ret;
 
-    otn = GetOTN(gid, sid, 1, 0, 3, msg);
+    otn = GetApplicableOtn(gid, sid, 1, 0, 3, msg);
     if (otn == NULL)
         return 0;
 
@@ -426,8 +425,7 @@ int file_eventq_add(uint32_t gid, uint32_t sid, char *msg, RuleType type)
 
     rtn->type = type;
 
-    ret = SnortEventqAdd(gid, sid, 1, 0, 3, msg, otn);
-    return(ret);
+    return SnortEventqAdd(gid, sid, 1, 0, 3, msg, otn);
 }
 
 static inline void add_file_to_block(Packet *p, File_Verdict verdict,

@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: encode.c,v 1.25 2015/04/23 18:28:08 jocornet Exp $ */
 /****************************************************************************
  *
  * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.

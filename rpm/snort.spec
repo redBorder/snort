@@ -1,4 +1,4 @@
-# $Id$
+# $Id: snort.spec,v 1.81 2015/07/06 19:54:21 cwaxman Exp $
 # Snort.org's SPEC file for Snort
 
 ################################################################
@@ -54,7 +54,7 @@ Name: %{realname}
 Summary: An open source Network Intrusion Detection System (NIDS)
 Conflicts: %{realname}-openappid
 %endif
-Version: 2.9.7.3
+Version: 2.9.7.5
 Epoch: 1
 Release: %{release}
 Group: Applications/Internet

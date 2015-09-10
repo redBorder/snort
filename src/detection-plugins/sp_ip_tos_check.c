@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id$ */
+/* $Id: sp_ip_tos_check.c,v 1.40 2015/04/23 18:28:09 jocornet Exp $ */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"

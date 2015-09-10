@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: hi_paf.c,v 1.20 2015/07/06 19:54:21 cwaxman Exp $ */
 /****************************************************************************
  *
  * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
@@ -101,6 +101,8 @@ static uint32_t hi_cap = 0;
 static uint32_t hi_paf_calls = 0;
 static uint32_t hi_paf_bytes = 0;
 
+static uint8_t hi_paf_id = 0;
+
 //--------------------------------------------------------------------
 // char classification stuff per RFC 2616
 //--------------------------------------------------------------------
@@ -158,6 +160,11 @@ static const uint8_t class_map[256] =
 #define SEPS "\5"  // matches SEP
 #define CHRS "\6"  // matches CHAR
 #define DIGS "\7"  // matches DIGIT
+
+static inline bool is_lwspace(const char c)
+{
+    return (c == ' ' || c == '\t');
+}
 
 static uint8_t Classify (const char* s)
 {
@@ -239,7 +246,7 @@ typedef struct {
 #define R3 (R2+5)
 #define R4 (R3+5)
 #define R5 (R4+1)
-#define R6 (R5+2)
+#define R6 (R5+4)
 #define R7 (R6+2)
 #define R8 (R7+2)
 
@@ -368,7 +375,9 @@ static HiRule hi_rule[] =
 
     // extract decimal content length
     { R5+ 0, R2   , R5+ 1, ACT_LNB, EOLS },
-    { R5+ 1, R5   , R5   , ACT_SHI, ANYS },
+    { R5+ 1, R5   , R5+ 2, ACT_SHI, DIGS },
+    { R5+ 2, R5   , R5+ 3, ACT_SHI, LWSS },
+    { R5+ 3, R8   , R8   , ACT_SHI, ANYS },
 
     // extract hex chunk length
     { R6+ 0, R7   , R6+ 1, ACT_LNC, EOLS },
@@ -684,8 +693,10 @@ static inline PAF_Status hi_exec (Hi5State* s, Action a, int c)
             if ( s->flags & HIF_ERR )
                 break;
             if ( isdigit(c) && (s->len < 429496728) )
+            {
                 s->len = (10 * s->len) + dton(c);
-            else
+            }
+            else if (!is_lwspace(c))
             {
                 hi_paf_event_msg_size();
                 s->flags |= HIF_ERR;
@@ -769,7 +780,7 @@ static void hi_pipe_pop (Hi5State* s_rsp, void* ssn)
     Hi5State* s_req;
     uint32_t nreq, pipe;
 
-    void** pv = stream_api->get_paf_user_data(ssn, 1);
+    void** pv = stream_api->get_paf_user_data(ssn, 1, hi_paf_id);
 
     if ( !*pv )
         return;
@@ -1092,10 +1103,10 @@ int hi_paf_register_port (
         return -1;
 
     if ( client )
-        stream_api->register_paf_port(sc, pid, port, true, hi_paf, auto_on);
+        hi_paf_id = stream_api->register_paf_port(sc, pid, port, true, hi_paf, auto_on);
 
     if ( server )
-        stream_api->register_paf_port(sc, pid, port, false, hi_paf, auto_on);
+        hi_paf_id = stream_api->register_paf_port(sc, pid, port, false, hi_paf, auto_on);
 
     return 0;
 }
@@ -1113,10 +1124,10 @@ int hi_paf_register_service (
         return -1;
 
     if ( client )
-        stream_api->register_paf_service(sc, pid, service, true, hi_paf, auto_on);
+        hi_paf_id = stream_api->register_paf_service(sc, pid, service, true, hi_paf, auto_on);
 
     if ( server )
-        stream_api->register_paf_service(sc, pid, service, false, hi_paf, auto_on);
+        hi_paf_id = stream_api->register_paf_service(sc, pid, service, false, hi_paf, auto_on);
 
     return 0;
 }
@@ -1157,7 +1168,7 @@ bool hi_paf_simple_request (void* ssn)
 {
     if ( ssn )
     {
-        Hi5State** s = (Hi5State **)stream_api->get_paf_user_data(ssn, 1);
+	 Hi5State** s = (Hi5State **)stream_api->get_paf_user_data(ssn, 1, hi_paf_id);
 
         if ( s && *s )
             return ( (*s)->flags & HIF_V09 );
