@@ -28,6 +28,7 @@
 #include "decode.h"
 #include "rules.h"
 #include "treenodes.h"
+#include "generators.h"
 
 /* 
  * this has been upgarded to reroute traffic to fpLogEvent() 
@@ -37,37 +38,49 @@
  * requires a rule be writen for each decoder event, and preprocssor event,
  * although preprocessors don't seem to use this much.
  */
-uint32_t GenerateSnortEvent(Packet *p,
-                            uint32_t gen_id,
-                            uint32_t sig_id,
-                            uint32_t sig_rev,
-                            uint32_t classification,
-                            uint32_t priority,
-                            const char *msg);
+uint32_t GenerateSnortEvent(
+    Packet * p,
+    uint32_t gen_id,
+    uint32_t sig_id,
+    uint32_t sig_rev,
+    uint32_t classification,
+    uint32_t priority,
+    const char * msg
+    );
 
 OptTreeNode * GenerateSnortEventOtn(
-                            uint32_t gen_id,
-                            uint32_t sig_id,
-                            uint32_t sig_rev,
-                            uint32_t classification,
-                            uint32_t priority,
-                            const char *msg );
+    uint32_t gen_id,
+    uint32_t sig_id,
+    uint32_t sig_rev,
+    uint32_t classification,
+    uint32_t priority,
+    const char * msg
+    );
 
-RuleTreeNode* GenerateSnortEventRtn(OptTreeNode*, tSfPolicyId);
+RuleTreeNode* GenerateSnortEventRtn(OptTreeNode *, tSfPolicyId);
 
-int LogTagData(Packet *p,
-               uint32_t gen_id,
-               uint32_t sig_id,
-               uint32_t sig_rev,
-               uint32_t classification,
-               uint32_t priority,
-               uint32_t event_ref,
-               time_t ref_sec,
-               char *msg);
+int LogTagData(
+    Packet * p,
+    uint32_t gen_id,
+    uint32_t sig_id,
+    uint32_t sig_rev,
+    uint32_t classification,
+    uint32_t priority,
+    uint32_t event_ref,
+    time_t ref_sec,
+    char * msg
+    );
 
+void LogSnortEvent(Packet *, OptTreeNode *, RuleTreeNode *, const char *);
 
 /* Utility functions */
-OptTreeNode *otnCreate(uint32_t gid, uint32_t sid, uint32_t rev,
-                       uint32_t classification, uint32_t priority, const char *msg);
+OptTreeNode *otnCreate(
+    uint32_t gid,
+    uint32_t sid,
+    uint32_t rev,
+    uint32_t classification,
+    uint32_t priority,
+    const char *msg
+    );
 
 #endif /* _EVENT_WRAPPER_H */

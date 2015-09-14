@@ -62,6 +62,7 @@ typedef struct s_MAIL_LogState
 #define FLAG_RCPT_TO_PRESENT                 0x00000002
 #define FLAG_FILENAME_PRESENT                0x00000004
 #define FLAG_EMAIL_HDRS_PRESENT              0x00000008
+#define FLAG_FILENAME_IN_HEADER              0x00000010
 
 typedef struct s_MAIL_LogConfig
 {

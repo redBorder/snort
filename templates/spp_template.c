@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: spp_template.c,v 1.5 2004/02/13 16:19:03 roesch Exp $ */
 /* Snort Preprocessor Plugin Source File Template */
 
 /* spp_template 

@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id$ */
+/* $Id: sp_clientserver.h,v 1.21 2015/04/23 18:28:09 jocornet Exp $ */
 /* ClientServer detection plugin header */
 
 #ifndef __SP_CLIENTSERVER_H__

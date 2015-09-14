@@ -1,5 +1,5 @@
 /*
- **  $Id$
+ **  $Id: sfcontrol.c,v 1.12 2015/04/23 18:28:11 jocornet Exp $
  **
  **  sfcontrol.c
  **

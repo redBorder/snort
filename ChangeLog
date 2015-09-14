@@ -1,3 +1,67 @@
+2015-07-01 Carter Waxman <cwaxman@cisco.com>
+Snort 2.9.7.5
+    * src/build.h:
+      updating build number to 262
+
+    * src/preprocessors/Stream6/snort_stream_tcp.c: 
+      Improved handling of asymmetric traffic
+
+    * src/active.c: 
+      Active responses no longer set the FIN flag on the last segment
+      transmitted
+
+    * src/dynamic-preprocessors/appid/luaDetectorApi.c:
+      Added sanity checks to client api
+      
+    * doc/snort_manual.pdf,
+      src/: dynamic-preprocessors/dcerpc2/dce2_paf.c,
+      dynamic-preprocessors/dnp3/dnp3_paf.c,
+      dynamic-preprocessors/ftptelnet/snort_ftptelnet.c,
+      dynamic-preprocessors/imap/imap_paf.c,
+      dynamic-preprocessors/pop/pop_paf.c,
+      dynamic-preprocessors/sip/sip_paf.c,
+      dynamic-preprocessors/smtp/smtp_paf.c,
+      preprocessors/session_api.h, preprocessors/spp_stream6.c,
+      preprocessors/stream_api.h,
+      preprocessors/HttpInspect/utils/hi_paf.c,
+      preprocessors/Session/session_common.h,
+      preprocessors/Stream6/snort_stream_tcp.c,
+      preprocessors/Stream6/snort_stream_tcp.h,
+      preprocessors/Stream6/stream_paf.c,
+      preprocessors/Stream6/stream_paf.h: 
+      Multiple PAF clients can Read/Write to the same user data
+
+    * src/: file-process/file_api.h, file-process/file_mail_common.h,
+      file-process/file_mime_process.c,
+      sfutil/sf_email_attach_decode.c, sfutil/sf_email_attach_decode.h: 
+      Fixed filename parsing from Mime body for UUencoded MIME
+
+    * src/preprocessors/perf-base.c,
+      src/preprocessors/Stream6/snort_stream_tcp.c: 
+      Prunes triggered by timeouts are now accounted by perfmonitor.
+
+    * src/preprocessors/spp_session.c: 
+      Log warning instead of Fatal Error
+      if a stream5_global config is in a non-default policy
+      
+    * src/detection-plugins/sp_base64_decode.c: 
+      Removed unused checks
+      
+    * src/snort.c:
+      Improved reliability of configuration reloads
+
+    * src/preprocessors/snort_httpinspect.c: 
+      Fixed issue in http
+      file processing where SHAs may not always be correct.
+
+    * doc/snort_manual.pdf,
+      src/sfutil/sf_email_attach_decode.c: 
+      Fixed handling new line chars in QP encoding
+      
+
+    * src/preprocessors/snort_httpinspect.c: 
+      Fixed inconsistent behavior when configuring "max_gzip_mem -1"
+
 2015-22-04 Joel Cornett <jocornet@cisco.com>
 Snort 2.9.7.3
     * src/build.h:
