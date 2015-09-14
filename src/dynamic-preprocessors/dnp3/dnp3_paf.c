@@ -47,13 +47,15 @@ typedef struct _dnp3_paf_data
     uint16_t real_length;
 } dnp3_paf_data_t;
 
+static uint8_t dnp3_paf_id = 0;
+
 static int DNP3PafRegisterPort (struct _SnortConfig *sc, uint16_t port, tSfPolicyId policy_id)
 {
     if (!_dpd.isPafEnabled())
         return 0;
 
-    _dpd.streamAPI->register_paf_port(sc, policy_id, port, 0, DNP3Paf, true);
-    _dpd.streamAPI->register_paf_port(sc, policy_id, port, 1, DNP3Paf, true);
+    dnp3_paf_id = _dpd.streamAPI->register_paf_port(sc, policy_id, port, 0, DNP3Paf, true);
+    dnp3_paf_id = _dpd.streamAPI->register_paf_port(sc, policy_id, port, 1, DNP3Paf, true);
 
     return 0;
 }
@@ -64,8 +66,8 @@ int DNP3AddServiceToPaf (struct _SnortConfig *sc, uint16_t service, tSfPolicyId 
     if (!_dpd.isPafEnabled())
         return 0;
 
-    _dpd.streamAPI->register_paf_service(sc, policy_id, service, 0, DNP3Paf, true);
-    _dpd.streamAPI->register_paf_service(sc, policy_id, service, 1, DNP3Paf, true);
+    dnp3_paf_id = _dpd.streamAPI->register_paf_service(sc, policy_id, service, 0, DNP3Paf, true);
+    dnp3_paf_id = _dpd.streamAPI->register_paf_service(sc, policy_id, service, 1, DNP3Paf, true);
 
     return 0;
 }

@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: spp_session.c,v 1.5 2015/07/06 19:54:21 cwaxman Exp $ */
 /****************************************************************************
  *
  * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
@@ -3457,31 +3457,44 @@ static void reloadSessionConfiguration( struct _SnortConfig *sc, char *args, voi
     SessionConfiguration *session_config = ( SessionConfiguration * ) *new_config;
 
     // session config is only in default policy... fatal error if not parsing default
-    if( getParserPolicy( sc ) != getDefaultPolicy( ) )
+    if( getParserPolicy( sc ) == getDefaultPolicy( ) )
     {
-        FatalError("%s(%d) Session configuration included in non-default policy.\n", __FILE__, __LINE__);
-    }
+        if ( session_config == NULL )
+        {
+            session_config = initSessionConfiguration( );
+            parseSessionConfiguration( session_config, args );
+            *new_config = session_config;
 
-    if ( session_config == NULL )
-    {
-        session_config = initSessionConfiguration( );
-        parseSessionConfiguration( session_config, args );
-        *new_config = session_config;
+            session_reload_configuration = session_config;
 
-        session_reload_configuration = session_config;
-
-        sc->run_flags |= RUN_FLAG__STATEFUL;
+            sc->run_flags |= RUN_FLAG__STATEFUL;
+        }
+        else
+        {
+// For 2.9.7 if there are multiple stream5_globals in the policy or stream5_global
+// is configured in a non-default policy all but the first set in the default policy
+// are ignored and a warning is written to the log file for any additional stream5_globals processed.
+// This is a workaround to enable snort 2.9.7 to handle pre-2.9.7 policy configurations that
+// include multiple stream5_global config settings.  This behavior is only supported in the 2.9.7.x
+// snort releases.
+#if 0
+            FatalError("stream5_global must only be configured once.\n");
+#else
+            WarningMessage("stream5_global must only be configured once. Ignoring this configuration element\n");
+            *new_config = NULL;
+#endif
+        }
     }
     else
     {
 #if 0
-        // EDM-TBD
-        FatalError("stream5_global must only be configured once.\n");
+        FatalError("%s(%d) Session configuration included in non-default policy.\n", __FILE__, __LINE__);
 #else
-        WarningMessage("stream5_global must only be configured once. Ignoring this configuration element\n");
+        WarningMessage("stream5_global must only be configured in the default policy. Ignoring this configuration element\n");
         *new_config = NULL;
 #endif
     }
+
 }
 
 static bool verifyConfigOptionUnchanged( uint32_t new, uint32_t old, char *name, SessionConfiguration *config )

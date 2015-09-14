@@ -1,18 +1,7 @@
-2015-22-04 - Snort 2.9.7.3
-[*] New additions
-*  Added PAF support for SIP based traffic
+2015-07-14 Snort 2.9.7.5
 
 [*] Improvements
-*  Resolved a backtracking issue where the 'protected_content' rule option
-   was not matching on content following a content rule option that is
-   not matched.
 
-*  Resolved an issue where snort dropped privilege levels before attempting
-   to delete its PID file created during the higher privilege level
+*  Added improved support to the Stream preprocessor for asynchronous TCP traffic.
 
-*  Improved processing of SSLv3 traffic, IPv6 extensions, HTTPS session
-   reassembly and normalization
-
-*  Performance improvements for file preprocessor
-
-*  Stability improvements for ftp_telnet preprocessor
+*  Active response no longer sets the FIN flag on the last segment sent.

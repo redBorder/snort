@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: session_api.h,v 1.4 2015/07/06 19:54:21 cwaxman Exp $ */
 
 /*
  * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
@@ -182,7 +182,6 @@ typedef struct _StreamSessionLimits
 
 typedef struct _StreamHAState
 {
-    bool        new_session;
     uint32_t   session_flags;
 
 #ifdef TARGET_BASED
@@ -192,7 +191,7 @@ typedef struct _StreamHAState
 
     char       direction;
     char       ignore_direction; /* flag to ignore traffic on this session */
-
+    bool        new_session;
 } StreamHAState;
 
 typedef enum {

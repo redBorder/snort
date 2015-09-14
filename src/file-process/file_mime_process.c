@@ -180,8 +180,20 @@ static inline int extract_file_name(const char **start, int length, bool *disp_c
 
 }
 
-/* accumulate MIME attachment filenames. The filenames are appended by commas */
-int log_file_name(const uint8_t *start, int length, FILE_LogState *log_state, bool *disp_cont)
+/* accumulate MIME attachment filenames. The filenames are appended by commas
+ * start - If extract_fname is true,start is ptr in MIME header
+ *         to extract file names from. Else, if extract_fname
+ *         is false, start is the filename
+ *  length - If extract_fname is false , length is the strlen of
+ *          filename contained in start
+ *
+ * log_state - file log state
+ * disp_cont
+ * extract_fname - false, when filename is already extracted
+ *                        and passed to the first argument
+ */
+
+int log_file_name(const uint8_t *start, int length, FILE_LogState *log_state, bool *disp_cont, bool extract_fname)
 {
     uint8_t *alt_buf;
     int alt_size;
@@ -190,17 +202,27 @@ int log_file_name(const uint8_t *start, int length, FILE_LogState *log_state, bo
     int cont =0;
     int log_avail = 0;
 
-
-    if(!start || (length <= 0))
+    if ( extract_fname )
     {
-        *disp_cont = false;
-        return -1;
+        if(!start || (length <= 0))
+        {
+            *disp_cont = false;
+            return -1;
+        }
+
+        if(*disp_cont)
+            cont = 1;
+
+        ret = extract_file_name((const char **)(&start), length, disp_cont);
     }
-
-    if(*disp_cont)
-        cont = 1;
-
-    ret = extract_file_name((const char **)(&start), length, disp_cont);
+    else
+    {
+        if(*disp_cont)
+            cont = 1;
+         /* Since the file name is already passed as parameter and the length as well,
+          * just set ret here*/
+         ret = length;
+    }
 
     if (ret == -1)
         return ret;
@@ -759,8 +781,9 @@ static const uint8_t * process_mime_header(Packet *p, const uint8_t *ptr,
             if(mime_ssn->log_config->log_filename && mime_ssn->log_state )
             {
                 if(!log_file_name(cont_disp, eolm - cont_disp,
-                        &(mime_ssn->log_state->file_log), &disp_cont) )
+                        &(mime_ssn->log_state->file_log), &disp_cont, true) )
                     mime_ssn->log_flags |= FLAG_FILENAME_PRESENT;
+                    mime_ssn->log_flags |= FLAG_FILENAME_IN_HEADER;
             }
             if (disp_cont)
             {
@@ -839,6 +862,8 @@ static const uint8_t * process_mime_body(Packet *p, const uint8_t *ptr,
     {
         const uint8_t *attach_start = ptr;
         const uint8_t *attach_end;
+        uint8_t filename[MAX_UNICODE_FILE_NAME] ;
+        uint32_t file_name_size = 0;
 
         if (is_data_end )
         {
@@ -851,14 +876,29 @@ static const uint8_t * process_mime_body(Packet *p, const uint8_t *ptr,
 
         if( attach_start < attach_end )
         {
-            if(EmailDecode( attach_start, attach_end, decode_state) < DECODE_SUCCESS )
+            bool filename_in_mime_header = (mime_ssn->log_flags & FLAG_FILENAME_IN_HEADER) ? true: false;
+            if(EmailDecode( attach_start, attach_end, decode_state, filename, &file_name_size, filename_in_mime_header ) < DECODE_SUCCESS )
             {
                 if (mime_ssn->methods && mime_ssn->methods->decode_alert)
                     mime_ssn->methods->decode_alert(mime_ssn->decode_state);
             }
+            else
+            {
+               if ( !filename_in_mime_header && (decode_state->decode_type == DECODE_UU) && file_name_size && mime_ssn->log_state)
+              {
+                    bool disp_cont = (mime_ssn->state_flags & MIME_FLAG_IN_CONT_DISP_CONT)? true: false;
+                    if ( !log_file_name((const uint8_t *) filename, \
+                                                 file_name_size , \
+                                                 &(mime_ssn->log_state->file_log), &disp_cont, false) )
+                    {
+                         mime_ssn->log_flags |= FLAG_FILENAME_PRESENT;
+                    }
+                }
+            }
         }
     }
 
+    mime_ssn->log_flags &= ~FLAG_FILENAME_IN_HEADER;
     if (is_data_end)
     {
         mime_ssn->data_state = STATE_MIME_HEADER;
@@ -983,6 +1023,7 @@ const uint8_t * process_mime_data_paf(void *packet, const uint8_t *start, const 
         case STATE_DATA_BODY:
             DEBUG_WRAP(DebugMessage(DEBUG_FILE, "DATA BODY STATE ~~~~~~~~~~~~~~~~~~~~~~~~\n"););
             start = process_mime_body(p, start, end, mime_ssn, isFileEnd(position) );
+            update_file_name(mime_ssn->log_state);
             break;
         }
     }

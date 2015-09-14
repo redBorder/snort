@@ -1,5 +1,5 @@
 /*
-**  $Id$
+**  $Id: fpdetect.c,v 1.77 2015/07/06 19:54:21 cwaxman Exp $
 **
 **  fpdetect.c
 **
@@ -60,6 +60,8 @@
 #include "event_wrapper.h"
 #include "active.h"
 #include "encode.h"
+#include "sfPolicy.h"
+#include "sfPolicyData.h"
 
 #include "sp_pattern_match.h"
 #include "spp_frag3.h"
@@ -70,7 +72,6 @@
 #endif
 
 #include "ppm.h"
-#include "sfPolicy.h"
 #include "generators.h"
 #include "detection_util.h"
 
@@ -202,8 +203,9 @@ static inline void fpLogOther (Packet* p, OptTreeNode* otn, int action)
 */
 int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
 {
-    int action = -1, rateAction = -1;
-    int override, filterEvent = 0;
+    int action = -1,
+        rateAction = -1,
+        filterEvent = 0;
 
     if (!rtn || !otn)
     {
@@ -213,12 +215,13 @@ int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
                 "   => Got rule match, rtn type = %d, evalIndex = %d, passIndex = %d\n",
                 rtn->type,ScGetEvalIndex(rtn->type),  ScGetEvalIndex(RULE_TYPE__PASS)););
+
     if (RULE_TYPE__PASS == rtn->type)
     {
         p->packet_flags |= PKT_PASS_RULE;
     }
 
-    if ( otn->stateless )
+    if (otn->stateless)
     {
         /* Stateless rule, set the stateless bit */
         p->packet_flags |= PKT_STATELESS;
@@ -238,9 +241,9 @@ int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
     {
         // We still want to drop packets that are drop rules.
         // We just don't want to see the alert.
-        if ( (rtn->type == RULE_TYPE__DROP) ||
-             (rtn->type == RULE_TYPE__SDROP) ||
-             (rtn->type == RULE_TYPE__REJECT) )
+        if ((rtn->type == RULE_TYPE__DROP) ||
+            (rtn->type == RULE_TYPE__SDROP) ||
+            (rtn->type == RULE_TYPE__REJECT))
         {
             Active_DropSession(p);
         }
@@ -250,15 +253,22 @@ int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
 
     // perform rate filtering tests - impacts action taken
     rateAction = RateFilter_Test(otn, p);
-    override = ( rateAction >= RULE_TYPE__MAX );
-    if ( override ) rateAction -= RULE_TYPE__MAX;
 
-    // internal events are no-ops
-    if ( (rateAction < 0) && EventIsInternal(otn->sigInfo.generator) )
+    if (rateAction < 0)
     {
-        return 1;
+        // internal events are no-ops
+        if (EventIsInternal(otn->sigInfo.generator))
+            return 1;
+        else
+            action = (int) rtn->type;
     }
-    action = (rateAction < 0) ? (int)rtn->type : rateAction;
+    else
+    {
+        if (rateAction >= RULE_TYPE__MAX)
+            action = rateAction - RULE_TYPE__MAX;
+        else
+            action = rateAction;
+    }
 
     // When rate filters kick in, event filters are still processed.
     // perform event filtering tests - impacts logging
@@ -282,7 +292,7 @@ int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
             p->pkth->ts.tv_sec);
     }
 
-    if ( (filterEvent < 0) || (filterEvent > 0 && !override) )
+    if ( (filterEvent < 0) || (filterEvent > 0 && (rateAction < RULE_TYPE__MAX)) )
     {
         /*
         **  If InlineMode is on, then we still want to drop packets
@@ -326,32 +336,32 @@ int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
     {
         case RULE_TYPE__PASS:
             PassAction();
-            SetTags(p, otn, event_id);
+            SetTags(p, otn, rtn, event_id);
             break;
 
         case RULE_TYPE__ACTIVATE:
-            ActivateAction(p, otn, &otn->event_data);
-            SetTags(p, otn, event_id);
+            ActivateAction(p, otn, rtn, &otn->event_data);
+            SetTags(p, otn, rtn, event_id);
             break;
 
         case RULE_TYPE__ALERT:
-            AlertAction(p, otn, &otn->event_data);
-            SetTags(p, otn, event_id);
+            AlertAction(p, otn, rtn, &otn->event_data);
+            SetTags(p, otn, rtn, event_id);
             break;
 
         case RULE_TYPE__DYNAMIC:
-            DynamicAction(p, otn, &otn->event_data);
-            SetTags(p, otn, event_id);
+            DynamicAction(p, otn, rtn, &otn->event_data);
+            SetTags(p, otn, rtn, event_id);
             break;
 
         case RULE_TYPE__LOG:
-            LogAction(p, otn, &otn->event_data);
-            SetTags(p, otn, event_id);
+            LogAction(p, otn, rtn, &otn->event_data);
+            SetTags(p, otn, rtn, event_id);
             break;
 
         case RULE_TYPE__DROP:
-            DropAction(p, otn, &otn->event_data);
-            SetTags(p, otn, event_id);
+            DropAction(p, otn, rtn, &otn->event_data);
+            SetTags(p, otn, rtn, event_id);
             break;
 
         case RULE_TYPE__SDROP:
@@ -359,11 +369,11 @@ int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
             break;
 
         case RULE_TYPE__REJECT:
-            DropAction(p, otn, &otn->event_data);
+            DropAction(p, otn, rtn, &otn->event_data);
 #ifdef ACTIVE_RESPONSE
             Active_QueueReject();
 #endif
-            SetTags(p, otn, event_id);
+            SetTags(p, otn, rtn, event_id);
             break;
 
         default:
@@ -1763,38 +1773,100 @@ void fpEvalIpProtoOnlyRules(SF_LIST **ip_proto_only_lists, Packet *p)
     }
 }
 
-OptTreeNode * GetOTN(uint32_t gid, uint32_t sid,
-        uint32_t rev, uint32_t classification, uint32_t priority, const char *msg)
+
+static inline OptTreeNode *CreateOtnForPolicy(
+    uint32_t gid,
+    uint32_t sid,
+    uint32_t rev,
+    uint32_t classification,
+    uint32_t priority,
+    const char * msg,
+    tSfPolicyId policy_id
+    )
 {
-    OptTreeNode *otn = OtnLookup(snort_conf->otn_map, gid, sid);
+    OptTreeNode *otn = otnCreate(
+        gid,
+        sid,
+        rev,
+        classification,
+        priority,
+        msg
+        );
 
-    if (ScAutoGenPreprocDecoderOtns()
-            && ((otn == NULL) || otn->generated))
+    if (otn)
     {
-        if (otn == NULL)
+        if (GenerateSnortEventRtn(otn, policy_id))
         {
-            otn = GenerateSnortEventOtn(gid, sid,
-                    rev, classification, priority, msg);
-            if (otn == NULL)
-                return NULL;
-
             OtnLookupAdd(snort_conf->otn_map, otn);
         }
         else
         {
-            tSfPolicyId policy_id = getIpsRuntimePolicy();
-
-            if ((getRtnFromOtn(otn, policy_id) == NULL)
-                    && (GenerateSnortEventRtn(otn, policy_id) == NULL))
-                return NULL;
+            free(otn);
+            otn = NULL;
         }
     }
-    else if ((otn != NULL) && (getRtnFromOtn(otn, getIpsRuntimePolicy()) == NULL))
+
+    return otn;
+}
+
+
+OptTreeNode *GetOtnForPolicy(
+    uint32_t gid,
+    uint32_t sid,
+    uint32_t rev,
+    uint32_t classification,
+    uint32_t priority,
+    const char *msg,
+    tSfPolicyId policy_id
+    )
+{
+    OptTreeNode *otn = OtnLookup(snort_conf->otn_map, gid, sid);
+
+    if (!getRtnFromOtn(otn, policy_id))
     {
-        // If not configured to autogenerate and there isn't an RTN, meaning
-        // this rule isn't in the current policy, return NULL.
+        if (ScAutoGenPreprocDecoderOtns())
+        {
+            if (!otn)
+            {
+                return CreateOtnForPolicy(
+                    gid,
+                    sid,
+                    rev,
+                    classification,
+                    priority,
+                    msg,
+                    policy_id
+                    );
+            }
+            else if (otn->generated && GenerateSnortEventRtn(otn, policy_id))
+            {
+                return otn;
+            }
+        }
+
         return NULL;
     }
 
     return otn;
+}
+
+
+OptTreeNode *GetApplicableOtn(
+    uint32_t gid,
+    uint32_t sid,
+    uint32_t rev,
+    uint32_t classification,
+    uint32_t priority,
+    const char * msg
+    )
+{
+    return GetOtnForPolicy(
+        gid,
+        sid,
+        rev,
+        classification,
+        priority,
+        msg,
+        getApplicableRuntimePolicy(gid)
+        );
 }

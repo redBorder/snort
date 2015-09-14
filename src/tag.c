@@ -20,7 +20,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id$ */
+/* $Id: tag.c,v 1.70 2015/07/06 19:54:21 cwaxman Exp $ */
 
 /*  I N C L U D E S  ************************************************/
 #ifdef HAVE_CONFIG_H
@@ -756,7 +756,7 @@ static int PruneTime(SFXHASH* tree, uint32_t thetime)
     return pruned;
 }
 
-void SetTags(Packet *p, OptTreeNode *otn, uint16_t event_id)
+void SetTags(Packet *p, OptTreeNode *otn, RuleTreeNode *rtn, uint16_t event_id)
 {
    DEBUG_WRAP(DebugMessage(DEBUG_FLOW, "Setting tags\n"););
 
@@ -764,7 +764,6 @@ void SetTags(Packet *p, OptTreeNode *otn, uint16_t event_id)
     {
         if (otn->tag->tag_type != 0)
         {
-            RuleTreeNode* rtn = getRuntimeRtnFromOtn(otn);
             void* log_list = rtn ? rtn->listhead : NULL;
 
             switch(otn->tag->tag_type)
