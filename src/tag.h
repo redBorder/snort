@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id$ */
+/* $Id: tag.h,v 1.28 2015/07/06 19:54:21 cwaxman Exp $ */
 #ifndef __TAG_H__
 #define __TAG_H__
 
@@ -48,7 +48,7 @@
 void InitTag(void);
 void CleanupTag(void);
 int CheckTagList(Packet *, Event *, void**);
-void SetTags(Packet *, OptTreeNode *, uint16_t);
+void SetTags(Packet *, OptTreeNode *, RuleTreeNode *, uint16_t);
 void TagCacheReset(void);
 
 #endif /* __TAG_H__ */

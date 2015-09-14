@@ -22,6 +22,7 @@
 #ifndef _SF_POLICY_DATA_H_
 #define _SF_POLICY_DATA_H_
 
+#include "generators.h"
 #include "sfPolicy.h"
 
 extern tSfPolicyId napRuntimePolicyId;
@@ -35,6 +36,14 @@ static inline tSfPolicyId getNapRuntimePolicy(void)
 static inline tSfPolicyId getIpsRuntimePolicy(void)
 {
     return ipsRuntimePolicyId;
+}
+
+static inline tSfPolicyId getApplicableRuntimePolicy(uint32_t gid)
+{
+    if (gid == GENERATOR_INTERNAL)
+        return getNapRuntimePolicy();
+    else
+        return getIpsRuntimePolicy();
 }
 
 static inline void setNapRuntimePolicy(tSfPolicyId id)

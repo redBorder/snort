@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: detect.c,v 1.104 2015/07/06 19:54:21 cwaxman Exp $ */
 /*
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
@@ -1135,10 +1135,8 @@ int PassAction(void)
     return 1;
 }
 
-int ActivateAction(Packet * p, OptTreeNode * otn, Event *event)
+int ActivateAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
 {
-    RuleTreeNode *rtn = getRuntimeRtnFromOtn(otn);
-
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
                    "        <!!> Activating and generating alert! \"%s\"\n",
                    otn->sigInfo.message););
@@ -1172,12 +1170,15 @@ int ActivateAction(Packet * p, OptTreeNode * otn, Event *event)
     return 1;
 }
 
-int AlertAction(Packet * p, OptTreeNode * otn, Event *event)
+int AlertAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
 {
-    RuleTreeNode *rtn = getRuntimeRtnFromOtn(otn);
-
-    if (rtn == NULL)
-        return 0;
+    if (!rtn)
+    {
+        // This function may be called from ppm, which doesn't do an RTN lookup
+        rtn = getRuntimeRtnFromOtn(otn);
+        if (!rtn)
+            return 0;
+    }
 
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
                 "        <!!> Generating alert! \"%s\", policyId %d\n", otn->sigInfo.message, getIpsRuntimePolicy()););
@@ -1217,10 +1218,8 @@ int AlertAction(Packet * p, OptTreeNode * otn, Event *event)
     return 1;
 }
 
-int DropAction(Packet * p, OptTreeNode * otn, Event *event)
+int DropAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
 {
-    RuleTreeNode *rtn = getRuntimeRtnFromOtn(otn);
-
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
                "        <!!> Generating Alert and dropping! \"%s\"\n",
                otn->sigInfo.message););
@@ -1254,7 +1253,7 @@ int DropAction(Packet * p, OptTreeNode * otn, Event *event)
     return 1;
 }
 
-int SDropAction(Packet * p, OptTreeNode * otn, Event *event)
+int SDropAction(Packet * p, OptTreeNode * otn, Event * event)
 {
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
                "        <!!> Dropping without Alerting! \"%s\"\n",
@@ -1266,10 +1265,8 @@ int SDropAction(Packet * p, OptTreeNode * otn, Event *event)
     return 1;
 }
 
-int DynamicAction(Packet * p, OptTreeNode * otn, Event *event)
+int DynamicAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
 {
-    RuleTreeNode *rtn = getRuntimeRtnFromOtn(otn);
-
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT, "   => Logging packet data and"
                             " adjusting dynamic counts (%d/%d)...\n",
                             rtn->countdown, otn->countdown););
@@ -1296,10 +1293,8 @@ int DynamicAction(Packet * p, OptTreeNode * otn, Event *event)
     return 1;
 }
 
-int LogAction(Packet * p, OptTreeNode * otn, Event *event)
+int LogAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
 {
-    RuleTreeNode *rtn = getRuntimeRtnFromOtn(otn);
-
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT,"   => Logging packet data and returning...\n"););
 
     CallLogFuncs(p, otn->sigInfo.message, rtn->listhead, event);

@@ -5,7 +5,7 @@
  *
  * Copyright (c) 2000 Dug Song <dugsong@monkey.org>
  *
- * $Id$
+ * $Id: os.h,v 1.3 2010/12/20 17:15:27 jjordan Exp $
  */
 
 #ifndef DNET_OS_H

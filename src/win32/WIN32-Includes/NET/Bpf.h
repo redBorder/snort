@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: Bpf.h,v 1.4 2003/10/20 15:03:44 chrisgreen Exp $ */
 /*-
  * Copyright (c) 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -38,7 +38,7 @@
  *
  *      @(#)bpf.h       7.1 (Berkeley) 5/7/91
  *
- * @(#) $Header$ (LBL)
+ * @(#) $Header: /usr/cvsroot-snort/snort/src/win32/WIN32-Includes/NET/Bpf.h,v 1.4 2003/10/20 15:03:44 chrisgreen Exp $ (LBL)
  */
 
 #ifndef BPF_MAJOR_VERSION
