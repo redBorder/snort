@@ -536,7 +536,7 @@ static int ProcessMaxGzipMem(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
         char *ErrorString, int ErrStrLen)
 {
     char *pcToken, *pcEnd;
-    unsigned int max_gzip_mem;
+    int max_gzip_mem;
 
     pcToken = strtok(NULL, CONF_SEPARATORS);
     if(pcToken == NULL)
@@ -546,7 +546,7 @@ static int ProcessMaxGzipMem(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
         return -1;
     }
 
-    max_gzip_mem = SnortStrtoulRange(pcToken, &pcEnd, 10, 0, UINT_MAX);
+    max_gzip_mem = SnortStrtolRange(pcToken, &pcEnd, 10, 0, INT_MAX);
     if ((pcEnd == pcToken) || *pcEnd || (errno == ERANGE))
     {
         SnortSnprintf(ErrorString, ErrStrLen,
@@ -560,7 +560,7 @@ static int ProcessMaxGzipMem(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
                       "Invalid argument to '%s'.", MAX_GZIP_MEM);
         return -1;
     }
-    GlobalConf->max_gzip_mem = max_gzip_mem;
+    GlobalConf->max_gzip_mem = (unsigned int)max_gzip_mem;
 
     return 0;
 
@@ -3745,9 +3745,58 @@ static inline void setFileName(Packet *p)
     file_api->set_file_name (p->ssnptr, buf, len);
 }
 
+static inline int processPostFileData(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p, HI_SESSION *Session, HttpSessionData *hsd)
+{
+    uint8_t *start = (uint8_t *)(Session->client.request.content_type);
+
+    if ( !PacketHasPAFPayload(p) )
+        return 0;
+
+    if ( hsd && start )
+    {
+        /* mime parsing
+         * mime boundary should be processed before this
+         */
+        uint8_t *end;
+
+        if (!hsd->mime_ssn)
+        {
+            hsd->mime_ssn = (MimeState *)SnortAlloc(sizeof(MimeState));
+            if (!hsd->mime_ssn)
+                return -1;
+            hsd->mime_ssn->log_config = &(GlobalConf->mime_conf);
+            hsd->mime_ssn->decode_conf = &(GlobalConf->decode_conf);
+            hsd->mime_ssn->mime_mempool = mime_decode_mempool;
+            hsd->mime_ssn->log_mempool = mime_log_mempool;
+            /*Set log buffers per session*/
+            if (file_api->set_log_buffers(&(hsd->mime_ssn->log_state),
+                    hsd->mime_ssn->log_config, hsd->mime_ssn->log_mempool) < 0)
+            {
+                return -1;
+            }
+        }
+        else
+        {
+            file_api->reset_mime_paf_state(&(hsd->mime_ssn->mime_boundary));
+        }
+
+        end = (uint8_t *)(Session->client.request.post_raw + Session->client.request.post_raw_size);
+        file_api->process_mime_data(p, start, end, hsd->mime_ssn, 1, false);
+    }
+    else
+    {
+        if (file_api->file_process(p,(uint8_t *)Session->client.request.post_raw,
+                (uint16_t)Session->client.request.post_raw_size,
+                    file_api->get_file_position(p), true, false))
+        {
+            setFileName(p);
+        }
+    }
+    return 0;
+}
 static inline void processFileData(Packet *p, HttpSessionData *hsd, bool *fileProcessed)
 {
-    if (*fileProcessed)
+    if (*fileProcessed || !PacketHasPAFPayload(p))
         return;
 
     if (hsd->mime_ssn)
@@ -4051,48 +4100,8 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
             {
                 if(Session->client.request.post_raw)
                 {
-                    uint8_t *start = (uint8_t *)(Session->client.request.content_type);
-
-                    if ( hsd && start )
-                    {
-                        /* mime parsing
-                         * mime boundary should be processed before this
-                         */
-                        uint8_t *end;
-
-                        if (!hsd->mime_ssn)
-                        {
-                            hsd->mime_ssn = (MimeState *)SnortAlloc(sizeof(MimeState));
-                            if (!hsd->mime_ssn)
-                                return 0;
-                            hsd->mime_ssn->log_config = &(GlobalConf->mime_conf);
-                            hsd->mime_ssn->decode_conf = &(GlobalConf->decode_conf);
-                            hsd->mime_ssn->mime_mempool = mime_decode_mempool;
-                            hsd->mime_ssn->log_mempool = mime_log_mempool;
-                            /*Set log buffers per session*/
-                            if (file_api->set_log_buffers(&(hsd->mime_ssn->log_state),
-                                    hsd->mime_ssn->log_config, hsd->mime_ssn->log_mempool) < 0)
-                            {
-                                return 0;
-                            }
-                        }
-                        else
-                        {
-                            file_api->reset_mime_paf_state(&(hsd->mime_ssn->mime_boundary));
-                        }
-
-                        end = (uint8_t *)(Session->client.request.post_raw + Session->client.request.post_raw_size);
-                        file_api->process_mime_data(p, start, end, hsd->mime_ssn, 1, false);
-                    }
-                    else
-                    {
-                        if (file_api->file_process(p,(uint8_t *)Session->client.request.post_raw,
-                                (uint16_t)Session->client.request.post_raw_size,
-                                    file_api->get_file_position(p), true, false))
-                        {
-                            setFileName(p);
-                        }
-                    }
+                    if(processPostFileData(GlobalConf, p, Session, hsd) != 0)
+                        return 0;
 
                     if(Session->server_conf->post_depth > -1)
                     {

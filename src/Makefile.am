@@ -1,4 +1,4 @@
-## $Id$
+## $Id: Makefile.am,v 1.51 2014/06/10 13:29:29 cwaxman Exp $
 AUTOMAKE_OPTIONS=foreign no-dependencies
 
 bin_PROGRAMS = snort

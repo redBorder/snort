@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: snort.c,v 1.340 2015/07/06 19:54:21 cwaxman Exp $ */
 /*
 ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
@@ -574,7 +574,11 @@ int InMainThread ()
 
 bool SnortIsInitializing( )
 {
+#if defined(INLINE_FAILOPEN) && !defined(WIN32)
+    return snort_initializing && !inline_failopen_initialized;
+#else
     return snort_initializing;
+#endif
 }
 
 static int IsProcessingPackets(uint16_t type, const uint8_t *data, uint32_t length, void **new_config,
@@ -714,9 +718,15 @@ static inline void CheckForReload(void)
 
 /*  F U N C T I O N   D E F I N I T I O N S  **********************************/
 
+#define INLINE_FAIL_OPEN_NOT_USED 0
+#define INLINE_FAIL_OPEN_COMPLETE 1
+#define INLINE_FAIL_OPEN_ERROR    2
+
 static int InlineFailOpen (void)
 {
 #if defined(INLINE_FAILOPEN) && !defined(WIN32)
+    int error = 0;
+
     if (ScAdapterInlineMode() &&
         !ScReadMode() && !ScDisableInlineFailopen())
     {
@@ -757,7 +767,7 @@ static int InlineFailOpen (void)
              * (linuxthreads) */
             while (snort_initializing)
             {
-                int error = DAQ_Acquire(1, IgnoreCallback, NULL);
+                error = DAQ_Acquire(1, IgnoreCallback, NULL);
 
                 if (error)
                     break;
@@ -769,11 +779,14 @@ static int InlineFailOpen (void)
             LogMessage("Fail Open Thread terminated, passed %d packets.\n",
                        inline_failopen_pass_pkt_cnt);
 
-            return 1;
+            if(error)
+                return INLINE_FAIL_OPEN_ERROR;
+            else
+                return INLINE_FAIL_OPEN_COMPLETE;
         }
     }
 #endif
-    return 0;
+    return INLINE_FAIL_OPEN_NOT_USED;
 }
 
 /*
@@ -911,11 +924,22 @@ int SnortMain(int argc, char *argv[])
         SetPktProcessor();
         DAQ_Start();
     }
-    else if ( !InlineFailOpen() )
-    {
-        DAQ_Start();
-        SetPktProcessor();
-        SnortUnprivilegedInit();
+    else
+    { 
+        switch(InlineFailOpen())
+        {
+            case INLINE_FAIL_OPEN_COMPLETE:
+                break;
+            case INLINE_FAIL_OPEN_NOT_USED:
+                DAQ_Start();
+                SetPktProcessor();
+                SnortUnprivilegedInit();
+                break;
+            case INLINE_FAIL_OPEN_ERROR:
+            default:
+                CleanExit(1);
+                return 0;
+        }
     }
 
     PacketLoop();
@@ -3618,6 +3642,11 @@ static void SnortCleanup(int exit_val)
 
     Active_Suspend();  // rules that fire now can't actually block
 
+#if defined(INLINE_FAILOPEN) && !defined(WIN32)
+    if (inline_failopen_thread_running)
+        pthread_kill(inline_failopen_thread_id, SIGKILL);
+#endif
+
     if ( DAQ_WasStarted() )
     {
 #ifdef EXIT_CHECK
@@ -3628,6 +3657,7 @@ static void SnortCleanup(int exit_val)
     }
 
     ControlSocketCleanUp();
+
 #ifdef SIDE_CHANNEL
     SideChannelStopTXThread();
     SideChannelCleanUp();
@@ -3647,11 +3677,6 @@ static void SnortCleanup(int exit_val)
      * of it's loop and exit */
     if (snort_reload_thread_created)
         pthread_join(snort_reload_thread_id, NULL);
-#endif
-
-#if defined(INLINE_FAILOPEN) && !defined(WIN32)
-    if (inline_failopen_thread_running)
-        pthread_kill(inline_failopen_thread_id, SIGKILL);
 #endif
 
 #if defined(TARGET_BASED) && !defined(WIN32)

@@ -29,7 +29,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id$
+ * $Id: sha2.h,v 1.1 2014/02/21 17:06:08 ssturges Exp $
  */
 
 #include "config.h"

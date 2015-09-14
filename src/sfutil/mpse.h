@@ -1,5 +1,5 @@
 /*
-** $Id$
+** $Id: mpse.h,v 1.25 2015/04/23 18:28:11 jocornet Exp $
 **
 **  mpse.h
 **

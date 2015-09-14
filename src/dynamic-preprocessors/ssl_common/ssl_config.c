@@ -850,6 +850,25 @@ static int SSLPP_CheckPolicyConfig(
     return 0;
 }
 
+
+//  Enable SSL preproc for any policies that have inspection turned on.
+static int SSLPP_CheckPolicyEnabled(
+        struct _SnortConfig *sc,
+        tSfPolicyUserContextId config,
+        tSfPolicyId policyId,
+        void* pData
+        )
+{
+    if(_dpd.isSSLPolicyEnabled(sc))
+    {
+        //  Send packets to SSL preproc even when only doing Network Discovery.
+        _dpd.reenablePreprocBit(sc, PP_SSL);
+    }
+
+    return 0;
+}
+
+
 static int SSLPP_CheckConfig(struct _SnortConfig *sc)
 {
 #ifdef ENABLE_HA
@@ -880,6 +899,8 @@ static int SSLPP_CheckConfig(struct _SnortConfig *sc)
         }
 #endif
     }
+
+    sfPolicyUserDataIterate (sc, ssl_config, SSLPP_CheckPolicyEnabled);
 
     return 0;
 }

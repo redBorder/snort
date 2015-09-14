@@ -1,6 +1,6 @@
 @echo off
 
-REM $Id$
+REM $Id: build_releases.bat,v 1.3 2004/01/14 04:12:00 chris_reid Exp $
 
 REM -- --------------------------------------------------------------
 REM -- If you are having problems running "NMAKE", you probably

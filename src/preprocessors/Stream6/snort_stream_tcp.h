@@ -75,7 +75,7 @@ int s5TcpGetPortFilterStatus( struct _SnortConfig *sc, unsigned short port, tSfP
 void s5TcpSetSynSessionStatus(struct _SnortConfig *sc, uint16_t status, tSfPolicyId policyId, int parsing);
 void s5TcpUnsetSynSessionStatus(struct _SnortConfig *sc, uint16_t status, tSfPolicyId policyId, int parsing);
 void StreamTcpConfigFree(StreamTcpConfig *);
-void **StreamGetPAFUserDataTcp(SessionControlBlock*, bool to_server);
+void **StreamGetPAFUserDataTcp(SessionControlBlock*, bool to_server, uint8_t id);
 bool StreamIsPafActiveTcp(SessionControlBlock*, bool to_server);
 bool StreamActivatePafTcp (SessionControlBlock *scb, int dir, int16_t service_port, uint8_t type);
 void StreamResetPolicyTcp(SessionControlBlock*, int dir, uint16_t policy, uint16_t mss);
