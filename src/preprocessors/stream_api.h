@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: stream_api.h,v 1.46 2015/07/06 19:54:21 cwaxman Exp $ */
 /*
  ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  * ** Copyright (C) 2005-2013 Sourcefire, Inc.
@@ -371,11 +371,11 @@ typedef struct _stream_api
 
     // register for stateful scanning of in-order payload to determine flush points
     // autoEnable allows PAF regardless of s5 ports config
-    bool (*register_paf_port)( struct _SnortConfig *sc, tSfPolicyId, uint16_t server_port, bool toServer,
+    uint8_t (*register_paf_port)( struct _SnortConfig *sc, tSfPolicyId, uint16_t server_port, bool toServer,
         PAF_Callback, bool autoEnable);
 
     // get any paf user data stored for this session
-    void** (*get_paf_user_data)(void* ssnptr, bool toServer);
+    void** (*get_paf_user_data)(void* ssnptr, bool toServer, uint8_t id);
 
     bool (*is_paf_active)(void* ssn, bool toServer);
     bool (*activate_paf)(void* ssn, int dir, int16_t service, uint8_t type);
@@ -407,7 +407,7 @@ typedef struct _stream_api
 
     // register for stateful scanning of in-order payload to determine flush points
     // autoEnable allows PAF regardless of s5 ports config
-    bool (*register_paf_service)(
+    uint8_t (*register_paf_service)(
         struct _SnortConfig *sc, tSfPolicyId, uint16_t service, bool toServer,
         PAF_Callback, bool autoEnable);
 

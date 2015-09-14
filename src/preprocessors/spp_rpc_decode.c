@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id$ */
+/* $Id: spp_rpc_decode.c,v 1.62 2015/04/23 18:28:10 jocornet Exp $ */
 /* spp_rpc_decode
  *
  * Purpose:

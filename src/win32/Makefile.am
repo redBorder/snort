@@ -1,4 +1,4 @@
-# $Id$
+# $Id: Makefile.am,v 1.30 2012/04/27 18:09:56 rcombs Exp $
 AUTOMAKE_OPTIONS=foreign no-dependencies
 # find . -type f | grep -ve 'CVS\|Makefile\.\(in\|am\)'
 EXTRA_DIST= \

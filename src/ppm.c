@@ -21,7 +21,7 @@
  ****************************************************************************/
 
 /*
-**  $Id$
+**  $Id: ppm.c,v 1.27 2015/07/06 19:54:21 cwaxman Exp $
 **
 **  ppm.c
 **
@@ -386,7 +386,7 @@ void ppm_pkt_log(ppm_cfg_t *ppm_cfg, Packet* p)
         if(filterEvent < 0)
             filterEvent = 0;
         else
-            AlertAction(p, potn, &ev);
+            AlertAction(p, potn, NULL, &ev);
     }
 
     if (ppm_cfg->pkt_log & PPM_LOG_MESSAGE)
@@ -507,7 +507,7 @@ void ppm_rule_log(ppm_cfg_t *ppm_cfg, uint64_t pktcnt, Packet *p)
                 if(filterEvent < 0)
                     filterEvent = 0;
                 else
-                    AlertAction(p, otn, &ev);
+                    AlertAction(p, otn, NULL, &ev);
 
                 otn->sigInfo.message = tmp;
             }
@@ -581,7 +581,7 @@ void ppm_rule_log(ppm_cfg_t *ppm_cfg, uint64_t pktcnt, Packet *p)
                 if(filterEvent < 0)
                     filterEvent = 0;
                 else
-                    AlertAction(p, otn, &ev);
+                    AlertAction(p, otn, NULL, &ev);
                 otn->sigInfo.message = tmp;
             }
         }

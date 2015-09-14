@@ -1589,6 +1589,12 @@ static int client_addApp(
 
     detector = detectorUserData->pDetector;
 
+    if (!detector->client.appModule.api)
+    {
+        lua_pushnumber(L, -1);
+        return 1;
+    }
+
     detector->client.appModule.api->add_app(detector->validateParams.flowp,
              appGetAppFromServiceId(serviceId), appGetAppFromClientId(productId), version);
 
@@ -1616,6 +1622,12 @@ static int client_addInfo(
     }
 
     detector = detectorUserData->pDetector;
+
+    if (!detector->client.appModule.api)
+    {
+        lua_pushnumber(L, -1);
+        return 1;
+    }
 
     detector->client.appModule.api->add_info(detector->validateParams.flowp, info);
 
@@ -1645,6 +1657,12 @@ static int client_addUser(
 
     detector = detectorUserData->pDetector;
 
+    if (!detector->client.appModule.api)
+    {
+        lua_pushnumber(L, -1);
+        return 1;
+    }
+
     detector->client.appModule.api->add_user(detector->validateParams.flowp, userName, appGetAppFromServiceId(serviceId), 1);
 
     lua_pushnumber(L, 0);
@@ -1670,6 +1688,12 @@ static int client_addPayload(
     }
 
     detector = detectorUserData->pDetector;
+
+    if (!detector->client.appModule.api)
+    {
+        lua_pushnumber(L, -1);
+        return 1;
+    }
 
     detector->client.appModule.api->add_payload(detector->validateParams.flowp, appGetAppFromServiceId(payloadId));
 
@@ -2421,6 +2445,12 @@ static int openAddClientApp(
 
     detector = detectorUserData->pDetector;
 
+    if (!detector->client.appModule.api)
+    {
+        lua_pushnumber(L, -1);
+        return 1;
+    }
+
     detector->client.appModule.api->add_app(detector->validateParams.flowp, serviceAppId, clientAppId, "");
 
     lua_pushnumber(L, 0);
@@ -2485,6 +2515,12 @@ static int openAddPayloadApp(
     }
 
     detector = detectorUserData->pDetector;
+
+    if (!detector->client.appModule.api)
+    {
+        lua_pushnumber(L, -1);
+        return 1;
+    }
 
     detector->client.appModule.api->add_payload(detector->validateParams.flowp, payloadAppId);
 

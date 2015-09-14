@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: active.c,v 1.26 2015/07/06 19:54:21 cwaxman Exp $ */
 /****************************************************************************
  *
  * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
@@ -299,7 +299,7 @@ bool Active_SendData (
             plen = 0;
             toSend = blen > maxPayload ? maxPayload : blen;
             flags = (flags & ~ENC_FLAG_VAL) | sent;
-            seg = Encode_Response((toSend == blen) ? ENC_TCP_FIN : ENC_TCP_PUSH, flags, p, &plen, buf, toSend);
+            seg = Encode_Response(ENC_TCP_PUSH, flags, p, &plen, buf, toSend);
 
             if ( !seg )
                 return false;
@@ -310,17 +310,14 @@ bool Active_SendData (
             sent += toSend;
         } while(blen -= toSend);
     }
-    else
-    {
-        plen = 0;
-        flags = (flags & ~ENC_FLAG_VAL) | sent;
-        seg = Encode_Response(ENC_TCP_FIN, flags, p, &plen, NULL, 0);
+    plen = 0;
+    flags = (flags & ~ENC_FLAG_VAL) | sent;
+    seg = Encode_Response(ENC_TCP_FIN, flags, p, &plen, NULL, 0);
 
-        if ( !seg )
-            return false;
+    if ( !seg )
+        return false;
 
-        s_send(p->pkth, !(flags & ENC_FLAG_FWD), seg, plen);
-    }
+    s_send(p->pkth, !(flags & ENC_FLAG_FWD), seg, plen);
 
     if (flags & ENC_FLAG_RST_CLNT)
     {

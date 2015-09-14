@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: file_decomp.h,v 1.2 2015/04/23 18:28:10 jocornet Exp $ */
 /*
 ** file_decomp.h
 **

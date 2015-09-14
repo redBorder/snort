@@ -1,6 +1,6 @@
 /*
 **
-** $Id$
+** $Id: acsmx.c,v 1.28 2015/04/23 18:28:11 jocornet Exp $
 **
 ** Multi-Pattern Search Engine
 **

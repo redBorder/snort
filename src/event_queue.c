@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: event_queue.c,v 1.33 2015/07/06 19:54:21 cwaxman Exp $ */
 /*
  ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2004-2013 Sourcefire, Inc.
@@ -66,6 +66,7 @@
 #include "event_queue.h"
 #include "sfthreshold.h"
 #include "sfPolicy.h"
+#include "sfPolicyData.h"
 
 //-------------------------------------------------
 // the push/pop methods ensure that qIndex stays in
@@ -82,45 +83,6 @@ static unsigned s_events = 0;
 static inline SF_EVENTQ *getEventQueue(void)
 {
     return snort_conf->event_queue[qIndex];
-}
-
-static inline OptTreeNode *getRuleInfo(uint32_t gid, uint32_t sid, uint32_t rev,
-                                uint32_t classification, uint32_t priority,
-                                const char *msg, OptTreeNode *rule_info)
-{
-    if (rule_info)
-    {
-        if (!getRtnFromOtn(rule_info, getIpsRuntimePolicy()))
-            return NULL;
-
-        return rule_info;
-    }
-
-    return GetOTN(gid, sid, rev, classification, priority, msg);
-}
-
-static inline int EventqAdd(uint32_t gid, uint32_t sid, uint32_t rev,
-                            uint32_t classification, uint32_t priority,
-                            const char *msg, OptTreeNode *rule_info)
-{
-    EventNode *en = (EventNode *) sfeventq_event_alloc(getEventQueue());
-    if (!en)
-        return -1;
-
-    en->gid = gid;
-    en->sid = sid;
-    en->rev = rev;
-    en->classification = classification;
-    en->priority = priority;
-    en->msg = msg;
-    en->rule_info = rule_info;
-
-    if (sfeventq_add(getEventQueue(), (void *) en) != 0)
-        return -1;
-
-    s_events++;
-
-    return 0;
 }
 
 // API functions
@@ -162,26 +124,45 @@ void EventQueueConfigFree(EventQueueConfig *eq)
     free(eq);
 }
 
-int SnortEventqAdd(uint32_t gid, uint32_t sid, uint32_t rev,
-        uint32_t classification, uint32_t priority, const char *msg, void *rule_info)
+int SnortEventqAdd(
+    uint32_t gid,
+    uint32_t sid,
+    uint32_t rev,
+    uint32_t classification,
+    uint32_t priority,
+    const char * msg,
+    void * rule_info
+    )
 {
+    EventNode *en;
     OptTreeNode *otn = (OptTreeNode *) rule_info;
 
-    // Preprocessors and decoder will call this function with a NULL rule_info
-    // since they don't have access to the OTN.
-    // If rule_info is NULL, getRuleInfo will do a lookup of the OTN.
-    otn = getRuleInfo(gid, sid, rev, classification, priority, msg, otn);
     if (!otn)
-        return 0;
+        otn = GetApplicableOtn(gid, sid, rev, classification, priority, msg);
+    else if (!getRtnFromOtn(otn, getApplicableRuntimePolicy(gid)))
+        otn = NULL;
 
-    return EventqAdd(gid, sid, rev, classification, priority, msg, otn);
-}
+    if (otn)
+    {
+        en = (EventNode *) sfeventq_event_alloc(getEventQueue());
+        if (!en)
+            return -1;
 
-/* Same as SnortEventqAdd, but doesn't attempt to get rule info or check if rule info exists. */
-int SnortEventqAddBypass(uint32_t gid, uint32_t sid, uint32_t rev,
-        uint32_t classification, uint32_t priority, const char *msg, void *rule_info)
-{
-    return EventqAdd(gid, sid, rev, classification, priority, msg, (OptTreeNode *) rule_info);
+        en->gid = gid;
+        en->sid = sid;
+        en->rev = rev;
+        en->classification = classification;
+        en->priority = priority;
+        en->msg = msg;
+        en->rule_info = rule_info;
+
+        if (sfeventq_add(getEventQueue(), (void *) en) != 0)
+            return -1;
+
+        s_events++;
+    }
+
+    return 0;
 }
 
 void SnortEventqNew(
@@ -206,20 +187,20 @@ void SnortEventqFree(SF_EVENTQ *eq[])
         sfeventq_free(eq[i]);
 }
 
-static int LogSnortEvents(void *event, void *user)
+static int LogSnortEvents(void * event, void * user)
 {
-    EventNode *en = (EventNode *)event;
-    SNORT_EVENTQ_USER *snort_user = (SNORT_EVENTQ_USER *)user;
+    EventNode *en = (EventNode *) event;
+    SNORT_EVENTQ_USER *snort_user = (SNORT_EVENTQ_USER *) user;
     OptTreeNode *otn;
     RuleTreeNode *rtn = NULL;
 
-    if ((event == NULL) || (user == NULL))
+    if (!event || !user)
         return 0;
 
-    if ( s_events > 0 )
+    if (s_events > 0)
         s_events--;
 
-    if (en->rule_info != NULL)
+    if (en->rule_info)
     {
         otn = en->rule_info;
     }
@@ -228,31 +209,23 @@ static int LogSnortEvents(void *event, void *user)
         // The above en->rule_info may be NULL to avoid performing an OTN/RTN
         // lookup until after policy switching is finalized. In that case, 
         // perform the lookup here.
-        otn = GetOTN(en->gid, en->sid, en->rev,
-                en->classification, en->priority, en->msg);
+        otn = GetApplicableOtn(
+            en->gid,
+            en->sid,
+            en->rev,
+            en->classification,
+            en->priority,
+            en->msg
+        );
     }
 
-    if (otn != NULL)
-        rtn = getRuntimeRtnFromOtn(otn);
-
-    if ((otn != NULL) && (rtn != NULL))
+    if (otn)
     {
-        snort_user->rule_alert = otn->sigInfo.rule_flushing;
-
-        if (IsPreprocDecoderRule(otn->sigInfo.rule_type))
+        rtn = getRtnFromOtn(otn, getApplicableRuntimePolicy(en->gid));
+        if (rtn)
         {
-            // If it's a preprocessor or decoder rule, the message we want to
-            // use is the one that was passed in, not what is in the message of
-            // the OTN, which will be generic if the rule was not autogenerated
-            // and potentially wrong if it was.
-            const char *tmp = otn->sigInfo.message;
-            otn->sigInfo.message = en->msg;
-            fpLogEvent(rtn, otn, (Packet *)snort_user->pkt);
-            otn->sigInfo.message = tmp;
-        }
-        else
-        {
-            fpLogEvent(rtn, otn, (Packet *)snort_user->pkt);
+            snort_user->rule_alert = otn->sigInfo.rule_flushing;
+            LogSnortEvent((Packet *) snort_user->pkt, otn, rtn, en->msg);
         }
     }
 
