@@ -1,5 +1,5 @@
 AUTOMAKE_OPTIONS=foreign
-bin_PROGRAMS = snort_control snort_dump_packets_control snort_iplist
+bin_PROGRAMS = snort_control snort_dump_packets_control snort_iplist snort_control_reload
 
 docdir = ${datadir}/doc/${PACKAGE}
 
@@ -11,6 +11,9 @@ snort_dump_packets_control_CFLAGS = @CFLAGS@ $(AM_CFLAGS)
 
 snort_iplist_SOURCES = snort_reload_iplist.c
 snort_iplist_CFLAGS = @CFLAGS@ $(AM_CFLAGS)
+
+snort_control_reload_SOURCES = snort_control_reload.c
+snort_control_reload_CFLAGS = @CFLAGS@ $(AM_CFLAGS)
 
 INCLUDES = @INCLUDES@ @extra_incl@
 
