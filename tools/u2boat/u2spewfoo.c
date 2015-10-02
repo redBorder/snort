@@ -339,16 +339,18 @@ static void event6_dump(const u2record *record,FILE *out_file) {
 
     fprintf(out_file,
             "\n---------------------------------------------------------------------------------------------------------\n"
-            "(IPv6 Event at: %s)\n"
-            "\tsensor id: %10u  event id:  %15u  event second: %10u  event microsecond: %10u\n"
-            "\tsig id:    %10u  gen id:    %15u  revision:     %10u  classification:    %10u\n"
-            "\tpriority:  %10u  ip source: %15s\n",
-             time_readable, event.sensor_id, event.event_id,
-             event.event_second, event.event_microsecond,
-             event.signature_id, event.generator_id,
-             event.signature_revision, event.classification_id,
-             event.priority_id, ip6buf);
+            "IPv6 Event at: %s\n"
+            "\tsensor id:    %10u  event id:          %10u  classification: %10u\n"
+            "\tevent second: %10u  event microsecond: %10u  priority:       %10u\n"
+            "\tsig id:       %10u  gen id:            %10u  revision:       %10u\n"
+            "\tip source:    %10s\n",
 
+             time_readable,
+
+             event.sensor_id,     event.event_id,           event.classification_id,
+             event.event_second,  event.event_microsecond,  event.priority_id,
+             event.signature_id,  event.generator_id,       event.signature_revision,
+             ip6buf);
 
     inet_ntop(AF_INET6, &event.ip_destination, ip6buf, INET6_ADDRSTRLEN);
     fprintf(out_file,"ip destination: %s\n"
@@ -399,8 +401,8 @@ static void event2_dump(const u2record *record, FILE *out_file) {
     sprintf(ip_destination, "%u.%u.%u.%u", TO_IP(event.ip_destination));
 
     fprintf(out_file,
-        "\n---------------------------------------------------------------------------------------------------------\n"
-        "Event at: %s\n"
+            "\n---------------------------------------------------------------------------------------------------------\n"
+            "Event at: %s\n"
             "\tsensor id:    %15u  event id:          %15u  classification: %10u\n"
             "\tevent second: %15u  event microsecond: %15u  priority:       %10u\n"
             "\tsig id:       %15u  gen id:            %15u  revision:       %10u\n"
@@ -459,15 +461,18 @@ static void event2_6_dump(const u2record *record,FILE *out_file) {
     fprintf(out_file,
             "\n---------------------------------------------------------------------------------------------------------\n"
             "IPv6 Event at: %s\n"
-            "\tsensor id: %10u  event id:  %10u  event second: %10u  event microsecond: %10u\n"
-            "\tsig id:    %10u  gen id:    %10u  revision:     %10u  classification:    %10u\n"
-            "\tpriority:  %10u  ip source: %10s\n",
-             time_readable, event.sensor_id, event.event_id,
-             event.event_second, event.event_microsecond,
-             event.signature_id, event.generator_id,
-             event.signature_revision, event.classification_id,
-             event.priority_id, ip6buf);
+            "\tsensor id:    %10u  event id:          %10u  classification: %10u\n"
+            "\tevent second: %10u  event microsecond: %10u  priority:       %10u\n"
+            "\tsig id:       %10u  gen id:            %10u  revision:       %10u\n"
+            "\tip source:    %10s\n",
 
+             time_readable,
+
+             event.sensor_id,     event.event_id,           event.classification_id,
+             event.event_second,  event.event_microsecond,  event.priority_id,
+             event.signature_id,  event.generator_id,       event.signature_revision,
+             ip6buf
+            );
 
     inet_ntop(AF_INET6, &event.ip_destination, ip6buf, INET6_ADDRSTRLEN);
     fprintf(out_file,"ip destination: %s\n"
