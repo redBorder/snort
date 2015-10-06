@@ -285,19 +285,26 @@ static void event_dump(const u2record *record, FILE *out_file) {
     sprintf(ip_destination, "%u.%u.%u.%u", TO_IP(event.ip_destination));
 
     fprintf(out_file,
-        "\n(Event at: %s)\n"
-            "\tsensor id: %10u  event id:  %15u  event second:   %u  event microsecond: %10u\n"
-            "\tsig id:    %10u  gen id:    %15u  revision:       %u  classification:    %10u\n"
-            "\tpriority:  %10u  ip source: %15s  ip destination: %s  blocked:           %10u\n"
-            "\tsrc port:  %10u  dest port: %15u  protocol:       %u  impact_flag:       %10u\n",
-             time_readable, event.sensor_id, event.event_id,
-             event.event_second, event.event_microsecond,
-             event.signature_id, event.generator_id,
-             event.signature_revision, event.classification_id,
-             event.priority_id, ip_source,
-             ip_destination, event.blocked, event.sport_itype,
-             event.dport_icode, event.protocol,
-             event.impact_flag);
+        "\n---------------------------------------------------------------------------------------------------------\n"
+        "Event at: %s\n"
+            "\tsensor id:    %15u  event id:          %15u  classification: %10u\n"
+            "\tevent second: %15u  event microsecond: %15u  priority:       %10u\n"
+            "\tsig id:       %15u  gen id:            %15u  revision:       %10u\n"
+            "\tip source:    %15s  ip destination     %15s  vlan id:        %10s\n"
+            "\tsrc port:     %15u  dest port:         %15u  protocol:       %10u\n"
+            "\tblocked:      %15u  impact_flag:       %15u  mpls_label:     %10s\n"
+            "\tpolicy_id:    %15s\n",
+
+             time_readable,
+
+             event.sensor_id,    event.event_id,          event.classification_id,
+             event.event_second, event.event_microsecond, event.priority_id,
+             event.signature_id, event.generator_id,      event.signature_revision,
+             ip_source,          ip_destination,          "---",
+             event.sport_itype,  event.dport_icode,       event.protocol,
+             event.blocked,      event.impact_flag,       "---",
+             "---"
+            );
 
     free(time_readable);
 }
@@ -330,16 +337,20 @@ static void event6_dump(const u2record *record,FILE *out_file) {
 
     char * time_readable = get_readable_time(event.event_second);
 
-    fprintf(out_file,"\n(IPv6 Event at: %s)\n"
-            "\tsensor id: %10u  event id:  %15u  event second: %10u  event microsecond: %10u\n"
-            "\tsig id:    %10u  gen id:    %15u  revision:     %10u  classification:    %10u\n"
-            "\tpriority:  %10u  ip source: %15s  ",
-             time_readable, event.sensor_id, event.event_id,
-             event.event_second, event.event_microsecond,
-             event.signature_id, event.generator_id,
-             event.signature_revision, event.classification_id,
-             event.priority_id, ip6buf);
+    fprintf(out_file,
+            "\n---------------------------------------------------------------------------------------------------------\n"
+            "IPv6 Event at: %s\n"
+            "\tsensor id:    %10u  event id:          %10u  classification: %10u\n"
+            "\tevent second: %10u  event microsecond: %10u  priority:       %10u\n"
+            "\tsig id:       %10u  gen id:            %10u  revision:       %10u\n"
+            "\tip source:    %10s\n",
 
+             time_readable,
+
+             event.sensor_id,     event.event_id,           event.classification_id,
+             event.event_second,  event.event_microsecond,  event.priority_id,
+             event.signature_id,  event.generator_id,       event.signature_revision,
+             ip6buf);
 
     inet_ntop(AF_INET6, &event.ip_destination, ip6buf, INET6_ADDRSTRLEN);
     fprintf(out_file,"ip destination: %s\n"
@@ -389,21 +400,27 @@ static void event2_dump(const u2record *record, FILE *out_file) {
     sprintf(ip_source, "%u.%u.%u.%u", TO_IP(event.ip_source));
     sprintf(ip_destination, "%u.%u.%u.%u", TO_IP(event.ip_destination));
 
-    fprintf(out_file,"\n(Event at: %s)\n"
-            "\tsensor id:  %10u  event id:  %15u  event second:   %15u  event microsecond: %10u\n"
-            "\tsig id:     %10u  gen id:    %15u  revision:       %15u  classification:    %10u\n"
-            "\tpriority:   %10u  ip source: %15s  ip destination: %15s  blocked:           %10u\n"
-            "\tsrc port:   %10u  dest port: %15u  protocol:       %15u  impact_flag:       %10u\n"
-            "\tmpls label: %10u  vland id:  %15u  policy id:      %15u\n",
-             time_readable, event.sensor_id, event.event_id,
-             event.event_second, event.event_microsecond,
-             event.signature_id, event.generator_id,
-             event.signature_revision, event.classification_id,
-             event.priority_id, ip_source,
-             ip_destination, event.blocked, event.sport_itype,
-             event.dport_icode, event.protocol,
-             event.impact_flag,
-             event.mpls_label, event.vlanId, event.pad2);
+    fprintf(out_file,
+            "\n---------------------------------------------------------------------------------------------------------\n"
+            "Event at: %s\n"
+            "\tsensor id:    %15u  event id:          %15u  classification: %10u\n"
+            "\tevent second: %15u  event microsecond: %15u  priority:       %10u\n"
+            "\tsig id:       %15u  gen id:            %15u  revision:       %10u\n"
+            "\tip source:    %15s  ip destination     %15s  vlan id:        %10u\n"
+            "\tsrc port:     %15u  dest port:         %15u  protocol:       %10u\n"
+            "\tblocked:      %15u  impact_flag:       %15u  mpls_label:     %10u\n"
+            "\tpolicy_id:    %15u\n",
+
+             time_readable,
+
+             event.sensor_id,    event.event_id,          event.classification_id,
+             event.event_second, event.event_microsecond, event.priority_id,
+             event.signature_id, event.generator_id,      event.signature_revision,
+             ip_source,          ip_destination,          event.vlanId,
+             event.sport_itype,  event.dport_icode,       event.protocol,
+             event.blocked,      event.impact_flag,       event.mpls_label,
+             event.pad2
+            );
 
 		free(time_readable);
 }
@@ -441,16 +458,21 @@ static void event2_6_dump(const u2record *record,FILE *out_file) {
 
     inet_ntop(AF_INET6, &event.ip_source, ip6buf, INET6_ADDRSTRLEN);
     char * time_readable = get_readable_time(event.event_second);
-    fprintf(out_file,"\n(IPv6 Event at: %s)\n"
-            "\tsensor id: %10u  event id:  %10u  event second: %10u  event microsecond: %10u\n"
-            "\tsig id:    %10u  gen id:    %10u  revision:     %10u  classification:    %10u\n"
-            "\tpriority:  %10u  ip source: %10s\t",
-             time_readable, event.sensor_id, event.event_id,
-             event.event_second, event.event_microsecond,
-             event.signature_id, event.generator_id,
-             event.signature_revision, event.classification_id,
-             event.priority_id, ip6buf);
+    fprintf(out_file,
+            "\n---------------------------------------------------------------------------------------------------------\n"
+            "IPv6 Event at: %s\n"
+            "\tsensor id:    %10u  event id:          %10u  classification: %10u\n"
+            "\tevent second: %10u  event microsecond: %10u  priority:       %10u\n"
+            "\tsig id:       %10u  gen id:            %10u  revision:       %10u\n"
+            "\tip source:    %10s\n",
 
+             time_readable,
+
+             event.sensor_id,     event.event_id,           event.classification_id,
+             event.event_second,  event.event_microsecond,  event.priority_id,
+             event.signature_id,  event.generator_id,       event.signature_revision,
+             ip6buf
+            );
 
     inet_ntop(AF_INET6, &event.ip_destination, ip6buf, INET6_ADDRSTRLEN);
     fprintf(out_file,"ip destination: %s\n"
@@ -532,10 +554,12 @@ static void packet_dump(const u2record *record,FILE *out_file) {
 
     char * time_readable = get_readable_time(packet.packet_second);
 
-    fprintf(out_file,"\nPacket at: %s\n"
+    fprintf(out_file,
+            "\nPacket at: %s\n"
             "\tsensor id:     %10u  event id:           %10u  event second: %10u\n"
             "\tpacket second: %10u  packet microsecond: %10u\n"
-            "\tlinktype:      %10u  packet_length:      %10u\n",
+            "\tlinktype:      %10u  packet_length:      %10u\n"
+            "\n",
             time_readable, packet.sensor_id, packet.event_id, packet.event_second,
             packet.packet_second, packet.packet_microsecond, packet.linktype,
             packet.packet_length);
