@@ -1,4 +1,4 @@
-% $Id: snort_manual.tex,v 1.160 2015/07/06 19:54:21 cwaxman Exp $
+% $Id$
 % 
 % BUILDING HTML VERSION:
 % latex2html -info 0 -local_icons -show_section_numbers -link +2 -split +2 -noaddress snort_manual.tex
@@ -101,7 +101,7 @@
 
 \begin{document}
 
-\title{SNORT\textsuperscript{\textregistered} Users Manual\\2.9.7.5}
+\title{SNORT\textsuperscript{\textregistered} Users Manual\\2.9.7.3}
 
 \author{The Snort Project}
 
@@ -13100,13 +13100,13 @@ log_rcptto
 \end{verbatim}
 
 This option enables SMTP preprocessor to parse and log the
-recipients email address extracted from the "RCPT FROM" command
+recipients email address extracted from the "RCPT TO" command
 along with all the generated events for that session.
 
 See section \ref{SMTP} for more information
 
 \begin{verbatim}
-log_rcptto
+log_filename
 \end{verbatim}
 
 This option enables SMTP preprocessor to parse and log the MIME
@@ -20004,7 +20004,8 @@ options.
     sensor id               4 bytes
     event id                4 bytes
     event seconds           4 bytes
-    event microseconds      4 bytes
+    packet seconds          4 bytes
+    packet microseconds     4 bytes
     linktype                4 bytes
     packet length           4 bytes
     packet data             <variable length>

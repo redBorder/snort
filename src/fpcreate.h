@@ -1,5 +1,5 @@
 /*
-**  $Id: fpcreate.h,v 1.26 2015/04/23 18:28:09 jocornet Exp $
+**  $Id$
 **
 **  fpcreate.h
 **

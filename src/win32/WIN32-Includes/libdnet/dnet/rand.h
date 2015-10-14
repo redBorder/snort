@@ -6,7 +6,7 @@
  * Copyright (c) 2000 Dug Song <dugsong@monkey.org>
  * Copyright (c) 1996 David Mazieres <dm@lcs.mit.edu>
  *
- * $Id: rand.h,v 1.1 2010/06/09 22:54:03 jjordan Exp $
+ * $Id$
  */
 
 #ifndef DNET_RAND_H

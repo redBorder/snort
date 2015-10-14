@@ -1,4 +1,4 @@
-## $Id: Makefile.am,v 1.36 2014/09/16 18:24:43 jocornet Exp $
+## $Id$
 AUTOMAKE_OPTIONS=foreign no-dependencies
 
 INCLUDES = -I${top_builddir}/src/dynamic-preprocessors/include -I${top_builddir}/src/dynamic-preprocessors/ssl_common -I${top_srcdir}/src/dynamic-preprocessors/libs -I${top_builddir}

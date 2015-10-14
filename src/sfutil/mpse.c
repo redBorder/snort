@@ -1,5 +1,5 @@
 /*
-*  $Id: mpse.c,v 1.37 2015/04/23 18:28:11 jocornet Exp $
+*  $Id$
 *
 *   mpse.c
 *

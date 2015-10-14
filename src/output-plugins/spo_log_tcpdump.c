@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: spo_log_tcpdump.c,v 1.69 2015/04/23 18:28:10 jocornet Exp $ */
+/* $Id$ */
 
 /* spo_log_tcpdump
  *

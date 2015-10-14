@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: spo_plugbase.h,v 1.19 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 #ifndef __SPO_PLUGBASE_H__
 #define __SPO_PLUGBASE_H__
 

@@ -1,4 +1,4 @@
-/* $Id: sp_dynamic.c,v 1.40 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 /*
  * sp_dynamic.c
  *

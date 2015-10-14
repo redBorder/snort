@@ -1,4 +1,4 @@
-/* $Id: hi_client.h,v 1.28 2015/04/23 18:28:10 jocornet Exp $ */
+/* $Id$ */
 /****************************************************************************
  *
  * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.

@@ -1,5 +1,5 @@
 /*
-**  $Id: perf.c,v 1.34 2015/04/23 18:28:10 jocornet Exp $
+**  $Id$
 **
 **  perf.c
 **
