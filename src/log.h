@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: log.h,v 1.45 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 #ifndef __LOG_H__
 #define __LOG_H__
 

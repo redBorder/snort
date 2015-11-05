@@ -1,5 +1,5 @@
 /*
-** $Id: bitop.h,v 1.17 2015/04/23 18:28:11 jocornet Exp $
+** $Id$
 ** 
 ** bitopt.c
 **

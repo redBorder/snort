@@ -1,4 +1,4 @@
-/* $Id: decode.c,v 1.195 2015/04/23 18:28:08 jocornet Exp $ */
+/* $Id$ */
 
 /*
 ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
@@ -116,13 +116,26 @@ static inline void execIpOptDrop (void *data)
     }
 }
 
+static inline void execMinTtlDrop (void *data)
+{
+    if ( ScNormalDrop(NORM_IP4_TTL) &&
+            ScDecoderAlerts() && ScDecoderDrops() )
+    {
+        Packet* p = (Packet*)data;
+        DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
+           "Dropping bad packet (IP4 min TTL)\n"););
+        p->error_flags |= PKT_ERR_BAD_TTL;
+        Active_DropPacket(p);
+    }
+}
+
 static inline void execTtlDrop (void *data)
 {
     if ( ScNormalDrop(NORM_IP4_TTL) )
     {
         Packet* p = (Packet*)data;
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
-           "Dropping bad packet (IP4 TTL)\n"););
+           "Dropping bad packet (IP4 zero TTL)\n"););
         p->error_flags |= PKT_ERR_BAD_TTL;
         Active_DropPacket(p);
     }
@@ -131,6 +144,19 @@ static inline void execTtlDrop (void *data)
 static inline void execHopDrop (void *data)
 {
     if ( ScNormalDrop(NORM_IP6_TTL) )
+    {
+        Packet* p = (Packet*)data;
+        DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
+           "Dropping bad packet (IP6 zero hop)\n"););
+        p->error_flags |= PKT_ERR_BAD_TTL;
+        Active_DropPacket(p);
+    }
+}
+
+static inline void execIpv6MinTtlDrop (void *data)
+{
+    if ( ScNormalDrop(NORM_IP6_TTL) &&
+            ScDecoderAlerts() && ScDecoderDrops() )
     {
         Packet* p = (Packet*)data;
         DEBUG_WRAP(DebugMessage(DEBUG_DECODE,
@@ -443,7 +469,7 @@ static inline void CheckIPv4_MinTTL(Packet *p, uint8_t ttl)
         else if ( Event_Enabled(DECODE_IP4_MIN_TTL) )
         {
             DecoderOptEvent(p, DECODE_IP4_MIN_TTL, DECODE_IP4_MIN_TTL_STR,
-                    1, 1, execTtlDrop);
+                    1, 1, execMinTtlDrop);
         }
     }
 }
@@ -462,7 +488,7 @@ static inline void CheckIPv6_MinTTL(Packet *p, uint8_t hop_limit)
         else if ( Event_Enabled(DECODE_IPV6_MIN_TTL) )
         {
             DecoderOptEvent(p, DECODE_IPV6_MIN_TTL,
-                    DECODE_IPV6_MIN_TTL_STR, 1, 1, execHopDrop);
+                    DECODE_IPV6_MIN_TTL_STR, 1, 1, execIpv6MinTtlDrop);
         }
     }
 }

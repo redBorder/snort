@@ -1,11 +1,11 @@
-# $Id: configure.in,v 1.258 2015/07/06 19:54:21 cwaxman Exp $
+# $Id$
 AC_INIT
 AC_CONFIG_SRCDIR([src/snort.c])
 AC_PREREQ(2.50)
 AM_CONFIG_HEADER(config.h)
 # When changing the snort version, please also update the VERSION
 # definition in "src/win32/WIN32-Includes/config.h"
-AM_INIT_AUTOMAKE(snort,2.9.7.5)
+AM_INIT_AUTOMAKE(snort,2.9.7.6)
 
 NO_OPTIMIZE="no"
 

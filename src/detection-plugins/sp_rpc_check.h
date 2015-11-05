@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: sp_rpc_check.h,v 1.21 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 #ifndef __SP_RPC_CHECK_H__
 #define __SP_RPC_CHECK_H__
 

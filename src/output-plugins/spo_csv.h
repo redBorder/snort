@@ -20,7 +20,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: spo_csv.h,v 1.19 2015/04/23 18:28:10 jocornet Exp $ */
+/* $Id$ */
 
 /* This file gets included in plugbase.h when it is integrated into the rest 
  * of the program.  Sometime in The Future, I'll whip up a bad ass Perl script

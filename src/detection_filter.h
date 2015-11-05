@@ -1,4 +1,4 @@
-/* $Id: detection_filter.h,v 1.11 2015/04/23 18:28:08 jocornet Exp $ */
+/* $Id$ */
 /****************************************************************************
  *
  * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.

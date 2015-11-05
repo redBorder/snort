@@ -1,5 +1,5 @@
 /*
-** $Id: perf-base.c,v 1.51 2015/07/06 19:54:21 cwaxman Exp $
+** $Id$
 **
 ** perf-base.c
 **
