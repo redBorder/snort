@@ -20,7 +20,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: tag.c,v 1.70 2015/07/06 19:54:21 cwaxman Exp $ */
+/* $Id$ */
 
 /*  I N C L U D E S  ************************************************/
 #ifdef HAVE_CONFIG_H

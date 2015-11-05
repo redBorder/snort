@@ -30,7 +30,7 @@
  * Basic USB data struct
  * By Paolo Abeni <paolo.abeni@email.it>
  *
- * @(#) $Header: /usr/cvsroot-snort/snort/src/win32/WIN32-Includes/WinPCAP/pcap/usb.h,v 1.2 2010/04/06 14:05:52 jjordan Exp $
+ * @(#) $Header$
  */
  
 #ifndef _PCAP_USB_STRUCTS_H__

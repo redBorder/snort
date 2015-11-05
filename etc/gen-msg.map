@@ -1,4 +1,4 @@
-# $Id: gen-msg.map,v 1.82 2014/11/24 21:27:46 cwaxman Exp $
+# $Id$
 # GENERATORS -> msg map
 # Format: generatorid || alertid || MSG
 

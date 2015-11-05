@@ -1,4 +1,4 @@
-/* $Id: sfthreshold.c,v 1.41 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 /*
  ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2003-2013 Sourcefire, Inc.

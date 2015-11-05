@@ -20,7 +20,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: spo_csv.c,v 1.50 2015/04/23 18:28:10 jocornet Exp $ */
+/* $Id$ */
 
 /* spo_csv
  *

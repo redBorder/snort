@@ -1,4 +1,4 @@
-/* $Id: win32_service.c,v 1.17 2012/09/21 00:09:14 ssturges Exp $ */
+/* $Id$ */
 /*
 ** Copyright (C) 2002 Chris Reid <chris.reid@codecraftconsulants.com>
 **

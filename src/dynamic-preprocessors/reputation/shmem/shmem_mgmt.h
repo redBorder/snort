@@ -1,4 +1,4 @@
-/* $Id: shmem_mgmt.h,v 1.9 2015/04/23 18:28:10 jocornet Exp $ */
+/* $Id$ */
 /****************************************************************************
  *
  * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.

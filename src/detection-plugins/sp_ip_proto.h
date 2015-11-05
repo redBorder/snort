@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: sp_ip_proto.h,v 1.20 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 
 #ifndef __SP_IP_PROTO_H__
 #define __SP_IP_PROTO_H__

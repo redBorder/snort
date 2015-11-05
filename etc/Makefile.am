@@ -1,4 +1,4 @@
-## $Id: Makefile.am,v 1.13 2013/12/30 20:46:22 ssturges Exp $
+## $Id$
 AUTOMAKE_OPTIONS=foreign no-dependencies
 
 EXTRA_DIST = snort.conf classification.config gen-msg.map \
