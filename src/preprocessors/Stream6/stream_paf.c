@@ -164,15 +164,44 @@ static uint32_t s5_paf_flush (
 }
 
 //--------------------------------------------------------------------
+static inline int8_t s5_paf_user_data_index(PAF_State* ps, uint8_t id)
+{
+    int8_t i;
+   //use id and iterate over ps.cb_id[]. compare. if matching return index
+    for( i = 0; i < MAX_PAF_USER; i++ )
+    {
+      // Check ch_id[i] against (id+1)
+      if( ps->cb_id[i] == (id + 1) )
+          return i;
+    }
+
+   //if id doesnt match and user slot is available, this is new PAF call
+   //use the free slot and return its index
+    for( i = 0; i < MAX_PAF_USER; i++ )
+    {
+        if(ps->user[i] == NULL)
+          return i;
+    }
+
+    return -1;
+}
+
+//--------------------------------------------------------------------
+int8_t s5_paf_get_user_data_index(PAF_State* ps, uint8_t id)
+{
+   return s5_paf_user_data_index(ps, id-1);
+}
+//--------------------------------------------------------------------
 
 static bool s5_paf_callback (
     PAF_State* ps, void* ssn,
-    const uint8_t* data, uint32_t len, uint32_t flags) 
+    const uint8_t* data, uint32_t len, uint32_t flags)
 {
     PAF_Status paf = PAF_ABORT;
     uint16_t mask = ps->cb_mask;
     bool update = false;
     int i = 0;
+    int8_t udata_idx;
 
     while ( mask )
     {
@@ -182,7 +211,20 @@ static bool s5_paf_callback (
             DEBUG_WRAP(DebugMessage(DEBUG_STREAM_PAF,
                 "%s: mask=%d, i=%u\n", __FUNCTION__, mask, i);)
 
-            paf = s5_cb[i](ssn, &ps->user, data, len, flags, &ps->fpt);
+            udata_idx = s5_paf_user_data_index(ps, i);
+
+            if(udata_idx == -1)
+            {
+                if ( ++i == MAX_CB )
+                    break;
+                else
+                    continue;
+            }
+
+
+           // Assign (id+1) to cb_id[i] to ensure cb_id[i] = 0 indicates only unintialized value
+            ps->cb_id[udata_idx] = ( i + 1 ) ;
+            paf = s5_cb[i](ssn, &ps->user[udata_idx], data, len, flags, &ps->fpt);
 
             if ( paf == PAF_ABORT )
             {
@@ -349,12 +391,16 @@ void s5_paf_setup (PAF_State* ps, uint16_t mask)
 
 void s5_paf_clear (PAF_State* ps)
 {
+    int i;
     // either require pp to manage in other session state
     // or provide user free func?
-    if ( ps->user )
+    for(i = 0; i < MAX_PAF_USER; i++)
     {
-        free(ps->user);
-        ps->user = NULL;
+	if ( ps->user[i] )
+	{
+	   free(ps->user[i]);
+           ps->user[i] = NULL;
+	}
     }
     ps->paf = PAF_ABORT;
 }
@@ -462,26 +508,26 @@ uint32_t s5_paf_check (
 //--------------------------------------------------------------------
 // port registration foo
 
-bool s5_paf_register_port (struct _SnortConfig *sc,
+uint8_t s5_paf_register_port (struct _SnortConfig *sc,
     tSfPolicyId pid, uint16_t port, bool c2s, PAF_Callback cb, bool auto_on)
 {
     PAF_Config* pc = get_config(sc, pid);
     int i, dir = c2s ? 1 : 0;
 
     if ( !pc )
-        return false;
+        return 0;
 
     i = install_callback(cb);
 
     if ( i < 0 )
-        return false;
+        return 0;
 
     pc->port_map[port][dir].cb_mask |= (1<<i);
 
     if ( !pc->port_map[port][dir].auto_on )
         pc->port_map[port][dir].auto_on = (uint8_t)auto_on;
 
-    return true;
+    return i+1;
 }
 
 uint16_t s5_paf_port_registration (void* pv, uint16_t port, bool c2s, bool flush)
@@ -524,19 +570,19 @@ uint16_t s5_paf_port_registration_all (void* pv, uint16_t port, bool c2s, bool f
 //--------------------------------------------------------------------
 // service registration foo
 
-bool s5_paf_register_service (struct _SnortConfig *sc,
+uint8_t s5_paf_register_service (struct _SnortConfig *sc,
     tSfPolicyId pid, uint16_t service, bool c2s, PAF_Callback cb, bool auto_on)
 {
     PAF_Config* pc = get_config(sc, pid);
     int i, dir = c2s ? 1 : 0;
 
     if ( !pc )
-        return false;
+        return 0;
 
     i = install_callback(cb);
 
     if ( i < 0 )
-        return false;
+        return 0;
 
     pc->service_map[service][dir].cb_mask |= (1<<i);
     global_mask |= (1<<i);
@@ -544,7 +590,7 @@ bool s5_paf_register_service (struct _SnortConfig *sc,
     if ( !pc->service_map[service][dir].auto_on )
         pc->service_map[service][dir].auto_on = (uint8_t)auto_on;
 
-    return true;
+    return i+1;
 }
 
 uint16_t s5_paf_service_registration (void* pv, uint16_t service, bool c2s, bool flush)

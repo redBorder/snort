@@ -298,7 +298,7 @@ typedef struct _StateMgr
 // -- extra data may be captured before or after alerts
 // -- extra data may be per packet or persistent (saved on session)
 //
-// -- per packet extra data is logged iff we alert on the packet 
+// -- per packet extra data is logged iff we alert on the packet
 //    containing the extra data - u2 drives this
 // -- an extra data mask is added to Packet to indicate when per packet
 //    extra data is available
@@ -856,14 +856,14 @@ static inline void InitFlushMgrByPort (
         }
 
     if ( registration )
-    {   
+    {
         if( flush_policy == STREAM_FLPOLICY_FOOTPRINT_NOACK )
             flush_policy = STREAM_FLPOLICY_PROTOCOL_NOACK;
         else
             flush_policy = STREAM_FLPOLICY_PROTOCOL;
         s5_paf_setup(&pst->paf_state, registration);
         auto_disable = !flush;
-    }   
+    }
     InitFlushMgr(&pst->flush_mgr,
             &pst->tcp_policy->flush_point_list, flush_policy, auto_disable);
 }
@@ -885,14 +885,14 @@ static inline void InitFlushMgrByService (
                 ( ( StreamConfig * ) scb->stream_config )->tcp_config->paf_config, service, c2s, flush);
 
     if ( registration )
-    {   
+    {
         if( flush_policy == STREAM_FLPOLICY_FOOTPRINT_NOACK )
             flush_policy = STREAM_FLPOLICY_PROTOCOL_NOACK;
         else
             flush_policy = STREAM_FLPOLICY_PROTOCOL;
         s5_paf_setup(&pst->paf_state, registration);
         auto_disable = !flush;
-    }   
+    }
     InitFlushMgr(&pst->flush_mgr,
             &pst->tcp_policy->flush_point_list, flush_policy, auto_disable);
 }
@@ -956,9 +956,14 @@ static inline void ResetFlushMgrs( void )
     sfPolicyUserDataFreeIterate( stream_online_config, ResetFlushMgrsPolicy );
 }
 
-void **StreamGetPAFUserDataTcp( SessionControlBlock* scb, bool to_server )
+void **StreamGetPAFUserDataTcp( SessionControlBlock* scb, bool to_server, uint8_t id )
 {
     TcpSession* tcpssn;
+    PAF_State *ps;
+    int8_t i;
+
+    if(!id)
+       return NULL;
 
     if( !scb->proto_specific_data )
         return NULL;
@@ -968,9 +973,16 @@ void **StreamGetPAFUserDataTcp( SessionControlBlock* scb, bool to_server )
     if ( !tcpssn )
         return NULL;
 
-    return ( to_server ) ? &tcpssn->server.paf_state.user
-        :
-        &tcpssn->client.paf_state.user;
+    ps = ( to_server ) ? &tcpssn->server.paf_state
+       :
+       &tcpssn->client.paf_state;
+
+    i = s5_paf_get_user_data_index( ps, id );
+
+    if( i >= 0 )
+       return &ps->user[i];
+    else
+       return NULL;
 }
 
 bool StreamIsPafActiveTcp( SessionControlBlock *scb, bool to_server )
@@ -1092,40 +1104,40 @@ bool StreamActivatePafTcp (SessionControlBlock *scb, int dir, int16_t service_po
 }
 
 static inline void StreamResetPolicyPerTrk( StreamTracker* trk, uint16_t policy, uint16_t mss )
-{                                                           
-    trk->tcp_policy->policy = trk->os_policy = policy; 
+{
+    trk->tcp_policy->policy = trk->os_policy = policy;
     trk->reassembly_policy = GetTcpReassemblyPolicy( policy );
     trk->mss = mss;
-}                                                            
+}
 
 void StreamResetPolicyTcp ( SessionControlBlock *scb, int dir, uint16_t policy, uint16_t mss)
-{                                                                 
-    TcpSession *tcpssn;                                     
+{
+    TcpSession *tcpssn;
 
-    if( !scb->proto_specific_data )                                                  
-        return;                                       
-
-    tcpssn = ( TcpSession * ) scb->proto_specific_data->data;  
-
-    if( !tcpssn )                                                   
+    if( !scb->proto_specific_data )
         return;
 
-    switch( dir )                                                                                                    
+    tcpssn = ( TcpSession * ) scb->proto_specific_data->data;
+
+    if( !tcpssn )
+        return;
+
+    switch( dir )
     {
         case SSN_DIR_TO_CLIENT:
             StreamResetPolicyPerTrk( &tcpssn->client, policy, mss );
             break;
 
-        case SSN_DIR_TO_SERVER:                             
+        case SSN_DIR_TO_SERVER:
             StreamResetPolicyPerTrk( &tcpssn->server, policy, mss );
             break;
 
         case SSN_DIR_BOTH:
             StreamResetPolicyPerTrk( &tcpssn->server, policy, mss );
-            StreamResetPolicyPerTrk( &tcpssn->client, policy, mss );         
+            StreamResetPolicyPerTrk( &tcpssn->client, policy, mss );
             break;
 
-        default:                                                               
+        default:
             break;
     }
 }
@@ -1197,7 +1209,7 @@ static int StreamTCPDeleteSession( const SessionKey *key )
 
     if( scb != NULL )
     {
-        if( StreamSetRuntimeConfiguration( scb, scb->protocol == 0 ) )
+        if( StreamSetRuntimeConfiguration( scb, scb->protocol ) == 0 )
             session_api->delete_session( tcp_lws_cache, scb, "ha sync" );
         else
             WarningMessage(" WARNING: Attempt to delete a TCP Session when no valid runtime configuration.\n" );
@@ -1302,7 +1314,7 @@ void StreamTcpRegisterRuleOptions( struct _SnortConfig *sc )
             NULL, NULL, NULL, NULL );
 
     RegisterPreprocessorRuleOption( sc, "stream_reassemble", &s5TcpStreamReassembleRuleOptionInit,
-            &s5TcpStreamReassembleRuleOptionEval, 
+            &s5TcpStreamReassembleRuleOptionEval,
             &s5TcpStreamReassembleRuleOptionCleanup,
             NULL, NULL, NULL, NULL );
 #ifdef PERF_PROFILING
@@ -1345,7 +1357,7 @@ static void addStreamTcpPolicyToList( StreamTcpConfig *config, StreamTcpPolicy *
     }
     else
     {
-        uint32_t policyListSize = sizeof( StreamTcpPolicy * ) * ( config->num_policies ); 
+        uint32_t policyListSize = sizeof( StreamTcpPolicy * ) * ( config->num_policies );
         StreamTcpPolicy **tmpPolicyList = ( StreamTcpPolicy ** ) SnortAlloc( policyListSize );
 
         // copy the existing policies to new list, free old list and point to new...
@@ -2983,7 +2995,7 @@ static inline void EventInternal (uint32_t eventSid)
     STREAM_DEBUG_WRAP(DebugMessage(DEBUG_STREAM_STATE,
                 "Stream raised internal event %d\n", eventSid););
 
-    SnortEventqAddBypass(
+    SnortEventqAdd(
         GENERATOR_INTERNAL,             /* GID */
         eventSid,                       /* SID */
         1,                              /* rev */
@@ -3120,10 +3132,10 @@ static inline bool NormalStripTimeStamp (Packet* p, int i)
             // first set raw option bytes to nops
             opt = (uint8_t*)p->tcp_options[i].data - 2;
             memset(opt, TCPOPT_NOP, TCPOLEN_TIMESTAMP);
-        
+
             // then nop decoded option code only
             p->tcp_options[i].code = TCPOPT_NOP;
-        
+
             p->packet_flags |= PKT_MODIFIED;
             return true;
         }
@@ -3268,7 +3280,7 @@ void StreamUpdatePerfBaseState(SFBASE *sf_base,
 
                 scb->ha_state.session_flags |= SSNFLAG_COUNTED_ESTABLISH;
 
-                if ((scb->ha_state.session_flags & SSNFLAG_COUNTED_INITIALIZE) && 
+                if ((scb->ha_state.session_flags & SSNFLAG_COUNTED_INITIALIZE) &&
                         !(scb->ha_state.session_flags & SSNFLAG_COUNTED_CLOSING))
                 {
                     assert(sf_base->iSessionsInitializing);
@@ -3409,7 +3421,6 @@ static inline int IsBetween(uint32_t low, uint32_t high, uint32_t cur)
     return (SEQ_GEQ(cur, low) && SEQ_LEQ(cur, high));
 }
 
-#define SSNFLAG_SEEN_BOTH (SSNFLAG_SEEN_SERVER | SSNFLAG_SEEN_CLIENT)
 static inline bool TwoWayTraffic (SessionControlBlock *scb)
 {
     return ( (scb->ha_state.session_flags & SSNFLAG_SEEN_BOTH) == SSNFLAG_SEEN_BOTH );
@@ -4517,6 +4528,7 @@ static inline uint32_t get_q_footprint(StreamTracker *st)
     return fp;
 }
 
+static bool two_way_traffic=true;
 // FIXTHIS get_q_sequenced() performance could possibly be
 // boosted by tracking sequenced bytes as seglist is updated
 // to avoid the while loop, etc. below.
@@ -4529,7 +4541,7 @@ static inline uint32_t get_q_sequenced(StreamTracker *st)
     if ( !seg )
         return 0;
 
-    if ( SEQ_LT(st->r_win_base, seg->seq) )
+    if ( two_way_traffic && SEQ_LT(st->r_win_base, seg->seq) )
         return 0;
 
     while ( seg->next && (seg->next->seq == seg->seq + seg->size) )
@@ -4703,7 +4715,7 @@ static int FlushStream(
         // scanning at the start of next PDU instead of aborting.
         // FIXTHIS FIN may be in toSeq causing bogus gap counts.
         if ( ((ss->next && (ss->seq + ss->size != ss->next->seq)) ||
-                    (!ss->next && (ss->seq + ss->size < toSeq))) && 
+                    (!ss->next && (ss->seq + ss->size < toSeq))) &&
                 !(st->flags & TF_FIRST_PKT_MISSING) )
         {
             if ( ss->next )
@@ -4923,17 +4935,11 @@ static void TcpSessionClear (SessionControlBlock* scb, TcpSession* tcpssn, int f
     RemoveStreamSession(&sfBase);
 
     if (scb->ha_state.session_flags & SSNFLAG_PRUNED)
-    {
         CloseStreamSession(&sfBase, SESSION_CLOSED_PRUNED);
-    }
     else if (scb->ha_state.session_flags & SSNFLAG_TIMEDOUT)
-    {
-        CloseStreamSession(&sfBase, SESSION_CLOSED_TIMEDOUT);
-    }
+        CloseStreamSession(&sfBase, SESSION_CLOSED_PRUNED | SESSION_CLOSED_TIMEDOUT);
     else
-    {
         CloseStreamSession(&sfBase, SESSION_CLOSED_NORMALLY);
-    }
 
     // release external state
     if (freeApplicationData)
@@ -5154,7 +5160,7 @@ StreamTcpPolicy *StreamSearchTcpConfigForBoundPolicy(StreamTcpConfig *tcp_config
 
 static inline StreamTcpPolicy *StreamPolicyLookup( SessionControlBlock *scb, sfip_t *ip)
 {
-    StreamTcpConfig *tcp_config = ( ( StreamConfig * ) scb->stream_config )->tcp_config; 
+    StreamTcpConfig *tcp_config = ( ( StreamConfig * ) scb->stream_config )->tcp_config;
 
     if( tcp_config != NULL )
         return StreamSearchTcpConfigForBoundPolicy( tcp_config, ip );
@@ -5483,7 +5489,7 @@ int StreamProcessTcp(Packet *p, SessionControlBlock *scb, StreamTcpPolicy *s5Tcp
         }
     }
 
-    rc = isPacketFilterDiscard( p, 
+    rc = isPacketFilterDiscard( p,
             ( ( ( StreamConfig * ) scb->stream_config )->tcp_config->default_policy->flags & STREAM_CONFIG_IGNORE_ANY ) );
     if( rc == PORT_MONITOR_PACKET_DISCARD )
     {
@@ -5558,14 +5564,14 @@ midstream_pickup_allowed:
             else if (p->dsize > 0)
             {
                 /* If we have data -- missed the SYN/ACK
-                 * somehow -- maybe just an incomplete PCAP. 
+                 * somehow -- maybe just an incomplete PCAP.
                  * This handles data on SYN situations
                  */
                 scb->session_established = true;
                 scb->proto_policy = s5TcpPolicy;
                 s5stats.total_tcp_sessions++;
             }
-            else if( ( ( ( StreamConfig * ) scb->stream_config )->tcp_config->session_on_syn || 
+            else if( ( ( ( StreamConfig * ) scb->stream_config )->tcp_config->session_on_syn ||
                         ( StreamPacketHasWscale(p) & TF_WSCALE ) )
                     && TCP_ISFLAGSET(p->tcph, TH_SYN))
             {
@@ -5595,6 +5601,8 @@ midstream_pickup_allowed:
                 }
 #endif
 
+                if(TCP_ISFLAGSET(p->tcph, TH_SYN))
+                    scb->session_state |= STREAM_STATE_SYN;
                 PREPROC_PROFILE_END(s5TcpPerfStats);
 #ifdef REG_TEST
                 S5TraceTCP(p, scb, &tdb, 1);
@@ -6772,7 +6780,7 @@ static int StreamQueue(StreamTracker *st, Packet *p, TcpDataBlock *tdb,
                 right = right->next;
 
                 if (rsize == 0)
-                {   
+                {
                     // All data was retransmitted
                     RetransmitProcess(p, tcpssn);
 
@@ -8148,7 +8156,7 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
         {
             // TBD-EDM not sure we need this here...
             //
-            /*  need to figure out direction, etc 
+            /*  need to figure out direction, etc
                 Assume from client, can update later */
             if (p->sp > p->dp)
             {
@@ -8267,6 +8275,7 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
 #endif
     }
 
+    two_way_traffic = TwoWayTraffic(scb);
     /* figure out direction of this packet */
     session_api->set_packet_direction_flag(p, scb);
 
@@ -9011,7 +9020,8 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
             {
                 // these normalizations can't be done if we missed setup. and
                 // window is zero in one direction until we've seen both sides.
-                if ( !(scb->ha_state.session_flags & SSNFLAG_MIDSTREAM) )
+                // Avoid this normalization for Asymmetric traffic
+                if (( !(scb->ha_state.session_flags & SSNFLAG_MIDSTREAM) ) && TwoWayTraffic(scb))
                 {
                     // sender of syn w/mss limits payloads from peer
                     // since we store mss on sender side, use listener mss
@@ -9094,8 +9104,16 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
                     EndOfFileHandle(p, (TcpSession *) scb->proto_specific_data->data);
 #ifdef NORMALIZER
                     if ( !p->dsize )
-                        CheckFlushPolicyOnData( ( ( StreamConfig * ) scb->stream_config )->tcp_config,
+                    {
+                        uint32_t flushed = 0;
+                        flushed = CheckFlushPolicyOnData( ( ( StreamConfig * ) scb->stream_config )->tcp_config,
                                                 tcpssn, talker, listener, tdb, p);
+                        if (flushed)
+                        {
+                            if(listener->xtradata_mask && extra_data_log)
+                                  purge_alerts(listener, listener->seglist->seq + flushed, (void *)tcpssn->scb);
+                        }
+                    }
 #endif
 
                     StreamUpdatePerfBaseState(&sfBase, scb, TCP_STATE_CLOSING);
@@ -9169,9 +9187,25 @@ dupfin:
     /*
      * handle TIME_WAIT timer stuff
      */
+
+    /* Handle Asymmetric connection closing, we will see only one direction pkts. FIN_ACK handling */
+    if((!TwoWayTraffic(scb)&&
+        (talker->s_mgr.state >= TCP_STATE_FIN_WAIT_1 || listener->s_mgr.state >= TCP_STATE_FIN_WAIT_1)))
+    {
+        if (TCP_ISFLAGSET(p->tcph, (TH_FIN|TH_ACK)))
+        {
+            if(talker->s_mgr.state >= TCP_STATE_FIN_WAIT_1)
+                talker->s_mgr.state = TCP_STATE_CLOSED;
+            if(listener->s_mgr.state >= TCP_STATE_FIN_WAIT_1)
+                listener->s_mgr.state = TCP_STATE_CLOSED;
+            listener->flags |= TF_FORCE_FLUSH;
+        }
+    }
+
     if((talker->s_mgr.state == TCP_STATE_TIME_WAIT && listener->s_mgr.state == TCP_STATE_CLOSED) ||
             (listener->s_mgr.state == TCP_STATE_TIME_WAIT && talker->s_mgr.state == TCP_STATE_CLOSED) ||
-            (listener->s_mgr.state == TCP_STATE_TIME_WAIT && talker->s_mgr.state == TCP_STATE_TIME_WAIT))
+            (listener->s_mgr.state == TCP_STATE_TIME_WAIT && talker->s_mgr.state == TCP_STATE_TIME_WAIT)||
+            (!TwoWayTraffic(scb)&& (talker->s_mgr.state == TCP_STATE_CLOSED || listener->s_mgr.state == TCP_STATE_CLOSED)))
     {
         //dropssn:
         STREAM_DEBUG_WRAP(DebugMessage(DEBUG_STREAM_STATE,
@@ -9259,16 +9293,49 @@ dupfin:
         }
     }
 
-    if((listener->flush_mgr.flush_policy == STREAM_FLPOLICY_FOOTPRINT_NOACK) 
+    if((listener->flush_mgr.flush_policy == STREAM_FLPOLICY_FOOTPRINT_NOACK)
             || (listener->flush_mgr.flush_policy == STREAM_FLPOLICY_PROTOCOL_NOACK))
     {
-        CheckFlushPolicyOnData( ( ( StreamConfig * ) scb->stream_config )->tcp_config,
+        uint32_t flushed = 0;
+        flushed = CheckFlushPolicyOnData( ( ( StreamConfig * ) scb->stream_config )->tcp_config,
                                 tcpssn, talker, listener, tdb, p);
+        if (flushed)
+        {
+             if(listener->xtradata_mask && extra_data_log)
+                  purge_alerts(listener, listener->seglist->seq + flushed, (void *)tcpssn->scb);
+        }
     }
 #ifdef NORMALIZER
     else if ( p->dsize > 0 )
-        CheckFlushPolicyOnData( ( ( StreamConfig * ) scb->stream_config )->tcp_config,
+    {
+        /* in case of Asymmetric traffic, enfore flush_policy from STREAM_FLPOLICY_FOOTPRINT to STREAM_FLPOLICY_FOOTPRINT_IPS
+         * This will be applied on passive mode sessions, which has policy mode as STREAM_FLPOLICY_FOOTPRINT only
+         */
+        uint32_t flushed = 0;
+        if (!TwoWayTraffic(scb) &&
+                (scb->session_state & ( STREAM_STATE_SYN | STREAM_STATE_SYN_ACK)) &&
+                !TCP_ISFLAGSET(p->tcph, TH_SYN))
+        {
+            if(listener->flush_mgr.flush_policy == STREAM_FLPOLICY_PROTOCOL)
+                listener->flush_mgr.flush_policy = STREAM_FLPOLICY_PROTOCOL_IPS;
+            else if(listener->flush_mgr.flush_policy == STREAM_FLPOLICY_FOOTPRINT)
+                listener->flush_mgr.flush_policy = STREAM_FLPOLICY_FOOTPRINT_IPS;
+        }
+
+        flushed = CheckFlushPolicyOnData( ( ( StreamConfig * ) scb->stream_config )->tcp_config,
                                 tcpssn, talker, listener, tdb, p);
+        if (!TwoWayTraffic(scb) && flushed &&
+                (scb->session_state & ( STREAM_STATE_SYN | STREAM_STATE_SYN_ACK)) &&
+                !TCP_ISFLAGSET(p->tcph, TH_SYN))
+        {
+            purge_to_seq(tcpssn, listener, listener->seglist->seq + flushed);
+        }
+        else if(flushed)
+        {
+            if(listener->xtradata_mask && extra_data_log)
+                 purge_alerts(listener, listener->seglist->seq + flushed, (void *)tcpssn->scb);
+        }
+    }
 #endif
 
     if ( p->tcph->th_flags & TH_ACK )
@@ -9386,7 +9453,7 @@ static inline uint32_t flush_pdu_ips ( StreamTcpConfig *config, TcpSession *ssn,
         }
 
         flush_pt = s5_paf_check( config->paf_config, &trk->paf_state, ssn->scb,
-                                 seg->payload, size, total, seg->seq, srv_port, 
+                                 seg->payload, size, total, seg->seq, srv_port,
                                  flags, trk->flush_mgr.flush_pt);
 
         if ( flush_pt > 0 )
@@ -9461,7 +9528,7 @@ static inline int CheckFlushPolicyOnData( StreamTcpConfig *config, TcpSession *t
                 CheckFlushCoercion(
                         p, &listener->flush_mgr, listener->tcp_policy->flush_factor);
 
-                if ( avail > 0) 
+                if ( avail > 0)
                 {
                     uint32_t dir = GetForwardDir(p);
 
@@ -9584,7 +9651,7 @@ static inline uint32_t flush_pdu_ackd ( StreamTcpConfig *config, TcpSession* ssn
         total += size;
 
         flush_pt = s5_paf_check( config->paf_config, &trk->paf_state, ssn->scb,
-                                 seg->payload, size, total, seg->seq, srv_port, 
+                                 seg->payload, size, total, seg->seq, srv_port,
                                  flags, trk->flush_mgr.flush_pt);
 
         if ( flush_pt > 0 )
@@ -9600,7 +9667,7 @@ static inline uint32_t flush_pdu_ackd ( StreamTcpConfig *config, TcpSession* ssn
 }
 
 static int CheckFlushPolicyOnAck( StreamTcpConfig *config, TcpSession *tcpssn,
-                                  StreamTracker *talker, StreamTracker *listener, 
+                                  StreamTracker *talker, StreamTracker *listener,
                                   TcpDataBlock *tdb, Packet *p)
 {
     uint32_t flushed = 0;
@@ -10994,7 +11061,7 @@ static void freeNrpNode( void *data )
 
 static void StreamCreateReassemblyPortList( void )
 {
-    sf_sdlist_init( &targeted_nrps, &freeNrpNode ); 
+    sf_sdlist_init( &targeted_nrps, &freeNrpNode );
 }
 
 static void StreamDestoryReassemblyPortList( void )
@@ -11009,7 +11076,7 @@ static NetworkReassemblyPorts *initNetworkPortReassembly( sfip_t *ip, unsigned s
     if( nrp == NULL )
     {
         ErrorMessage( " ERROR: Unable to allocate memory for initializing Network Reassembly Post List\n");
-        return NULL; 
+        return NULL;
     }
 
     nrp->ip = ip;
@@ -11056,7 +11123,7 @@ void registerPortForReassembly( char *network, uint16_t port, int ra_dir )
             SFIP_RET rc;
 
             NetworkReassemblyPorts *net_data = sf_sdlist_data( net_node );
-            rc = sfip_compare( net_data->ip, ip ); 
+            rc = sfip_compare( net_data->ip, ip );
             if( rc == SFIP_EQUAL )
             {
                 // already have this network in list, add the new port...
@@ -11100,7 +11167,7 @@ void registerPortForReassembly( char *network, uint16_t port, int ra_dir )
             NetworkReassemblyPorts *new_net = initNetworkPortReassembly( ip, port, ra_dir);
             if( new_net != NULL)
             {
-                sf_sdlist_ins_next( &targeted_nrps, sf_sdlist_tail( &targeted_nrps ), new_net ); 
+                sf_sdlist_ins_next( &targeted_nrps, sf_sdlist_tail( &targeted_nrps ), new_net );
                 ip = NULL;
             }
         }
@@ -11147,7 +11214,7 @@ void enableTargetedPolicyReassemblyPorts( StreamConfig *config )
     {
         NetworkReassemblyPorts *nrp_list = sf_sdlist_data( net_node );
         StreamTcpPolicy *policy = StreamSearchTcpConfigForBoundPolicy( config->tcp_config,
-                                                                       nrp_list->ip );  
+                                                                       nrp_list->ip );
         if( policy == config->tcp_config->default_policy )
         {
             // no existing policy for this network...create a new one by cloning
@@ -11160,14 +11227,14 @@ void enableTargetedPolicyReassemblyPorts( StreamConfig *config )
 
         // now look back up the list of networks and register ports from all networks
         // that contain the current network...
-        prev_node = sf_sdlist_prev( net_node ); 
+        prev_node = sf_sdlist_prev( net_node );
         while( prev_node != NULL )
         {
             NetworkReassemblyPorts *prev_nrp_list = sf_sdlist_data( prev_node );
 
             if( sfip_contains( prev_nrp_list->ip, nrp_list->ip ) == SFIP_CONTAINS )
                 enablePortsForReassembly( prev_nrp_list, policy );
-            prev_node = sf_sdlist_prev( prev_node );       
+            prev_node = sf_sdlist_prev( prev_node );
         }
 
         net_node = sf_sdlist_next( net_node );

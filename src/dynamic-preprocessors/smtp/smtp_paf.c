@@ -27,6 +27,8 @@
 #include "snort_smtp.h"
 #include "file_api.h"
 
+static uint8_t smtp_paf_id = 0;
+
 /* State tracker for MIME PAF */
 typedef enum _SmtpDataCMD
 {
@@ -390,7 +392,7 @@ bool is_data_end (void* ssn)
 {
     if ( ssn )
     {
-        SmtpPafData** s = (SmtpPafData **)_dpd.streamAPI->get_paf_user_data(ssn, 1);
+	SmtpPafData** s = (SmtpPafData **)_dpd.streamAPI->get_paf_user_data(ssn, 1, smtp_paf_id);
 
         if ( s && (*s) )
             return ((*s)->end_of_data);
@@ -404,8 +406,8 @@ void register_smtp_paf_service (struct _SnortConfig *sc, int16_t app, tSfPolicyI
 {
     if (_dpd.isPafEnabled())
     {
-        _dpd.streamAPI->register_paf_service(sc, policy, app, true, smtp_paf_eval, true);
-        _dpd.streamAPI->register_paf_service(sc, policy, app, false,smtp_paf_eval, true);
+        smtp_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, true, smtp_paf_eval, true);
+        smtp_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, false,smtp_paf_eval, true);
     }
 }
 #endif
@@ -414,8 +416,8 @@ void register_smtp_paf_port(struct _SnortConfig *sc, unsigned int i, tSfPolicyId
 {
     if (_dpd.isPafEnabled())
     {
-        _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, true, smtp_paf_eval, true);
-        _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, false, smtp_paf_eval, true);
+        smtp_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, true, smtp_paf_eval, true);
+        smtp_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, false, smtp_paf_eval, true);
     }
 }
 

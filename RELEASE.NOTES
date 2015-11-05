@@ -1,18 +1,17 @@
-2015-22-04 - Snort 2.9.7.3
+2015-08-17 Snort 2.9.7.6
 [*] New additions
-*  Added PAF support for SIP based traffic
+  * Added support for detecting 'SSH tunneling over HTTP'.
 
 [*] Improvements
-*  Resolved a backtracking issue where the 'protected_content' rule option
-   was not matching on content following a content rule option that is
-   not matched.
+  * Behavioral change in file processing to block malware files in inline-test mode also.
 
-*  Resolved an issue where snort dropped privilege levels before attempting
-   to delete its PID file created during the higher privilege level
+  * Improvements to XFF handling in case of pipelined HTTP requests. 
 
-*  Improved processing of SSLv3 traffic, IPv6 extensions, HTTPS session
-   reassembly and normalization
+  * Stability improvements for Stream6 preprocessor.
 
-*  Performance improvements for file preprocessor
+  * Resolved an issue where min_ttl decoder was dropping packets in alert mode also.
 
-*  Stability improvements for ftp_telnet preprocessor
+  * Added improved support to inspect unlimited packets in HTTP.
+
+  * Resolved an issue where reputation config incorrectly displayed 'blacklist' in
+    priority field even though 'whitelist' option was configured.

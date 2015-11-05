@@ -1819,6 +1819,32 @@ const u_char *extract_http_cookie(const u_char *p, const u_char *end, HEADER_PTR
     return p;
 }
 
+Transaction* createNode_tList(sfip_t *tmp, uint8_t req_id)
+{
+    Transaction *tList_node = (Transaction*)SnortAlloc(sizeof(Transaction));
+    tList_node->true_ip = tmp;
+    tList_node->tID = req_id;
+    tList_node->next = NULL;
+    return tList_node;
+}
+
+void insertNode_tList(HttpSessionData* hsd, sfip_t *tmp)
+{
+   Transaction *tList_node = createNode_tList(tmp,hsd->http_req_id);
+   if( hsd->tList_start == NULL && hsd->tList_end == NULL )
+   {
+       hsd->tList_start = tList_node;
+       hsd->tList_end = tList_node;
+   }
+   else if ( (hsd->tList_end != NULL) && ( hsd->tList_end->tID != hsd->http_req_id ) )
+   {
+       hsd->tList_end->next = tList_node;
+       hsd->tList_end = tList_node;
+   }
+   else
+       freeTransactionNode(tList_node);
+}
+
 
 const u_char *extract_http_xff(HI_SESSION *Session, const u_char *p, const u_char *start,
         const u_char *end, HI_CLIENT_HDR_ARGS *hdrs_args)
@@ -1832,13 +1858,9 @@ const u_char *extract_http_xff(HI_SESSION *Session, const u_char *p, const u_cha
     const u_char *start_ptr, *end_ptr, *cur_ptr;
     const u_char *port;
     HEADER_PTR *header_ptr;
-    sfip_t **true_ip;
 
     header_ptr = hdrs_args->hdr_ptr;
-    true_ip = &(hdrs_args->sd->true_ip);
 
-    if(!true_ip)
-        return p;
 
     if( (hdrs_args->true_clnt_xff & (HDRS_BOTH | XFF_HEADERS)) == HDRS_BOTH)
     {
@@ -1949,28 +1971,41 @@ const u_char *extract_http_xff(HI_SESSION *Session, const u_char *p, const u_cha
                     hdrs_args->true_clnt_xff &= (~XFF_HEADERS_ACTIVE);
             }
 
-            /* If we have already set a 'true_ip' for the session, look to see if the
-               new IP differs from the current IP.  If so, replace it and post an alert. */
-            if(*true_ip)
+            /*** If Count reaches to Max limit, we are not store XFF data for further requests in the session.
+             */
+            if( ( hdrs_args->sd->tList_count != XFF_MAX_PIPELINE_REQ ) && (hdrs_args->sd->tList_count != 0 ) )
             {
-                if(!IP_EQUALITY(*true_ip, tmp))
+                /* Check if true-IP for this request is added to the List or not. If not, add this new IP to the List.
+                   If already added true-IP , then check new Ip and current IP is same or not.*/
+                if ( (hdrs_args->sd->tList_end != NULL) && ( hdrs_args->sd->tList_end->tID == hdrs_args->sd->http_req_id ) )
                 {
-                    sfip_free(*true_ip);
-                    *true_ip = tmp;
-
-                    //alert
-                    if( ((hdrs_args->true_clnt_xff & XFF_HEADERS) == 0) &&
-                        hi_eo_generate_event(Session, HI_EO_CLIENT_MULTIPLE_TRUEIP_IN_SESSION))
-                    {
-                        hi_eo_client_event_log(Session, HI_EO_CLIENT_MULTIPLE_TRUEIP_IN_SESSION, NULL, NULL);
-                    }
+                     /* If we have already added a true_ip to the List for the currect request,
+                        see if the current IP differs from other XFF Headers IP.
+                        If so , replace it and post an alert saying multiple true IPs in same session.
+                     */
+                     if (!IP_EQUALITY(hdrs_args->sd->tList_end->true_ip, tmp))
+                     {
+                          sfip_free(hdrs_args->sd->tList_end->true_ip);
+                          hdrs_args->sd->tList_end->true_ip = tmp;
+                          // alert
+                          if( ((hdrs_args->true_clnt_xff & XFF_HEADERS) == 0) &&
+                              hi_eo_generate_event(Session, HI_EO_CLIENT_MULTIPLE_TRUEIP_IN_SESSION))
+                          {
+                                 hi_eo_client_event_log(Session, HI_EO_CLIENT_MULTIPLE_TRUEIP_IN_SESSION, NULL, NULL);
+                          }
+                     }
+                     else
+                        sfip_free(tmp);
                 }
                 else
-                    sfip_free(tmp);
-
+                {
+                    // Add true-ip to the List for this request.
+                    insertNode_tList(hdrs_args->sd, tmp);
+                }
             }
             else
-                *true_ip = tmp;
+               sfip_free(tmp);
+
             free(ipAddr);
         }
 
@@ -2682,6 +2717,22 @@ static inline const u_char *hi_client_extract_header(
             return p;
         }
     }
+
+    /******* If  xff is enabled , then only we are storing original client IP data */
+     if( ServerConf->enable_xff )
+     {
+         if( ScPafEnabled() )
+         {
+             if (hsd->http_req_id == XFF_MAX_PIPELINE_REQ )
+                hsd->http_req_id = 0;
+
+             hsd->http_req_id++;
+             hsd->is_response = 0;
+
+             if( hsd->tList_count != XFF_MAX_PIPELINE_REQ )
+                 hsd->tList_count++;
+         }
+     }
 
     offset = (u_char*)p;
 

@@ -1,3 +1,59 @@
+2015-08-13 Rahul Burman <rahburma@cisco.com>
+Snort 2.9.7.6
+    * src/build.h:
+	  updating build number to 285
+
+    * src/dynamic-preprocessors/reputation/reputation_config.c:
+          Fixed unexpected behaviour in reputation config where blacklist is displayed
+	  in priority field even though whitelist option is set [reported by Mike Cox].	
+
+    * src/preprocessors/Stream6/snort_stream_tcp.c:
+	  Fixed issue where XFF/ExtraData is not always logged when 'drop' rules trigger [reported by Mike Cox].
+	  Fixed issue in TCP session deletion when being called from Stream5 HA.
+
+    * src/: active.h, file-process/file_service.c:
+	  ACTIVE_DROP is changed to ACTIVE_FORCE_DROP when file_verdict is pending.
+
+    * src/dynamic-preprocessors/appid/fw_appid.c:
+	  Fixed issue where openappid does not provide the Content-Type field for use with CHPAddAction.
+
+    * doc/snort_manual.tex:
+	  Corrected errors in snort_manual.tex [reported by Gabriel Corre].
+	  
+    * preproc_rules/preprocessor.rules
+	  src/preprocessors/: session_api.h, snort_httpinspect.c,
+	  HttpInspect/event_output/hi_eo_log.c, HttpInspect/include/hi_eo_events.h
+	  Stream6/snort_stream_tcp.c:
+	  Enhancement done to detect 'SSH tunneling over HTTP'.
+
+    * src/sfutil/sfportobject.c:
+	  Fixed Memory leaks [reported by Bill Parker].
+
+    * doc/snort_manual.tex:
+	  Corrected the information about unified2 record structure [reported by Avery Rozar].
+	
+    * etc/snort.conf, src/preprocessors/snort_httpinspect.c,
+          src/preprocessors/snort_httpinspect.h,
+          src/preprocessors/HttpInspect/client/hi_client.c,
+          src/preprocessors/HttpInspect/server/hi_server.c,
+          src/preprocessors/Stream6/stream_paf.c:
+	  Fixed issue where original client IP in intrusion event is incorrectly
+	  populated with XFF of the last GET request.
+
+    * src/preprocessors/: snort_httpinspect.c, snort_httpinspect.h,
+          HttpInspect/server/hi_server.c,
+          snort_httpinspect.c, snort_httpinspect.h,
+          HttpInspect/server/hi_server.c:
+	  Http unlimited decompression will now decompress the entire stream.
+
+    * src/decode.c:
+	  Added a check so that min_ttl decoder do not drop packet in alert mode.
+	  
+    * etc/snort.conf, src/preprocessors/snort_httpinspect.c,
+          src/preprocessors/snort_httpinspect.h,
+          src/preprocessors/HttpInspect/client/hi_client.c,
+          src/preprocessors/HttpInspect/server/hi_server.c
+	  Fixed issue where original client IP in intrusion event is incorrectly populated with XFF of the last GET request.		
 2015-22-04 Joel Cornett <jocornet@cisco.com>
 Snort 2.9.7.3
     * src/build.h:

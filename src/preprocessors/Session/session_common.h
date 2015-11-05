@@ -137,8 +137,8 @@ typedef struct _SessionControlBlock
     void *stream_config;
     void *proto_policy;
 
-    PreprocEnableMask enabled_pps; 
     PreprocEvalFuncNode *initial_pp;
+    PreprocEnableMask enabled_pps;
 
     uint16_t    session_state;
     uint8_t     handler[SE_MAX];

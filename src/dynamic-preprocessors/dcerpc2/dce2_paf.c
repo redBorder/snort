@@ -34,6 +34,9 @@
 
 #define DCE2_SMB_PAF_SHIFT(x64, x8) { x64 <<= 8; x64 |= (uint64_t)x8; }
 
+static uint8_t dce2_smbpaf_id = 0;
+static uint8_t dce2_tcppaf_id = 0;
+
 // Enumerations for PAF states
 typedef enum _DCE2_PafSmbStates
 {
@@ -557,12 +560,12 @@ int DCE2_PafRegisterPort (struct _SnortConfig *sc, uint16_t port, tSfPolicyId pi
     switch (trans)
     {
         case DCE2_TRANS_TYPE__SMB:
-            _dpd.streamAPI->register_paf_port(sc, pid, port, 0, DCE2_SmbPaf, true);
-            _dpd.streamAPI->register_paf_port(sc, pid, port, 1, DCE2_SmbPaf, true);
+            dce2_smbpaf_id = _dpd.streamAPI->register_paf_port(sc, pid, port, 0, DCE2_SmbPaf, true);
+            dce2_smbpaf_id = _dpd.streamAPI->register_paf_port(sc, pid, port, 1, DCE2_SmbPaf, true);
             break;
         case DCE2_TRANS_TYPE__TCP:
-            _dpd.streamAPI->register_paf_port(sc, pid, port, 0, DCE2_TcpPaf, true);
-            _dpd.streamAPI->register_paf_port(sc, pid, port, 1, DCE2_TcpPaf, true);
+            dce2_tcppaf_id = _dpd.streamAPI->register_paf_port(sc, pid, port, 0, DCE2_TcpPaf, true);
+            dce2_tcppaf_id = _dpd.streamAPI->register_paf_port(sc, pid, port, 1, DCE2_TcpPaf, true);
             break;
         default:
             DCE2_Die("Invalid transport type sent to paf registration function");
@@ -580,12 +583,12 @@ int DCE2_PafRegisterService (struct _SnortConfig *sc, uint16_t app_id, tSfPolicy
     switch (trans)
     {
         case DCE2_TRANS_TYPE__SMB:
-            _dpd.streamAPI->register_paf_service(sc, pid, app_id, 0, DCE2_SmbPaf, true);
-            _dpd.streamAPI->register_paf_service(sc, pid, app_id, 1, DCE2_SmbPaf, true);
+            dce2_smbpaf_id = _dpd.streamAPI->register_paf_service(sc, pid, app_id, 0, DCE2_SmbPaf, true);
+            dce2_smbpaf_id = _dpd.streamAPI->register_paf_service(sc, pid, app_id, 1, DCE2_SmbPaf, true);
             break;
         case DCE2_TRANS_TYPE__TCP:
-            _dpd.streamAPI->register_paf_service(sc, pid, app_id, 0, DCE2_TcpPaf, true);
-            _dpd.streamAPI->register_paf_service(sc, pid, app_id, 1, DCE2_TcpPaf, true);
+            dce2_tcppaf_id = _dpd.streamAPI->register_paf_service(sc, pid, app_id, 0, DCE2_TcpPaf, true);
+            dce2_tcppaf_id = _dpd.streamAPI->register_paf_service(sc, pid, app_id, 1, DCE2_TcpPaf, true);
             break;
         default:
             DCE2_Die("Invalid transport type sent to paf registration function");

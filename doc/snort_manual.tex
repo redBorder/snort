@@ -13100,13 +13100,13 @@ log_rcptto
 \end{verbatim}
 
 This option enables SMTP preprocessor to parse and log the
-recipients email address extracted from the "RCPT FROM" command
+recipients email address extracted from the "RCPT TO" command
 along with all the generated events for that session.
 
 See section \ref{SMTP} for more information
 
 \begin{verbatim}
-log_rcptto
+log_filename
 \end{verbatim}
 
 This option enables SMTP preprocessor to parse and log the MIME
@@ -20004,7 +20004,8 @@ options.
     sensor id               4 bytes
     event id                4 bytes
     event seconds           4 bytes
-    event microseconds      4 bytes
+    packet seconds          4 bytes
+    packet microseconds     4 bytes
     linktype                4 bytes
     packet length           4 bytes
     packet data             <variable length>

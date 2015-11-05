@@ -1000,6 +1000,7 @@ static void SetGzipBuffers(HttpSessionData *hsd, HI_SESSION *session)
                 hsd->decomp_state->decompr_depth = session->global_conf->decompr_depth;
             }
             hsd->decomp_state->inflate_init = 0;
+            hsd->decomp_state->stage = HTTP_DECOMP_START;
         }
         else
         {
@@ -1017,12 +1018,17 @@ int uncompress_gzip ( u_char *dest, int destLen, const u_char *source,
 
    stream = sd->decomp_state->d_stream;
 
-   stream.next_in = (Bytef*)source;
-   stream.avail_in = (uInt)sourceLen;
-   if ((uLong)stream.avail_in != (uLong)sourceLen)
+   /* Are we starting a new packet or continuing on the current one? */
+   if (sd->decomp_state->stage == HTTP_DECOMP_START)
    {
-       sd->decomp_state->d_stream = stream;
-       return HI_FATAL_ERR;
+       stream.next_in = (Bytef*)source;
+       stream.avail_in = (uInt)sourceLen;
+       if ((uLong)stream.avail_in != (uLong)sourceLen)
+       {
+           sd->decomp_state->d_stream = stream;
+           sd->decomp_state->stage = HTTP_DECOMP_FIN;
+           return HI_FATAL_ERR;
+       }
    }
 
    stream.next_out = dest;
@@ -1049,7 +1055,7 @@ int uncompress_gzip ( u_char *dest, int destLen, const u_char *source,
            return HI_FATAL_ERR;
        }
    }
-   else
+   else if (sd->decomp_state->stage != HTTP_DECOMP_MID)
    {
        stream.total_in = 0;
        stream.total_out =0;
@@ -1092,10 +1098,20 @@ int uncompress_gzip ( u_char *dest, int destLen, const u_char *source,
            iRet = HI_FATAL_ERR;
        inflateEnd(&stream);
        sd->decomp_state->d_stream = stream;
+       sd->decomp_state->stage = HTTP_DECOMP_FIN;
        return iRet;
    }
-   *total_bytes_read = stream.total_out;
+   if(sd->decomp_state->stage == HTTP_DECOMP_START)
+       *total_bytes_read = stream.total_out;
+   else
+       *total_bytes_read = stream.total_out - sd->decomp_state->d_stream.total_out;
    sd->decomp_state->d_stream = stream;
+
+   /* Check if we need to decompress more */
+   if (sd->decomp_state->d_stream.total_in < sourceLen && *total_bytes_read != 0)
+       sd->decomp_state->stage = HTTP_DECOMP_MID;
+   else
+       sd->decomp_state->stage = HTTP_DECOMP_FIN;
    return HI_SUCCESS;
 }
 
@@ -1198,7 +1214,8 @@ static inline int hi_server_decompress(HI_SESSION *Session, HttpSessionData *sd,
         zRet = uncompress_gzip(decompression_buffer, decompr_avail, ptr, compr_avail,
                 sd, &total_bytes_read, sd->decomp_state->compress_fmt);
     }
-
+    if(!Session->server_conf->unlimited_decompress)
+        sd->decomp_state->stage = HTTP_DECOMP_FIN;
 
     if((zRet == HI_SUCCESS) || (zRet == HI_NONFATAL_ERR))
     {
@@ -1232,6 +1249,8 @@ static inline int hi_server_decompress(HI_SESSION *Session, HttpSessionData *sd,
             ResetRespState(&(sd->resp_state));
         (void)File_Decomp_Reset(sd->fd_state);
         ResetGzipState(sd->decomp_state);
+        if(sd->decomp_state)
+            sd->decomp_state->stage = HTTP_DECOMP_FIN;
     }
 
     if(zRet!=HI_SUCCESS)
@@ -1406,7 +1425,8 @@ int HttpResponseInspection(HI_SESSION *Session, Packet *p, const unsigned char *
             simple_response = false;
             if ( sd )
             {
-                ResetState(sd);
+                if (!sd->decomp_state || (sd->decomp_state->stage != HTTP_DECOMP_MID))
+                    ResetState(sd);
             }
         }
         else if ( sd )
@@ -1438,6 +1458,8 @@ int HttpResponseInspection(HI_SESSION *Session, Packet *p, const unsigned char *
                 {
                     expected_pkt = 0;
                     ResetState(sd);
+                    if (sd->decomp_state)
+                        sd->decomp_state->stage = HTTP_DECOMP_FIN;
                 }
             }
         }
@@ -1468,8 +1490,14 @@ int HttpResponseInspection(HI_SESSION *Session, Packet *p, const unsigned char *
             else
             {
                 (void)File_Decomp_Reset(sd->fd_state);
-                ResetGzipState(sd->decomp_state);
                 ResetRespState(&(sd->resp_state));
+                if(sd->decomp_state && sd->decomp_state->stage != HTTP_DECOMP_START)
+                {
+                    ResetGzipState(sd->decomp_state);
+                    sd->decomp_state->stage = HTTP_DECOMP_FIN;
+                }
+                else
+                    ResetGzipState(sd->decomp_state);
             }
         }
         else
@@ -1489,8 +1517,14 @@ int HttpResponseInspection(HI_SESSION *Session, Packet *p, const unsigned char *
                 else
                 {
                     (void)File_Decomp_Reset(sd->fd_state);
-                    ResetGzipState(sd->decomp_state);
                     ResetRespState(&(sd->resp_state));
+                    if(sd->decomp_state && sd->decomp_state->stage != HTTP_DECOMP_START)
+                    {
+                        ResetGzipState(sd->decomp_state);
+                        sd->decomp_state->stage = HTTP_DECOMP_FIN;
+                    }
+                    else
+                        ResetGzipState(sd->decomp_state);
                 }
             }
             else
@@ -1503,8 +1537,14 @@ int HttpResponseInspection(HI_SESSION *Session, Packet *p, const unsigned char *
                 else
                 {
                     (void)File_Decomp_Reset(sd->fd_state);
-                    ResetGzipState(sd->decomp_state);
                     ResetRespState(&(sd->resp_state));
+                    if(sd->decomp_state && sd->decomp_state->stage != HTTP_DECOMP_START)
+                    {
+                        ResetGzipState(sd->decomp_state);
+                        sd->decomp_state->stage = HTTP_DECOMP_FIN;
+                    }
+                    else
+                        ResetGzipState(sd->decomp_state);
                 }
 
             }
@@ -1902,6 +1942,32 @@ int hi_server_inspection(void *S, Packet *p, HttpSessionData *hsd)
     }
 
     Session = (HI_SESSION *)S;
+
+    /*  IF Server->enable_xff is not enabled, we are not going to do anything related to
+        Extradata list update. if XFF is not enabled req_id and resp_id will be zero always .
+    */
+    if (Session->server_conf->enable_xff)
+    {
+       if( ScPafEnabled() )
+       {
+           if(hsd->http_resp_id == XFF_MAX_PIPELINE_REQ)
+              hsd->http_resp_id = 0;
+           if( PacketHasStartOfPDU(p) )
+           {
+              hsd->http_resp_id++;
+              if( hsd->tList_count != 0 )
+                 hsd->tList_count--;
+           }
+           hsd->is_response = 1;
+
+           uint8_t find_id = (hsd->http_resp_id - 1 );
+           if( !find_id )
+               find_id = XFF_MAX_PIPELINE_REQ;
+
+           if( (hsd->tList_start != NULL) && ( hsd->tList_start->tID == find_id ) )
+               deleteNode_tList(hsd);
+       }
+    }
 
     /*
     **  Let's inspect the server response.
