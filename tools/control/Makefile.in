@@ -81,6 +81,7 @@ build_triplet = @build@
 host_triplet = @host@
 bin_PROGRAMS = snort_control$(EXEEXT) \
 	snort_dump_packets_control$(EXEEXT) snort_iplist$(EXEEXT)
+	snort_control_reload$(EXEEXT)
 subdir = tools/control
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(top_srcdir)/depcomp $(dist_doc_DATA)
@@ -104,6 +105,14 @@ am__v_lt_1 =
 snort_control_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(snort_control_CFLAGS) \
 	$(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
+am_snort_control_reload_OBJECTS =  \
+	snort_control_reload-snort_control_reload.$(OBJEXT)
+snort_control_reload_OBJECTS = $(am_snort_control_reload_OBJECTS)
+snort_control_reload_LDADD = $(LDADD)
+snort_control_reload_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
+	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
+	$(snort_control_reload_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
+	$(LDFLAGS) -o $@
 am_snort_dump_packets_control_OBJECTS =  \
 	snort_dump_packets_control-snort_dump_packets.$(OBJEXT)
 snort_dump_packets_control_OBJECTS =  \
@@ -153,10 +162,11 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(snort_control_SOURCES) \
-	$(snort_dump_packets_control_SOURCES) $(snort_iplist_SOURCES)
+SOURCES = $(snort_control_SOURCES) $(snort_control_reload_SOURCES) \
+	$(snort_iplist_SOURCES) $(snort_dump_packets_control_SOURCES)
 DIST_SOURCES = $(snort_control_SOURCES) \
 	$(snort_dump_packets_control_SOURCES) $(snort_iplist_SOURCES)
+	$(snort_control_reload_SOURCES) \
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -351,6 +361,8 @@ snort_dump_packets_control_SOURCES = snort_dump_packets.c
 snort_dump_packets_control_CFLAGS = @CFLAGS@ $(AM_CFLAGS)
 snort_iplist_SOURCES = snort_reload_iplist.c
 snort_iplist_CFLAGS = @CFLAGS@ $(AM_CFLAGS)
+snort_control_reload_SOURCES = snort_control_reload.c
+snort_control_reload_CFLAGS = @CFLAGS@ $(AM_CFLAGS)
 dist_doc_DATA = README.snort_control README.snort_dump_packets_control
 all: all-am
 
@@ -440,6 +452,10 @@ snort_control$(EXEEXT): $(snort_control_OBJECTS) $(snort_control_DEPENDENCIES) $
 	@rm -f snort_control$(EXEEXT)
 	$(AM_V_CCLD)$(snort_control_LINK) $(snort_control_OBJECTS) $(snort_control_LDADD) $(LIBS)
 
+snort_control_reload$(EXEEXT): $(snort_control_reload_OBJECTS) $(snort_control_reload_DEPENDENCIES) $(EXTRA_snort_control_reload_DEPENDENCIES) 
+	@rm -f snort_control_reload$(EXEEXT)
+	$(AM_V_CCLD)$(snort_control_reload_LINK) $(snort_control_reload_OBJECTS) $(snort_control_reload_LDADD) $(LIBS)
+
 snort_dump_packets_control$(EXEEXT): $(snort_dump_packets_control_OBJECTS) $(snort_dump_packets_control_DEPENDENCIES) $(EXTRA_snort_dump_packets_control_DEPENDENCIES) 
 	@rm -f snort_dump_packets_control$(EXEEXT)
 	$(AM_V_CCLD)$(snort_dump_packets_control_LINK) $(snort_dump_packets_control_OBJECTS) $(snort_dump_packets_control_LDADD) $(LIBS)
@@ -455,6 +471,7 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/snort_control-sfcontrol.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/snort_control_reload-snort_control_reload.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/snort_dump_packets_control-snort_dump_packets.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/snort_iplist-snort_reload_iplist.Po@am__quote@
 
@@ -492,6 +509,20 @@ snort_control-sfcontrol.obj: sfcontrol.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='sfcontrol.c' object='snort_control-sfcontrol.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(snort_control_CFLAGS) $(CFLAGS) -c -o snort_control-sfcontrol.obj `if test -f 'sfcontrol.c'; then $(CYGPATH_W) 'sfcontrol.c'; else $(CYGPATH_W) '$(srcdir)/sfcontrol.c'; fi`
+
+snort_control_reload-snort_control_reload.o: snort_control_reload.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(snort_control_reload_CFLAGS) $(CFLAGS) -MT snort_control_reload-snort_control_reload.o -MD -MP -MF $(DEPDIR)/snort_control_reload-snort_control_reload.Tpo -c -o snort_control_reload-snort_control_reload.o `test -f 'snort_control_reload.c' || echo '$(srcdir)/'`snort_control_reload.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/snort_control_reload-snort_control_reload.Tpo $(DEPDIR)/snort_control_reload-snort_control_reload.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='snort_control_reload.c' object='snort_control_reload-snort_control_reload.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(snort_control_reload_CFLAGS) $(CFLAGS) -c -o snort_control_reload-snort_control_reload.o `test -f 'snort_control_reload.c' || echo '$(srcdir)/'`snort_control_reload.c
+
+snort_control_reload-snort_control_reload.obj: snort_control_reload.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(snort_control_reload_CFLAGS) $(CFLAGS) -MT snort_control_reload-snort_control_reload.obj -MD -MP -MF $(DEPDIR)/snort_control_reload-snort_control_reload.Tpo -c -o snort_control_reload-snort_control_reload.obj `if test -f 'snort_control_reload.c'; then $(CYGPATH_W) 'snort_control_reload.c'; else $(CYGPATH_W) '$(srcdir)/snort_control_reload.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/snort_control_reload-snort_control_reload.Tpo $(DEPDIR)/snort_control_reload-snort_control_reload.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='snort_control_reload.c' object='snort_control_reload-snort_control_reload.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(snort_control_reload_CFLAGS) $(CFLAGS) -c -o snort_control_reload-snort_control_reload.obj `if test -f 'snort_control_reload.c'; then $(CYGPATH_W) 'snort_control_reload.c'; else $(CYGPATH_W) '$(srcdir)/snort_control_reload.c'; fi`
 
 snort_dump_packets_control-snort_dump_packets.o: snort_dump_packets.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(snort_dump_packets_control_CFLAGS) $(CFLAGS) -MT snort_dump_packets_control-snort_dump_packets.o -MD -MP -MF $(DEPDIR)/snort_dump_packets_control-snort_dump_packets.Tpo -c -o snort_dump_packets_control-snort_dump_packets.o `test -f 'snort_dump_packets.c' || echo '$(srcdir)/'`snort_dump_packets.c
