@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: sp_ipoption_check.c,v 1.37 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif

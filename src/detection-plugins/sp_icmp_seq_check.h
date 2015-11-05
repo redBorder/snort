@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: sp_icmp_seq_check.h,v 1.20 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 /* ICMP ping Seq field detection plugin */
 
 #ifndef __SP_ICMP_SEQ_H__

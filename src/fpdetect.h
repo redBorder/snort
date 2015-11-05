@@ -1,5 +1,5 @@
 /*
-** $Id: fpdetect.h,v 1.26 2015/07/06 19:54:21 cwaxman Exp $
+** $Id$
 **
 ** fpfuncs.h
 **

@@ -3706,12 +3706,15 @@ static inline void HttpLogFuncs(HTTPINSPECT_GLOBAL_CONF *GlobalConf, HttpSession
     if ( !iCallDetect )
         stream_api->clear_extra_data(p->ssnptr, p, 0);
 
-    if(hsd->true_ip)
+    if ( hsd->tList_start !=NULL && hsd->tList_end != NULL)
     {
-        if(!(p->packet_flags & PKT_STREAM_INSERT) && !(p->packet_flags & PKT_REBUILT_STREAM))
-            SetExtraData(p, GlobalConf->xtra_trueip_id);
-        else
-            stream_api->set_extra_data(p->ssnptr, p, GlobalConf->xtra_trueip_id);
+        if( hsd->tList_start->tID == hsd->http_resp_id || hsd->tList_end->tID == hsd->http_req_id )
+        {
+           if(!(p->packet_flags & PKT_STREAM_INSERT) && !(p->packet_flags & PKT_REBUILT_STREAM))
+               SetExtraData(p, GlobalConf->xtra_trueip_id);
+           else
+               stream_api->set_extra_data(p->ssnptr, p, GlobalConf->xtra_trueip_id);
+        }
     }
 
     if(hsd->log_flags & HTTP_LOG_URI)
@@ -3929,6 +3932,25 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
 
     hsd = GetHttpSessionData(p);
 
+    /*
+     ** HI_EO_SERVER_PROTOCOL_OTHER alert added to detect 'SSH tunneling over HTTP',
+     ** In SSH over HTTP evasion, first data message will always be 'HTTP response with SSH server
+     ** version/banner' (without any client request). If the HTTP server response is the
+     ** first message in http_session, this alert will be generated
+     */
+    if(!hsd && ( SiInput.pdir == HI_SI_SERVER_MODE ) && (p->packet_flags & PKT_STREAM_ORDER_OK))
+    {
+        if(p->ssnptr &&
+             ((session_api->get_session_flags(p->ssnptr) &(SSNFLAG_SEEN_BOTH|SSNFLAG_MIDSTREAM)) == SSNFLAG_SEEN_BOTH))
+        {
+            if(hi_eo_generate_event(Session, HI_EO_SERVER_PROTOCOL_OTHER))
+            {
+                hi_eo_server_event_log(Session, HI_EO_SERVER_PROTOCOL_OTHER, NULL, NULL);
+            }
+            LogEvents(Session, p, iInspectMode, hsd);
+        }
+    }
+
     if ( ScPafEnabled() &&
         (p->packet_flags & PKT_STREAM_INSERT) &&
         (!(p->packet_flags & PKT_PDU_TAIL)) )
@@ -3987,6 +4009,8 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
     **  requests in this way doesn't require any memory or tracking overhead.
     **  Instead, we just process each request linearly.
     */
+    if (hsd->decomp_state)
+        hsd->decomp_state->stage = HTTP_DECOMP_START;
     do
     {
         /*
@@ -4438,7 +4462,20 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
         */
         iCallDetect = 0;
 
-    } while(Session->client.request.pipeline_req);
+#ifdef PPM_MGR
+        /*
+        **  Check PPM here to ensure decompression loop doesn't spin indefinitely
+        */
+        if( PPM_PKTS_ENABLED() )
+        {
+            PPM_GET_TIME();
+            PPM_PACKET_TEST();
+
+            if( PPM_PACKET_ABORT_FLAG() )
+                return 0;
+        }
+#endif
+    } while(Session->client.request.pipeline_req || (hsd->decomp_state && hsd->decomp_state->stage == HTTP_DECOMP_MID));
 
     if ( iCallDetect == 0 )
     {
@@ -4525,9 +4562,8 @@ void FreeHttpSessionData(void *data)
         mempool_free(http_mempool, hsd->log_state->log_bucket);
         free(hsd->log_state);
     }
-
-    if(hsd->true_ip)
-        sfip_free(hsd->true_ip);
+    while(hsd->tList_start != NULL )
+        deleteNode_tList(hsd);
 
     file_api->free_mime_session(hsd->mime_ssn);
 

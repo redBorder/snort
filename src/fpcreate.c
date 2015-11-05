@@ -1,5 +1,5 @@
 /*
-**  $Id: fpcreate.c,v 1.55 2015/04/23 18:28:09 jocornet Exp $
+**  $Id$
 **
 **  fpcreate.c
 **

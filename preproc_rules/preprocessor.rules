@@ -62,6 +62,7 @@ alert ( msg: "HI_SERVER_PDF_DEFLATE_FAILURE"; sid: 14; gid: 120; rev: 1; metadat
 alert ( msg: "HI_SERVER_PDF_UNSUP_COMP_TYPE"; sid: 15; gid: 120; rev: 1; metadata: rule-type preproc ; classtype:unknown; )
 alert ( msg: "HI_SERVER_PDF_CASC_COMP"; sid: 16; gid: 120; rev: 1; metadata: rule-type preproc ; classtype:unknown; )
 alert ( msg: "HI_SERVER_PDF_PARSE_FAILURE"; sid: 17; gid: 120; rev: 1; metadata: rule-type preproc ; classtype:unknown; )
+alert ( msg: "HI_SERVER_PROTOCOL_OTHER"; sid: 18; gid: 120; rev: 1; metadata: rule-type preproc ; classtype:unknown; )
 alert ( msg: "PSNG_TCP_PORTSCAN"; sid: 1; gid: 122; rev: 1; metadata: rule-type preproc ; classtype:attempted-recon; )
 alert ( msg: "PSNG_TCP_DECOY_PORTSCAN"; sid: 2; gid: 122; rev: 1; metadata: rule-type preproc ; classtype:attempted-recon; )
 alert ( msg: "PSNG_TCP_PORTSWEEP"; sid: 3; gid: 122; rev: 1; metadata: rule-type preproc ; classtype:attempted-recon; )

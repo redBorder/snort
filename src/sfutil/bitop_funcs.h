@@ -1,5 +1,5 @@
 /*
-** $Id: bitop_funcs.h,v 1.19 2015/04/23 18:28:11 jocornet Exp $
+** $Id$
 **
 ** bitopt_funcs.h
 **

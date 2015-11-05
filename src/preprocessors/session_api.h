@@ -1,4 +1,4 @@
-/* $Id: session_api.h,v 1.4 2015/07/06 19:54:21 cwaxman Exp $ */
+/* $Id$ */
 
 /*
  * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
@@ -97,6 +97,7 @@
 #define SSNFLAG_SEEN_SENDER         0x00000001
 #define SSNFLAG_SEEN_SERVER         0x00000002
 #define SSNFLAG_SEEN_RESPONDER      0x00000002
+#define SSNFLAG_SEEN_BOTH           (SSNFLAG_SEEN_SERVER | SSNFLAG_SEEN_CLIENT)  /* used to check asymetric traffic */
 #define SSNFLAG_ESTABLISHED         0x00000004
 #define SSNFLAG_NMAP                0x00000008
 #define SSNFLAG_ECN_CLIENT_QUERY    0x00000010

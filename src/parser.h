@@ -20,7 +20,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: parser.h,v 1.50 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 #ifndef __PARSER_H__
 #define __PARSER_H__
 

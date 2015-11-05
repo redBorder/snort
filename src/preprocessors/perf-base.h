@@ -1,5 +1,5 @@
 /*
-** $Id: perf-base.h,v 1.33 2015/04/23 18:28:10 jocornet Exp $
+** $Id$
 **
 ** perf-base.h
 **

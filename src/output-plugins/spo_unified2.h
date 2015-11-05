@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: spo_unified2.h,v 1.16 2015/04/23 18:28:10 jocornet Exp $ */
+/* $Id$ */
 
 #ifndef __SPO_UNIFIED2_H__
 #define __SPO_UNIFIED2_H__

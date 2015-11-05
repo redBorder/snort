@@ -1,4 +1,4 @@
-## $Id: Makefile.am,v 1.2 2013/07/03 21:31:22 ssturges Exp $
+## $Id$
 AUTOMAKE_OPTIONS=foreign no-dependencies
 
 if SO_WITH_STATIC_LIB

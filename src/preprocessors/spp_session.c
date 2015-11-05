@@ -1,4 +1,4 @@
-/* $Id: spp_session.c,v 1.5 2015/07/06 19:54:21 cwaxman Exp $ */
+/* $Id$ */
 /****************************************************************************
  *
  * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
