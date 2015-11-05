@@ -45,12 +45,12 @@ extern uint16_t event_id;
 
 /* rule match action functions */
 int PassAction(void);
-int ActivateAction(Packet *, OptTreeNode *, Event *);
-int AlertAction(Packet *, OptTreeNode *, Event *);
-int DropAction(Packet *, OptTreeNode *, Event *);
+int ActivateAction(Packet *, OptTreeNode *, RuleTreeNode *, Event *);
+int AlertAction(Packet *, OptTreeNode *, RuleTreeNode *, Event *);
+int DropAction(Packet *, OptTreeNode *, RuleTreeNode *, Event *);
 int SDropAction(Packet *, OptTreeNode *, Event *);
-int DynamicAction(Packet *, OptTreeNode *, Event *);
-int LogAction(Packet *, OptTreeNode *, Event *);
+int DynamicAction(Packet *, OptTreeNode *, RuleTreeNode *, Event *);
+int LogAction(Packet *, OptTreeNode *, RuleTreeNode *, Event *);
 
 /* detection/manipulation funcs */
 int Preprocess(Packet *);

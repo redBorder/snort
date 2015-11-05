@@ -483,7 +483,7 @@ static void DisplayReputationConfig(ReputationConfig *config)
     _dpd.logMsg("    Scan local network: %s\n",
             config->scanlocal ? "ENABLED":"DISABLED (Default)");
     _dpd.logMsg("    Reputation priority:  %s \n",
-            config->priority ==  WHITELISTED_TRUST?
+            ((config->priority == WHITELISTED_TRUST) || (config->priority == WHITELISTED_UNBLACK))?
                     REPUTATION_WHITELIST_KEYWORD "(Default)" : REPUTATION_BLACKLIST_KEYWORD );
     _dpd.logMsg("    Nested IP: %s %s \n",
             NestedIPKeyword[config->nestedIP],

@@ -282,7 +282,7 @@ void Base64DecodeParse(char *data, Base64DecodeData *idx, OptTreeNode *otn)
 
     mSplitFree(&toks,num_toks);
 
-    if (otn && otn->ds_list && otn->ds_list[PLUGIN_PATTERN_MATCH_URI])
+    if (otn && otn->ds_list[PLUGIN_PATTERN_MATCH_URI])
     {
         PatternMatchData *pmd = (PatternMatchData *)(otn->ds_list[PLUGIN_PATTERN_MATCH_URI]);
         idx->buffer_type = pmd->http_buffer;

@@ -33,6 +33,7 @@
 
 extern const IMAPToken imap_resps[];
 
+static uint8_t imap_paf_id = 0;
 
 typedef struct _ImapDataInfo
 {
@@ -581,7 +582,7 @@ bool is_data_end (void* ssn)
 {
     if ( ssn )
     {
-        ImapPafData** s = (ImapPafData **)_dpd.streamAPI->get_paf_user_data(ssn, 1);
+        ImapPafData** s = (ImapPafData **)_dpd.streamAPI->get_paf_user_data(ssn, 1, imap_paf_id);
 
         if ( s && (*s) )
             return ((*s)->end_of_data);
@@ -596,8 +597,8 @@ void register_imap_paf_service (struct _SnortConfig *sc, int16_t app, tSfPolicyI
 {
     if (_dpd.isPafEnabled())
     {
-        _dpd.streamAPI->register_paf_service(sc, policy, app, true, imap_paf, true);
-        _dpd.streamAPI->register_paf_service(sc, policy, app, false,imap_paf, true);
+       imap_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, true, imap_paf, true);
+       imap_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, false,imap_paf, true);
     }
 }
 #endif
@@ -607,7 +608,7 @@ void register_imap_paf_port(struct _SnortConfig *sc, unsigned int i, tSfPolicyId
 {
     if (_dpd.isPafEnabled())
     {
-        _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, true, imap_paf, true);
-        _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, false, imap_paf, true);
+       imap_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, true, imap_paf, true);
+       imap_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, false, imap_paf, true);
     }
 }

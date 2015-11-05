@@ -48,7 +48,7 @@
 void InitTag(void);
 void CleanupTag(void);
 int CheckTagList(Packet *, Event *, void**);
-void SetTags(Packet *, OptTreeNode *, uint16_t);
+void SetTags(Packet *, OptTreeNode *, RuleTreeNode *, uint16_t);
 void TagCacheReset(void);
 
 #endif /* __TAG_H__ */

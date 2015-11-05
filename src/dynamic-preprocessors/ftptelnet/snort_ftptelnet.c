@@ -95,6 +95,7 @@
 #include "sf_snort_plugin_api.h"
 #include "Unified2_common.h"
 #include "ssl_include.h"
+#include <daq_common.h>
 
 #ifdef PERF_PROFILING
 extern PreprocStats ftpPerfStats;
@@ -313,6 +314,8 @@ static const char* DEFAULT_FTP_CONF[] = {
 };
 
 #define CONF_CHUNKS (sizeof(DEFAULT_FTP_CONF)/sizeof(DEFAULT_FTP_CONF[0]))
+
+static uint8_t ftp_paf_id = 0;
 
 static char* DefaultConf (size_t* pn) {
     unsigned i;
@@ -4389,6 +4392,7 @@ void SnortFTPData_EOF(SFSnortPacket *p)
 
 int SnortFTPData(SFSnortPacket *p)
 {
+    FTP_SESSION *ftp_ssn;
     FTP_DATA_SESSION *data_ssn;
 
     if (!p->stream_session)
@@ -4403,18 +4407,46 @@ int SnortFTPData(SFSnortPacket *p)
     if (data_ssn->flags & FTPDATA_FLG_STOP)
         return 0;
 
+    /* FTP-Data Session is in limbo, we need to lookup the control session
+     * to figure out what to do. */
+     ftp_ssn = (FTP_SESSION *) _dpd.sessionAPI->get_application_data_from_key(data_ssn->ftp_key, PP_FTPTELNET);
+     if(!ftp_ssn)
+         return -3;
+
+#ifdef DAQ_PKT_FLAG_SSL_DETECTED
+    //  Set up the flow context when an SSL client hello is detected and
+    //  ignore packets until the flow is decrypted.
+    if(p->pkt_header->flags & DAQ_PKT_FLAG_SSL_DETECTED)
+    {
+        ssl_callback_interface_t *ssl_cb;
+        ssl_cb = (ssl_callback_interface_t *)_dpd.getSSLCallback();
+        if(ssl_cb)
+        {
+            ftp_ssn->data_chan_state |= DATA_CHAN_CLIENT_HELLO_SEEN;
+            ssl_cb->session_initialize(p, ftp_ssn, FTP_Set_flow_id);
+        }
+        return 0;  //  Ignore SSL client hello.
+    }
+    else if(ftp_ssn->data_chan_state & DATA_CHAN_CLIENT_HELLO_SEEN)
+    {
+        if( _dpd.streamAPI->is_session_decrypted(p->stream_session))
+        {
+            //  Done handling SSL handshake.
+            ftp_ssn->data_chan_state &= ~DATA_CHAN_CLIENT_HELLO_SEEN;
+        }
+        else
+        {
+            return 0;   //  Ignore packet.
+        }
+    }
+#endif
+
     //  bail if we have not rebuilt the stream yet.
     if (!(p->flags & FLAG_REBUILT_STREAM))
         return 0;
 
     if (data_ssn->file_xfer_info == FTPP_FILE_UNKNOWN)
     {
-        /* FTP-Data Session is in limbo, we need to lookup the control session
-         * to figure out what to do. */
-
-        FTP_SESSION *ftp_ssn = (FTP_SESSION *)
-            _dpd.sessionAPI->get_application_data_from_key(data_ssn->ftp_key, PP_FTPTELNET);
-
         if (!PROTO_IS_FTP(ftp_ssn))
         {
             DEBUG_WRAP(DebugMessage(DEBUG_FTPTELNET,
@@ -4676,8 +4708,8 @@ static void _FTPTelnetAddService (struct _SnortConfig *sc, int16_t app, tSfPolic
 {
     if ( _dpd.isPafEnabled() )
     {
-        _dpd.streamAPI->register_paf_service(sc, policy, app, true, ftp_paf, false);
-        _dpd.streamAPI->register_paf_service(sc, policy, app, false, ftp_paf, false);
+        ftp_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, true, ftp_paf, false);
+        ftp_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, false, ftp_paf, false);
     }
 }
 #endif
@@ -4696,8 +4728,8 @@ static void _addPortsToStream(struct _SnortConfig *sc, char *ports, tSfPolicyId 
 
             if ( ftp && _dpd.isPafEnabled() )
             {
-                _dpd.streamAPI->register_paf_port(sc, policy_id, (uint16_t)i, true, ftp_paf, false);
-                _dpd.streamAPI->register_paf_port(sc, policy_id, (uint16_t)i, false, ftp_paf, false);
+                ftp_paf_id = _dpd.streamAPI->register_paf_port(sc, policy_id, (uint16_t)i, true, ftp_paf, false);
+                ftp_paf_id = _dpd.streamAPI->register_paf_port(sc, policy_id, (uint16_t)i, false, ftp_paf, false);
             }
         }
     }
