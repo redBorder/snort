@@ -75,6 +75,7 @@ extern DataBuffer HttpDecodeBuf;
 #define DEFLATE_WBITS   15
 #define GZIP_WBITS      31
 
+#define XFF_MAX_PIPELINE_REQ 255
 
 typedef enum _HttpRespCompressType
 {
@@ -82,6 +83,13 @@ typedef enum _HttpRespCompressType
     HTTP_RESP_COMPRESS_TYPE__DEFLATE  = 0x00000002
 
 } _HttpRespCompressType;
+
+typedef enum _DecompressStage
+{
+    HTTP_DECOMP_START,
+    HTTP_DECOMP_MID,
+    HTTP_DECOMP_FIN
+} DecompressStage;
 
 typedef struct s_DECOMPRESS_STATE
 {
@@ -95,7 +103,7 @@ typedef struct s_DECOMPRESS_STATE
     z_stream d_stream;
     MemBucket *bkt;
     bool deflate_initialized;
-
+    DecompressStage stage;
 } DECOMPRESS_STATE;
 
 typedef struct s_HTTP_RESP_STATE
@@ -120,19 +128,31 @@ typedef struct s_HTTP_LOG_STATE
     uint8_t *hostname_extracted;
 }HTTP_LOG_STATE;
 
+typedef struct _Transaction
+{
+   uint8_t tID;
+   sfip_t *true_ip;
+   struct _Transaction *next;
+}Transaction;
+
 typedef struct _HttpSessionData
 {
     uint64_t event_flags;
     HTTP_RESP_STATE resp_state;
     DECOMPRESS_STATE *decomp_state;
     HTTP_LOG_STATE *log_state;
-    sfip_t *true_ip;
     decode_utf_state_t utf_state;
     uint8_t log_flags;
     uint8_t cli_small_chunk_count;
     uint8_t srv_small_chunk_count;
     MimeState *mime_ssn;
     fd_session_p_t fd_state;
+    uint8_t http_req_id;
+    uint8_t http_resp_id;
+    uint8_t is_response;
+    uint8_t tList_count;
+    Transaction *tList_start;
+    Transaction *tList_end;
 } HttpSessionData;
 
 typedef struct _HISearch
@@ -213,6 +233,22 @@ static inline HttpSessionData * GetHttpSessionData(Packet *p)
     return (HttpSessionData *)session_api->get_application_data(p->ssnptr, PP_HTTPINSPECT);
 }
 
+static inline void freeTransactionNode(Transaction *tPtr)
+{
+    if(tPtr->true_ip)
+        sfip_free(tPtr->true_ip);
+    free(tPtr);
+}
+
+static inline void deleteNode_tList(HttpSessionData *hsd)
+{
+    Transaction *tmp = hsd->tList_start;
+    hsd->tList_start = hsd->tList_start->next;
+    if( hsd->tList_start == NULL )
+         hsd->tList_end = NULL;
+    freeTransactionNode(tmp);
+}
+
 static inline sfip_t *GetTrueIPForSession(void *data)
 {
     HttpSessionData *hsd = NULL;
@@ -223,9 +259,15 @@ static inline sfip_t *GetTrueIPForSession(void *data)
 
     if(hsd == NULL)
         return NULL;
+    if( hsd->tList_start != NULL && hsd->tList_end != NULL )
+    {
+        if ((hsd->is_response == 0) && ( hsd->http_req_id == hsd->tList_end->tID ) )
+           return hsd->tList_end->true_ip;
+        else if ( (hsd->is_response == 1) && (hsd->http_resp_id == hsd->tList_start->tID ) )
+           return hsd->tList_start->true_ip;
+    }
 
-    return hsd->true_ip;
-
+    return NULL;
 }
 
 static inline void ResetGzipState(DECOMPRESS_STATE *ds)
@@ -240,6 +282,7 @@ static inline void ResetGzipState(DECOMPRESS_STATE *ds)
     ds->decompr_bytes_read = 0;
     ds->compress_fmt = 0;
     ds->decompress_data = 0;
+    ds->stage = HTTP_DECOMP_START;
 }
 
 static inline void ResetRespState(HTTP_RESP_STATE *ds)

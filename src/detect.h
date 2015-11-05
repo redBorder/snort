@@ -1,4 +1,4 @@
-/* $Id: detect.h,v 1.36 2015/07/06 19:54:21 cwaxman Exp $ */
+/* $Id$ */
 /*
 ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.

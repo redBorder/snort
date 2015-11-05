@@ -1,4 +1,4 @@
-/* $Id: byte_extract.c,v 1.19 2015/04/23 18:28:08 jocornet Exp $ */
+/* $Id$ */
 /*
 ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2003-2013 Sourcefire, Inc.

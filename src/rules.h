@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: rules.h,v 1.68 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 #ifndef __RULES_H__
 #define __RULES_H__
 

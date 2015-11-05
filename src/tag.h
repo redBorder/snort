@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: tag.h,v 1.28 2015/07/06 19:54:21 cwaxman Exp $ */
+/* $Id$ */
 #ifndef __TAG_H__
 #define __TAG_H__
 

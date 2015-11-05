@@ -1,4 +1,4 @@
-/* $Id: checksum.h,v 1.29 2015/04/23 18:28:08 jocornet Exp $ */
+/* $Id$ */
 /*
 ** Copyright (C) 2000,2001 Christopher Cramer <cec@ee.duke.edu>
 ** Snort is Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>

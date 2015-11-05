@@ -1,4 +1,4 @@
-## $Id: Makefile.am,v 1.86 2013/10/24 21:01:03 hcao Exp $
+## $Id$
 AUTOMAKE_OPTIONS=foreign no-dependencies
 SUBDIRS = src doc etc templates rpm m4 preproc_rules tools
 
