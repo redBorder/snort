@@ -35,10 +35,12 @@
 #include "sfPolicy.h"
 #include "stream_api.h"
 
+#define MAX_PAF_USER 2
+
 void* s5_paf_new(void);     // create new paf config (per policy)
 void s5_paf_delete(void*);  // free config
 
-bool s5_paf_register_port(
+uint8_t s5_paf_register_port(
     struct _SnortConfig *, // snort configuration
     tSfPolicyId,     // applicable policy
     uint16_t port,   // server port
@@ -47,7 +49,7 @@ bool s5_paf_register_port(
     bool autoEnable  // enable PAF reassembly regardless of s5 ports config
 );
 
-bool s5_paf_register_service(
+uint8_t s5_paf_register_service(
     struct _SnortConfig *, // snort configuration
     tSfPolicyId,      // same as above
     uint16_t service, // service ordinal
@@ -62,7 +64,7 @@ uint16_t s5_paf_port_registration_all (void* pv, uint16_t port, bool c2s, bool f
 uint16_t s5_paf_service_registration (void* pv, uint16_t service, bool c2s, bool flush);
 
 typedef struct {
-    void* user;      // arbitrary user data
+    void* user[MAX_PAF_USER];      // arbitrary user data
 
     uint32_t seq;    // stream cursor
     uint32_t pos;    // last flush position
@@ -72,6 +74,7 @@ typedef struct {
 
     PAF_Status paf;  // current scan state
     uint16_t cb_mask; // callback mask
+    uint8_t cb_id[MAX_PAF_USER];
 } PAF_State;         // per session direction
 
 // called at session start
@@ -99,5 +102,6 @@ uint32_t s5_paf_check(
     const uint8_t* data, uint32_t len, uint32_t total,
     uint32_t seq, uint16_t port, uint32_t* flags, uint32_t fuzz);
 
+int8_t s5_paf_get_user_data_index( PAF_State *ps, uint8_t id);
 #endif
 

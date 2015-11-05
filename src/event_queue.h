@@ -57,7 +57,6 @@ typedef struct _EventNode
     unsigned int priority;
     const char  *msg;
     OptTreeNode *rule_info;
-
 } EventNode;
 
 EventQueueConfig * EventQueueConfigNew(void);
@@ -72,8 +71,6 @@ void SnortEventqResetCounts(void);
 int SnortEventqLog(SF_EVENTQ *[], Packet *);
 int SnortEventqAdd(uint32_t, uint32_t, uint32_t,
                    uint32_t, uint32_t, const char *, void *);
-int SnortEventqAddBypass(uint32_t, uint32_t, uint32_t,
-                         uint32_t, uint32_t, const char *, void *);
 
 void SnortEventqPush(void);
 void SnortEventqPop(void);

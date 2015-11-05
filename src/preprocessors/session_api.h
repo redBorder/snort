@@ -97,6 +97,7 @@
 #define SSNFLAG_SEEN_SENDER         0x00000001
 #define SSNFLAG_SEEN_SERVER         0x00000002
 #define SSNFLAG_SEEN_RESPONDER      0x00000002
+#define SSNFLAG_SEEN_BOTH           (SSNFLAG_SEEN_SERVER | SSNFLAG_SEEN_CLIENT)  /* used to check asymetric traffic */
 #define SSNFLAG_ESTABLISHED         0x00000004
 #define SSNFLAG_NMAP                0x00000008
 #define SSNFLAG_ECN_CLIENT_QUERY    0x00000010
@@ -182,7 +183,6 @@ typedef struct _StreamSessionLimits
 
 typedef struct _StreamHAState
 {
-    bool        new_session;
     uint32_t   session_flags;
 
 #ifdef TARGET_BASED
@@ -192,7 +192,7 @@ typedef struct _StreamHAState
 
     char       direction;
     char       ignore_direction; /* flag to ignore traffic on this session */
-
+    bool        new_session;
 } StreamHAState;
 
 typedef enum {
