@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: sf_dynamic_preproc_lib.h,v 1.14 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 
 /* Snort Dynamic Preprocessor */
 

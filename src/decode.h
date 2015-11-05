@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: decode.h,v 1.150 2015/04/23 18:28:08 jocornet Exp $ */
+/* $Id$ */
 
 #ifndef __DECODE_H__
 #define __DECODE_H__

@@ -18,7 +18,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: spo_alert_sf_socket.c,v 1.28 2015/04/23 18:28:10 jocornet Exp $ */
+/* $Id$ */
 
 /* We use some Linux only socket capabilities */
 

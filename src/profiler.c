@@ -1,5 +1,5 @@
 /*
-**  $Id: profiler.c,v 1.40 2015/04/23 18:28:09 jocornet Exp $
+**  $Id$
 **
 **  profiler.c
 **

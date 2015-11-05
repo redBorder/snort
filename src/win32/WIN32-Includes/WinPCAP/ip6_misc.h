@@ -18,7 +18,7 @@
  * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  *
- * @(#) $Header: /usr/cvsroot-snort/snort/src/win32/WIN32-Includes/WinPCAP/ip6_misc.h,v 1.2 2010/01/23 20:55:24 jjordan Exp $ (LBL)
+ * @(#) $Header$ (LBL)
  */
 
 /*

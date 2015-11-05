@@ -1,5 +1,5 @@
 /*
- **  $Id: snort_dump_packets.c,v 1.3 2015/04/23 18:28:11 jocornet Exp $
+ **  $Id$
  **
  **  snort_dump_packets.c
  **

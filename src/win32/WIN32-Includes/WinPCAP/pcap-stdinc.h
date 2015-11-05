@@ -28,7 +28,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * @(#) $Header: /usr/cvsroot-snort/snort/src/win32/WIN32-Includes/WinPCAP/pcap-stdinc.h,v 1.3 2010/01/23 20:55:24 jjordan Exp $ (LBL)
+ * @(#) $Header$ (LBL)
  */
 
 #define SIZEOF_CHAR 1

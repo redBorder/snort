@@ -1,4 +1,4 @@
-/* $Id: snort_stream_tcp.c,v 1.6 2015/07/06 19:54:21 cwaxman Exp $ */
+/* $Id$ */
 /****************************************************************************
  *
  * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
@@ -1209,7 +1209,7 @@ static int StreamTCPDeleteSession( const SessionKey *key )
 
     if( scb != NULL )
     {
-        if( StreamSetRuntimeConfiguration( scb, scb->protocol == 0 ) )
+        if( StreamSetRuntimeConfiguration( scb, scb->protocol ) == 0 )
             session_api->delete_session( tcp_lws_cache, scb, "ha sync" );
         else
             WarningMessage(" WARNING: Attempt to delete a TCP Session when no valid runtime configuration.\n" );
@@ -3421,7 +3421,6 @@ static inline int IsBetween(uint32_t low, uint32_t high, uint32_t cur)
     return (SEQ_GEQ(cur, low) && SEQ_LEQ(cur, high));
 }
 
-#define SSNFLAG_SEEN_BOTH (SSNFLAG_SEEN_SERVER | SSNFLAG_SEEN_CLIENT)
 static inline bool TwoWayTraffic (SessionControlBlock *scb)
 {
     return ( (scb->ha_state.session_flags & SSNFLAG_SEEN_BOTH) == SSNFLAG_SEEN_BOTH );
@@ -9105,8 +9104,16 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
                     EndOfFileHandle(p, (TcpSession *) scb->proto_specific_data->data);
 #ifdef NORMALIZER
                     if ( !p->dsize )
-                        CheckFlushPolicyOnData( ( ( StreamConfig * ) scb->stream_config )->tcp_config,
+                    {
+                        uint32_t flushed = 0;
+                        flushed = CheckFlushPolicyOnData( ( ( StreamConfig * ) scb->stream_config )->tcp_config,
                                                 tcpssn, talker, listener, tdb, p);
+                        if (flushed)
+                        {
+                            if(listener->xtradata_mask && extra_data_log)
+                                  purge_alerts(listener, listener->seglist->seq + flushed, (void *)tcpssn->scb);
+                        }
+                    }
 #endif
 
                     StreamUpdatePerfBaseState(&sfBase, scb, TCP_STATE_CLOSING);
@@ -9289,8 +9296,14 @@ dupfin:
     if((listener->flush_mgr.flush_policy == STREAM_FLPOLICY_FOOTPRINT_NOACK)
             || (listener->flush_mgr.flush_policy == STREAM_FLPOLICY_PROTOCOL_NOACK))
     {
-        CheckFlushPolicyOnData( ( ( StreamConfig * ) scb->stream_config )->tcp_config,
+        uint32_t flushed = 0;
+        flushed = CheckFlushPolicyOnData( ( ( StreamConfig * ) scb->stream_config )->tcp_config,
                                 tcpssn, talker, listener, tdb, p);
+        if (flushed)
+        {
+             if(listener->xtradata_mask && extra_data_log)
+                  purge_alerts(listener, listener->seglist->seq + flushed, (void *)tcpssn->scb);
+        }
     }
 #ifdef NORMALIZER
     else if ( p->dsize > 0 )
@@ -9316,6 +9329,11 @@ dupfin:
                 !TCP_ISFLAGSET(p->tcph, TH_SYN))
         {
             purge_to_seq(tcpssn, listener, listener->seglist->seq + flushed);
+        }
+        else if(flushed)
+        {
+            if(listener->xtradata_mask && extra_data_log)
+                 purge_alerts(listener, listener->seglist->seq + flushed, (void *)tcpssn->scb);
         }
     }
 #endif

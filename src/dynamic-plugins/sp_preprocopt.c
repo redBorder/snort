@@ -1,4 +1,4 @@
-/* $Id: sp_preprocopt.c,v 1.34 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 /*
  * sp_preprocopt.c
  *

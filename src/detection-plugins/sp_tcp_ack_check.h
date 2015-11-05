@@ -19,7 +19,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: sp_tcp_ack_check.h,v 1.20 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 #ifndef __SP_TCP_ACK_CHECK_H__
 #define __SP_TCP_ACK_CHECK_H__
 

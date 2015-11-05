@@ -1,4 +1,4 @@
-/* $Id: sp_pcre.c,v 1.45 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 /*
 ** Copyright (C) 2003 Brian Caswell <bmc@snort.org>
 ** Copyright (C) 2003 Michael J. Pomraning <mjp@securepipe.com>

@@ -20,7 +20,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-/* $Id: sp_isdataat.h,v 1.17 2015/04/23 18:28:09 jocornet Exp $ */
+/* $Id$ */
 
 #ifndef __SP_ISDATAAT_H__
 #define __SP_ISDATAAT_H__
