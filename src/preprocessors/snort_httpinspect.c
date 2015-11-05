@@ -3804,6 +3804,9 @@ static inline int processPostFileData(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packe
                     file_api->get_file_position(p), true, false))
         {
             setFileName(p);
+#ifdef HAVE_EXTRADATA_FILE
+            setFileHostname(p);
+#endif
         }
     }
     return 0;
@@ -4136,7 +4139,6 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
             {
                 if(Session->client.request.post_raw)
                 {
-
                     if(processPostFileData(GlobalConf, p, Session, hsd) != 0)
                         return 0;
 
