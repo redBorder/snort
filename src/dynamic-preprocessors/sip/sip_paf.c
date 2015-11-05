@@ -70,6 +70,8 @@ static char* content_len_key_compact = "l";
 
 #define UNKNOWN_CONTENT_LENGTH         UINT32_MAX
 
+static uint8_t sip_paf_id = 0;
+
 static inline void reset_data_states(SIPPafData *pfdata)
 {
     /* reset data information information */
@@ -338,8 +340,8 @@ void register_sip_paf_service (struct _SnortConfig *sc, int16_t app, tSfPolicyId
 {
     if (_dpd.isPafEnabled())
     {
-        _dpd.streamAPI->register_paf_service(sc, policy, app, true, sip_paf, true);
-        _dpd.streamAPI->register_paf_service(sc, policy, app, false, sip_paf, true);
+        sip_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, true, sip_paf, true);
+        sip_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, false, sip_paf, true);
     }
 }
 #endif
@@ -349,7 +351,7 @@ void register_sip_paf_port(struct _SnortConfig *sc, unsigned int i, tSfPolicyId 
 {
     if (_dpd.isPafEnabled())
     {
-        _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, true, sip_paf, true);
-        _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, false, sip_paf, true);
+        sip_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, true, sip_paf, true);
+        sip_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, false, sip_paf, true);
     }
 }

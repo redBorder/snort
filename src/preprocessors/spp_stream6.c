@@ -162,15 +162,15 @@ static int StreamGetRebuiltPackets( Packet *p, PacketIterator callback, void *us
 static int StreamGetStreamSegments( Packet *p, StreamSegmentIterator callback, void *userdata);
 static uint32_t StreamGetFlushPoint(void *ssnptr, char dir);
 static void StreamSetFlushPoint(void *ssnptr, char dir, uint32_t flush_point);
-static bool StreamRegisterPAFPort(
+static uint8_t StreamRegisterPAFPort(
         struct _SnortConfig *, tSfPolicyId,
         uint16_t server_port, bool toServer,
         PAF_Callback, bool autoEnable);
-static bool StreamRegisterPAFService(
+static uint8_t StreamRegisterPAFService(
         struct _SnortConfig *, tSfPolicyId,
         uint16_t service, bool toServer,
         PAF_Callback, bool autoEnable);
-static void** StreamGetPAFUserData(void* ssnptr, bool to_server);
+static void** StreamGetPAFUserData(void* ssnptr, bool to_server, uint8_t id);
 static bool StreamIsPafActive(void* ssnptr, bool to_server);
 static bool StreamActivatePaf(void* ssnptr, int dir, int16_t service, uint8_t type);
 
@@ -1326,13 +1326,13 @@ int isPacketFilterDiscard( Packet *p, int ignore_any_rules )
     return PORT_MONITOR_PACKET_PROCESS;
 }
 
-static bool StreamRegisterPAFPort( struct _SnortConfig *sc, tSfPolicyId id, uint16_t server_port,
+static uint8_t StreamRegisterPAFPort( struct _SnortConfig *sc, tSfPolicyId id, uint16_t server_port,
         bool to_server, PAF_Callback cb, bool autoEnable)
 {
     return s5_paf_register_port( sc, id, server_port, to_server, cb, autoEnable );
 }
 
-static bool StreamRegisterPAFService( struct _SnortConfig *sc, tSfPolicyId id, uint16_t service, 
+static uint8_t StreamRegisterPAFService( struct _SnortConfig *sc, tSfPolicyId id, uint16_t service,
         bool to_server, PAF_Callback cb, bool autoEnable)
 {
     return s5_paf_register_service( sc, id, service, to_server, cb, autoEnable );
@@ -1371,9 +1371,9 @@ static void StreamRegisterXtraDataLog( LogExtraData f, void *config )
     extra_data_config = config;
 }
 
-void** StreamGetPAFUserData( void* ssnptr, bool to_server )
+void** StreamGetPAFUserData( void* ssnptr, bool to_server, uint8_t id )
 {
-    return StreamGetPAFUserDataTcp( ( SessionControlBlock * ) ssnptr, to_server );
+    return StreamGetPAFUserDataTcp( ( SessionControlBlock * ) ssnptr, to_server, id );
 }
 
 static bool StreamIsPafActive( void* ssnptr, bool to_server )

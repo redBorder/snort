@@ -48,6 +48,7 @@
 #define FILE_ALL_OFF                        0x00000000
 #define MAX_FILE                            1024
 #define MAX_EMAIL                           1024
+#define MAX_UNICODE_FILE_NAME               1024
 
 #define FILE_RESUME_BLOCK                   0x01
 #define FILE_RESUME_LOG                     0x02

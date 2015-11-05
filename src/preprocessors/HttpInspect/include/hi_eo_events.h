@@ -87,6 +87,7 @@ typedef enum _HI_EVENTS
     HI_EO_SERVER_PDF_UNSUP_COMP_TYPE,
     HI_EO_SERVER_PDF_CASC_COMP,
     HI_EO_SERVER_PDF_PARSE_FAILURE,
+    HI_EO_SERVER_PROTOCOL_OTHER,
     HI_EO_SERVER_EVENT_NUM
 }HI_EVENTS;
 
@@ -201,7 +202,8 @@ typedef enum _HI_EVENTS
     "(http_inspect) HTTP_RESPONSE PDF FILE CASCADED COMPRESSION"
 #define HI_EO_SERVER_PDF_PARSE_FAILURE_STR              \
     "(http_inspect) HTTP_RESPONSE PDF FILE PARSE FAILURE"
- 
+#define HI_EO_SERVER_PROTOCOL_OTHER_STR                 \
+    "(http_inspect) PROTOCOL-OTHER HTTP server response before client request "
 /*
 **  Event Priorities
 */

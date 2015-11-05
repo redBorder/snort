@@ -54,7 +54,7 @@ Name: %{realname}
 Summary: An open source Network Intrusion Detection System (NIDS)
 Conflicts: %{realname}-openappid
 %endif
-Version: 2.9.7.3
+Version: 2.9.7.6
 Epoch: 1
 Release: %{release}
 Group: Applications/Internet

@@ -756,7 +756,7 @@ static int PruneTime(SFXHASH* tree, uint32_t thetime)
     return pruned;
 }
 
-void SetTags(Packet *p, OptTreeNode *otn, uint16_t event_id)
+void SetTags(Packet *p, OptTreeNode *otn, RuleTreeNode *rtn, uint16_t event_id)
 {
    DEBUG_WRAP(DebugMessage(DEBUG_FLOW, "Setting tags\n"););
 
@@ -764,7 +764,6 @@ void SetTags(Packet *p, OptTreeNode *otn, uint16_t event_id)
     {
         if (otn->tag->tag_type != 0)
         {
-            RuleTreeNode* rtn = getRuntimeRtnFromOtn(otn);
             void* log_list = rtn ? rtn->listhead : NULL;
 
             switch(otn->tag->tag_type)

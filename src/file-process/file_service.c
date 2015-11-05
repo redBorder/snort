@@ -650,9 +650,8 @@ int file_eventq_add(uint32_t gid, uint32_t sid, char *msg, RuleType type)
 {
     OptTreeNode *otn;
     RuleTreeNode *rtn;
-    int ret;
 
-    otn = GetOTN(gid, sid, 1, 0, 3, msg);
+    otn = GetApplicableOtn(gid, sid, 1, 0, 3, msg);
     if (otn == NULL)
         return 0;
 
@@ -664,8 +663,7 @@ int file_eventq_add(uint32_t gid, uint32_t sid, char *msg, RuleType type)
 
     rtn->type = type;
 
-    ret = SnortEventqAdd(gid, sid, 1, 0, 3, msg, otn);
-    return(ret);
+    return SnortEventqAdd(gid, sid, 1, 0, 3, msg, otn);
 }
 
 static inline void add_file_to_block(Packet *p, File_Verdict verdict,
@@ -761,7 +759,7 @@ static inline void _file_signature_lookup(FileContext* context,
             /*Drop packets if not timeout*/
             if (pkt->pkth->ts.tv_sec <= context->expires)
             {
-                Active_DropPacket(pkt);
+                Active_ForceDropPacket();
                 return;
             }
             /*Timeout, let packet go through OR block based on config*/
@@ -780,7 +778,7 @@ static inline void _file_signature_lookup(FileContext* context,
             if (file_config)
                 context->expires = (time_t)(file_config->file_lookup_timeout
                         + pkt->pkth->ts.tv_sec);
-            Active_DropPacket(pkt);
+	    Active_ForceDropPacket();
             stream_api->set_event_handler(ssnptr, s_cb_id, SE_REXMIT);
             save_to_pending_context(ssnptr);
             return;
