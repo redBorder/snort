@@ -31,7 +31,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * @(#) $Header: /usr/cvsroot-snort/snort/src/win32/WIN32-Includes/WinPCAP/pcap/pcap.h,v 1.2 2010/04/06 14:05:52 jjordan Exp $ (LBL)
+ * @(#) $Header$ (LBL)
  */
 
 #ifndef lib_pcap_pcap_h

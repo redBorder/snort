@@ -1,4 +1,4 @@
-/* $Id: spp_frag3.c,v 1.89 2015/04/23 18:28:10 jocornet Exp $ */
+/* $Id$ */
 
 /**
  * @file    spp_frag3.c

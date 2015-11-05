@@ -1,4 +1,4 @@
-/* $Id: stdint.h,v 1.15 2012/09/21 00:09:14 ssturges Exp $ */
+/* $Id$ */
 /*
 ** Copyright (C) 1998-2003 Chris Reid <chris.reid@codecraftconsultants.com>
 **

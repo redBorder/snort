@@ -1,4 +1,4 @@
-/* $Id: syslog.c,v 1.16 2011/06/08 00:33:21 jjordan Exp $ */
+/* $Id$ */
 /* -/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/
  . Copyright (c) 2001 Michael Davis <mike@datanerds.net>
  . All rights reserved.

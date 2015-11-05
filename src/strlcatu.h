@@ -1,4 +1,4 @@
-/* $Id: strlcatu.h,v 1.6 2014/06/10 13:29:29 cwaxman Exp $ */
+/* $Id$ */
 /*
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **

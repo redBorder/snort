@@ -4,7 +4,7 @@
 ** Adam Keeton
 ** Kevin Liu <kliu@sourcefire.com>
 **
-** $Id: sf_ip.c,v 1.26 2015/04/23 18:28:11 jocornet Exp $
+** $Id$
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License Version 2 as
 ** published by the Free Software Foundation.  You may not use, modify or

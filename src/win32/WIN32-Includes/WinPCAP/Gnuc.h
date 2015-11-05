@@ -1,4 +1,4 @@
-/* @(#) $Header: /usr/cvsroot-snort/snort/src/win32/WIN32-Includes/WinPCAP/Gnuc.h,v 1.1 2005/09/14 18:43:30 ssturges Exp $ (LBL) */
+/* @(#) $Header$ (LBL) */
 
 /* Define __P() macro, if necessary */
 

@@ -1,4 +1,4 @@
-Snort Version 2.9.7.5
+Snort Version 2.9.7.3
 
 by Martin Roesch and The Snort Team (http://www.snort.org/contact#team)
 
@@ -105,4 +105,4 @@ www.snort.org.
 Please read the USAGE file or the snort_manual.pdf for more info!
 
 ******************************************************************************
-/* $Id: README,v 1.44 2015/07/06 19:54:21 cwaxman Exp $ */
+/* $Id$ */

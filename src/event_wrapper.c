@@ -1,4 +1,4 @@
-/* $Id: event_wrapper.c,v 1.35 2015/07/06 19:54:21 cwaxman Exp $ */
+/* $Id$ */
 /*
  ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 1998-2013 Sourcefire, Inc.

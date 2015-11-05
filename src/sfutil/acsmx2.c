@@ -1,5 +1,5 @@
 /*
-**   $Id: acsmx2.c,v 1.44 2015/04/23 18:28:11 jocornet Exp $
+**   $Id$
 **
 ** Copyright(C) 2002,2003,2004 Marc Norton
 ** Copyright(C) 2003,2004 Daniel Roelker

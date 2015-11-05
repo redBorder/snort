@@ -20,7 +20,7 @@
  */
 
 /* Snort Preprocessor for Telnet Negotiation Normalization*/
-/* $Id: pp_telnet.c,v 1.22 2015/04/23 18:28:10 jocornet Exp $ */
+/* $Id$ */
 
 /* pp_telnet.c
  *
