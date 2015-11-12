@@ -80,7 +80,7 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 bin_PROGRAMS = snort_control$(EXEEXT) \
-	snort_dump_packets_control$(EXEEXT) snort_iplist$(EXEEXT)
+	snort_dump_packets_control$(EXEEXT) snort_iplist$(EXEEXT) \
 	snort_control_reload$(EXEEXT)
 subdir = tools/control
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
