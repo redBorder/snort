@@ -836,8 +836,6 @@ enable_static_daq
 enable_build_dynamic_examples
 enable_dlclose
 enable_remote_file_s3
-with_librdkafka_includes
-with_librdkafka_libraries
 with_libs3_includes
 with_libs3_libraries
 enable_lzma
@@ -1530,7 +1528,7 @@ Optional Features:
   --disable-static-daq     Link static DAQ modules.
   --enable-build-dynamic-examples   Enable building of example dynamically loaded preprocessor and rule (off by default)
   --disable-dlclose        Only use if you are developing dynamic preprocessors or shared object rules.  Disable (--disable-dlclose) for testing valgrind leaks in dynamic libraries so a usable backtrace is reported.  Enabled by default.
-  --enable-remote-file-s3  Enable S3 file saving (implies rdkafka and s3 libs)
+  --enable-remote-file-s3  Enable S3 file saving (implies s3 libs)
   --disable-lzma           Disable LZMA Decompression
   --disable-gre            Disable GRE and IP in IP encapsulation support
   --disable-mpls           Disable MPLS support
@@ -1583,8 +1581,6 @@ Optional Packages:
   --with-openssl-libraries=DIR   openssl library directory
   --with-dnet-includes=DIR       libdnet include directory
   --with-dnet-libraries=DIR      libdnet library directory
-  --with-librdkafka-includes=DIR librdkafka include directory
-  --with-librdkafka-libraries=DIR librdkafka library directory
   --with-libs3-includes=DIR      libs3 include directory
   --with-libs3-libraries=DIR     libs3 library directory
   --with-lzma-includes=DIR       liblzma include directory
@@ -16235,24 +16231,6 @@ fi
 
 
 
-# Check whether --with-librdkafka-includes was given.
-if test "${with_librdkafka_includes+set}" = set; then :
-  withval=$with_librdkafka_includes; with_rdkafka_includes="$withval"
-else
-  with_rdkafka_includes="no"
-fi
-
-
-
-# Check whether --with-librdkafka-libraries was given.
-if test "${with_librdkafka_libraries+set}" = set; then :
-  withval=$with_librdkafka_libraries; with_librdkafka_libraries="$withval"
-else
-  with_librdkafka_libraries="no"
-fi
-
-
-
 # Check whether --with-libs3-includes was given.
 if test "${with_libs3_includes+set}" = set; then :
   withval=$with_libs3_includes; with_libs3_includes="$withval"
@@ -16279,76 +16257,6 @@ else
 fi
 
 if test "x$enable_file_s3" = "xyes"; then
-    if test "x$with_rdkafka_includes" != "xno"; then
-        CPPFLAGS="${CPPFLAGS} -I${with_rdkafka_includes}"
-        LIBRDKAFKA_HEADERS="yes"
-    else
-        for ac_header in librdkafka/rdkafka.h
-do :
-  ac_fn_c_check_header_mongrel "$LINENO" "librdkafka/rdkafka.h" "ac_cv_header_librdkafka_rdkafka_h" "$ac_includes_default"
-if test "x$ac_cv_header_librdkafka_rdkafka_h" = xyes; then :
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBRDKAFKA_RDKAFKA_H 1
-_ACEOF
- LIBRDKAFKA_HEADERS="yes"
-else
-  LIBRDKAFKA_HEADERS="no"
-fi
-
-done
-
-    fi
-
-    if test "x$with_librdkafka_libraries" != "xno"; then
-        LDFLAGS="${LDFLAGS} -L${with_librdkafka_libraries}"
-        LIBRDKAFKA_LIB="yes"
-    else
-        LIBS_BAK=$LIBS
-        { $as_echo "$as_me:${as_lineno-$LINENO}: checking for rd_kafka_new in -lrdkafka" >&5
-$as_echo_n "checking for rd_kafka_new in -lrdkafka... " >&6; }
-if ${ac_cv_lib_rdkafka_rd_kafka_new+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lrdkafka  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char rd_kafka_new ();
-int
-main ()
-{
-return rd_kafka_new ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_rdkafka_rd_kafka_new=yes
-else
-  ac_cv_lib_rdkafka_rd_kafka_new=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_rdkafka_rd_kafka_new" >&5
-$as_echo "$ac_cv_lib_rdkafka_rd_kafka_new" >&6; }
-if test "x$ac_cv_lib_rdkafka_rd_kafka_new" = xyes; then :
-  LIBRDKAFKA_LIB="yes"
-else
-  LIBRDKAFKA_LIB="no"
-fi
-
-        LIBS="$LIBS_BAK"
-    fi
-
     if test "x$with_libs3_includes" != "xno"; then
         CPPFLAGS="${CPPFLAGS} -I${with_libs3_includes}"
         LIBS3_HEADERS="yes"
@@ -16418,14 +16326,6 @@ else
 fi
 
         LIBS="$LIBS_BAK"
-    fi
-
-    if test "x$LIBRDKAFKA_LIB" == "xno" -o "x$LIBRDKAFKA_HEADERS" == "xno"; then
-      echo
-      echo "   ERROR!  librdkafka not found."
-      echo "   Get it from https://github.com/edenhill/librdkafka"
-      echo
-      exit 1
     fi
 
     if test "x$LIBS3_LIB" == "xno" -o "x$LIBS3_HEADERS" == "xno"; then
