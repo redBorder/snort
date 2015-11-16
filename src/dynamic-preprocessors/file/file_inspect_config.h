@@ -37,7 +37,6 @@
 
 #if HAVE_S3FILE
 //#include "src/sfutil/sfxhash.h"
-#include <librdkafka/rdkafka.h>
 #include <libs3.h>
 #endif
 
