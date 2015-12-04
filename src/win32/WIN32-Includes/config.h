@@ -82,31 +82,6 @@
 #define SIZEOF_LONG_INT 4
 #endif
 
-/* Version number of package */
-#ifdef ENABLE_ODBC
-    #define VERSION_ENABLE_ODBC "-ODBC"
-#else
-    #define VERSION_ENABLE_ODBC
-#endif
-
-#ifdef ENABLE_MYSQL
-    #define VERSION_ENABLE_MYSQL "-MySQL"
-#else
-    #define VERSION_ENABLE_MYSQL
-#endif
-
-#ifdef ENABLE_MSSQL
-    #define VERSION_ENABLE_MSSQL "-MSSQL"
-#else
-    #define VERSION_ENABLE_MSSQL
-#endif
-
-#ifdef ENABLE_ORACLE
-    #define VERSION_ENABLE_ORACLE "-ORACLE"
-#else
-    #define VERSION_ENABLE_ORACLE
-#endif
-
 #ifdef ENABLE_RESPONSE
     #define VERSION_ENABLE_RESPONSE "-FlexRESP"
 #else
@@ -126,7 +101,7 @@
  * should both match the ones specified in the
  * AM_INIT_AUTOMAKE() macro of configure.in
  */
-#define VERSION "2.9.7.6"VERSION_ENABLE_ODBC""VERSION_ENABLE_MYSQL""VERSION_ENABLE_MSSQL""VERSION_ENABLE_ORACLE""VERSION_ENABLE_RESPONSE"-WIN32"VERSION_DEBUG
+#define VERSION "2.9.8.0"VERSION_ENABLE_RESPONSE"-WIN32"VERSION_DEBUG
 #define PACKAGE "snort"
 
 #define IFNAMSIZ   255

@@ -687,7 +687,7 @@ static char * printIP(unsigned u )
 #endif
 
 int sfthd_test_rule(SFXHASH *rule_hash, THD_NODE *sfthd_node,
-                    snort_ip_p sip, snort_ip_p dip, long curtime)
+                    sfaddr_t* sip, sfaddr_t* dip, long curtime)
 {
     int status;
 
@@ -701,7 +701,7 @@ int sfthd_test_rule(SFXHASH *rule_hash, THD_NODE *sfthd_node,
 
 static inline int sfthd_test_suppress (
     THD_NODE* sfthd_node,
-    snort_ip_p ip)
+    sfaddr_t* ip)
 {
     if ( !sfthd_node->ip_address ||
          IpAddrSetContains(sfthd_node->ip_address, ip) )
@@ -888,14 +888,14 @@ static inline int sfthd_test_non_suppress(
 int sfthd_test_local(
     SFXHASH *local_hash,
     THD_NODE   * sfthd_node,
-    snort_ip_p   sip,
-    snort_ip_p   dip,
+    sfaddr_t*    sip,
+    sfaddr_t*    dip,
     time_t       curtime )
 {
     THD_IP_NODE_KEY key;
     THD_IP_NODE     data,*sfthd_ip_node;
     int             status=0;
-    snort_ip_p      ip;
+    sfaddr_t*       ip;
     tSfPolicyId policy_id = getIpsRuntimePolicy();
 
 #ifdef THD_DEBUG
@@ -941,7 +941,7 @@ int sfthd_test_local(
 
     /* Set up the key */
     key.policyId = policy_id;
-    key.ip     = IP_VAL(ip);
+    sfaddr_copy_to_raw(&key.ip, ip);
     key.thd_id = sfthd_node->thd_id;
 
     /* Set up a new data element */
@@ -983,14 +983,14 @@ static inline int sfthd_test_global(
     THD_NODE   * sfthd_node,
     unsigned     gen_id,     /* from current event */
     unsigned     sig_id,     /* from current event */
-    snort_ip_p   sip,        /* " */
-    snort_ip_p   dip,        /* " */
+    sfaddr_t*    sip,        /* " */
+    sfaddr_t*    dip,        /* " */
     time_t       curtime )
 {
     THD_IP_GNODE_KEY key;
     THD_IP_NODE      data, *sfthd_ip_node;
     int              status=0;
-    snort_ip_p       ip;
+    sfaddr_t*        ip;
     tSfPolicyId policy_id = getIpsRuntimePolicy();
 
 #ifdef THD_DEBUG
@@ -1032,7 +1032,7 @@ static inline int sfthd_test_global(
     */
 
     /* Set up the key */
-    key.ip     = IP_VAL(ip);
+    sfaddr_copy_to_raw(&key.ip, ip);
     key.gen_id = sfthd_node->gen_id;
     key.sig_id = sig_id;
     key.policyId = policy_id;
@@ -1090,8 +1090,8 @@ int sfthd_test_threshold(
     THD_STRUCT *thd,
     unsigned   gen_id,
     unsigned   sig_id,
-    snort_ip_p sip,
-    snort_ip_p dip,
+    sfaddr_t*  sip,
+    sfaddr_t*  dip,
     long       curtime )
 {
     tThdItemKey key;

@@ -279,7 +279,7 @@ void RpcDecodeInit(struct _SnortConfig *sc, char *args)
         AddFuncToPreprocCleanExitList(RpcDecodeCleanExit, NULL, PRIORITY_LAST, PP_RPCDECODE);
 
 #ifdef PERF_PROFILING
-        RegisterPreprocessorProfile("rpcdecode", &rpcdecodePerfStats, 0, &totalPerfStats);
+        RegisterPreprocessorProfile("rpcdecode", &rpcdecodePerfStats, 0, &totalPerfStats, NULL);
 #endif
 
 #ifdef TARGET_BASED

@@ -69,8 +69,10 @@ static void WriteFlowIPStats(SFFLOW *sfFlow, FILE *fp);
 
 typedef struct _sfSingleFlowStatsKey
 {
-    snort_ip ipA;
-    snort_ip ipB;
+    sfaddr_t ipA;
+    uint16_t ipApad;
+    sfaddr_t ipB;
+    uint16_t ipBpad;
 } sfSFSKey;
 
 typedef struct _sfBidirectionalTrafficStats
@@ -288,12 +290,14 @@ int UpdateICMPFlowStats(SFFLOW *sfFlow, int type, int len)
     return 0;
 }
 
-static sfSFSValue *findFlowIPStats(SFFLOW *sfFlow, snort_ip_p src_addr, snort_ip_p dst_addr, int *swapped)
+static sfSFSValue *findFlowIPStats(SFFLOW *sfFlow, sfaddr_t* src_addr, sfaddr_t* dst_addr, int *swapped)
 {
     SFXHASH_NODE *node;
     sfSFSKey key;
     sfSFSValue *value;
 
+    key.ipApad = 0;
+    key.ipBpad = 0;
     if (IP_LESSER(src_addr, dst_addr))
     {
         IP_COPY_VALUE(key.ipA, src_addr);
@@ -323,7 +327,7 @@ static sfSFSValue *findFlowIPStats(SFFLOW *sfFlow, snort_ip_p src_addr, snort_ip
     return value;
 }
 
-int UpdateFlowIPStats(SFFLOW *sfFlow, snort_ip_p src_addr, snort_ip_p dst_addr, int len, SFSType type)
+int UpdateFlowIPStats(SFFLOW *sfFlow, sfaddr_t* src_addr, sfaddr_t* dst_addr, int len, SFSType type)
 {
     sfSFSValue *value;
     sfBTStats *stats;
@@ -351,7 +355,7 @@ int UpdateFlowIPStats(SFFLOW *sfFlow, snort_ip_p src_addr, snort_ip_p dst_addr, 
     return 0;
 }
 
-int UpdateFlowIPState(SFFLOW *sfFlow, snort_ip_p src_addr, snort_ip_p dst_addr, SFSState state)
+int UpdateFlowIPState(SFFLOW *sfFlow, sfaddr_t* src_addr, sfaddr_t* dst_addr, SFSState state)
 {
     sfSFSValue *value;
     int swapped;
@@ -822,8 +826,8 @@ static void DisplayFlowIPStats(SFFLOW *sfFlow)
         key = (sfSFSKey *) node->key;
         stats = (sfSFSValue *) node->data;
 
-        sfip_raw_ntop(key->ipA.family, key->ipA.ip32, ipA, sizeof(ipA));
-        sfip_raw_ntop(key->ipB.family, key->ipB.ip32, ipB, sizeof(ipB));
+        sfip_ntop(&key->ipA, ipA, sizeof(ipA));
+        sfip_ntop(&key->ipB, ipB, sizeof(ipB));
         LogMessage("[%s <-> %s]: " STDu64 " bytes in " STDu64 " packets (%u, %u, %u)\n", ipA, ipB,
                 stats->total_bytes, stats->total_packets, stats->stateChanges[SFS_STATE_TCP_ESTABLISHED],
                 stats->stateChanges[SFS_STATE_TCP_CLOSED], stats->stateChanges[SFS_STATE_UDP_CREATED]);
@@ -848,8 +852,8 @@ static void WriteFlowIPStats(SFFLOW *sfFlow, FILE *fp)
         key = (sfSFSKey *) node->key;
         stats = (sfSFSValue *) node->data;
 
-        sfip_raw_ntop(key->ipA.family, key->ipA.ip32, ipA, sizeof(ipA));
-        sfip_raw_ntop(key->ipB.family, key->ipB.ip32, ipB, sizeof(ipB));
+        sfip_ntop(&key->ipA, ipA, sizeof(ipA));
+        sfip_ntop(&key->ipB, ipB, sizeof(ipB));
         fprintf(fp, "%s,%s," CSVu64 CSVu64 CSVu64 CSVu64 CSVu64 CSVu64 CSVu64
                 CSVu64 CSVu64 CSVu64 CSVu64 CSVu64 "%u,%u,%u\n",
                 ipA, ipB,

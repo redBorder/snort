@@ -54,14 +54,12 @@ static void ConstructSegmentNames (int dataset, int group_id, int numa_node)
             "%s.%d.%d.%d",dataset_names[dataset].name,group_id,numa_node,i);
 }
 
-int InitShmemUser (
-    uint32_t instance_num, int instance_type, int dataset,
-    int group_id, int numa_node, const char* path, uint32_t instance_polltime)
+int InitShmemUser (uint32_t instance_num, int instance_type, int dataset, int group_id,
+        int numa_node, const char* path, uint32_t instance_polltime, uint16_t max_instances)
 {
     int rval = SF_EINVAL, num_nodes;
 
-    if (
-        (instance_num >= MAX_INSTANCES) ||
+    if ((instance_num >= max_instances) ||
         (instance_type != READ && instance_type != WRITE) ||
         (dataset != IPREP) || !path || !instance_polltime )
         goto exit;

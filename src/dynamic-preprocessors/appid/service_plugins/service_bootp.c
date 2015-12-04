@@ -26,6 +26,8 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 
+#include "appIdApi.h"
+#include "appInfoTable.h"
 #include "flow.h"
 #include "service_api.h"
 
@@ -72,13 +74,14 @@ typedef struct _SERVICE_DHCP_HEADER
 static int bootp_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(bootp_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &bootp_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "bootp",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -88,7 +91,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule bootp_service_mod =
+tRNAServiceValidationModule bootp_service_mod =
 {
     "DHCP",
     &bootp_init,
@@ -107,7 +110,7 @@ static int bootp_init(const InitServiceAPI * const init_api)
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&bootp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&bootp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -161,10 +164,12 @@ MakeRNAServiceValidationPrototype(bootp_validate)
                     op = (ServiceDHCPOption *)&data[i];
                     if (op->option == 0xff)
                     {
-                        if (option53 && op55_len)
+                        if (!pkt->ether_header) goto fail;
+
+                        if (option53 && op55_len && (memcmp(pkt->ether_header->ether_source, bh->chaddr, 6) == 0))
                         {
                             if(bootp_service_mod.api->data_add_dhcp(flowp, op55_len, op55, op60_len, op60,
-                                                                    pkt->ether_header->ether_source))
+                                                                    bh->chaddr))
                             {
                                 return SERVICE_ENOMEM;
                             }
@@ -206,11 +211,11 @@ MakeRNAServiceValidationPrototype(bootp_validate)
 
     if (dir == APP_ID_FROM_INITIATOR)
     {
-        flow_mark(flowp, FLOW_UDP_REVERSED);
+        setAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED);
     }
     else
     {
-        flow_clear(flowp, FLOW_UDP_REVERSED);
+        clearAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED);
     }
 
     if (size > sizeof(ServiceBOOTPHeader) + 4)
@@ -230,13 +235,15 @@ MakeRNAServiceValidationPrototype(bootp_validate)
                 op = (ServiceDHCPOption *)&data[i];
                 if (op->option == 0xff)
                 {
-                    if (option53)
+                    if (!pkt->ether_header) goto fail;
+
+                    if (option53 && (memcmp(pkt->ether_header->ether_destination, bh->chaddr, 6) == 0))
                         bootp_service_mod.api->dhcpNewLease(flowp, bh->chaddr, bh->yiaddr, pkt->pkt_header->ingress_group, ntohl(subnet), ntohl(leaseTime), router);
                     goto success;
                 }
                 i += sizeof(ServiceDHCPOption);
                 if (i + op->len > size) goto fail;
-                
+
                 switch (op->option)
                 {
                     case DHCP_OPT_DHCP_MESSAGE_TYPE:
@@ -274,33 +281,33 @@ MakeRNAServiceValidationPrototype(bootp_validate)
     }
 
 success:
-    if (!flow_checkflag(flowp, FLOW_SERVICEDETECTED))
+    if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
     {
-        flow_mark(flowp, FLOW_CONTINUE);
+        setAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
         bootp_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
                                            APP_ID_DHCP, NULL, NULL, NULL);
     }
     return SERVICE_SUCCESS;
 
 inprocess:
-    if (!flow_checkflag(flowp, FLOW_SERVICEDETECTED))
+    if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
     {
         bootp_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
     }
     return SERVICE_INPROCESS;
 
 fail:
-    if (!flow_checkflag(flowp, FLOW_SERVICEDETECTED))
+    if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
     {
-        bootp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+        bootp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, bootp_service_mod.flow_data_index, pConfig);
     }
-    flow_clear(flowp, FLOW_CONTINUE);
+    clearAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
     return SERVICE_NOMATCH;
 
 not_compatible:
-    if (!flow_checkflag(flowp, FLOW_SERVICEDETECTED))
+    if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
     {
-        bootp_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element);
+        bootp_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element, bootp_service_mod.flow_data_index, pConfig);
     }
     return SERVICE_NOT_COMPATIBLE;
 }

@@ -61,7 +61,8 @@ rate_filter.c rate_filter.h \
 obfuscation.c obfuscation.h \
 rule_option_types.h \
 sfdaq.c sfdaq.h \
-idle_processing.c idle_processing.h idle_processing_funcs.h
+idle_processing.c idle_processing.h idle_processing_funcs.h \
+appIdApi.h
 
 if BUILD_CONTROL_SOCKET
 snort_SOURCES += dump.c dump.h

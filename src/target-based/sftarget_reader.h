@@ -110,7 +110,7 @@ typedef struct _HostInfo
 #define SFAT_CLIENT 2
 typedef struct _HostAttributeEntry
 {
-    sfip_t ipAddr;
+    sfcidr_t ipAddr;
 
     HostInfo hostInfo;
     ApplicationList *services;
@@ -122,7 +122,7 @@ int SFAT_AddMapEntry(MapEntry *);
 char *SFAT_LookupAttributeNameById(int id);
 HostAttributeEntry * SFAT_CreateHostEntry(void);
 int SFAT_AddHostEntryToMap(void);
-int SFAT_SetHostIp(char *);
+int SFAT_SetHostIp(const char *);
 int SFAT_SetOSAttribute(AttributeData *data, int attribute);
 int SFAT_SetOSPolicy(char *policy_name, int attribute);
 ApplicationEntry * SFAT_CreateApplicationEntry(void);
@@ -153,10 +153,10 @@ void AttributeTableReloadCheck(void);
 uint32_t SFAT_NumberOfHosts(void);
 
 /* API Lookup functions, to be called by Stream & Frag */
-HostAttributeEntry *SFAT_LookupHostEntryByIP(sfip_t *ipAddr);
+HostAttributeEntry *SFAT_LookupHostEntryByIP(sfaddr_t *ipAddr);
 HostAttributeEntry *SFAT_LookupHostEntryBySrc(Packet *p);
 HostAttributeEntry *SFAT_LookupHostEntryByDst(Packet *p);
-void SFAT_UpdateApplicationProtocol(sfip_t *ipAddr, uint16_t port, uint16_t protocol, uint16_t id);
+void SFAT_UpdateApplicationProtocol(sfaddr_t *ipAddr, uint16_t port, uint16_t protocol, uint16_t id);
 
 /* Returns whether this has been configured */
 int IsAdaptiveConfigured( void );

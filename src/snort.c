@@ -131,6 +131,7 @@
 #include "sfcontrol_funcs.h"
 #include "idle_processing_funcs.h"
 #include "file_service.h"
+#include "session_expect.h"
 #ifdef SIDE_CHANNEL
 # include "sidechannel.h"
 #endif
@@ -164,6 +165,10 @@
 
 #ifdef CONTROL_SOCKET
 #include "dump.h"
+#endif
+
+#ifdef PERF_PROFILING
+#include "perf_indicators.h"
 #endif
 
 /* Macros *********************************************************************/
@@ -867,6 +872,7 @@ int SnortMain(int argc, char *argv[])
     {
         DAQ_Init(snort_conf);
         DAQ_New(snort_conf, intf);
+        DAQ_UpdateTunnelBypass(snort_conf);
     }
     if ( tmp_ptr )
         free(tmp_ptr);
@@ -925,7 +931,7 @@ int SnortMain(int argc, char *argv[])
         DAQ_Start();
     }
     else
-    { 
+    {
         switch(InlineFailOpen())
         {
             case INLINE_FAIL_OPEN_COMPLETE:
@@ -956,7 +962,7 @@ int SnortMain(int argc, char *argv[])
  * The child does not "inherit" threads created in the parent. */
 static void SnortStartThreads(void)
 {
-    
+
     ControlSocketInit();
 
 #ifdef SIDE_CHANNEL
@@ -1045,7 +1051,7 @@ static void PrintAllInterfaces (void)
         if (dev->addresses)
         {
             struct sockaddr_in* saddr = (struct sockaddr_in*)dev->addresses->addr;
-            sfip_t dev_ip;
+            sfcidr_t dev_ip;
             if ((saddr->sin_family == AF_INET) || (saddr->sin_family == AF_INET6))
             {
                 sfip_set_raw(&dev_ip, &saddr->sin_addr, saddr->sin_family);
@@ -1278,8 +1284,6 @@ static int PQ_Next (void)
         PQ_Show(pcap);
         SetPktProcessor();
 
-        SetSampleTime(perfmon_config, NULL);
-
 #if defined(SNORT_RELOAD) && !defined(WIN32)
         if ( snort_conf->run_flags & RUN_FLAG__PCAP_RELOAD && ScIdsMode())
         {
@@ -1374,9 +1378,7 @@ static void InitPidChrootAndPrivs(pid_t pid)
     /* Drop the Chrooted Settings */
     if (snort_conf->chroot_dir)
         SetChroot(snort_conf->chroot_dir, &snort_conf->log_dir);
-#endif
 
-#ifndef WIN32
     /* Drop privileges if requested, when initialization is done */
     SetUidGid(ScUid(), ScGid());
 #endif
@@ -1672,7 +1674,7 @@ static DAQ_Verdict PacketCallback(
     DAQ_Verdict verdict = DAQ_VERDICT_PASS;
     PROFILE_VARS;
 
-    PREPROC_PROFILE_START(totalPerfStats);
+    PREPROC_PROFILE_START_PI(totalPerfStats);
 
 #ifdef SIDE_CHANNEL
     if (ScSideChannelEnabled() && !snort_process_lock_held)
@@ -1692,7 +1694,7 @@ static DAQ_Verdict PacketCallback(
     {
 #ifndef SNORT_RELOAD
         /* Got SIGNAL_SNORT_RELOAD */
-        PREPROC_PROFILE_END(totalPerfStats);
+        PREPROC_PROFILE_END_PI(totalPerfStats);
         Restart();
 #endif
     }
@@ -1715,7 +1717,7 @@ static DAQ_Verdict PacketCallback(
 #ifdef REG_TEST
     if ( snort_conf->pkt_skip && pc.total_from_daq <= snort_conf->pkt_skip )
     {
-        PREPROC_PROFILE_END(totalPerfStats);
+        PREPROC_PROFILE_END_PI(totalPerfStats);
         return verdict;
     }
 #endif
@@ -1723,7 +1725,7 @@ static DAQ_Verdict PacketCallback(
 #if defined(WIN32) && defined(ENABLE_WIN32_SERVICE)
     if (ScTerminateService() || ScPauseService())
     {
-        PREPROC_PROFILE_END(totalPerfStats);
+        PREPROC_PROFILE_END_PI(totalPerfStats);
         return verdict;  // time to go
     }
 #endif
@@ -1747,21 +1749,19 @@ static DAQ_Verdict PacketCallback(
         Active_SendResponses(&s_packet);
     }
 #endif
+
     if ( Active_PacketWasDropped() )
     {
-        if ( verdict == DAQ_VERDICT_PASS ) 
+        if ( verdict == DAQ_VERDICT_PASS )
         {
 #ifdef HAVE_DAQ_VERDICT_RETRY
-            if (file_api->get_file_verdict(s_packet.ssnptr) == FILE_VERDICT_PENDING)
-            {
-                //  File module is waiting for a response from the cloud.
+            if ( Active_RetryIsPending() && !(s_packet.packet_flags & PKT_RETRANSMIT) )
                 verdict = DAQ_VERDICT_RETRY;
-            }
             else
-#endif
-            {
                 verdict = DAQ_VERDICT_BLOCK;
-            }
+#else
+            verdict = DAQ_VERDICT_BLOCK;
+#endif
         }
     }
     else
@@ -1814,10 +1814,11 @@ static DAQ_Verdict PacketCallback(
             }
         }
     }
+
 #ifdef ENABLE_HA
     /* This needs to be called here since the session could have been updated anywhere up to this point. :( */
     if (session_api)
-        session_api->process_ha(s_packet.ssnptr);
+        session_api->process_ha(s_packet.ssnptr, pkthdr);
 #endif
 
     /* Collect some "on the wire" stats about packet size, etc */
@@ -1834,7 +1835,7 @@ static DAQ_Verdict PacketCallback(
 
     s_packet.pkth = NULL;  // no longer avail on segv
 
-    PREPROC_PROFILE_END(totalPerfStats);
+    PREPROC_PROFILE_END_PI(totalPerfStats);
     return verdict;
 }
 
@@ -1906,12 +1907,8 @@ DAQ_Verdict ProcessPacket(
             Active_ForceDropAction(p);
 
         if ( Active_GetTunnelBypass() )
-        {
             pc.internal_blacklist++;
-            return verdict;
-        }
-
-        if ( ScIpsInlineMode() || Active_PacketForceDropped() )
+        else if ( ScIpsInlineMode() || Active_PacketForceDropped() )
             verdict = DAQ_VERDICT_BLACKLIST;
         else
             verdict = DAQ_VERDICT_IGNORE;
@@ -3284,7 +3281,10 @@ void PacketLoop (void)
 {
     int error = 0;
     int pkts_to_read = (int)snort_conf->pkt_cnt;
+    time_t curr_time, last_time;
 
+    curr_time = time(NULL);
+    last_time = curr_time;
     TimeStart();
 
     while ( !exit_logged )
@@ -3307,6 +3307,10 @@ void PacketLoop (void)
 
         if ( error )
         {
+            //Update the time tracker
+            curr_time = packet_time();
+            last_time = curr_time;
+
             if ( !ScReadMode() || !PQ_Next() )
             {
                 /* If not read-mode or no next pcap, we're done */
@@ -3321,6 +3325,16 @@ void PacketLoop (void)
             // so either move SnortIdle() to SignalCheck() or directly
             // set the flag in the signal handler (and then clear it
             // in SnortIdle()).
+
+            if ( !ScReadMode() )
+            {
+                time_t new_time = time(NULL);
+                curr_time += new_time - last_time;
+                last_time = new_time;
+
+                // Check if its time to dump perf data
+                sfPerformanceStatsOOB(perfmon_config, curr_time);
+            }
 
             // check for signals
             if ( SignalCheck() )
@@ -3657,7 +3671,6 @@ static void SnortCleanup(int exit_val)
     }
 
     ControlSocketCleanUp();
-
 #ifdef SIDE_CHANNEL
     SideChannelStopTXThread();
     SideChannelCleanUp();
@@ -4170,9 +4183,7 @@ SnortConfig * SnortConfNew(void)
     sc->targeted_policies = NULL;
     sc->num_policies_allocated = 0;
 
-#ifndef REG_TEST
     sc->paf_max = DEFAULT_PAF_MAX;
-#endif
 
     /* Default secure hash pattern type */
     sc->Default_Protected_Content_Hash_Type = SECHASH_NONE;
@@ -4358,6 +4369,8 @@ void SnortConfFree(SnortConfig *sc)
 #ifdef SNORT_RELOAD
     FreePreprocessorReloadData(sc);
 #endif
+
+    FreeMandatoryEarlySessionCreators(sc->mandatoryESCreators);
 
     free(sc);
 #ifdef HAVE_MALLOC_TRIM
@@ -4663,11 +4676,11 @@ static SnortConfig * MergeSnortConfs(SnortConfig *cmd_line, SnortConfig *config_
     if (cmd_line->fast_pattern_config != NULL)
         config_file->fast_pattern_config->search_method = cmd_line->fast_pattern_config->search_method;
 
-    if (cmd_line->obfuscation_net.family != 0)
-        memcpy(&config_file->obfuscation_net, &cmd_line->obfuscation_net, sizeof(sfip_t));
+    if (sfip_is_set(&cmd_line->obfuscation_net))
+        memcpy(&config_file->obfuscation_net, &cmd_line->obfuscation_net, sizeof(sfcidr_t));
 
-    if (cmd_line->homenet.family != 0)
-        memcpy(&config_file->homenet, &cmd_line->homenet, sizeof(sfip_t));
+    if (sfip_is_set(&cmd_line->homenet))
+        memcpy(&config_file->homenet, &cmd_line->homenet, sizeof(sfcidr_t));
 
     if (cmd_line->interface != NULL)
     {
@@ -5021,16 +5034,19 @@ void SnortInit(int argc, char **argv)
 
 #ifdef PERF_PROFILING
         /* Register the main high level perf stats */
-        RegisterPreprocessorProfile("detect", &detectPerfStats, 0, &totalPerfStats);
-        RegisterPreprocessorProfile("mpse", &mpsePerfStats, 1, &detectPerfStats);
-        RegisterPreprocessorProfile("rule eval", &rulePerfStats, 1, &detectPerfStats);
-        RegisterPreprocessorProfile("rtn eval", &ruleRTNEvalPerfStats, 2, &rulePerfStats);
-        RegisterPreprocessorProfile("rule tree eval", &ruleOTNEvalPerfStats, 2, &rulePerfStats);
-        RegisterPreprocessorProfile("preproc_rule_options", &preprocRuleOptionPerfStats, 3, &ruleOTNEvalPerfStats);
-        RegisterPreprocessorProfile("decode", &decodePerfStats, 0, &totalPerfStats);
-        RegisterPreprocessorProfile("eventq", &eventqPerfStats, 0, &totalPerfStats);
-        RegisterPreprocessorProfile("total", &totalPerfStats, 0, NULL);
-        RegisterPreprocessorProfile("daq meta", &metaPerfStats, 0, NULL);
+        RegisterPreprocessorProfile("detect", &detectPerfStats, 0, &totalPerfStats, NULL);
+        RegisterPreprocessorProfile("mpse", &mpsePerfStats, 1, &detectPerfStats, NULL);
+        RegisterPreprocessorProfile("rule eval", &rulePerfStats, 1, &detectPerfStats, NULL);
+        RegisterPreprocessorProfile("rtn eval", &ruleRTNEvalPerfStats, 2, &rulePerfStats, NULL);
+        RegisterPreprocessorProfile("rule tree eval", &ruleOTNEvalPerfStats, 2, &rulePerfStats, NULL);
+        RegisterPreprocessorProfile("preproc_rule_options", &preprocRuleOptionPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
+        RegisterPreprocessorProfile("decode", &decodePerfStats, 0, &totalPerfStats, NULL);
+        RegisterPreprocessorProfile("eventq", &eventqPerfStats, 0, &totalPerfStats, NULL);
+        RegisterPreprocessorProfile("total", &totalPerfStats, 0, NULL, NULL);
+        RegisterPreprocessorProfile("daq meta", &metaPerfStats, 0, NULL, NULL);
+        (void)PerfIndicator_RegisterPreprocStat( &totalPerfStats,
+                                                 Perf_Indicator_Type_Packet_Latency );
+
 #endif
 
         LogMessage("Parsing Rules file \"%s\"\n", snort_conf_file);
@@ -5128,7 +5144,7 @@ void SnortInit(int argc, char **argv)
     /* Allocate an array for IP6 extensions for the main Packet struct */
     // Make sure this memory is freed on exit.
     s_packet.ip6_extensions = SnortAlloc(sizeof(*s_packet.ip6_extensions) * ScMaxIP6Extensions());
-    
+
     /* Finish up the pcap list and put in the queues */
     PQ_SetUp();
 
@@ -5764,6 +5780,8 @@ static SnortConfig * ReloadConfig(void)
         SnortConfFree(sc);
         return NULL;
     }
+
+    DAQ_UpdateTunnelBypass(sc);
 
     if (sc->output_flags & OUTPUT_FLAG__USE_UTC)
         sc->thiszone = 0;

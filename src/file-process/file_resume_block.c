@@ -48,8 +48,8 @@ static FileState sig_file_state = { FILE_CAPTURE_SUCCESS, FILE_SIG_DONE };
 
 typedef struct _FileHashKey
 {
-    snort_ip sip;
-    snort_ip dip;
+    struct in6_addr sip;
+    struct in6_addr dip;
     uint32_t file_sig;
 } FileHashKey;
 
@@ -65,11 +65,15 @@ typedef struct _FileNode
 
 void file_resume_block_init(void)
 {
-    fileHash = sfxhash_new(MAX_FILES_TRACKED, sizeof(FileHashKey), sizeof(FileNode), 0, 1,
-            NULL, NULL, 1);
+    /* number of entries * overhead per entry */
+    unsigned long maxmem = sfxhash_calc_maxmem(MAX_FILES_TRACKED,
+			sizeof(FileHashKey) + sizeof(FileNode));
+
+    fileHash = sfxhash_new(MAX_FILES_TRACKED, sizeof(FileHashKey), sizeof(FileNode),
+			maxmem, 1, NULL, NULL, 1);
+
     if (!fileHash)
         FatalError("Failed to create the expected channel hash table.\n");
-
 }
 
 void file_resume_block_cleanup(void)
@@ -105,15 +109,15 @@ int file_resume_block_add_file(void *pkt, uint32_t file_sig, uint32_t timeout,
     SFXHASH_NODE *hash_node = NULL;
     FileNode *node;
     FileNode new_node;
-    snort_ip_p srcIP;
-    snort_ip_p dstIP;
+    sfaddr_t* srcIP;
+    sfaddr_t* dstIP;
     Packet *p = (Packet *)pkt;
     time_t now = p->pkth->ts.tv_sec;
 
     srcIP = GET_SRC_IP(p);
     dstIP = GET_DST_IP(p);
-    IP_COPY_VALUE(hashKey.dip, dstIP);
-    IP_COPY_VALUE(hashKey.sip, srcIP);
+    sfaddr_copy_to_raw(&hashKey.dip, dstIP);
+    sfaddr_copy_to_raw(&hashKey.sip, srcIP);
     hashKey.file_sig = file_sig;
 
     hash_node = sfxhash_find_node(fileHash, &hashKey);
@@ -241,8 +245,8 @@ static inline File_Verdict checkVerdict(Packet *p, FileNode *node, SFXHASH_NODE 
 File_Verdict file_resume_block_check(void *pkt, uint32_t file_sig)
 {
     File_Verdict verdict = FILE_VERDICT_UNKNOWN;
-    snort_ip_p srcIP;
-    snort_ip_p dstIP;
+    sfaddr_t* srcIP;
+    sfaddr_t* dstIP;
     SFXHASH_NODE *hash_node;
     FileHashKey hashKey;
     FileNode *node;
@@ -256,8 +260,8 @@ File_Verdict file_resume_block_check(void *pkt, uint32_t file_sig)
     }
     srcIP = GET_SRC_IP(p);
     dstIP = GET_DST_IP(p);
-    IP_COPY_VALUE(hashKey.dip, dstIP);
-    IP_COPY_VALUE(hashKey.sip, srcIP);
+    sfaddr_copy_to_raw(&hashKey.dip, dstIP);
+    sfaddr_copy_to_raw(&hashKey.sip, srcIP);
     hashKey.file_sig = file_sig;
 
     hash_node = sfxhash_find_node(fileHash, &hashKey);

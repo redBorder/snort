@@ -49,13 +49,14 @@ typedef struct _SERVICE_DATA
 static int battle_field_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(battle_field_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &battle_field_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "battle_field",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -80,7 +81,7 @@ static RNAServiceValidationPort pp[] =
 #define PATTERN_6     "\xfe\xfd\x09\x00\x00\x00\x00"
 
 
-RNAServiceValidationModule battlefield_service_mod =
+tRNAServiceValidationModule battlefield_service_mod =
 {
     "BattleField",
     &battle_field_init,
@@ -91,18 +92,18 @@ static tAppRegistryEntry appIdRegistry[] = {{APP_ID_BATTLEFIELD, 0}};
 
 static int battle_field_init(const InitServiceAPI * const init_api)
 {
-    init_api->RegisterPattern(&battle_field_validate, IPPROTO_TCP, (uint8_t *)PATTERN_HELLO, sizeof(PATTERN_HELLO)-1,  5, "battle_field");
-    init_api->RegisterPattern(&battle_field_validate, IPPROTO_TCP, (uint8_t *)PATTERN_2, sizeof(PATTERN_2)-1,  0, "battle_field");
-    init_api->RegisterPattern(&battle_field_validate, IPPROTO_TCP, (uint8_t *)PATTERN_3, sizeof(PATTERN_3)-1,  0, "battle_field");
-    init_api->RegisterPattern(&battle_field_validate, IPPROTO_TCP, (uint8_t *)PATTERN_4, sizeof(PATTERN_4)-1,  0, "battle_field");
-    init_api->RegisterPattern(&battle_field_validate, IPPROTO_TCP, (uint8_t *)PATTERN_5, sizeof(PATTERN_5)-1,  0, "battle_field");
-    init_api->RegisterPattern(&battle_field_validate, IPPROTO_TCP, (uint8_t *)PATTERN_6, sizeof(PATTERN_6)-1,  0, "battle_field");
+    init_api->RegisterPattern(&battle_field_validate, IPPROTO_TCP, (uint8_t *)PATTERN_HELLO, sizeof(PATTERN_HELLO)-1,  5, "battle_field", init_api->pAppidConfig);
+    init_api->RegisterPattern(&battle_field_validate, IPPROTO_TCP, (uint8_t *)PATTERN_2, sizeof(PATTERN_2)-1,  0, "battle_field", init_api->pAppidConfig);
+    init_api->RegisterPattern(&battle_field_validate, IPPROTO_TCP, (uint8_t *)PATTERN_3, sizeof(PATTERN_3)-1,  0, "battle_field", init_api->pAppidConfig);
+    init_api->RegisterPattern(&battle_field_validate, IPPROTO_TCP, (uint8_t *)PATTERN_4, sizeof(PATTERN_4)-1,  0, "battle_field", init_api->pAppidConfig);
+    init_api->RegisterPattern(&battle_field_validate, IPPROTO_TCP, (uint8_t *)PATTERN_5, sizeof(PATTERN_5)-1,  0, "battle_field", init_api->pAppidConfig);
+    init_api->RegisterPattern(&battle_field_validate, IPPROTO_TCP, (uint8_t *)PATTERN_6, sizeof(PATTERN_6)-1,  0, "battle_field", init_api->pAppidConfig);
 
 	unsigned i;
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&battle_field_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&battle_field_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -120,13 +121,13 @@ MakeRNAServiceValidationPrototype(battle_field_validate)
         goto inprocess_nofd;
     }
 
-    fd = battlefield_service_mod.api->data_get(flowp);
+    fd = battlefield_service_mod.api->data_get(flowp, battlefield_service_mod.flow_data_index);
     if (!fd)
     {
         fd = calloc(1, sizeof(*fd));
         if (!fd)
             return SERVICE_ENOMEM;
-        if (battlefield_service_mod.api->data_add(flowp, fd, &free))
+        if (battlefield_service_mod.api->data_add(flowp, fd, battlefield_service_mod.flow_data_index, &free))
         {
             free(fd);
             return SERVICE_ENOMEM;
@@ -192,7 +193,7 @@ MakeRNAServiceValidationPrototype(battle_field_validate)
     }
 
     
-    battlefield_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+    battlefield_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, battlefield_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 
 inprocess:
@@ -215,7 +216,7 @@ success:
     return SERVICE_SUCCESS;
 
 fail:
-    battlefield_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+    battlefield_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, battlefield_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 
 }

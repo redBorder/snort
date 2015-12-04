@@ -129,8 +129,8 @@
 typedef struct s_PS_HASH_KEY
 {
     int protocol;
-    snort_ip scanner;
-    snort_ip scanned;
+    struct in6_addr scanner;
+    struct in6_addr scanned;
     tSfPolicyId      policyId;
 } PS_HASH_KEY;
 
@@ -352,8 +352,8 @@ void ps_reset(void)
 /**
 **  Check scanner and scanned ips to see if we can filter them out.
 */
-static int ps_ignore_ip(snort_ip_p scanner, uint16_t scanner_port,
-                        snort_ip_p scanned, uint16_t scanned_port)
+static int ps_ignore_ip(sfaddr_t* scanner, uint16_t scanner_port,
+                        sfaddr_t* scanned, uint16_t scanned_port)
 {
     if (portscan_eval_config->ignore_scanners)
     {
@@ -382,7 +382,8 @@ static int ps_filter_ignore(PS_PKT *ps_pkt)
 {
     Packet  *p;
     int      reverse_pkt = 0;
-    snort_ip_p scanner, scanned;
+    sfaddr_t* scanner;
+    sfaddr_t* scanned;
 
     p = (Packet *)ps_pkt->pkt;
 
@@ -564,12 +565,12 @@ static int ps_tracker_lookup(PS_PKT *ps_pkt, PS_TRACKER **scanner,
     if (portscan_eval_config->detect_scan_type &
         (PS_TYPE_PORTSCAN | PS_TYPE_DECOYSCAN | PS_TYPE_DISTPORTSCAN))
     {
-        IP_CLEAR(key.scanner);
+        memset(&key.scanner.s6_addr, 0, sizeof(key.scanner.s6_addr));
 
         if(ps_pkt->reverse_pkt)
-            IP_COPY_VALUE(key.scanned, GET_SRC_IP(p));
+            sfaddr_copy_to_raw(&key.scanned, GET_SRC_IP(p));
         else
-            IP_COPY_VALUE(key.scanned, GET_DST_IP(p));
+            sfaddr_copy_to_raw(&key.scanned, GET_DST_IP(p));
 
         /*
         **  Get the scanned tracker.
@@ -582,12 +583,12 @@ static int ps_tracker_lookup(PS_PKT *ps_pkt, PS_TRACKER **scanner,
     */
     if(portscan_eval_config->detect_scan_type & PS_TYPE_PORTSWEEP)
     {
-        IP_CLEAR(key.scanned);
+        memset(&key.scanned.s6_addr, 0, sizeof(key.scanned.s6_addr));
 
         if(ps_pkt->reverse_pkt)
-            IP_COPY_VALUE(key.scanner, GET_DST_IP(p));
+            sfaddr_copy_to_raw(&key.scanner, GET_DST_IP(p));
         else
-            IP_COPY_VALUE(key.scanner, GET_SRC_IP(p));
+            sfaddr_copy_to_raw(&key.scanner, GET_SRC_IP(p));
 
         /*
         **  Get the scanner tracker
@@ -730,7 +731,7 @@ static int ps_proto_update_window(PS_PROTO *proto, time_t pkt_time)
 **  @param u_short  port/ip_proto to track
 **  @param time_t   time the packet was received. update windows.
 */
-static int ps_proto_update(PS_PROTO *proto, int ps_cnt, int pri_cnt, snort_ip_p ip,
+static int ps_proto_update(PS_PROTO *proto, int ps_cnt, int pri_cnt, sfaddr_t* ip,
         u_short port, time_t pkt_time)
 {
     if(!proto)
@@ -787,7 +788,7 @@ static int ps_proto_update(PS_PROTO *proto, int ps_cnt, int pri_cnt, snort_ip_p 
 
     /* we need to do the IP comparisons in host order */
 
-    if(sfip_is_set(&proto->low_ip))
+    if(sfaddr_is_set(&proto->low_ip))
     {
         if(IP_GREATER(&proto->low_ip, ip))
             IP_COPY_VALUE(proto->low_ip, ip);
@@ -797,7 +798,7 @@ static int ps_proto_update(PS_PROTO *proto, int ps_cnt, int pri_cnt, snort_ip_p 
         IP_COPY_VALUE(proto->low_ip, ip);
     }
 
-    if(IP_IS_SET(proto->high_ip))
+    if(sfaddr_is_set(&proto->high_ip))
     {
         if(IP_LESSER(&proto->high_ip, ip))
             IP_COPY_VALUE(proto->high_ip, ip);
@@ -879,7 +880,7 @@ static int ps_tracker_update_tcp(PS_PKT *ps_pkt, PS_TRACKER *scanner,
 {
     Packet  *p;
     uint32_t session_flags;
-    snort_ip cleared;
+    sfaddr_t cleared;
     IP_CLEAR(cleared);
 
     p = (Packet *)ps_pkt->pkt;
@@ -1059,7 +1060,7 @@ static int ps_tracker_update_ip(PS_PKT *ps_pkt, PS_TRACKER *scanner,
                                 PS_TRACKER *scanned)
 {
     Packet *p;
-    snort_ip cleared;
+    sfaddr_t cleared;
     IP_CLEAR(cleared);
 
     p = (Packet *)ps_pkt->pkt;
@@ -1091,7 +1092,7 @@ static int ps_tracker_update_udp(PS_PKT *ps_pkt, PS_TRACKER *scanner,
                                  PS_TRACKER *scanned)
 {
     Packet  *p;
-    snort_ip    cleared;
+    sfaddr_t    cleared;
     IP_CLEAR(cleared);
 
     p = (Packet *)ps_pkt->pkt;
@@ -1149,7 +1150,7 @@ static int ps_tracker_update_icmp(PS_PKT *ps_pkt, PS_TRACKER *scanner,
                                   PS_TRACKER *scanned)
 {
     Packet  *p;
-    snort_ip cleared;
+    sfaddr_t cleared;
     IP_CLEAR(cleared);
 
     p = (Packet *)ps_pkt->pkt;

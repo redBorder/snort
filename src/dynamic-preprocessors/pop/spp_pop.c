@@ -194,7 +194,7 @@ static void POPInit(struct _SnortConfig *sc, char *args)
 #endif
 
 #ifdef PERF_PROFILING
-        _dpd.addPreprocProfileFunc("pop", (void*)&popPerfStats, 0, _dpd.totalPerfStats);
+        _dpd.addPreprocProfileFunc("pop", (void*)&popPerfStats, 0, _dpd.totalPerfStats, NULL);
 #endif
     }
 

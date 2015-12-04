@@ -464,10 +464,10 @@ static int base64DataInternal(void *p, CursorInfo* cursorInfo, const uint8_t **c
 
     _ded.SetAltDetect((uint8_t *)base64decodebuf, (uint16_t)base64decodesize);
     retVal = setCursorInternal(p, cursorInfo->flags, cursorInfo->offset, cursor);
-        
+
     if( retVal > RULE_NOMATCH)
         return RULE_MATCH;
-            
+
     _ded.DetectFlag_Disable(SF_FLAG_ALT_DETECT);
     return retVal;
 }

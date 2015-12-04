@@ -164,8 +164,8 @@ static void FileInit(struct _SnortConfig *sc, char *argp)
 
     file_config_parse(pPolicyConfig, (u_char *)argp);
     FileUpdateConfig(pPolicyConfig, file_config);
-
     file_agent_init(pPolicyConfig);
+    _dpd.addPostConfigFunc(sc, file_agent_thread_init, pPolicyConfig);
 
 }
 

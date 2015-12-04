@@ -64,8 +64,8 @@
 #define MAX_APP_PROTOCOL_ID  4
 #endif /* defined(FEAT_OPEN_APPID) */
 
-/*  Control Socket types */                                                            
-#define CS_TYPE_DEBUG_STREAM_HA     ((PP_STREAM << 7) + 0)     // 0x680 / 1664           
+/*  Control Socket types */
+#define CS_TYPE_DEBUG_STREAM_HA     ((PP_STREAM << 7) + 0)     // 0x680 / 1664
 
 /*  D A T A   S T R U C T U R E S  **********************************/
 
@@ -80,6 +80,7 @@ typedef struct _SessionHAConfig
 # ifdef SIDE_CHANNEL
     uint8_t use_side_channel;
 # endif
+    uint8_t use_daq;
 } SessionHAConfig;
 #endif
 
@@ -117,6 +118,14 @@ typedef struct _SessionConfiguration
     uint32_t  *policy_ref_count;
 } SessionConfiguration;
 
+#ifdef MPLS
+typedef struct _MPLS_Hdr
+{
+    uint16_t length;
+    uint8_t* start;
+}MPLS_Hdr;
+#endif
+
 // this struct is organized by member size for compactness
 typedef struct _SessionControlBlock
 {
@@ -132,7 +141,6 @@ typedef struct _SessionControlBlock
 
     tSfPolicyId napPolicyId;
     tSfPolicyId ipsPolicyId;
-    bool    ips_os_selected;
     SessionConfiguration *session_config;
     void *stream_config;
     void *proto_policy;
@@ -143,8 +151,8 @@ typedef struct _SessionControlBlock
     uint16_t    session_state;
     uint8_t     handler[SE_MAX];
 
-    snort_ip    client_ip; // FIXTHIS family and bits should be changed to uint16_t
-    snort_ip    server_ip; // or uint8_t to reduce sizeof from 24 to 20
+    sfaddr_t    client_ip; // FIXTHIS family and bits should be changed to uint16_t
+    sfaddr_t    server_ip; // or uint8_t to reduce sizeof from 24 to 20
 
     uint16_t    client_port;
     uint16_t    server_port;
@@ -170,16 +178,23 @@ typedef struct _SessionControlBlock
     uint8_t         ha_flags;
 #endif
 
-    bool     session_established;
+    bool    ips_os_selected;
+    bool    session_established;
+    bool    new_session;
+    bool    in_oneway_list;
 
     // pointers for linking into list of oneway sessions
     struct _SessionControlBlock *ows_prev;
     struct _SessionControlBlock *ows_next;
-    bool in_oneway_list;
 
 #if defined(FEAT_OPEN_APPID)
     int16_t     app_protocol_id[MAX_APP_PROTOCOL_ID];
 #endif /* defined(FEAT_OPEN_APPID) */
+
+#ifdef MPLS
+   MPLS_Hdr *clientMplsHeader;
+   MPLS_Hdr *serverMplsHeader;
+#endif
 
 } SessionControlBlock;
 

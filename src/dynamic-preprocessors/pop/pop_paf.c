@@ -464,7 +464,7 @@ bool is_data_end (void* ssn)
 {
     if ( ssn )
     {
-	PopPafData** s = (PopPafData **)_dpd.streamAPI->get_paf_user_data(ssn, 0, pop_paf_id);
+        PopPafData** s = (PopPafData **)_dpd.streamAPI->get_paf_user_data(ssn, 0, pop_paf_id);
 
         if ( s && (*s) )
             return ((*s)->end_of_data);
@@ -478,8 +478,8 @@ void register_pop_paf_service (struct _SnortConfig *sc, int16_t app, tSfPolicyId
 {
     if (_dpd.isPafEnabled())
     {
-        pop_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, true, pop_paf, true);
-        pop_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, false,pop_paf, true);
+       pop_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, true, pop_paf, true);
+       pop_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, false,pop_paf, true);
     }
 }
 #endif

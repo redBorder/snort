@@ -172,8 +172,8 @@ int SFRF_TestThreshold(
     RateFilterConfig *config,
     unsigned gid,
     unsigned sid,
-    snort_ip_p sip,
-    snort_ip_p dip,
+    sfaddr_t* sip,
+    sfaddr_t* dip,
     time_t curTime,
     SFRF_COUNT_OPERATION
 );

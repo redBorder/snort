@@ -107,6 +107,8 @@ extern char *snort_conf_dir;
 
 extern MemPool *hi_gzip_mempool;
 
+extern tSfPolicyUserContextId hi_config;
+
 
 /* Stats tracking for HTTP Inspect */
 HIStats hi_stats;
@@ -1734,7 +1736,7 @@ static int Add_XFF_Field( HTTPINSPECT_CONF *ServerConf, uint8_t *Prec_Array, uin
         return -1;
     }
 
-    cp = Field_Name;
+    cp = (unsigned char*)Field_Name;
     while( *cp != '\0' )
     {
         *cp = (uint8_t)toupper(*cp);  // Fold to upper case for runtime comparisons
@@ -3243,7 +3245,7 @@ int ProcessUniqueServerConf(struct _SnortConfig *sc, HTTPINSPECT_GLOBAL_CONF *Gl
     char *pIpAddressList2 = NULL;
     char *brkt = NULL;
     char firstIpAddress = 1;
-    sfip_t Ip;
+    sfcidr_t Ip;
     HTTPINSPECT_CONF *ServerConf = NULL;
     int iRet;
     int retVal = -1;
@@ -3706,7 +3708,7 @@ static inline void HttpLogFuncs(HTTPINSPECT_GLOBAL_CONF *GlobalConf, HttpSession
     if ( !iCallDetect )
         stream_api->clear_extra_data(p->ssnptr, p, 0);
 
-    if ( hsd->tList_start !=NULL && hsd->tList_end != NULL)
+    if ( hsd->tList_start != NULL )
     {
         if( hsd->tList_start->tID == hsd->http_resp_id || hsd->tList_end->tID == hsd->http_req_id )
         {
@@ -3745,7 +3747,7 @@ static inline void setFileName(Packet *p)
     uint32_t len = 0;
     uint32_t type = 0;
     GetHttpUriData(p->ssnptr, &buf, &len, &type);
-    file_api->set_file_name (p->ssnptr, buf, len);
+    file_api->set_file_name (p->ssnptr, buf, len, false);
 }
 
 static inline int processPostFileData(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p, HI_SESSION *Session, HttpSessionData *hsd)
@@ -3964,7 +3966,7 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
         }
         else
         {
-            ApplyFlowDepth(Session->server_conf, p, hsd, 0, 0, GET_PKT_SEQ(p));
+            ApplyFlowDepth(Session->server_conf, p, hsd, 0, 1, GET_PKT_SEQ(p));
         }
 
         p->packet_flags |= PKT_HTTP_DECODE;
@@ -4340,13 +4342,13 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                      Session->server.response.status_msg_size);
              }
 
-             if(Session->server.response.body_size > 0)
+             if(Session->server.response.body_raw_size > 0)
              {
                  int detect_data_size = (int)Session->server.response.body_size;
 
                  /*body_size is included in the data_extracted*/
                  if((Session->server_conf->server_flow_depth > 0) &&
-                         (hsd->resp_state.data_extracted  < (Session->server_conf->server_flow_depth + (int)Session->server.response.body_size)))
+                         (hsd->resp_state.data_extracted  < (Session->server_conf->server_flow_depth + (int)Session->server.response.body_raw_size)))
                  {
                      /*flow_depth is smaller than data_extracted, need to subtract*/
                      if(Session->server_conf->server_flow_depth < hsd->resp_state.data_extracted)
@@ -4365,7 +4367,7 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                      uint16_t Data_Len;
                      const uint8_t *Data;
 
-                     hsd->fd_state->Next_In = (uint8_t *) (Data = Session->server.response.body);
+                     hsd->fd_state->Next_In = (uint8_t *) (Data = Session->server.response.body_raw);
                      hsd->fd_state->Avail_In = (Data_Len = (uint16_t) detect_data_size);
 
                      (void)File_Decomp_SetBuf( hsd->fd_state );
@@ -4375,7 +4377,9 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                      if( Ret_Code == File_Decomp_DecompError )
                      {
                          Session->server.response.body = Data;
+                         Session->server.response.body_raw = Data;
                          Session->server.response.body_size = Data_Len;
+                         Session->server.response.body_raw_size = Data_Len;
 
                          if(hi_eo_generate_event(Session, hsd->fd_state->Error_Event))
                          {
@@ -4395,6 +4399,8 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                      {
                          Session->server.response.body = hsd->fd_state->Buffer;
                          Session->server.response.body_size = hsd->fd_state->Total_Out;
+                         Session->server.response.body_raw = hsd->fd_state->Buffer;
+                         Session->server.response.body_raw_size = hsd->fd_state->Total_Out;
                      }
 
                      setFileDataPtr(Session->server.response.body, (uint16_t)Session->server.response.body_size);
@@ -4405,8 +4411,8 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                  }
 
                  if( ScPafEnabled() && PacketHasPAFPayload( p )
-                     && file_api->file_process( p, (uint8_t *)Session->server.response.body,
-                                                (uint16_t)Session->server.response.body_size,
+                     && file_api->file_process( p, (uint8_t *)Session->server.response.body_raw,
+                                                (uint16_t)Session->server.response.body_raw_size,
                                                 file_api->get_file_position( p ), false, false ) )
                  {
                      setFileName(p);
@@ -4562,6 +4568,7 @@ void FreeHttpSessionData(void *data)
         mempool_free(http_mempool, hsd->log_state->log_bucket);
         free(hsd->log_state);
     }
+
     while(hsd->tList_start != NULL )
         deleteNode_tList(hsd);
 
@@ -4578,25 +4585,25 @@ void FreeHttpSessionData(void *data)
 
 int GetHttpTrueIP(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
 {
-    sfip_t *true_ip = NULL;
+    sfaddr_t *true_ip;
 
     true_ip = GetTrueIPForSession(data);
     if(!true_ip)
         return 0;
 
-    if(true_ip->family == AF_INET6)
+    if(sfaddr_family(true_ip) == AF_INET6)
     {
         *type = EVENT_INFO_XFF_IPV6;
         *len = sizeof(struct in6_addr); /*ipv6 address size in bytes*/
-
+        *buf = (uint8_t*)sfaddr_get_ip6_ptr(true_ip);
     }
     else
     {
         *type = EVENT_INFO_XFF_IPV4;
         *len = sizeof(struct in_addr); /*ipv4 address size in bytes*/
+        *buf = (uint8_t*)sfaddr_get_ip4_ptr(true_ip);
     }
 
-    *buf = true_ip->ip8;
     return 1;
 }
 
@@ -4759,6 +4766,72 @@ int HI_SearchStrFound(void *id, void *unused, int index, void *data, void *unuse
 
     /* Returning non-zero stops search, which is okay since we only look for one at a time */
     return 1;
+}
+
+static int GetHttpInspectConf( void *ssn, uint32_t flags, HTTPINSPECT_CONF **serverConf, HTTPINSPECT_CONF **clientConf )
+{
+    int iRet = HI_SUCCESS;
+    tSfPolicyId policyId = getNapRuntimePolicy();
+    HTTPINSPECT_GLOBAL_CONF *pPolicyConfig = NULL;
+    HI_SI_INPUT SiInput;
+    int iInspectMode = 0;
+    SessionControlBlock *scb = (SessionControlBlock *)ssn;
+    sfPolicyUserPolicySet (hi_config, policyId);
+    pPolicyConfig = (HTTPINSPECT_GLOBAL_CONF *)sfPolicyUserDataGetCurrent(hi_config);
+    if( !scb )
+        return iRet;
+
+    SiInput.pdir = HI_SI_NO_MODE;
+
+    if(  flags & PKT_FROM_CLIENT )
+    {
+        SiInput.pdir = HI_SI_CLIENT_MODE;
+
+        IP_COPY_VALUE(SiInput.sip, &scb->client_ip);
+        IP_COPY_VALUE(SiInput.dip, &scb->server_ip);
+
+        SiInput.sport = ntohs(scb->client_port);
+        SiInput.dport = ntohs(scb->server_port);
+    }
+    else if (  flags & PKT_FROM_SERVER )
+    {
+        SiInput.pdir = HI_SI_SERVER_MODE;
+
+        IP_COPY_VALUE(SiInput.sip, &scb->server_ip);
+        IP_COPY_VALUE(SiInput.dip, &scb->client_ip);
+
+        SiInput.sport = ntohs(scb->server_port);
+        SiInput.dport = ntohs(scb->client_port);
+    }
+
+    iRet = GetHttpConf(pPolicyConfig, serverConf, clientConf, &SiInput, &iInspectMode, ssn);
+    return iRet;
+}
+
+int GetHttpFlowDepth(void *ssn, uint32_t flags)
+{
+    HTTPINSPECT_CONF *serverConf = 0;
+    HTTPINSPECT_CONF *clientConf = 0;
+    int flow_depth  = 0;
+
+    GetHttpInspectConf( ssn, flags, &serverConf, &clientConf );
+    if( !serverConf )
+        return flow_depth;
+
+    if( serverConf->file_policy )
+    {
+        flow_depth = 0;
+    }
+    else if(  flags & PKT_FROM_CLIENT )
+    {
+        //Only for POST
+        flow_depth =  serverConf->post_depth;
+    }
+    else if( flags & PKT_FROM_SERVER )
+    {
+        flow_depth = serverConf->server_flow_depth;
+    }
+    return flow_depth;
 }
 
 

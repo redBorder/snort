@@ -205,7 +205,7 @@ static void ARPspoofInit(struct _SnortConfig *sc, char *args)
        arp_spoof_config = sfPolicyConfigCreate();
 
 #ifdef PERF_PROFILING
-        RegisterPreprocessorProfile("arpspoof", &arpPerfStats, 0, &totalPerfStats);
+        RegisterPreprocessorProfile("arpspoof", &arpPerfStats, 0, &totalPerfStats, NULL);
 #endif
 
         AddFuncToPreprocCleanExitList(ARPspoofCleanExit, NULL, PRIORITY_LAST, PP_ARPSPOOF);
@@ -532,7 +532,7 @@ static IPMacEntry *LookupIPMacEntryByIP(IPMacEntryList *ip_mac_entry_list,
     IPMacEntryListNode *current;
 #if defined(DEBUG)
     char *cha, *chb;
-    snort_ip ina, inb;
+    sfaddr_t ina, inb;
 #endif
 
     if (ip_mac_entry_list == NULL)
@@ -549,6 +549,8 @@ static IPMacEntry *LookupIPMacEntryByIP(IPMacEntryList *ip_mac_entry_list,
 
         DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN,
             "MODNAME: LookupIPMacEntryByIP() comparing %s to %s\n", cha, chb););
+        free(cha);
+        free(chb);
 #endif
         if (current->ip_mac_entry->ipv4_addr == ipv4_addr)
         {
@@ -637,7 +639,7 @@ static void PrintIPMacEntryList(IPMacEntryList *ip_mac_entry_list)
 {
     IPMacEntryListNode *current;
     int i;
-    snort_ip in;
+    sfaddr_t in;
 
     if (ip_mac_entry_list == NULL)
         return;

@@ -24,7 +24,7 @@
 
 #include "client_app_api.h"
 
-extern RNAClientAppModule smtp_client_mod;
+extern tRNAClientAppModule smtp_client_mod;
 
 #endif  /* __CLIENT_APP_SMTP_H__ */
 

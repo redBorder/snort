@@ -83,6 +83,11 @@
 #include "mempool.h"
 #include "file_api.h"
 #include "sf_email_attach_decode.h"
+
+#if defined(FEAT_OPEN_APPID)
+#include "spp_stream6.h"
+#endif /* defined(FEAT_OPEN_APPID) */
+
 /*
 **  Defines for preprocessor initialization
 */
@@ -529,7 +534,7 @@ static void HttpInspectInit(struct _SnortConfig *sc, char *args)
         RegisterPreprocStats("http_inspect", HttpInspectDropStats);
 
 #ifdef PERF_PROFILING
-        RegisterPreprocessorProfile("httpinspect", &hiPerfStats, 0, &totalPerfStats);
+        RegisterPreprocessorProfile("httpinspect", &hiPerfStats, 0, &totalPerfStats, NULL);
 #endif
 
 #ifdef TARGET_BASED
@@ -723,6 +728,7 @@ static void updateConfigFromFileProcessing (HTTPINSPECT_GLOBAL_CONF *pPolicyConf
         ServerConf->log_uri = 1;
         ServerConf->unlimited_decompress = 1;
         pPolicyConfig->mime_conf.log_filename = 1;
+        ServerConf->file_policy = 1;
     }
 
     if (!fileDepth || (!ServerConf->server_flow_depth))
@@ -772,7 +778,7 @@ static int HttpInspectVerifyPolicy(struct _SnortConfig *sc, tSfPolicyUserContext
     updateConfigFromFileProcessing(pPolicyConfig);
     HttpInspectAddPortsOfInterest(sc, pPolicyConfig, policyId);
 #if defined(FEAT_OPEN_APPID)
-    if (IsPreprocEnabled(sc, PP_APP_ID))
+    if (IsAnybodyRegisteredForHttpHeader())
     {
         pPolicyConfig->global_server->appid_enabled = 1;
     }

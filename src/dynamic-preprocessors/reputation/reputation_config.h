@@ -54,6 +54,7 @@ typedef struct _SharedMem
 {
     char *path;
     uint32_t updateInterval;
+    uint16_t maxInstances;
 }SharedMem;
 
 
