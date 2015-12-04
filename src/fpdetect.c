@@ -37,9 +37,9 @@
 **  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 **
 */
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+# ifdef HAVE_CONFIG_H
+#  include "config.h"
+# endif
 
 #include "snort.h"
 #include "detect.h"
@@ -66,10 +66,11 @@
 #include "sp_pattern_match.h"
 #include "spp_frag3.h"
 #include "stream_api.h"
-#ifdef TARGET_BASED
-#include "target-based/sftarget_protocol_reference.h"
-#include "target-based/sftarget_reader.h"
-#endif
+
+# ifdef TARGET_BASED
+#  include "target-based/sftarget_protocol_reference.h"
+#  include "target-based/sftarget_reader.h"
+# endif
 
 #include "ppm.h"
 #include "generators.h"
@@ -282,7 +283,7 @@ int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
     }
     else
     {
-        snort_ip cleared;
+        sfaddr_t cleared;
         IP_CLEAR(cleared);
 
         filterEvent = sfthreshold_test(
@@ -683,9 +684,9 @@ static int rule_tree_match( void * id, void *tree, int index, void * data, void 
         {
             const uint8_t *tmp_data = eval_data.p->data;
             uint16_t tmp_dsize = eval_data.p->dsize;
-            void *tmp_iph = (void *)eval_data.p->iph;
-            void *tmp_ip4h = (void *)eval_data.p->ip4h;
-            void *tmp_ip6h = (void *)eval_data.p->ip6h;
+            const IPHdr *tmp_iph = eval_data.p->iph;
+            IP4Hdr *tmp_ip4h = eval_data.p->ip4h;
+            IP6Hdr *tmp_ip6h = eval_data.p->ip6h;
             eval_data.p->iph = eval_data.p->inner_iph;
             eval_data.p->ip4h = &eval_data.p->inner_ip4h;
             eval_data.p->ip6h = &eval_data.p->inner_ip6h;
@@ -704,8 +705,8 @@ static int rule_tree_match( void * id, void *tree, int index, void * data, void 
 
             /* restore original data & dsize */
             eval_data.p->iph = tmp_iph;
-            eval_data.p->ip4h = (IP4Hdr*)tmp_ip4h;
-            eval_data.p->ip6h = (IP6Hdr*)tmp_ip6h;
+            eval_data.p->ip4h = tmp_ip4h;
+            eval_data.p->ip6h = tmp_ip6h;
             eval_data.p->data = tmp_data;
             eval_data.p->dsize = tmp_dsize;
         }
@@ -1091,9 +1092,9 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
     int start_state;
     const uint8_t *tmp_payload;
     uint16_t tmp_dsize;
-    void *tmp_iph;
-    void *tmp_ip6h;
-    void *tmp_ip4h;
+    IPHdr *tmp_iph;
+    IP6Hdr *tmp_ip6h;
+    IP4Hdr *tmp_ip4h;
     char repeat = 0;
     FastPatternConfig *fp = snort_conf->fast_pattern_config;
     PROFILE_VARS;
@@ -1393,8 +1394,8 @@ fp_eval_header_sw_reset_ip:
     {
         /* Set the data & dsize back to original values. */
         p->iph = tmp_iph;
-        p->ip6h = (IP6Hdr *)tmp_ip6h;
-        p->ip4h = (IP4Hdr *)tmp_ip4h;
+        p->ip6h = tmp_ip6h;
+        p->ip4h = tmp_ip4h;
         p->data = tmp_payload;
         p->dsize = tmp_dsize;
         p->packet_flags &= ~(PKT_IP_RULE| PKT_IP_RULE_2ND);
@@ -1411,40 +1412,33 @@ static inline int fpEvalHeaderUdp(Packet *p, OTNX_MATCH_DATA *omd)
     PORT_GROUP *src = NULL, *dst = NULL, *gen = NULL;
 
 #ifdef TARGET_BASED
+    PORT_GROUP *nssrc = NULL, *nsdst = NULL;
+
     if (IsAdaptiveConfigured())
     {
         /* Check for a service/protocol ordinal for this packet */
         int16_t proto_ordinal = GetProtocolReference(p);
-
-        DEBUG_WRAP( DebugMessage(DEBUG_ATTRIBUTE,"proto_ordinal=%d\n",proto_ordinal););
-
-        if (proto_ordinal > 0)
+        if (proto_ordinal > 0 && proto_ordinal != SFTARGET_UNKNOWN_PROTOCOL)
         {
-            /* Grab the generic group -- the any-any rules */
             prmFindGenericRuleGroup(snort_conf->prmUdpRTNX, &gen);
 
             /* TODO:  To From Server ?, else we apply  */
-            dst = fpGetServicePortGroupByOrdinal(snort_conf->sopgTable, IPPROTO_UDP,
-                                                 TO_SERVER, proto_ordinal);
-            src = fpGetServicePortGroupByOrdinal(snort_conf->sopgTable, IPPROTO_UDP,
-                                                 TO_CLIENT, proto_ordinal);
-
-            DEBUG_WRAP(DebugMessage(DEBUG_ATTRIBUTE,
-                        "fpEvalHeaderUdpp:targetbased-ordinal-lookup: "
-                        "sport=%d, dport=%d, proto_ordinal=%d, src:%x, "
-                        "dst:%x, gen:%x\n",p->sp,p->dp,proto_ordinal,src,dst,gen););
+            dst = fpGetServicePortGroupByOrdinal(snort_conf->sopgTable, IPPROTO_UDP, TO_SERVER, proto_ordinal);
+            src = fpGetServicePortGroupByOrdinal(snort_conf->sopgTable, IPPROTO_UDP, TO_CLIENT, proto_ordinal);
         }
+
+        // Find non-service based rule groups and the generic rule groups
+        prmFindNoServiceRuleGroup(snort_conf->prmUdpRTNX, p->dp, p->sp, &nssrc, &nsdst, &gen);
     }
 
-    if ((src == NULL) && (dst == NULL))
+    if ( src == NULL && dst == NULL )
     {
-        /* we did not have a target based port group, use ports */
-        if (!prmFindRuleGroupUdp(snort_conf->prmUdpRTNX, p->dp, p->sp, &src, &dst, &gen))
+        if(!prmFindRuleGroupUdp(snort_conf->prmUdpRTNX, p->dp, p->sp, &src, &dst, &nssrc, &nsdst, &gen))
             return 0;
-
-        DEBUG_WRAP(DebugMessage(DEBUG_ATTRIBUTE,
-                    "fpEvalHeaderUdp: sport=%d, dport=%d, "
-                    "src:%x, dst:%x, gen:%x\n",p->sp,p->dp,src,dst,gen););
+    }
+    else
+    {
+        prmFindNoServiceRuleGroup(snort_conf->prmUdpRTNX, p->dp, p->sp, &nssrc, &nsdst, &gen);
     }
 #else
     if (!prmFindRuleGroupUdp(snort_conf->prmUdpRTNX, p->dp, p->sp, &src, &dst, &gen))
@@ -1460,23 +1454,18 @@ static inline int fpEvalHeaderUdp(Packet *p, OTNX_MATCH_DATA *omd)
 
     InitMatchInfo(omd);
 
-    if (dst != NULL)
-    {
-        if (fpEvalHeaderSW(dst, p, 1, 0, omd))
-            return 1;
-    }
-
-    if (src != NULL)
-    {
-        if (fpEvalHeaderSW(src, p, 1, 0, omd))
-            return 1;
-    }
-
-    if (gen != NULL)
-    {
-        if (fpEvalHeaderSW(gen, p, 1, 0, omd))
-            return 1;
-    }
+    if ( dst )
+        fpEvalHeaderSW(dst, p, 1, 0, omd);
+    if ( src )
+        fpEvalHeaderSW(src, p, 1, 0, omd);
+#ifdef TARGET_BASED
+    if ( nsdst )
+        fpEvalHeaderSW(nsdst, p, 1, 0, omd);
+    if ( nssrc )
+        fpEvalHeaderSW(nssrc, p, 1, 0, omd);
+#endif
+    if ( gen )
+        fpEvalHeaderSW(gen, p, 1, 0, omd);
 
     return fpFinalSelectEvent(omd, p);
 }
@@ -1489,81 +1478,51 @@ static inline int fpEvalHeaderTcp(Packet *p, OTNX_MATCH_DATA *omd)
     PORT_GROUP *src = NULL, *dst = NULL, *gen = NULL;
 
 #ifdef TARGET_BASED
+    PORT_GROUP *nssrc = NULL, *nsdst = NULL;
+
     if (IsAdaptiveConfigured())
     {
         int16_t proto_ordinal = GetProtocolReference(p);
-
-        DEBUG_WRAP(DebugMessage(DEBUG_ATTRIBUTE, "proto_ordinal=%d\n", proto_ordinal););
-
-        if (proto_ordinal > 0)
+        if (proto_ordinal > 0 && proto_ordinal != SFTARGET_UNKNOWN_PROTOCOL)
         {
-            /* Grab the generic group -- the any-any rules */
             prmFindGenericRuleGroup(snort_conf->prmTcpRTNX, &gen);
 
-            if (p->packet_flags & PKT_FROM_SERVER) /* to cli */
-            {
-                DEBUG_WRAP(DebugMessage(DEBUG_ATTRIBUTE, "pkt_from_server\n"););
+            if (p->packet_flags & PKT_FROM_SERVER)
+                src = fpGetServicePortGroupByOrdinal(snort_conf->sopgTable, IPPROTO_TCP, TO_CLIENT, proto_ordinal);
 
-                src = fpGetServicePortGroupByOrdinal(snort_conf->sopgTable, IPPROTO_TCP,
-                                                     0 /*to_cli */,  proto_ordinal);
-            }
-
-            if (p->packet_flags & PKT_FROM_CLIENT) /* to srv */
-            {
-                DEBUG_WRAP(DebugMessage(DEBUG_ATTRIBUTE, "pkt_from_client\n"););
-
-                dst = fpGetServicePortGroupByOrdinal(snort_conf->sopgTable, IPPROTO_TCP,
-                                                     1 /*to_srv */,  proto_ordinal);
-            }
-
-            DEBUG_WRAP(DebugMessage(DEBUG_ATTRIBUTE,
-                        "fpEvalHeaderTcp:targetbased-ordinal-lookup: "
-                        "sport=%d, dport=%d, proto_ordinal=%d, src:%x, "
-                        "dst:%x, gen:%x\n",p->sp,p->dp,proto_ordinal,src,dst,gen););
+            if (p->packet_flags & PKT_FROM_CLIENT)
+                dst = fpGetServicePortGroupByOrdinal(snort_conf->sopgTable, IPPROTO_TCP, TO_SERVER, proto_ordinal);
         }
     }
 
-    if ((src == NULL) && (dst == NULL))
+    if ( src == NULL && dst == NULL )
     {
-        /* grab the src/dst groups from the lookup above */
-        if (!prmFindRuleGroupTcp(snort_conf->prmTcpRTNX, p->dp, p->sp, &src, &dst, &gen))
+        if(!prmFindRuleGroupTcp(snort_conf->prmTcpRTNX, p->dp, p->sp, &src, &dst, &nssrc, &nsdst, &gen))
             return 0;
-
-        DEBUG_WRAP(DebugMessage(DEBUG_ATTRIBUTE,
-                    "fpEvalHeaderTcp: sport=%d, "
-                    "dport=%d, src:%x, dst:%x, gen:%x\n",p->sp,p->dp,src,dst,gen););
+    }
+    else
+    {
+        prmFindNoServiceRuleGroup(snort_conf->prmTcpRTNX, p->dp, p->sp, &nssrc, &nsdst, &gen);
     }
 #else
     if (!prmFindRuleGroupTcp(snort_conf->prmTcpRTNX, p->dp, p->sp, &src, &dst, &gen))
         return 0;
 #endif
 
-    if (fpDetectGetDebugPrintNcRules(snort_conf->fast_pattern_config))
-    {
-        LogMessage(
-            "fpEvalHeaderTcp: sport=%d, dport=%d, src:%p, dst:%p, gen:%p\n",
-             p->sp, p->dp, (void*)src, (void*)dst, (void*)gen);
-    }
-
     InitMatchInfo(omd);
 
-    if (dst != NULL)
-    {
-        if (fpEvalHeaderSW(dst, p, 1, 0, omd))
-            return 1;
-    }
-
-    if (src != NULL)
-    {
-        if (fpEvalHeaderSW(src, p, 1, 0, omd))
-            return 1;
-    }
-
-    if (gen != NULL)
-    {
-        if(fpEvalHeaderSW(gen, p, 1, 0, omd))
-            return 1;
-    }
+    if ( dst )
+        fpEvalHeaderSW(dst, p, 1, 0, omd);
+    if ( src )
+        fpEvalHeaderSW(src, p, 1, 0, omd);
+#ifdef TARGET_BASED
+    if ( nsdst )
+        fpEvalHeaderSW(nsdst, p, 1, 0, omd);
+    if ( nssrc )
+        fpEvalHeaderSW(nssrc, p, 1, 0, omd);
+#endif
+    if ( gen )
+        fpEvalHeaderSW(gen, p, 1, 0, omd);
 
     return fpFinalSelectEvent(omd, p);
 }

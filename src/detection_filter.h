@@ -20,7 +20,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  ****************************************************************************/
- 
+
 #ifndef _DETECTION_FILTER_H_
 #define _DETECTION_FILTER_H_
 
@@ -30,7 +30,7 @@
 //
 // both detection_filter and event_filter use the same basic mechanism.
 // however, detection_filter is evaluated as the final step in rule matching.
-// and thereby controls event generation.  event_filter is evaluated after 
+// and thereby controls event generation.  event_filter is evaluated after
 // the event is queued, and thereby controls which events get logged.
 
 #include "sfthreshold.h"
@@ -53,7 +53,7 @@ void detection_filter_cleanup( void );
 void detection_filter_print_config(DetectionFilterConfig *);
 void detection_filter_reset_active(void);
 
-int detection_filter_test(void*, snort_ip_p sip, snort_ip_p dip, long curtime); 
+int detection_filter_test(void*, sfaddr_t* sip, sfaddr_t* dip, long curtime);
 void * detection_filter_create(DetectionFilterConfig *, THDX_STRUCT *);
 
 #endif

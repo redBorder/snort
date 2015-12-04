@@ -351,6 +351,11 @@ static void SSLPP_config(SSLPP_config_t *config, char *conf)
             }
             UpdatePathToDir(full_path_dirname, PATH_MAX, tmpChar);
             config->pki_dir = strdup(full_path_dirname);
+            if (!config->pki_dir)
+            {
+                DynamicPreprocessorFatalMessage("%s(%d) Failed to allocate memory for "
+                    "option in SSL preprocessor\n", __FILE__, __LINE__);
+            }
         }
         else if(!strcasecmp(space_tok, "ssl_rules_dir"))
         {
@@ -365,6 +370,11 @@ static void SSLPP_config(SSLPP_config_t *config, char *conf)
             }
             UpdatePathToDir(full_path_dirname, PATH_MAX, tmpChar);
             config->ssl_rules_dir = strdup(full_path_dirname);
+            if (!config->ssl_rules_dir)
+            {
+                DynamicPreprocessorFatalMessage("%s(%d) Failed to allocate memory for "
+                    "option in SSL preprocessor\n", __FILE__, __LINE__);
+            }
         }
         else if(!strcasecmp(space_tok, "memcap"))
         {
@@ -547,7 +557,7 @@ static void SSLPP_print_config(SSLPP_config_t *config)
         _dpd.logMsg("    SSL HA enabled     : %s\n", config->enable_ssl_ha ? "YES" : "NO" );
 #endif
     _dpd.logMsg("    Maximum SSL Heartbeat length: %d\n", config->max_heartbeat_len);
-        
+
 }
 
 static inline void SSLSetPort(SSLPP_config_t *config, int port)
@@ -668,7 +678,7 @@ void SSLPP_init(struct _SnortConfig *sc, char *args)
         _dpd.addPreprocResetStats(SSLResetStats, NULL, PRIORITY_LAST, PP_SSL);
 
 #ifdef PERF_PROFILING
-        _dpd.addPreprocProfileFunc("ssl", (void *)&sslpp_perf_stats, 0, _dpd.totalPerfStats);
+        _dpd.addPreprocProfileFunc("ssl", (void *)&sslpp_perf_stats, 0, _dpd.totalPerfStats, NULL);
 #endif
 
 #ifdef ENABLE_HA
@@ -741,7 +751,7 @@ static int SSLFreeConfigPolicy(
 
 
     free(pPolicyConfig);
-        
+
     return 0;
 }
 
@@ -900,7 +910,8 @@ static int SSLPP_CheckConfig(struct _SnortConfig *sc)
 #endif
     }
 
-    sfPolicyUserDataIterate (sc, ssl_config, SSLPP_CheckPolicyEnabled);
+    if ((rval = sfPolicyUserDataIterate (sc, ssl_config, SSLPP_CheckPolicyEnabled)))
+        return rval;
 
     return 0;
 }

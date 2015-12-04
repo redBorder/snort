@@ -26,24 +26,63 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 
+#include "appIdApi.h"
+#include "appInfoTable.h"
 #include "client_app_api.h"
 #include "client_app_smtp.h"
 
+#define  UNIT_TESTING 0
+
+#if UNIT_TESTING
+#include "fw_appid.h"
+#endif
+
 typedef enum
 {
+    SMTP_STATE_NONE,
     SMTP_STATE_HELO,
     SMTP_STATE_MAIL_FROM,
     SMTP_STATE_RCPT_TO,
     SMTP_STATE_DATA,
     SMTP_STATE_MESSAGE,
-    SMTP_STATE_CONNECTION_ERROR
+    SMTP_STATE_GET_PRODUCT_VERSION,
+    SMTP_STATE_SKIP_LINE,
+    SMTP_STATE_CONNECTION_ERROR,
+    SMTP_STATE_STARTTLS
 } SMTPState;
+
+#define MAX_VERSION_SIZE    64
+#define MAX_HEADER_LINE_SIZE 1024
+
+#if UNIT_TESTING
+char *stateName [] =
+{
+    "SMTP_STATE_NONE",
+    "SMTP_STATE_HELO",
+    "SMTP_STATE_MAIL_FROM",
+    "SMTP_STATE_RCPT_TO",
+    "SMTP_STATE_DATA",
+    "SMTP_STATE_MESSAGE",
+    "SMTP_STATE_GET_PRODUCT_VERSION",
+    "SMTP_STATE_SKIP_LINE",
+    "SMTP_STATE_CONNECTION_ERROR",
+    "SMTP_STATE_STARTTLS"
+};
+#endif
+
+/* flag values for ClientSMTPData */
+#define CLIENT_FLAG_STARTTLS_SENT   0x01
+#define CLIENT_FLAG_SMTPS           0x02
 
 #define MAX_VERSION_SIZE    64
 typedef struct
 {
+    int flags;
     SMTPState state;
+    SMTPState nextstate;
     uint8_t version[MAX_VERSION_SIZE];
+    unsigned pos;
+    uint8_t     *headerline;
 } ClientSMTPData;
 
 typedef struct _SMTP_CLIENT_APP_CONFIG
@@ -55,9 +94,10 @@ static SMTP_CLIENT_APP_CONFIG smtp_config;
 
 static CLIENT_APP_RETCODE smtp_init(const InitClientAppAPI * const init_api, SF_LIST *config);
 static CLIENT_APP_RETCODE smtp_validate(const uint8_t *data, uint16_t size, const int dir,
-                                        FLOW *flowp, const SFSnortPacket *pkt, struct _Detector *userData);
+                                        tAppIdData *flowp, SFSnortPacket *pkt,
+                                        struct _Detector *userData, const struct appIdConfig_ *pConfig);
 
-RNAClientAppModule smtp_client_mod =
+tRNAClientAppModule smtp_client_mod =
 {
     .name = "SMTP",
     .proto = IPPROTO_TCP,
@@ -79,11 +119,18 @@ typedef struct {
 #define RCPTTO "RCPT TO:"
 #define DATA "DATA"
 #define RSET "RSET"
+#define AUTH "AUTH PLAIN"
+#define STARTTLS "STARTTLS"
+
+#define STARTTLS_COMMAND_SUCCESS "220 "
 
 #define MICROSOFT "Microsoft "
 #define OUTLOOK "Outlook"
 #define EXPRESS "Express "
 #define IMO "IMO, "
+
+#define XMAILER "X-Mailer: "
+#define USERAGENT "User-Agent: "
 
 static const uint8_t APP_SMTP_OUTLOOK[] = "Microsoft Outlook";
 static const uint8_t APP_SMTP_OUTLOOK_EXPRESS[] = "Microsoft Outlook Express ";
@@ -134,7 +181,8 @@ static tAppRegistryEntry appIdRegistry[] =
     {APP_ID_AOL_EMAIL, APPINFO_FLAG_CLIENT_ADDITIONAL},
     {APP_ID_MUTT, APPINFO_FLAG_CLIENT_ADDITIONAL},
     {APP_ID_SMTP, APPINFO_FLAG_CLIENT_ADDITIONAL},
-    {APP_ID_OUTLOOK_EXPRESS, APPINFO_FLAG_CLIENT_ADDITIONAL}
+    {APP_ID_OUTLOOK_EXPRESS, APPINFO_FLAG_CLIENT_ADDITIONAL},
+    {APP_ID_SMTPS, APPINFO_FLAG_CLIENT_ADDITIONAL}
 };
 
 static CLIENT_APP_RETCODE smtp_init(const InitClientAppAPI * const init_api, SF_LIST *config)
@@ -162,7 +210,7 @@ static CLIENT_APP_RETCODE smtp_init(const InitClientAppAPI * const init_api, SF_
     {
         for (i=0; i < sizeof(patterns)/sizeof(*patterns); i++)
         {
-            init_api->RegisterPattern(&smtp_validate, IPPROTO_TCP, patterns[i].pattern, patterns[i].length, patterns[i].index);
+            init_api->RegisterPattern(&smtp_validate, IPPROTO_TCP, patterns[i].pattern, patterns[i].length, patterns[i].index, init_api->pAppidConfig);
         }
     }
 
@@ -170,20 +218,21 @@ static CLIENT_APP_RETCODE smtp_init(const InitClientAppAPI * const init_api, SF_
 	for (j=0; j < sizeof(appIdRegistry)/sizeof(*appIdRegistry); j++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[j].appId);
-		init_api->RegisterAppId(&smtp_validate, appIdRegistry[j].appId, appIdRegistry[j].additionalInfo, NULL);
+		init_api->RegisterAppId(&smtp_validate, appIdRegistry[j].appId, appIdRegistry[j].additionalInfo, init_api->pAppidConfig);
 	}
 
     return CLIENT_APP_SUCCESS;
 }
 
 static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
-                          const uint8_t *data, FLOW *flowp, const SFSnortPacket *pkt)
+                          const uint8_t *data, tAppIdData *flowp, SFSnortPacket *pkt)
 {
     const u_int8_t *p;
     u_int8_t *v;
     u_int8_t *v_end;
     unsigned len;
     unsigned sublen;
+    tAppId appId = (fd->flags & CLIENT_FLAG_SMTPS) ?  APP_ID_SMTPS : APP_ID_SMTP;
 
     v_end = fd->version;
     v_end += MAX_VERSION_SIZE - 1;
@@ -207,7 +256,7 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
                     *v = *p;
                 }
                 *v = 0;
-                smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_OUTLOOK, (char *)fd->version);
+                smtp_client_mod.api->add_app(flowp, appId, APP_ID_OUTLOOK, (char *)fd->version);
                 return 0;
             }
             else if (*p == ' ')
@@ -222,7 +271,7 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
                         *v = *p;
                     }
                     *v = 0;
-                    smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_OUTLOOK_EXPRESS, (char *)fd->version);
+                    smtp_client_mod.api->add_app(flowp, appId, APP_ID_OUTLOOK_EXPRESS, (char *)fd->version);
                     return 0;
                 }
                 else if (data-p >= (int)sizeof(IMO) && memcmp(p, IMO, sizeof(IMO)-1) == 0)
@@ -234,7 +283,7 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
                         *v = *p;
                     }
                     *v = 0;
-                    smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_OUTLOOK, (char *)fd->version);
+                    smtp_client_mod.api->add_app(flowp, appId, APP_ID_OUTLOOK, (char *)fd->version);
                     return 0;
                 }
             }
@@ -249,7 +298,7 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
             *v = *p;
         }
         *v = 0;
-        smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_EVOLUTION, (char *)fd->version);
+        smtp_client_mod.api->add_app(flowp, appId, APP_ID_EVOLUTION, (char *)fd->version);
         return 0;
     }
     else if (len >= sizeof(APP_SMTP_LOTUSNOTES) && memcmp(product, APP_SMTP_LOTUSNOTES, sizeof(APP_SMTP_LOTUSNOTES)-1) == 0)
@@ -261,7 +310,7 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
             *v = *p;
         }
         *v = 0;
-        smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_LOTUS_NOTES, (char *)fd->version);
+        smtp_client_mod.api->add_app(flowp, appId, APP_ID_LOTUS_NOTES, (char *)fd->version);
         return 0;
     }
     else if (len >= sizeof(APP_SMTP_APPLEMAIL) && memcmp(product, APP_SMTP_APPLEMAIL, sizeof(APP_SMTP_APPLEMAIL)-1) == 0)
@@ -273,7 +322,7 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
             *v = *p;
         }
         *v = 0;
-        smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_APPLE_EMAIL, (char *)fd->version);
+        smtp_client_mod.api->add_app(flowp, appId, APP_ID_APPLE_EMAIL, (char *)fd->version);
         return 0;
     }
     else if (len >= sizeof(APP_SMTP_EUDORA) && memcmp(product, APP_SMTP_EUDORA, sizeof(APP_SMTP_EUDORA)-1) == 0)
@@ -285,7 +334,7 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
             *v = *p;
         }
         *v = 0;
-        smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_EUDORA, (char *)fd->version);
+        smtp_client_mod.api->add_app(flowp, appId, APP_ID_EUDORA, (char *)fd->version);
         return 0;
     }
     else if (len >= sizeof(APP_SMTP_EUDORAPRO) && memcmp(product, APP_SMTP_EUDORAPRO, sizeof(APP_SMTP_EUDORAPRO)-1) == 0)
@@ -297,7 +346,7 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
             *v = *p;
         }
         *v = 0;
-        smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_EUDORA_PRO, (char *)fd->version);
+        smtp_client_mod.api->add_app(flowp, appId, APP_ID_EUDORA_PRO, (char *)fd->version);
         return 0;
     }
     else if (len >= sizeof(APP_SMTP_AOL) && memcmp(product, APP_SMTP_AOL, sizeof(APP_SMTP_AOL)-1) == 0)
@@ -309,7 +358,7 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
             *v = *p;
         }
         *v = 0;
-        smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_AOL_EMAIL, (char *)fd->version);
+        smtp_client_mod.api->add_app(flowp, appId, APP_ID_AOL_EMAIL, (char *)fd->version);
         return 0;
     }
     else if (len >= sizeof(APP_SMTP_MUTT) && memcmp(product, APP_SMTP_MUTT, sizeof(APP_SMTP_MUTT)-1) == 0)
@@ -321,7 +370,7 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
             *v = *p;
         }
         *v = 0;
-        smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_MUTT, (char *)fd->version);
+        smtp_client_mod.api->add_app(flowp, appId, APP_ID_MUTT, (char *)fd->version);
         return 0;
     }
     else if (len >= sizeof(APP_SMTP_KMAIL) && memcmp(product, APP_SMTP_KMAIL, sizeof(APP_SMTP_KMAIL)-1) == 0)
@@ -333,7 +382,7 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
             *v = *p;
         }
         *v = 0;
-        smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_SMTP/*KMAIL_ID*/, (char *)fd->version);
+        smtp_client_mod.api->add_app(flowp, appId, appId/*KMAIL_ID*/, (char *)fd->version);
         return 0;
     }
     else if (len >= sizeof(APP_SMTP_THUNDERBIRD) && memcmp(product, APP_SMTP_THUNDERBIRD, sizeof(APP_SMTP_THUNDERBIRD)-1) == 0)
@@ -345,7 +394,7 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
             *v = *p;
         }
         *v = 0;
-        smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_THUNDERBIRD, (char *)fd->version);
+        smtp_client_mod.api->add_app(flowp, appId, APP_ID_THUNDERBIRD, (char *)fd->version);
         return 0;
     }
     else if (len >= sizeof(APP_SMTP_MTHUNDERBIRD) && memcmp(product, APP_SMTP_MTHUNDERBIRD, sizeof(APP_SMTP_MTHUNDERBIRD)-1) == 0)
@@ -357,7 +406,7 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
             *v = *p;
         }
         *v = 0;
-        smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_THUNDERBIRD, (char *)fd->version);
+        smtp_client_mod.api->add_app(flowp, appId, APP_ID_THUNDERBIRD, (char *)fd->version);
         return 0;
     }
     else if (len >= sizeof(APP_SMTP_MOZILLA) && memcmp(product, APP_SMTP_MOZILLA, sizeof(APP_SMTP_MOZILLA)-1) == 0)
@@ -365,7 +414,7 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
         for (p = product + sizeof(APP_SMTP_MOZILLA) - 1; p < data; p++)
         {
             if (*p == 'T')
-            { 
+            {
                 sublen = data - p;
                 if (sublen >= sizeof(APP_SMTP_THUNDERBIRD_SHORT) && memcmp(p, APP_SMTP_THUNDERBIRD_SHORT, sizeof(APP_SMTP_THUNDERBIRD_SHORT)-1) == 0)
                 {
@@ -377,70 +426,41 @@ static int ExtractVersion(ClientSMTPData * const fd, const uint8_t *product,
                         v++;
                     }
                     *v = 0;
-                    smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_THUNDERBIRD, (char *)fd->version);
+                    smtp_client_mod.api->add_app(flowp, appId, APP_ID_THUNDERBIRD, (char *)fd->version);
                     return 0;
-                }  
-            }                         
+                }
+            }
         }
-    } 
-
-    return 1;
-}
-
-static inline int CheckTag(const uint8_t *tag, const uint8_t *data)
-{
-#define XMAILER "X-Mailer"
-#define USERAGENT "User-Agent"
-
-    unsigned len;
-
-    len = data - tag;
-
-    if (len >= sizeof(XMAILER)-1 && memcmp(tag, XMAILER, sizeof(XMAILER)-1) == 0)
-        return 0;
-    if (len >= sizeof(USERAGENT)-1 && memcmp(tag, USERAGENT, sizeof(USERAGENT)-1) == 0)
-        return 0;
-    return 1;
-}
-
-static CLIENT_APP_RETCODE smtp_validate(const uint8_t *data, uint16_t size, const int dir,
-                                        FLOW *flowp, const SFSnortPacket *pkt, struct _Detector *userData)
-{
-#define FIND_NEWLINE() \
-    { \
-        while (data < end) \
-        { \
-            if (*data == 0x0A) break; \
-            else if (*data == 0x0D) \
-            { \
-                data++; \
-                if (data >= end || *data != 0x0A) goto done; \
-                break; \
-            } \
-            else if (!isprint(*data)) goto done; \
-            data++; \
-        } \
-        if (data >= end) goto done; \
-        data++; \
     }
 
+    return 1;
+}
+static void freeData(void *data)
+{
+    ClientSMTPData *fd = (ClientSMTPData *)data;
+    free(fd->headerline);
+    free(fd);
+
+}
+static CLIENT_APP_RETCODE smtp_validate(const uint8_t *data, uint16_t size, const int dir,
+                                        tAppIdData *flowp, SFSnortPacket *pkt, struct _Detector *userData,
+                                        const struct appIdConfig_ *pConfig)
+{
     ClientSMTPData *fd;
     const uint8_t *end;
-    const uint8_t *tag;
-    const uint8_t *product;
-    int rval;
     unsigned len;
+#if UNIT_TESTING
+    SMTPState currState = SMTP_STATE_NONE;
 
-    if (dir != APP_ID_FROM_INITIATOR)
-        return CLIENT_APP_INPROCESS;
+#endif
 
-    fd = smtp_client_mod.api->data_get(flowp);
+    fd = smtp_client_mod.api->data_get(flowp, smtp_client_mod.flow_data_index);
     if (!fd)
     {
         fd = calloc(1, sizeof(*fd));
         if (!fd)
             return CLIENT_APP_ENOMEM;
-        if (smtp_client_mod.api->data_add(flowp, fd, &free))
+        if (smtp_client_mod.api->data_add(flowp, fd, smtp_client_mod.flow_data_index, &freeData))
         {
             free(fd);
             return CLIENT_APP_ENOMEM;
@@ -448,134 +468,230 @@ static CLIENT_APP_RETCODE smtp_validate(const uint8_t *data, uint16_t size, cons
         fd->state = SMTP_STATE_HELO;
     }
 
-    end = data + size;
-
-    while (data < end)
+    if (dir != APP_ID_FROM_INITIATOR)
     {
+        if ( (fd->flags & CLIENT_FLAG_STARTTLS_SENT) &&
+             !memcmp(data,STARTTLS_COMMAND_SUCCESS,sizeof(STARTTLS_COMMAND_SUCCESS)-1) )
+        {
+            fd->flags &= ~(CLIENT_FLAG_STARTTLS_SENT);
+            fd->flags |= CLIENT_FLAG_SMTPS;
+            clearAppIdExtFlag(flowp, APPID_SESSION_CLIENT_GETS_SERVER_PACKETS); // we no longer need to examine the response.
+            if (!getAppIdExtFlag(flowp, APPID_SESSION_DECRYPTED))
+            {
+                /* Because we can't see any further info without decryption we settle for
+                   plain APP_ID_SMTPS instead of perhaps finding data that would make calling
+                   ExtractVersion() worthwhile, So set the appid and call it good. */
+                smtp_client_mod.api->add_app(flowp, APP_ID_SMTPS, APP_ID_SMTPS, NULL);
+                goto done;
+            }
+        }
+        return CLIENT_APP_INPROCESS;
+    }
+    if (getAppIdExtFlag(flowp, APPID_SESSION_ENCRYPTED))
+    {
+        if (!getAppIdExtFlag(flowp, APPID_SESSION_DECRYPTED))
+            return CLIENT_APP_INPROCESS;
+    }
+
+
+    for (end = data + size; data < end; data++)
+    {
+#if UNIT_TESTING
+    if (app_id_debug_session_flag && currState != fd->state)
+    {
+        DEBUG_WRAP(DebugMessage(DEBUG_APPID, "AppIdDbg %s SMTP client state %s\n", app_id_debug_session, stateName[fd->state]););
+        currState = fd->state;
+    }
+#endif
         switch (fd->state)
         {
         case SMTP_STATE_HELO:
             len = end - data;
-            if (len >= sizeof(HELO) && memcmp(HELO, data, sizeof(HELO)-1) == 0)
+            if (*data == HELO[fd->pos])
             {
-                data += sizeof(HELO) - 1;
+                fd->pos++;
+                if (fd->pos == strlen(HELO))
+                {
+                    fd->pos = 0;
+                    fd->nextstate = SMTP_STATE_MAIL_FROM;
+                    fd->state = SMTP_STATE_SKIP_LINE;
+                }
             }
-            else if (len >= sizeof(EHLO) && memcmp(EHLO, data, sizeof(EHLO)-1) == 0)
+            else if (*data == EHLO[fd->pos])
             {
-                data += sizeof(EHLO) - 1;
+                fd->pos++;
+                if (fd->pos == strlen(EHLO))
+                {
+                    fd->pos = 0;
+                    fd->nextstate = SMTP_STATE_MAIL_FROM;
+                    fd->state = SMTP_STATE_SKIP_LINE;
+                }
             }
             else goto done;
-            FIND_NEWLINE();
-            fd->state = SMTP_STATE_MAIL_FROM;
             break;
+
         case SMTP_STATE_MAIL_FROM:
-            if (end-data > (int)sizeof(MAILFROM) && memcmp(MAILFROM, data, sizeof(MAILFROM)-1) == 0)
+            if (*data == MAILFROM[fd->pos])
             {
-                data += sizeof(MAILFROM) - 1;
-                FIND_NEWLINE();
-                fd->state = SMTP_STATE_RCPT_TO;
-            }
-            else if (end-data > (int)sizeof(RSET) && memcmp(RSET, data, sizeof(RSET)-1) == 0)
-            {
-                data += sizeof(RSET) - 1;
-                if (*data != 0x0A)
+                fd->pos++;
+                if (fd->pos == strlen(MAILFROM))
                 {
-                    if (*data != 0x0D) goto done;
-                    data++;
-                    if (data >= end || *data != 0x0A) goto done;
+                    fd->pos = 0;
+                    fd->nextstate = SMTP_STATE_RCPT_TO;
+                    fd->state = SMTP_STATE_SKIP_LINE;
                 }
-                data++;
+            }
+            else if (*data == RSET[fd->pos])
+            {
+                fd->pos++;
+                if (fd->pos == strlen(RSET))
+                {
+                    fd->pos = 0;
+                    fd->nextstate = fd->state;
+                    fd->state = SMTP_STATE_SKIP_LINE;
+                }
+            }
+            else if (*data == AUTH[fd->pos])
+            {
+                fd->pos++;
+                if (fd->pos == strlen(AUTH))
+                {
+                    fd->pos = 0;
+                    fd->nextstate = fd->state;
+                    fd->state = SMTP_STATE_SKIP_LINE;
+                }
+            }
+            else if (*data == STARTTLS[fd->pos])
+            {
+                fd->pos++;
+                if (fd->pos == strlen(STARTTLS))
+                {
+                    fd->flags |= CLIENT_FLAG_STARTTLS_SENT;
+                    fd->pos = 0;
+                    fd->nextstate = fd->state;
+                    fd->state = SMTP_STATE_SKIP_LINE;
+                    setAppIdExtFlag(flowp, APPID_SESSION_ENCRYPTED);                }
             }
             else goto done;
             break;
         case SMTP_STATE_RCPT_TO:
-            if (end-data < (int)sizeof(RCPTTO) || memcmp(RCPTTO, data, sizeof(RCPTTO)-1) != 0) goto done;
-            data += sizeof(RCPTTO) - 1;
-            FIND_NEWLINE();
-            fd->state = SMTP_STATE_DATA;
-            break;
-        case SMTP_STATE_DATA:
-            if (end-data > (int)sizeof(DATA) && memcmp(DATA, data, sizeof(DATA)-1) == 0)
+            if (*data == RCPTTO[fd->pos])
             {
-                data += sizeof(DATA) - 1;
-                if (*data != 0x0A)
+                fd->pos++;
+                if (fd->pos == strlen(RCPTTO))
                 {
-                    if (*data != 0x0D) goto done;
-                    data++;
-                    if (data >= end || *data != 0x0A) goto done;
+                    fd->pos = 0;
+                    fd->nextstate = SMTP_STATE_DATA;
+                    fd->state = SMTP_STATE_SKIP_LINE;
                 }
-                data++;
-                fd->state = SMTP_STATE_MESSAGE;
             }
             else
+                goto done;
+            break;
+
+        case SMTP_STATE_DATA:
+            if (*data == DATA[fd->pos])
             {
-                if (end-data < (int)sizeof(RCPTTO) || memcmp(RCPTTO, data, sizeof(RCPTTO)-1) != 0) goto done;
-                data += sizeof(RCPTTO) - 1;
-                FIND_NEWLINE();
+                fd->pos++;
+                if (fd->pos == strlen(DATA))
+                {
+                    fd->pos = 0;
+                    fd->nextstate = SMTP_STATE_MESSAGE;
+                    fd->state = SMTP_STATE_SKIP_LINE;
+                }
+            }
+            else if (*data == RCPTTO[fd->pos])
+            {
+                fd->pos++;
+                if (fd->pos == strlen(RCPTTO))
+                {
+                    fd->pos = 0;
+                    fd->nextstate = fd->state;
+                    fd->state = SMTP_STATE_SKIP_LINE;
+                }
             }
             break;
         case SMTP_STATE_MESSAGE:
             if (*data == '.')
             {
                 len = end - data;
-                if ((len >= 1 && data[1] == 0x0A) ||
+                if (len == 0 ||
+                    (len >= 1 && data[1] == 0x0A) ||
                     (len >= 2 && data[1] == 0x0D && data[2] == 0x0A))
                 {
-                    smtp_client_mod.api->add_app(flowp, APP_ID_SMTP, APP_ID_SMTP, NULL);
+                    tAppId appId = (fd->flags & CLIENT_FLAG_SMTPS) ?  APP_ID_SMTPS : APP_ID_SMTP;
+                    smtp_client_mod.api->add_app(flowp, appId, appId, NULL);
                     goto done;
                 }
             }
-            tag = data;
-            while (data < end)
+            else if (*data == XMAILER[fd->pos])
             {
-                if (*data == ':')
+                fd->pos++;
+                if (fd->pos == strlen(XMAILER))
                 {
-                    /* Must end with ': ' and have more on the line */
-                    if (end-data < 3 || data[1] != ' ' || data[2] == 0x0D || data[2] == 0x0A || !isprint(data[2])) goto done;
-                    break;
+                    fd->pos = 0;
+                    fd->state = SMTP_STATE_GET_PRODUCT_VERSION;
                 }
-                else if (*data == 0x0A) break;
-                else if (*data == 0x0D)
-                {
-                    data++;
-                    if (data >= end || *data != 0x0A) goto done;
-                    break;
-                }
-                else if (!isprint(*data) && *data != 0x09) goto done;
-                data++;
             }
-            if (data >= end) goto done;
-            if (*data == ':')
+            else if (*data == USERAGENT[fd->pos])
             {
-                rval = CheckTag(tag, data);
-                data += 2;
-                if (rval == 0)
+                fd->pos++;
+                if (fd->pos == strlen(USERAGENT))
                 {
-                    while (data < end)
-                    {
-                        if (*data != ' ') break;
-                        data++;
-                    }
-                    if (data >= end) goto done;
-                    product = data;
-                    while (data < end)
-                    {
-                        if (*data == 0x0A) break;
-                        else if (*data == 0x0D)
-                        {
-                            if (end - data < 2 || data[1] != 0x0A) goto done;
-                            break;
-                        }
-                        else if (!isprint(*data)) goto done;
-                        data++;
-                    }
-                    if (data >= end) goto done;
-                    if (ExtractVersion(fd, product, data, flowp, pkt) == 0) goto done;
+                    fd->pos = 0;
+                    fd->state = SMTP_STATE_GET_PRODUCT_VERSION;
                 }
-                else FIND_NEWLINE();
             }
-            else data++;
+            else if (!isprint(*data) && *data != 0x09) goto done;
+            else
+            {
+                fd->pos = 0;
+                fd->nextstate = fd->state;
+                fd->state = SMTP_STATE_SKIP_LINE;
+            }
             break;
+
+        case SMTP_STATE_GET_PRODUCT_VERSION:
+            if (*data == 0x0D)
+            {
+                if (fd->headerline && fd->pos)
+                {
+                    ExtractVersion(fd, fd->headerline, fd->headerline + fd->pos, flowp, pkt);
+                    free(fd->headerline);
+                    fd->headerline = NULL;
+                }
+                goto done;
+            }
+            else if (!isprint(*data))
+            {
+                free(fd->headerline);
+                fd->headerline = NULL;
+                goto done;
+            }
+            else
+            {
+                if (!fd->headerline)
+                {
+                    if (!(fd->headerline = malloc(MAX_HEADER_LINE_SIZE)))
+                        goto done;
+                }
+
+                if (fd->pos < (MAX_HEADER_LINE_SIZE-1))
+                    fd->headerline[fd->pos++] = *data;
+            }
+            break;
+
+        case SMTP_STATE_SKIP_LINE:
+            if (*data == 0x0A)
+            {
+                fd->pos = 0;
+                fd->state = fd->nextstate;
+                fd->nextstate = SMTP_STATE_NONE;
+            }
+            else if (!(*data == 0x0D || isprint(*data)))
+                goto done;
+            break;
+
         default:
             goto done;
         }
@@ -583,7 +699,7 @@ static CLIENT_APP_RETCODE smtp_validate(const uint8_t *data, uint16_t size, cons
     return CLIENT_APP_INPROCESS;
 
 done:
-    flow_mark(flowp, FLOW_CLIENTAPPDETECTED);
+    setAppIdExtFlag(flowp, APPID_SESSION_CLIENT_DETECTED);
     return CLIENT_APP_SUCCESS;
 }
 

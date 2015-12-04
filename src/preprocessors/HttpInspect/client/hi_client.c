@@ -69,6 +69,10 @@
 #include "hi_cmd_lookup.h"
 #include "detection_util.h"
 
+#if defined(FEAT_OPEN_APPID)
+#include "spp_stream6.h"
+#endif /* defined(FEAT_OPEN_APPID) */
+
 #define HEADER_NAME__COOKIE "Cookie"
 #define HEADER_LENGTH__COOKIE 6
 #define HEADER_NAME__CONTENT_LENGTH "Content-length"
@@ -122,9 +126,6 @@ int NextNonWhiteSpace(HI_SESSION *Session, const u_char *start,
         const u_char *end, const u_char **ptr, URI_PTR *uri_ptr);
 extern const u_char *extract_http_transfer_encoding(HI_SESSION *, HttpSessionData *,
         const u_char *, const u_char *, const u_char *, HEADER_PTR *, int);
-#if defined(FEAT_OPEN_APPID)
-extern void CallHttpHeaderProcessors (Packet* p, HttpParsedHeaders *headers);
-#endif /* defined(FEAT_OPEN_APPID) */
 
 char **hi_client_get_field_names() { return( (char **)g_field_names ); }
 
@@ -1819,7 +1820,7 @@ const u_char *extract_http_cookie(const u_char *p, const u_char *end, HEADER_PTR
     return p;
 }
 
-Transaction* createNode_tList(sfip_t *tmp, uint8_t req_id)
+Transaction* createNode_tList(sfaddr_t *tmp, uint8_t req_id)
 {
     Transaction *tList_node = (Transaction*)SnortAlloc(sizeof(Transaction));
     tList_node->true_ip = tmp;
@@ -1828,7 +1829,7 @@ Transaction* createNode_tList(sfip_t *tmp, uint8_t req_id)
     return tList_node;
 }
 
-void insertNode_tList(HttpSessionData* hsd, sfip_t *tmp)
+void insertNode_tList(HttpSessionData* hsd, sfaddr_t *tmp)
 {
    Transaction *tList_node = createNode_tList(tmp,hsd->http_req_id);
    if( hsd->tList_start == NULL && hsd->tList_end == NULL )
@@ -1838,20 +1839,19 @@ void insertNode_tList(HttpSessionData* hsd, sfip_t *tmp)
    }
    else if ( (hsd->tList_end != NULL) && ( hsd->tList_end->tID != hsd->http_req_id ) )
    {
-       hsd->tList_end->next = tList_node;
+      hsd->tList_end->next = tList_node;
        hsd->tList_end = tList_node;
    }
    else
        freeTransactionNode(tList_node);
 }
 
-
 const u_char *extract_http_xff(HI_SESSION *Session, const u_char *p, const u_char *start,
         const u_char *end, HI_CLIENT_HDR_ARGS *hdrs_args)
 {
     int num_spaces = 0;
     SFIP_RET status;
-    sfip_t *tmp;
+    sfaddr_t *tmp;
     char *ipAddr = NULL;
     uint8_t unfold_buf[DECODE_BLEN];
     uint32_t unfold_size =0;
@@ -1860,7 +1860,6 @@ const u_char *extract_http_xff(HI_SESSION *Session, const u_char *p, const u_cha
     HEADER_PTR *header_ptr;
 
     header_ptr = hdrs_args->hdr_ptr;
-
 
     if( (hdrs_args->true_clnt_xff & (HDRS_BOTH | XFF_HEADERS)) == HDRS_BOTH)
     {
@@ -1916,7 +1915,7 @@ const u_char *extract_http_xff(HI_SESSION *Session, const u_char *p, const u_cha
         }
         if(ipAddr)
         {
-            if( (tmp = sfip_alloc(ipAddr, &status)) == NULL )
+            if( (tmp = sfaddr_alloc(ipAddr, &status)) == NULL )
             {
                 port = (u_char *)SnortStrnStr((const char *)start_ptr, (cur_ptr - start_ptr), ":");
                 if(port)
@@ -1927,7 +1926,7 @@ const u_char *extract_http_xff(HI_SESSION *Session, const u_char *p, const u_cha
                     {
                         return p;
                     }
-                    if( (tmp = sfip_alloc(ipAddr, &status)) == NULL )
+                    if( (tmp = sfaddr_alloc(ipAddr, &status)) == NULL )
                     {
                         if((status != SFIP_ARG_ERR) && (status !=SFIP_ALLOC_ERR))
                         {
@@ -1958,7 +1957,7 @@ const u_char *extract_http_xff(HI_SESSION *Session, const u_char *p, const u_cha
                 if( (hdrs_args->top_precedence > 0) &&
                     (hdrs_args->new_precedence >= hdrs_args->top_precedence) )
                     {
-                        sfip_free( tmp );
+                        sfaddr_free( tmp );
                         free( ipAddr );
                         return( p );
                     }
@@ -1985,26 +1984,21 @@ const u_char *extract_http_xff(HI_SESSION *Session, const u_char *p, const u_cha
                      */
                      if (!IP_EQUALITY(hdrs_args->sd->tList_end->true_ip, tmp))
                      {
-                          sfip_free(hdrs_args->sd->tList_end->true_ip);
+                          sfaddr_free(hdrs_args->sd->tList_end->true_ip);
                           hdrs_args->sd->tList_end->true_ip = tmp;
                           // alert
                           if( ((hdrs_args->true_clnt_xff & XFF_HEADERS) == 0) &&
                               hi_eo_generate_event(Session, HI_EO_CLIENT_MULTIPLE_TRUEIP_IN_SESSION))
-                          {
                                  hi_eo_client_event_log(Session, HI_EO_CLIENT_MULTIPLE_TRUEIP_IN_SESSION, NULL, NULL);
-                          }
                      }
                      else
-                        sfip_free(tmp);
+                       sfaddr_free(tmp);
                 }
                 else
-                {
-                    // Add true-ip to the List for this request.
-                    insertNode_tList(hdrs_args->sd, tmp);
-                }
+                   insertNode_tList(hdrs_args->sd, tmp);
             }
             else
-               sfip_free(tmp);
+                sfaddr_free(tmp);
 
             free(ipAddr);
         }
@@ -2027,7 +2021,7 @@ static const u_char *extract_http_client_header(HI_SESSION *Session, const u_cha
     int num_spaces = 0;
     uint8_t unfold_buf[DECODE_BLEN];
     uint32_t unfold_size =0;
-    const u_char *start_ptr, *end_ptr, *cur_ptr;
+    const u_char *end_ptr, *cur_ptr;
 
     SkipBlankSpace(start,end,&p);
 
@@ -2053,17 +2047,24 @@ static const u_char *extract_http_client_header(HI_SESSION *Session, const u_cha
 
         p = p + unfold_size;
 
-        start_ptr = unfold_buf;
         cur_ptr = unfold_buf;
         end_ptr = unfold_buf + unfold_size;
-        SkipBlankSpace(start_ptr,end_ptr,&cur_ptr);
+        SkipBlankSpace(unfold_buf,end_ptr,&cur_ptr);
 
-        start_ptr = cur_ptr;
-
-        if(end_ptr - start_ptr)
         {
-            headerLoc->len = end_ptr - start_ptr;
-            headerLoc->start = (u_char *)strndup((const char *)start_ptr, headerLoc->len);
+            unsigned field_strlen = (unsigned)(end_ptr - cur_ptr); 
+            if (field_strlen)
+            {
+                headerLoc->start = (u_char *)strndup((const char *)cur_ptr, field_strlen);
+                if (NULL == headerLoc->start)
+                {
+                    /* treat this out-of-memory error as a parse failure */
+                    header_ptr->header.uri_end = end;
+                    return end;
+                }
+                /* now that we have the memory, fill in len. */
+                headerLoc->len = field_strlen;
+            }
         }
     }
     else
@@ -2537,7 +2538,7 @@ static inline const u_char *extractHeaderFieldValues(HI_SESSION *Session,
             {
                 hdrs_args->hst_name_hdr = 1;
 #if defined(FEAT_OPEN_APPID)
-                if ( hsd && !(hdrs_args->strm_ins) && (ServerConf->log_hostname || ServerConf->appid_enabled))
+                if ( hsd && (ServerConf->log_hostname || ServerConf->appid_enabled))
 #else
                 if ( hsd && !(hdrs_args->strm_ins) && (ServerConf->log_hostname))
 #endif /* defined(FEAT_OPEN_APPID) */
@@ -3057,7 +3058,7 @@ int StatelessInspection(Packet *p, HI_SESSION *Session, HttpSessionData *hsd, in
 
         if(iRet == -1 || (CmdConf == NULL))
         {
-            if(hi_eo_generate_event(Session, HI_EO_CLIENT_UNKNOWN_METHOD))
+            if(!stream_ins && hi_eo_generate_event(Session, HI_EO_CLIENT_UNKNOWN_METHOD))
             {
                 hi_eo_client_event_log(Session, HI_EO_CLIENT_UNKNOWN_METHOD, NULL, NULL);
             }
@@ -3088,7 +3089,7 @@ int StatelessInspection(Packet *p, HI_SESSION *Session, HttpSessionData *hsd, in
 
     if (!sans_uri )
     {
-        uri_ptr.uri = method_ptr.uri_end; 
+        uri_ptr.uri = method_ptr.uri_end;
         uri_ptr.uri_end = end;
 
         /* This will set up the URI pointers - effectively extracting
@@ -3252,7 +3253,7 @@ int StatelessInspection(Packet *p, HI_SESSION *Session, HttpSessionData *hsd, in
             headers.method.len = Client->request.method_size;
         }
 
-        headers.userAgent = header_ptr.userAgent; 
+        headers.userAgent = header_ptr.userAgent;
         headers.referer = header_ptr.referer;
         headers.via = header_ptr.via;
 

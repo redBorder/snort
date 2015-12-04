@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 
+#include "appInfoTable.h"
 #include "flow.h"
 #include "service_api.h"
 
@@ -36,13 +37,14 @@
 static int rfb_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(rfb_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &rfb_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "rfb",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -58,7 +60,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule rfb_service_mod =
+tRNAServiceValidationModule rfb_service_mod =
 {
     "RFB",
     &rfb_init,
@@ -73,12 +75,12 @@ static tAppRegistryEntry appIdRegistry[] =
 
 static int rfb_init(const InitServiceAPI * const init_api)
 {
-    init_api->RegisterPattern(&rfb_validate, IPPROTO_TCP, (uint8_t *)RFB_BANNER, sizeof(RFB_BANNER)-1, 0, "rfb");
+    init_api->RegisterPattern(&rfb_validate, IPPROTO_TCP, (uint8_t *)RFB_BANNER, sizeof(RFB_BANNER)-1, 0, "rfb", init_api->pAppidConfig);
 	unsigned i;
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&rfb_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&rfb_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -121,7 +123,7 @@ inprocess:
     return SERVICE_INPROCESS;
 
 fail:
-    rfb_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+    rfb_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, rfb_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 }
 

@@ -68,30 +68,30 @@ typedef enum {
 
 #define SNORT_PCRE_OVERRIDE_MATCH_LIMIT 0x8000000
 
-#ifndef SO_PUBLIC
+#ifndef SF_SO_PUBLIC
 #if defined _WIN32 || defined __CYGWIN__
 #  if defined SF_SNORT_ENGINE_DLL || defined SF_SNORT_DETECTION_DLL || \
       defined SF_SNORT_PREPROC_DLL
 #    ifdef __GNUC__
-#      define SO_PUBLIC __attribute__((dllexport))
+#      define SF_SO_PUBLIC __attribute__((dllexport))
 #    else
-#      define SO_PUBLIC __declspec(dllexport)
+#      define SF_SO_PUBLIC __declspec(dllexport)
 #    endif
 #  else
 #    ifdef __GNUC__
-#      define SO_PUBLIC __attribute__((dllimport))
+#      define SF_SO_PUBLIC __attribute__((dllimport))
 #    else
-#      define SO_PUBLIC __declspec(dllimport)
+#      define SF_SO_PUBLIC __declspec(dllimport)
 #    endif
 #  endif
 #  define DLL_LOCAL
 #else
 #  ifdef SF_VISIBILITY
-#    define SO_PUBLIC  __attribute__ ((visibility("default")))
-#    define SO_PRIVATE __attribute__ ((visibility("hidden")))
+#    define SF_SO_PUBLIC  __attribute__ ((visibility("default")))
+#    define SF_SO_PRIVATE __attribute__ ((visibility("hidden")))
 #  else
-#    define SO_PUBLIC
-#    define SO_PRIVATE
+#    define SF_SO_PUBLIC
+#    define SF_SO_PRIVATE
 #  endif
 #endif
 #endif

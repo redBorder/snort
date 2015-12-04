@@ -118,6 +118,9 @@ static NormalizerContext* Init_GetContext (struct _SnortConfig *sc)
         base_set = sfPolicyConfigCreate();
         Preproc_Install(sc);
     }
+
+    sc->normalizer_set  = true;
+
     sfPolicyUserPolicySet(base_set, policy_id);
     pc = sfPolicyUserDataGetCurrent(base_set);
 
@@ -604,7 +607,7 @@ static void Preproc_Install (struct _SnortConfig *sc)
 {
 #ifdef PERF_PROFILING
     RegisterPreprocessorProfile(
-        "normalize", &norm_perf_stats, 0, &totalPerfStats);
+        "normalize", &norm_perf_stats, 0, &totalPerfStats, NULL);
 #endif
     AddFuncToPreprocCleanExitList(
         Preproc_CleanExit, NULL, PRIORITY_LAST, PP_NORMALIZE);
@@ -770,6 +773,9 @@ static NormalizerContext* Reload_GetContext (struct _SnortConfig *sc, void **new
         swap_set = sfPolicyConfigCreate();
         *new_config = (void *)swap_set;
     }
+
+    sc->normalizer_set  = true;
+
     sfPolicyUserPolicySet(swap_set, policy_id);
     pc = sfPolicyUserDataGetCurrent(swap_set);
 
@@ -930,6 +936,10 @@ NormMode Normalize_GetMode (const SnortConfig* sc, NormFlags nf)
 
     if ( !base_set )
         return NORM_MODE_OFF;
+
+    if (!sc->normalizer_set)
+        return NORM_MODE_OFF;
+
     pid = getNapRuntimePolicy();
     pc = sfPolicyUserDataGet(base_set, pid);
 

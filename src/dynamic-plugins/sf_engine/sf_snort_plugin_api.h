@@ -54,12 +54,12 @@
 
 #ifdef WIN32
 # ifdef SF_SNORT_ENGINE_DLL
-#  define ENGINE_LINKAGE SO_PUBLIC
+#  define ENGINE_LINKAGE SF_SO_PUBLIC
 # else
 #  define ENGINE_LINKAGE
 # endif
 #else /* WIN32 */
-# define ENGINE_LINKAGE SO_PUBLIC
+# define ENGINE_LINKAGE SF_SO_PUBLIC
 #endif
 
 #define RULE_NOMATCH 0

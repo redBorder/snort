@@ -25,6 +25,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 
+#include "appInfoTable.h"
 #include "flow.h"
 #include "service_base.h"
 #include "service_rtmp.h"
@@ -80,13 +81,14 @@ typedef struct _SERVICE_RTMP_DATA
 static int rtmp_init(const InitServiceAPI * const api);
 MakeRNAServiceValidationPrototype(rtmp_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &rtmp_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "rtmp",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -96,7 +98,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule rtmp_service_mod =
+tRNAServiceValidationModule rtmp_service_mod =
 {
     "rtmp",
     &rtmp_init,
@@ -114,7 +116,7 @@ static int rtmp_init(const InitServiceAPI * const init_api)
     for (i = 0; i < (sizeof(appIdRegistry) / sizeof(*appIdRegistry)); i++)
     {
         _dpd.debugMsg(DEBUG_LOG, "registering appId: %d\n", appIdRegistry[i].appId);
-        init_api->RegisterAppId(&rtmp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+        init_api->RegisterAppId(&rtmp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
     }
     return 0;
 }
@@ -444,13 +446,13 @@ MakeRNAServiceValidationPrototype(rtmp_validate)
     if (!size)
         goto inprocess;
 
-    ss = rtmp_service_mod.api->data_get(flowp);
+    ss = rtmp_service_mod.api->data_get(flowp, rtmp_service_mod.flow_data_index);
     if (!ss)
     {
         ss = calloc(1, sizeof(*ss));
         if (!ss)
             return SERVICE_ENOMEM;
-        if (rtmp_service_mod.api->data_add(flowp, ss, &rtmp_free))
+        if (rtmp_service_mod.api->data_add(flowp, ss, rtmp_service_mod.flow_data_index, &rtmp_free))
         {
             free(ss);
             return SERVICE_ENOMEM;
@@ -643,7 +645,7 @@ MakeRNAServiceValidationPrototype(rtmp_validate)
     }
 
     /* Give up if it's taking us too long to figure out this thing. */
-    if (flowp->session_packet_count >= appIdConfig.rtmp_max_packets)
+    if (flowp->session_packet_count >= appidStaticConfig.rtmp_max_packets)
     {
         goto fail;
     }
@@ -656,15 +658,20 @@ fail:
     free(ss->swfUrl);
     free(ss->pageUrl);
     ss->swfUrl = ss->pageUrl = NULL;
-    rtmp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+    rtmp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, rtmp_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 
 success:
     if (ss->swfUrl != NULL)
     {
-        if (flowp->url == NULL)
+        if (!flowp->hsession)
         {
-            flowp->url = ss->swfUrl;
+            if (!(flowp->hsession = calloc(1, sizeof(*flowp->hsession))))
+                DynamicPreprocessorFatalMessage("Could not allocate httpSession data");
+        }
+        if (flowp->hsession->url == NULL)
+        {
+            flowp->hsession->url = ss->swfUrl;
             flowp->scan_flags |= SCAN_HTTP_HOST_URL_FLAG;
         }
         else
@@ -675,8 +682,13 @@ success:
     }
     if (ss->pageUrl != NULL)
     {
-        if (!appIdConfig.referred_appId_disabled && (flowp->referer == NULL))
-            flowp->referer = ss->pageUrl;
+        if (!flowp->hsession)
+        {
+            if (!(flowp->hsession = calloc(1, sizeof(*flowp->hsession))))
+                DynamicPreprocessorFatalMessage("Could not allocate httpSession data");
+        }
+        if (!appidStaticConfig.referred_appId_disabled && (flowp->hsession->referer == NULL))
+            flowp->hsession->referer = ss->pageUrl;
         else
             free(ss->pageUrl);
         ss->pageUrl = NULL;

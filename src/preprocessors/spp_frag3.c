@@ -455,7 +455,7 @@ static void Frag3PostConfigInit(struct _SnortConfig *, void *);
 char *FragIPToStr(uint32_t ip[4], uint8_t proto)
 {
     char *ret_str;
-    sfip_t srcip;
+    sfaddr_t srcip;
     sfip_set_raw(&srcip, ip, proto == 4 ? AF_INET : AF_INET6);
 
     ret_str = sfip_to_str(&srcip);
@@ -1087,9 +1087,9 @@ static void Frag3GlobalInit(struct _SnortConfig *sc, char *args)
 #endif
 
 #ifdef PERF_PROFILING
-        RegisterPreprocessorProfile("frag3", &frag3PerfStats, 0, &totalPerfStats);
-        RegisterPreprocessorProfile("frag3insert", &frag3InsertPerfStats, 1, &frag3PerfStats);
-        RegisterPreprocessorProfile("frag3rebuild", &frag3RebuildPerfStats, 1, &frag3PerfStats);
+        RegisterPreprocessorProfile("frag3", &frag3PerfStats, 0, &totalPerfStats, NULL);
+        RegisterPreprocessorProfile("frag3insert", &frag3InsertPerfStats, 1, &frag3PerfStats, NULL);
+        RegisterPreprocessorProfile("frag3rebuild", &frag3RebuildPerfStats, 1, &frag3PerfStats, NULL);
 #endif
 
         AddFuncToPreprocCleanExitList(Frag3CleanExit, NULL, PP_FRAG3_PRIORITY, PP_FRAG3);
@@ -1179,7 +1179,7 @@ static void Frag3GlobalInit(struct _SnortConfig *sc, char *args)
 
 #ifdef REG_TEST
     LogMessage("\n");
-    LogMessage("    FragTracker Size: %lu\n", (long unsigned int)sizeof(FragTracker));
+    LogMessage("    FragTracker Size: %lu\n",(unsigned long)sizeof(FragTracker));
     LogMessage("\n");
 #endif
 
@@ -1916,7 +1916,7 @@ static void Frag3Defrag(Packet *p, void *context)
         DEBUG_WRAP(DebugMessage(DEBUG_FRAG,
                     "Blocking fragments due to earlier fragment drop\n"););
         DisableDetect( p );
-        Active_DAQDropPacket( p ); 
+        Active_DAQDropPacket( p );
         f3stats.drops++;
     }
 
@@ -2268,8 +2268,8 @@ static FragTracker *Frag3GetTracker(Packet *p, FRAGKEY *fkey)
      */
     if (IS_IP4(p))
     {
-        COPY4(fkey->sip, p->ip4h->ip_src.ip32);
-        COPY4(fkey->dip, p->ip4h->ip_dst.ip32);
+        COPY4(fkey->sip, sfaddr_get_ip6_ptr(&p->ip4h->ip_addrs->ip_src));
+        COPY4(fkey->dip, sfaddr_get_ip6_ptr(&p->ip4h->ip_addrs->ip_dst));
         fkey->id = GET_IPH_ID(p);
         fkey->ipver = 4;
         fkey->proto = GET_IPH_PROTO(p);
@@ -2277,8 +2277,8 @@ static FragTracker *Frag3GetTracker(Packet *p, FRAGKEY *fkey)
     else
     {
         IP6Frag *fragHdr;
-        COPY4(fkey->sip, p->ip6h->ip_src.ip32);
-        COPY4(fkey->dip, p->ip6h->ip_dst.ip32);
+        COPY4(fkey->sip, sfaddr_get_ip6_ptr(&p->ip6h->ip_addrs->ip_src));
+        COPY4(fkey->dip, sfaddr_get_ip6_ptr(&p->ip6h->ip_addrs->ip_dst));
         fkey->ipver = 6;
         /* Data points to the offset, and does not include the next hdr
          * and reserved.  Offset it by -2 to get there */
@@ -2498,7 +2498,7 @@ static int Frag3NewTracker(Packet *p, FRAGKEY *fkey, Frag3Context *f3context)
 
     tmp = (FragTracker *)hnode->data;
     memset(tmp, 0, sizeof(FragTracker));
-    
+
     /*
      * setup the frag tracker
      */

@@ -105,7 +105,7 @@ void SetupIpIdCheck(void)
     /* map the keyword to an initialization/processing function */
     RegisterRuleOption("id", IpIdCheckInit, NULL, OPT_TYPE_DETECTION, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("id", &ipIdPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("id", &ipIdPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
 
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN,"Plugin: IpIdCheck Initialized\n"););
