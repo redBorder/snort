@@ -278,8 +278,6 @@ void file_agent_init(FileInspectConf* conf)
     const struct timespec thread_sleep = { 0, 100 };
     sigset_t mask;
 
-    stop_file_capturing = capture_thread_running = false;
-
     /*Need to check configuration to decide whether to enable them*/
 
     if (conf->file_type_enabled)
@@ -346,6 +344,11 @@ void file_agent_init(FileInspectConf* conf)
         FILE_FATAL_ERROR("File capture: Unable to create file capture queue!");
     }
 
+    if(conf->sha256_cache_table_maxmem_m > 0) {
+        sha256_cache = hash_table_s3_cache_new(conf->sha256_cache_table_rows,
+            conf->sha256_cache_table_maxmem_m);
+    }
+
     if ((rval = pthread_create(&capture_thread_tid, NULL,
             &FileCaptureThread, conf)) != 0)
     {
@@ -362,15 +365,7 @@ void file_agent_init(FileInspectConf* conf)
     pthread_sigmask(SIG_SETMASK, &mask, NULL);
     _dpd.logMsg("File capture thread started tid=%p (pid=%u)\n",
             (void *) capture_thread_tid, capture_thread_pid);
-#ifndef WIN32
-    /* In daemon mode we need to re-create cbuffer consumer thread */
-    pthread_atfork(file_agent_close,NULL,file_agent_init0);
-#endif
 
-    if(conf->sha256_cache_table_maxmem_m > 0) {
-        sha256_cache = hash_table_s3_cache_new(conf->sha256_cache_table_rows,
-            conf->sha256_cache_table_maxmem_m);
-    }
 }
 
 /*
