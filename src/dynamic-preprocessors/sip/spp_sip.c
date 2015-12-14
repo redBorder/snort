@@ -186,7 +186,7 @@ static void SIPInit(struct _SnortConfig *sc, char *argp)
         _dpd.addPreprocExit(SIPCleanExit, NULL, PRIORITY_LAST, PP_SIP);
 
 #ifdef PERF_PROFILING
-        _dpd.addPreprocProfileFunc("sip", (void *)&sipPerfStats, 0, _dpd.totalPerfStats);
+        _dpd.addPreprocProfileFunc("sip", (void *)&sipPerfStats, 0, _dpd.totalPerfStats, NULL);
 #endif
 
 #ifdef TARGET_BASED

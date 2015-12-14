@@ -18,17 +18,14 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
+#ifndef _THIRDPARTY_APPID_UTILS_H_
+#define _THIRDPARTY_APPID_UTILS_H_
 
-#ifndef __SERVICE_PATTERN_H__
-#define __SERVICE_PATTERN_H__
+#include "thirdparty_appid_api.h"
 
-#include "service_api.h"
+extern ThirdPartyAppIDModule* thirdparty_appid_module;    //NULL means no 3rd party AppID module
 
-int csdPatternTreeSearch(const uint8_t *data, uint16_t size, int protocol, const SFSnortPacket *pkt,
-                         const RNAServiceElement** serviceData);
-extern RNAServiceValidationModule pattern_service_mod;
-int pattern_validate(const uint8_t *data, uint16_t size, const int dir,
-                     FLOW *flowp, const SFSnortPacket *pkt, struct _Detector *userdata);
+void ThirdPartyAppIDInit(const char* thirdparty_appid_dir);
+void ThirdPartyAppIDFini(void);
 
-#endif  /* __SERVICE_PATTERN_H__ */
-
+#endif

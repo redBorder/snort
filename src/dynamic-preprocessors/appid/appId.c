@@ -18,13 +18,7 @@
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-
-#ifndef __SERVICE_DNS_H__
-#define __SERVICE_DNS_H__
-
-#include "service_api.h"
-
-extern RNAServiceValidationModule dns_service_mod;
-
-#endif  /* __SERVICE_DNS_H__ */
+#include <stdint.h>
+#include <stdbool.h>
+#include "appId.h"
 

@@ -131,7 +131,7 @@ typedef struct s_HTTP_LOG_STATE
 typedef struct _Transaction
 {
    uint8_t tID;
-   sfip_t *true_ip;
+   sfaddr_t *true_ip;
    struct _Transaction *next;
 }Transaction;
 
@@ -162,8 +162,8 @@ typedef struct _HISearch
 
 } HISearch;
 
-typedef struct _HiSearchToken               
-{   
+typedef struct _HiSearchToken
+{
     char *name;
     int   name_len;
     int   search_id;
@@ -225,6 +225,7 @@ int GetHttpHostnameData(void *data, uint8_t **buf, uint32_t *len, uint32_t *type
 void HI_SearchInit(void);
 void HI_SearchFree(void);
 int HI_SearchStrFound(void *, void *, int , void *, void *);
+int GetHttpFlowDepth(void *, uint32_t);
 
 static inline HttpSessionData * GetHttpSessionData(Packet *p)
 {
@@ -236,7 +237,7 @@ static inline HttpSessionData * GetHttpSessionData(Packet *p)
 static inline void freeTransactionNode(Transaction *tPtr)
 {
     if(tPtr->true_ip)
-        sfip_free(tPtr->true_ip);
+        sfaddr_free(tPtr->true_ip);
     free(tPtr);
 }
 
@@ -249,7 +250,7 @@ static inline void deleteNode_tList(HttpSessionData *hsd)
     freeTransactionNode(tmp);
 }
 
-static inline sfip_t *GetTrueIPForSession(void *data)
+static inline sfaddr_t *GetTrueIPForSession(void *data)
 {
     HttpSessionData *hsd = NULL;
 
@@ -259,7 +260,8 @@ static inline sfip_t *GetTrueIPForSession(void *data)
 
     if(hsd == NULL)
         return NULL;
-    if( hsd->tList_start != NULL && hsd->tList_end != NULL )
+
+    if( hsd->tList_start != NULL )
     {
         if ((hsd->is_response == 0) && ( hsd->http_req_id == hsd->tList_end->tID ) )
            return hsd->tList_end->true_ip;

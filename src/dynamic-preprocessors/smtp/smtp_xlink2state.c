@@ -275,7 +275,7 @@ int ParseXLink2State(SFSnortPacket *p, const uint8_t *ptr)
          * (outside of whether its thresholded). */
         if (smtp_eval_config->drop_xlink2state)
         {
-            _dpd.inlineDropAndReset(p);
+            _dpd.inlineDropSessionAndReset(p);
         }
 
         SMTP_GenerateAlert(SMTP_XLINK2STATE_OVERFLOW, "%s", SMTP_XLINK2STATE_OVERFLOW_STR);

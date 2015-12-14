@@ -24,6 +24,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 
+#include "appInfoTable.h"
 #include "flow.h"
 #include "service_api.h"
 
@@ -61,21 +62,23 @@ static int radius_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(radius_validate);
 MakeRNAServiceValidationPrototype(radius_validate_accounting);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &radius_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "radius",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
-static RNAServiceElement acct_svc_element =
+static tRNAServiceElement acct_svc_element =
 {
     .next = NULL,
     .validate = &radius_validate_accounting,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "radacct",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -87,7 +90,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule radius_service_mod =
+tRNAServiceValidationModule radius_service_mod =
 {
     "RADIUS",
     &radius_init,
@@ -106,7 +109,7 @@ static int radius_init(const InitServiceAPI * const init_api)
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&radius_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&radius_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -124,13 +127,13 @@ MakeRNAServiceValidationPrototype(radius_validate)
     if (size < sizeof(RADIUSHeader))
         goto fail;
 
-    rd = radius_service_mod.api->data_get(flowp);
+    rd = radius_service_mod.api->data_get(flowp, radius_service_mod.flow_data_index);
     if (!rd)
     {
         rd = calloc(1, sizeof(*rd));
         if (!rd)
             return SERVICE_ENOMEM;
-        if (radius_service_mod.api->data_add(flowp, rd, &free))
+        if (radius_service_mod.api->data_add(flowp, rd, radius_service_mod.flow_data_index, &free))
         {
             free(rd);
             return SERVICE_ENOMEM;
@@ -145,12 +148,12 @@ MakeRNAServiceValidationPrototype(radius_validate)
             hdr->code == RADIUS_CODE_ACCESS_REJECT ||
             hdr->code == RADIUS_CODE_ACCESS_CHALLENGE)
         {
-            flow_mark(flowp, FLOW_UDP_REVERSED);
+            setAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED);
             rd->state = RADIUS_STATE_RESPONSE;
             new_dir = APP_ID_FROM_RESPONDER;
         }
     }
-    else if (flow_checkflag(flowp, FLOW_UDP_REVERSED))
+    else if (getAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED))
     {
         new_dir = (dir == APP_ID_FROM_RESPONDER) ? APP_ID_FROM_INITIATOR:APP_ID_FROM_RESPONDER;
     }
@@ -207,11 +210,11 @@ success:
     return SERVICE_SUCCESS;
 
 not_compatible:
-    radius_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element);
+    radius_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element, radius_service_mod.flow_data_index, pConfig);
     return SERVICE_NOT_COMPATIBLE;
 
 fail:
-    radius_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+    radius_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, radius_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 }
 
@@ -227,13 +230,13 @@ MakeRNAServiceValidationPrototype(radius_validate_accounting)
     if (size < sizeof(RADIUSHeader))
         goto fail;
 
-    rd = radius_service_mod.api->data_get(flowp);
+    rd = radius_service_mod.api->data_get(flowp, radius_service_mod.flow_data_index);
     if (!rd)
     {
         rd = calloc(1, sizeof(*rd));
         if (!rd)
             return SERVICE_ENOMEM;
-        if (radius_service_mod.api->data_add(flowp, rd, &free))
+        if (radius_service_mod.api->data_add(flowp, rd, radius_service_mod.flow_data_index, &free))
         {
             free(rd);
             return SERVICE_ENOMEM;
@@ -246,12 +249,12 @@ MakeRNAServiceValidationPrototype(radius_validate_accounting)
     {
         if (hdr->code == RADIUS_CODE_ACCOUNTING_RESPONSE)
         {
-            flow_mark(flowp, FLOW_UDP_REVERSED);
+            setAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED);
             rd->state = RADIUS_STATE_RESPONSE;
             new_dir = APP_ID_FROM_RESPONDER;
         }
     }
-    else if (flow_checkflag(flowp, FLOW_UDP_REVERSED))
+    else if (getAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED))
     {
         new_dir = (dir == APP_ID_FROM_RESPONDER) ? APP_ID_FROM_INITIATOR:APP_ID_FROM_RESPONDER;
     }
@@ -304,11 +307,11 @@ success:
     return SERVICE_SUCCESS;
 
 not_compatible:
-    radius_service_mod.api->incompatible_data(flowp, pkt, dir, &acct_svc_element);
+    radius_service_mod.api->incompatible_data(flowp, pkt, dir, &acct_svc_element, radius_service_mod.flow_data_index, pConfig);
     return SERVICE_NOT_COMPATIBLE;
 
 fail:
-    radius_service_mod.api->fail_service(flowp, pkt, dir, &acct_svc_element);
+    radius_service_mod.api->fail_service(flowp, pkt, dir, &acct_svc_element, radius_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 }
 

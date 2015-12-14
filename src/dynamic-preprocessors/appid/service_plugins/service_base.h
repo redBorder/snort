@@ -22,66 +22,88 @@
 #ifndef __SERVICE_BASE_H__
 #define __SERVICE_BASE_H__
 
+#include "appIdApi.h"
 #include "service_api.h"
 #include "commonAppMatcher.h"
 #include "flow.h"
+#include "serviceConfig.h"
+#include "appIdConfig.h"
 struct _SERVICE_MATCH;
 
-void CleanupServices(void);
-void ReconfigureServices(void);
-void ServiceInit(void);
-void FailInProcessService(tAppIdData *flowp);
-int LoadServiceModules(const char **dir_list, uint32_t instance_id);
+void CleanupServices(tAppIdConfig *pConfig);
+void ReconfigureServices(tAppIdConfig *pConfig);
+void UnconfigureServices(tAppIdConfig *pConfig);
+void ServiceInit(tAppIdConfig *pConfig);
+void ServiceFinalize(tAppIdConfig *pConfig);
+void FailInProcessService(tAppIdData *flowp, const tAppIdConfig *pConfig);
+int LoadServiceModules(const char **dir_list, uint32_t instance_id, tAppIdConfig *pConfig);
+
+/**
+ * \brief Reload C service modules
+ *
+ * This function is called during reload/reconfiguration. It registers service ports in the given
+ * AppId configuration. This function also takes care of services associated with detector modules.
+ *
+ * @param pConfig - AppId config in which services' ports get registered
+ * @return 0 on success, -1 on failure
+ */
+int ReloadServiceModules(tAppIdConfig *pConfig);
 int serviceLoadCallback(void *symbol);
-int ServiceAddPort(RNAServiceValidationPort *pp, RNAServiceValidationModule *svm,
-                   struct _Detector* userdata);
-void ServiceRemovePorts(RNAServiceValidationFCN validate, struct _Detector* userdata);
+int serviceLoadForConfigCallback(void *symbol, tAppIdConfig *pConfig);
+int ServiceAddPort(RNAServiceValidationPort *pp, tRNAServiceValidationModule *svm,
+                   struct _Detector* userdata, tAppIdConfig *pConfig);
+void ServiceRemovePorts(RNAServiceValidationFCN validate, struct _Detector* userdata, tAppIdConfig *pConfig);
 void ServiceRegisterPatternDetector(RNAServiceValidationFCN fcn,
                                     u_int8_t proto, const u_int8_t *pattern, unsigned size,
                                     int position, struct _Detector *userdata,
                                     const char *name);
-int AppIdDiscoverService(const SFSnortPacket *p, int direction, tAppIdData *rnaData);
-tAppId getPortServiceId(uint8_t proto, uint16_t port);
+int AppIdDiscoverService(SFSnortPacket *p, int direction, tAppIdData *rnaData, const tAppIdConfig *pConfig);
+tAppId getPortServiceId(uint8_t proto, uint16_t port, const tAppIdConfig *pConfig);
 
 void AppIdFreeServiceIDState(AppIdServiceIDState *id_state);
 
-int AppIdServiceAddService(FLOW *flow, const SFSnortPacket *pkt, int dir,
-                           const RNAServiceElement *svc_element,
+int AppIdServiceAddService(tAppIdData*flow, const SFSnortPacket *pkt, int dir,
+                           const tRNAServiceElement *svc_element,
                            tAppId appId, const char *vendor, const char *version,
                            const RNAServiceSubtype *subtype);
-int AppIdServiceAddServiceSubtype(FLOW *flow, const SFSnortPacket *pkt, int dir,
-                                  const RNAServiceElement *svc_element,
+int AppIdServiceAddServiceSubtype(tAppIdData*flow, const SFSnortPacket *pkt, int dir,
+                                  const tRNAServiceElement *svc_element,
                                   tAppId appId, const char *vendor, const char *version,
                                   RNAServiceSubtype *subtype);
-int AppIdServiceInProcess(FLOW *flow, const SFSnortPacket *pkt, int dir,
-                          const RNAServiceElement *svc_element);
-int AppIdServiceIncompatibleData(FLOW *flow, const SFSnortPacket *pkt, int dir,
-                                 const RNAServiceElement *svc_element);
-int AppIdServiceFailService(FLOW *flow, const SFSnortPacket *pkt, int dir,
-                            const RNAServiceElement *svc_element);
+int AppIdServiceInProcess(tAppIdData*flow, const SFSnortPacket *pkt, int dir,
+                          const tRNAServiceElement *svc_element);
+int AppIdServiceIncompatibleData(tAppIdData*flow, const SFSnortPacket *pkt, int dir,
+                                 const tRNAServiceElement *svc_element, unsigned flow_data_index, const tAppIdConfig *pConfig);
+int AppIdServiceFailService(tAppIdData*flow, const SFSnortPacket *pkt, int dir,
+                            const tRNAServiceElement *svc_element, unsigned flow_data_index, const tAppIdConfig *pConfig);
 int AddFTPServiceState(tAppIdData *fp);
-
 void AppIdFreeDhcpInfo(DHCPInfo *dd);
 void AppIdFreeSMBData(FpSMBData *sd);
 void AppIdFreeDhcpData(DhcpFPData *dd);
 
-void dumpPorts(FILE *stream);
+void dumpPorts(FILE *stream, const tAppIdConfig *pConfig);
 
-const RNAServiceElement *ServiceGetServiceElement(RNAServiceValidationFCN fcn, struct _Detector *userdata);
+const tRNAServiceElement *ServiceGetServiceElement(RNAServiceValidationFCN fcn, struct _Detector *userdata, tAppIdConfig *pConfig);
 
-extern RNAServiceValidationModule *active_service_list;
+extern tRNAServiceValidationModule *active_service_list;
 
-extern tAppId app_id_service_instance;
+extern uint32_t app_id_instance_id;
 void cleanupFreeServiceMatch(void);
 void AppIdFreeServiceMatchList(struct _SERVICE_MATCH* sm);
 
-static inline bool compareServiceElements(const RNAServiceElement *first, const RNAServiceElement *second)
+static inline bool compareServiceElements(const tRNAServiceElement *first, const tRNAServiceElement *second)
 {
     if (first == second)
         return 0;
     if (first == NULL || second == NULL)
         return 1;
     return (first->validate != second->validate || first->userdata != second->userdata);
+}
+
+static inline uint32_t AppIdServiceDetectionLevel(tAppIdData * session)
+{
+    if (getAppIdExtFlag(session, APPID_SESSION_DECRYPTED)) return 1;
+    return 0;
 }
 
 #endif /* __SERVICE_BASE_H__ */

@@ -52,7 +52,7 @@ File_Capture_Stats file_capture_stats;
  * This is used for debug purpose
  */
 
-#ifdef DEBUG
+#ifdef DEBUG_MSGS
 static void verify_file_capture_info(FileContext* context,
         FileCaptureInfo *fileInfo)
 {

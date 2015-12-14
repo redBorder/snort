@@ -341,7 +341,7 @@ void SetupAsn1(void)
     RegisterRuleOption("asn1", Asn1Init, NULL, OPT_TYPE_DETECTION, NULL);
 
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("asn1", &asn1PerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("asn1", &asn1PerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
 
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN,"Plugin: ASN1 Setup\n"););

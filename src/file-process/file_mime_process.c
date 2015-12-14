@@ -274,14 +274,14 @@ static void set_file_name_from_log(FILE_LogState *log_state, void *ssn)
     {
         if (log_state->file_current > log_state->file_name)
             file_api->set_file_name(ssn, log_state->filenames + log_state->file_name,
-                    log_state->file_current -log_state->file_name - 1);
+                    log_state->file_current -log_state->file_name - 1, false);
         else
             file_api->set_file_name(ssn, log_state->filenames + log_state->file_current,
-                    log_state->file_logged -log_state->file_current);
+                    log_state->file_logged -log_state->file_current, false);
     }
     else
     {
-        file_api->set_file_name(ssn, NULL, 0);
+        file_api->set_file_name(ssn, NULL, 0, false);
     }
 }
 /*
@@ -782,8 +782,10 @@ static const uint8_t * process_mime_header(Packet *p, const uint8_t *ptr,
             {
                 if(!log_file_name(cont_disp, eolm - cont_disp,
                         &(mime_ssn->log_state->file_log), &disp_cont, true) )
+                {
                     mime_ssn->log_flags |= FLAG_FILENAME_PRESENT;
-                    mime_ssn->log_flags |= FLAG_FILENAME_IN_HEADER;
+                }
+                mime_ssn->log_flags |= FLAG_FILENAME_IN_HEADER;
             }
             if (disp_cont)
             {

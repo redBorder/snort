@@ -24,7 +24,7 @@
 
 #include "client_app_api.h"
 
-extern RNAClientAppModule ym_client_mod;
+extern tRNAClientAppModule ym_client_mod;
 
 #endif  /* __CLIENT_APP_YM_H__ */
 

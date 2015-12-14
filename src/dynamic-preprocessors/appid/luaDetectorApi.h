@@ -33,6 +33,8 @@
 
 #include "service_api.h"
 #include "client_app_api.h"
+#include "appIdConfig.h"
+#include "profiler.h"
 
 typedef struct
 {
@@ -60,8 +62,9 @@ typedef struct _Detector
     struct _Detector *next;
 
     /**Identifies customer created detectors using SDL. */
-    unsigned isCustomDetector:1;
+    unsigned isCustom:1;
     unsigned isActive:1;
+    unsigned wasActive:1;
 
     struct
     {
@@ -69,7 +72,7 @@ typedef struct _Detector
         uint16_t size;
         int dir;
         tAppIdData *flowp;
-        const SFSnortPacket *pkt;
+        SFSnortPacket *pkt;
         uint8_t macAddress[6];
     } validateParams;
 
@@ -82,11 +85,11 @@ typedef struct _Detector
         unsigned int serviceId;
 
         /**present only for server detectors*/
-        RNAServiceValidationModule serviceModule;
+        struct RNAServiceValidationModule serviceModule;
 
         /**calloced buffer to satisfy internal flow API.
         */
-        RNAServiceElement *pServiceElement;
+        struct RNAServiceElement *pServiceElement;
 
     } server;
 
@@ -99,7 +102,7 @@ typedef struct _Detector
         unsigned int appFpId;
 
         /**Client Application Module. */
-        RNAClientAppModule appModule;
+        tRNAClientAppModule appModule;
 
     } client;
 
@@ -108,8 +111,8 @@ typedef struct _Detector
     /**Reference to lua userdata. This is a key into LUA_REGISTRYINDEX */
     int detectorUserDataRef;
 
-    /**Name assigned to Lua code (chunk)*/
-    char *chunkName;
+    /**Detector name. Lua file name is used as detector name*/
+    char *name;
 
     /**Package information retrieved from detector lua file.
      */
@@ -118,6 +121,16 @@ typedef struct _Detector
     unsigned detector_version;
     char *validatorBuffer;
     unsigned char digest[16];
+
+    tAppIdConfig *pAppidActiveConfig;     ///< AppId context in which this detector should be used; used during packet processing
+    tAppIdConfig *pAppidOldConfig;        ///< AppId context in which this detector should be cleaned; used at reload free and exit
+    tAppIdConfig *pAppidNewConfig;        ///< AppId context in which this detector should be loaded; used at initialization and reload
+
+#ifdef PERF_PROFILING
+    /**Snort profiling stats for individual Lua detector.*/
+    struct _PreprocStats *pPerfStats;
+#endif
+
 } Detector;
 
 /**data directly accessed by Lua code should be here.
@@ -138,9 +151,10 @@ DetectorUserData *checkDetectorUserData (
         lua_State *L,
         int index
         );
-int Detector_fini(void *key, void *detector);
+void Detector_fini(void *detector);
 void detectorRemoveAllPorts (
-        Detector *detector
+                             Detector *detector,
+                             tAppIdConfig *pConfig
         );
 Detector *createDetector(
         lua_State *L,
@@ -154,8 +168,9 @@ int validateAnyClientApp(
         uint16_t size,
         const int dir,
         tAppIdData *flowp,
-        const SFSnortPacket *pkt,
-        Detector *userdata
+        SFSnortPacket *pkt,
+        Detector *userdata,
+        const tAppIdConfig *pConfig
         );
 
 enum httpPatternType
@@ -166,18 +181,22 @@ enum httpPatternType
 };
 
 int Detector_addSSLCertPattern (lua_State *);
+int Detector_addDNSHostPattern (lua_State *);
 
 int Detector_addHttpPattern(lua_State *L);
 
-void CleanHttpPatternLists(int exiting);
+void CleanHttpPatternLists(tAppIdConfig *pConfig);
+void CleanClientPortPatternList(tAppIdConfig*);
+void CleanServicePortPatternList(tAppIdConfig*);
 
 int validateAnyService(
         const uint8_t *data,
         uint16_t size,
         const int dir,
-        FLOW *flowp,
-        const SFSnortPacket *pkt,
-        Detector *detector
+        tAppIdData *flowp,
+        SFSnortPacket *pkt,
+        struct _Detector *detector,
+        const struct appIdConfig_ *
         );
 int checkServiceElement( Detector *detector);
 #endif

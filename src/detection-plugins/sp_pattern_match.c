@@ -187,8 +187,8 @@ void SetupPatternMatch(void)
 #endif
 
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("content", &contentPerfStats, 3, &ruleOTNEvalPerfStats);
-    RegisterPreprocessorProfile("uricontent", &uricontentPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("content", &contentPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
+    RegisterPreprocessorProfile("uricontent", &uricontentPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
     DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
                 "Plugin: PatternMatch Initialized!\n"););

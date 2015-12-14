@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule bgp_service_mod;
+extern tRNAServiceValidationModule bgp_service_mod;
 
 #endif  /* __SERVICE_BGP_H__ */
 

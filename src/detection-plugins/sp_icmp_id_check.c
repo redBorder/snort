@@ -129,7 +129,7 @@ void SetupIcmpIdCheck(void)
     RegisterRuleOption("icmp_id", IcmpIdCheckInit, NULL, OPT_TYPE_DETECTION, NULL);
 
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("icmp_id", &icmpIdPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("icmp_id", &icmpIdPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN,"Plugin: IcmpIdCheck Setup\n"););
 }
