@@ -53,7 +53,7 @@
 
 #define HI_UI_CONFIG_MAX_HDR_DEFAULT 0
 #define HI_UI_CONFIG_MAX_HEADERS_DEFAULT 0
-#define HI_UI_CONFIG_MAX_SPACES_DEFAULT 200 
+#define HI_UI_CONFIG_MAX_SPACES_DEFAULT 200
 
 #define HI_UI_CONFIG_MAX_XFF_FIELD_NAMES 8
 
@@ -205,7 +205,7 @@ typedef struct s_HTTPINSPECT_CONF
     char normalize_utf;
 
     /*
-     * Normalize Javascripts in HTTP server responses 
+     * Normalize Javascripts in HTTP server responses
      */
     char normalize_javascript;
 
@@ -251,6 +251,7 @@ typedef struct s_HTTPINSPECT_CONF
 #if defined(FEAT_OPEN_APPID)
     char appid_enabled;
 #endif /* defined(FEAT_OPEN_APPID) */
+    uint8_t file_policy;
 
 }  HTTPINSPECT_CONF;
 
@@ -305,7 +306,7 @@ int hi_ui_config_reset_server(HTTPINSPECT_CONF *ServerConf);
 void hi_ui_config_reset_http_methods(HTTPINSPECT_CONF *ServerConf);
 
 int hi_ui_config_add_server(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
-                            sfip_t *ServerIP,
+                            sfcidr_t *ServerIP,
                             HTTPINSPECT_CONF *ServerConf);
 
 int hi_ui_config_set_profile_apache(HTTPINSPECT_CONF *GlobalConf);

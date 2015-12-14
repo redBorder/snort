@@ -87,7 +87,7 @@ void DebugMessageFunc(uint64_t level, const char *fmt, ...)
 
     va_start(ap, fmt);
 
-    if ((snort_conf != NULL) && ScDaemonMode())
+    if ((snort_conf != NULL) && (ScDaemonMode() || ScLogSyslog()))
     {
         char buf[STD_BUF];
         int buf_len = sizeof(buf);

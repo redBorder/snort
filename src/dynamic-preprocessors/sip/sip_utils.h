@@ -26,6 +26,7 @@
 
 #ifndef SIP_UTILS_H_
 #define SIP_UTILS_H_
+#include "sf_snort_packet.h"
 #include "sip_config.h"
 #include "sfhashfcn.h"
 

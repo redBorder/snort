@@ -310,6 +310,7 @@ bool Active_SendData (
             sent += toSend;
         } while(blen -= toSend);
     }
+
     plen = 0;
     flags = (flags & ~ENC_FLAG_VAL) | sent;
     seg = Encode_Response(ENC_TCP_FIN, flags, p, &plen, NULL, 0);
@@ -352,6 +353,23 @@ void Active_InjectData (
     s_send(p->pkth, !(flags & ENC_FLAG_FWD), seg, plen);
 }
 
+void Active_UDPInjectData (
+    Packet* p, EncodeFlags flags, const uint8_t* buf, uint32_t blen)
+{
+    uint32_t plen = 0;
+    const uint8_t* seg;
+
+    if ( !s_attempts )
+        return;
+
+    flags |= GetFlags();
+
+    seg = Encode_Response(ENC_UDP, flags, p, &plen, buf, blen);
+    if ( !seg )
+        return;
+
+    s_send(p->pkth, !(flags & ENC_FLAG_FWD ), seg , plen);
+}
 //--------------------------------------------------------------------
 
 int Active_IsRSTCandidate(const Packet* p)

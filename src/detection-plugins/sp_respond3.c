@@ -149,7 +149,7 @@ void SetupRespond(void)
 {
     RegisterRuleOption("resp", Resp3_Init, NULL, OPT_TYPE_ACTION, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("resp3", &resp3PerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("resp3", &resp3PerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
 }
 

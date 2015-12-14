@@ -220,7 +220,7 @@ static AlertCSVData *AlertCSVParseArgs(struct _SnortConfig *sc, char *args)
                 break;
         }
     }
-    if ( !data->csvargs ) data->csvargs = strdup(DEFAULT_CSV);
+    if ( !data->csvargs ) data->csvargs = SnortStrdup(DEFAULT_CSV);
     if ( !filename ) filename = ProcessFileOption(sc, DEFAULT_FILE);
 
     mSplitFree(&toks, num_toks);

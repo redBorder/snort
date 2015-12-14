@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule lpr_service_mod;
+extern tRNAServiceValidationModule lpr_service_mod;
 
 #endif  /* __SERVICE_LPR_H__ */
 

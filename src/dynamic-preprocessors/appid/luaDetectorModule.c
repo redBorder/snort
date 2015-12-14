@@ -38,11 +38,12 @@
 #include "config.h"
 #endif
 
-#include "sfxhash.h"
+#include "sfghash.h"
 #include "appIdConfig.h"
 #include "luaDetectorApi.h"
 #include "luaDetectorFlowApi.h"
 #include "luaDetectorModule.h"
+#include "fw_appid.h"
 
 #ifdef HAVE_OPENSSL_MD5
 #include <openssl/md5.h>
@@ -65,17 +66,25 @@
 #endif
 
 #define MAXPD 1024
+#define LUA_DETECTOR_FILENAME_MAX 1024
 
 typedef void (tFileProcessorFn)(char *filename);
 
 /*static const char * LuaLogLabel = "luaDetectorModule"; */
 
-static SFXHASH *allocatedDetectorList; /*list of detectors allocated */
+// This data structure is shared in the main and the reload threads. However, the detectors
+// in this list could be using different AppID contexts (pAppidOldConfig, pAppidActiveConfig
+// and pAppidActiveConfig) based on which context the detector is being used. For example,
+// a detector could simultaneously be loaded in the reload thread while the same detector
+// could be used in the packet processing thread. Since allocatedDetectorList is used only
+// during loading, we don't need to use synchronization measures to access it.
+static SFGHASH *allocatedDetectorList;  ///< list of detectors allocated
+
 SF_LIST allocatedFlowList;  /*list of flows allocated. */
 static uint32_t gLuaTrackerSize = 0;
 static unsigned gNumDetectors = 0;
 static unsigned gNumActiveDetectors;
-static void luaDetectorsCleanInactive(void);
+//static void luaDetectorsCleanInactive(void);
 
 #ifdef LUA_DETECTOR_DEBUG
 void luaErrorHandler(lua_State *l, lua_Debug *ar)
@@ -121,7 +130,7 @@ static lua_State *createLuaState()
             lua_getfield(myLuaState, -1, "jit");  /* Get jit.* module table. */
             lua_getfield (myLuaState, -1, "version");
             if (lua_isstring(myLuaState, -1))
-                _dpd.logMsg("LuaJIT: Version %s\n", lua_tostring(myLuaState, -1));
+                DEBUG_WRAP(DebugMessage(DEBUG_APPID, "LuaJIT: Version %s\n", lua_tostring(myLuaState, -1)););
             lua_pop(myLuaState, 1);
             once = 1;
         }
@@ -168,14 +177,14 @@ static lua_State *createLuaState()
         {
             snprintf(newLuaPath, PATH_MAX-1, "%s;%s/odp/libs/?.lua;%s/custom/libs/?.lua", 
                     curLuaPath,
-                    appIdCommandConfig->app_id_detector_path, 
-                    appIdCommandConfig->app_id_detector_path);
+                    appidStaticConfig.app_id_detector_path, 
+                    appidStaticConfig.app_id_detector_path);
         }
         else
         {
             snprintf(newLuaPath, PATH_MAX-1, "%s/odp/libs/?.lua;%s/custom/libs/?.lua", 
-                    appIdCommandConfig->app_id_detector_path, 
-                    appIdCommandConfig->app_id_detector_path);
+                    appidStaticConfig.app_id_detector_path, 
+                    appidStaticConfig.app_id_detector_path);
         }
 
         lua_pop( myLuaState, 1 ); 
@@ -346,14 +355,14 @@ static void luaServerInit(
 {
     if (!detector->packageInfo.server.initFunctionName)
     {
-        _dpd.errMsg("chunk %s: DetectorInit() is not provided for server\n",detector->chunkName);
+        _dpd.errMsg("Detector %s: DetectorInit() is not provided for server\n",detector->name);
         return;
     }
 
     lua_getglobal(myLuaState, detector->packageInfo.server.initFunctionName);
     if (!lua_isfunction(myLuaState, -1))
     {
-        _dpd.errMsg("chunk %s: does not contain DetectorInit() function\n",detector->chunkName);
+        _dpd.errMsg("Detector %s: does not contain DetectorInit() function\n",detector->name);
         /*lua_close(myLuaState); */
         return;
     }
@@ -363,7 +372,7 @@ static void luaServerInit(
 
     if (lua_pcall(myLuaState, 1, 1, 0) != 0)
     {
-        _dpd.errMsg("error loading lua chunk %s, error %s\n",detector->chunkName, lua_tostring(myLuaState, -1));
+        _dpd.errMsg("error loading lua Detector %s, error %s\n",detector->name, lua_tostring(myLuaState, -1));
         /*lua_close(myLuaState); */
         return;
     }
@@ -371,7 +380,7 @@ static void luaServerInit(
     {
         if (detector->server.pServiceElement)
             detector->server.pServiceElement->ref_count = 1;
-        _dpd.debugMsg(DEBUG_LOG,"Initialized %s\n",detector->chunkName);
+        _dpd.debugMsg(DEBUG_LOG,"Initialized %s\n",detector->name);
     }
 }
 /**Calls init function inside lua detector.
@@ -381,21 +390,21 @@ static void luaServerInit(
  * simpler.
  */
 static void luaClientInit(
-        RNAClientAppModule *li)
+                          tRNAClientAppModule *li)
 {
     Detector *detector = (Detector *)li->userData;
     lua_State *myLuaState = detector->myLuaState;
 
     if (!detector->packageInfo.client.initFunctionName)
     {
-        _dpd.errMsg("chunk %s: DetectorInit() is not provided for client\n",detector->chunkName);
+        _dpd.errMsg("Detector %s: DetectorInit() is not provided for client\n",detector->name);
         return;
     }
     /*printf ("readPackage beginning stack elements %d\n", lua_gettop(myLuaState)); */
     lua_getglobal(myLuaState, detector->packageInfo.client.initFunctionName);
     if (!lua_isfunction(myLuaState, -1))
     {
-        _dpd.errMsg("chunk %s: does not contain DetectorInit() function\n",detector->chunkName);
+        _dpd.errMsg("Detector %s: does not contain DetectorInit() function\n",detector->name);
         /*lua_close(myLuaState); */
         return;
     }
@@ -414,7 +423,7 @@ static void luaClientInit(
     }
     else
     {
-        _dpd.debugMsg(DEBUG_LOG,"Initialized %s\n",detector->chunkName);
+        _dpd.debugMsg(DEBUG_LOG,"Initialized %s\n",detector->name);
     }
 }
 
@@ -432,7 +441,7 @@ static void luaClientFini(
     lua_getglobal(myLuaState, detector->packageInfo.client.cleanFunctionName);
     if (!lua_isfunction(myLuaState, -1))
     {
-        _dpd.errMsg("chunk %s: does not contain DetectorFini() function\n",detector->chunkName);
+        _dpd.errMsg("Detector %s: does not contain DetectorFini() function\n",detector->name);
         /*lua_close(myLuaState); */
         return;
     }
@@ -443,7 +452,7 @@ static void luaClientFini(
 
     if (lua_pcall(myLuaState, 1, 1, 0) != 0)
     {
-        _dpd.errMsg("Could not cleanup the %s client app element: %s\n",detector->chunkName, lua_tostring(myLuaState, -1));
+        _dpd.errMsg("Could not cleanup the %s client app element: %s\n",detector->name, lua_tostring(myLuaState, -1));
         /*lua_close(myLuaState); */
     }
 }
@@ -504,14 +513,15 @@ static void luaCustomLoad(
         char *detectorName,
         char *validator,
         unsigned int validatorLen,
-        char *chunkName,
-        unsigned char * const digest
+        unsigned char * const digest,
+        tAppIdConfig *pConfig,
+        bool isCustom
         )
 {
     lua_State *myLuaState = createLuaState();
-    SFXHASH_NODE *node;
+    SFGHASH_NODE *node;
     Detector *detector;
-    RNAClientAppModule *cam = NULL;
+    tRNAClientAppModule *cam = NULL;
 
     if (myLuaState == NULL)
     {
@@ -523,16 +533,16 @@ static void luaCustomLoad(
     /*Load function works the same with Lua and Luac file. */
     if (luaL_loadbuffer(myLuaState, validator, validatorLen, "")  || lua_pcall(myLuaState, 0, 0, 0))
     {
-        _dpd.errMsg("cannot run validator %s, error: %s\n",chunkName, lua_tostring(myLuaState, -1));
+        _dpd.errMsg("cannot run validator %s, error: %s\n",detectorName, lua_tostring(myLuaState, -1));
         lua_close(myLuaState);
         free(validator);
         return;
     }
 
-    detector = createDetector(myLuaState, chunkName);
+    detector = createDetector(myLuaState, detectorName);
     if (!detector)
     {
-        _dpd.errMsg("cannot allocate detector %s\n",chunkName);
+        _dpd.errMsg("cannot allocate detector %s\n",detectorName);
         lua_close(myLuaState);
         free(validator);
         return;
@@ -543,25 +553,14 @@ static void luaCustomLoad(
     detector->validatorBuffer = validator;
     /*detector->detector_version = version; */
     detector->isActive = 1;
-
-
-#if 0
-    if ((detector->packageInfo.proto != IPPROTO_TCP)
-            && (detector->packageInfo.proto != IPPROTO_UDP))
-    {
-        _dpd.errMsg( "detector %s did not have a valid protocol (%u)",
-                chunkName, (unsigned)detector->packageInfo.proto);
-        freeDetector(detector);
-        lua_close(myLuaState);
-        return;
-    }
-#endif
+    detector->pAppidNewConfig = detector->pAppidActiveConfig = detector->pAppidOldConfig = pConfig;
+    detector->isCustom = isCustom;
 
     if (detector->packageInfo.server.initFunctionName)
     {
         /*add to active service list */
-        detector->server.serviceModule.next = active_service_list;
-        active_service_list = &detector->server.serviceModule;
+        detector->server.serviceModule.next = pConfig->serviceConfig.active_service_list;
+        pConfig->serviceConfig.active_service_list = &detector->server.serviceModule;
 
         detector->server.serviceId = APP_ID_UNKNOWN;
         
@@ -586,26 +585,43 @@ static void luaCustomLoad(
         cam->api = getClientApi();
     }
 
-    node = sfxhash_find_node(allocatedDetectorList, detectorName);
+    node = sfghash_find_node(allocatedDetectorList, detectorName);
     if (node)
     {
         detector->next = node->data;
         node->data = detector;
     }
-    else if (sfxhash_add(allocatedDetectorList, detectorName, detector))
+    else if (sfghash_add(allocatedDetectorList, detectorName, detector))
     {
         _dpd.errMsg( "Failed to add to list.");
         freeDetector(detector);
         lua_close(myLuaState);
         return;
     }
-
     memcpy(detector->digest, digest, sizeof(detector->digest));
 
-    _dpd.debugMsg(DEBUG_LOG,"Loaded detector %s\n",chunkName);
+#ifdef PERF_PROFILING
+    if (!(detector->pPerfStats = calloc(1, sizeof(*detector->pPerfStats))))
+    {
+        _dpd.errMsg("cannot allocate perStats %s\n",detectorName);
+        freeDetector(detector);
+        lua_close(myLuaState);
+        return;
+    }
+
+    if (isCustom)
+    {
+        _dpd.addPreprocProfileFunc(detector->name, detector->pPerfStats, 3, &luaCustomPerfStats, (PreprocStatsNodeFreeFunc)free);
+    }
+    else
+    {
+        _dpd.addPreprocProfileFunc(detector->name, detector->pPerfStats, 3, &luaCiscoPerfStats, (PreprocStatsNodeFreeFunc)free);
+    }
+#endif /*PERF_PROFILING */
+
+    _dpd.debugMsg(DEBUG_LOG,"Loaded detector %s\n",detectorName);
 
     gNumDetectors++;
-    gNumActiveDetectors++;
 }
 
 /**Initializes Lua modules. Open lua and if available LuaJIT libraries, and registers all API modules.
@@ -616,8 +632,7 @@ static void luaCustomLoad(
 void luaModuleInit(void)
 {
     sflist_init(&allocatedFlowList);
-    allocatedDetectorList = sfxhash_new(-1023, 0, 0, 0, 1,
-                                        (SFXHASH_FREE_FCN)Detector_fini, (SFXHASH_FREE_FCN)Detector_fini, 1);
+    allocatedDetectorList = sfghash_new(-1023, 0, 0, Detector_fini);
     if (!allocatedDetectorList)
     {
         _dpd.fatalMsg( "Failed to create the module hash");
@@ -633,19 +648,20 @@ void luaModuleInit(void)
  * total system memory.
  * @param numDetectors - number of lua detectors present in database.
  */
+#define LUA_TRACKERS_MAX  10000
+#define LUA_TRACKER_AVG_MEM_BYTES  740
+
 static inline uint32_t calculateLuaTrackerSize(u_int64_t rnaMemory, uint32_t numDetectors)
 {
     u_int64_t detectorMemory = (rnaMemory/8);
-    u_int64_t perTrackerMemory = (3700000*2/10000); /*derived from CAICCI run with 10,000 flow entries. Doubling for host entries. */
     unsigned numTrackers;
     if (!numDetectors)
         numDetectors = 1;
-    numTrackers = (detectorMemory/perTrackerMemory)/numDetectors;
-    _dpd.debugMsg(DEBUG_LOG,"calculated tracker size is %u\n",numTrackers);
-    return (numTrackers > 10000)? 10000: numTrackers;
+    numTrackers = (detectorMemory/LUA_TRACKER_AVG_MEM_BYTES)/numDetectors;
+    return (numTrackers > LUA_TRACKERS_MAX)? LUA_TRACKERS_MAX: numTrackers;
 }
 
-void loadCustomLuaModules(char *path)
+void loadCustomLuaModules(char *path, tAppIdConfig *pConfig, bool isCustom)
 {
     Detector *detector;
     int rval;
@@ -655,9 +671,9 @@ void loadCustomLuaModules(char *path)
     FILE *file;
     uint8_t *validatorBuffer;
     int validatorBufferLen;
-    char *detectorName;
 
-    snprintf(pattern, sizeof(pattern), "%s/*.lua", path);
+    //snprintf(pattern, sizeof(pattern), "%s/????????-????-????-????-????????????", path);
+    snprintf(pattern, sizeof(pattern), "%s/*", path);
 
     memset(&globs, 0, sizeof(globs));
     rval = glob(pattern, 0, NULL, &globs);
@@ -667,23 +683,28 @@ void loadCustomLuaModules(char *path)
         return;
     }
 
+    // Open each RNA detector file and gather detector information from it
     for (n = 0; n < globs.gl_pathc; n++)
     {
         unsigned char digest[16];
         MD5CONTEXT context;
+        char detectorName[LUA_DETECTOR_FILENAME_MAX];
+        char *basename;
 
-        detectorName = strrchr(globs.gl_pathv[n], '/');
-        if (!detectorName)
+        basename = strrchr(globs.gl_pathv[n], '/');
+        if (!basename)
         {
-            _dpd.errMsg("Invalid lua detector name '%s'\n",globs.gl_pathv[n]);
-            continue;
+            basename = globs.gl_pathv[n];
         }
+        basename++;
+
+        snprintf(detectorName, LUA_DETECTOR_FILENAME_MAX, "%s_%s", (isCustom? "custom": "cisco"), basename);
+
         if ((file = fopen(globs.gl_pathv[n], "r")) == NULL)
         {
             _dpd.errMsg("Unable to read lua detector '%s'\n",globs.gl_pathv[n]);
             continue;
         }
-        detectorName++;
 
         /*Load lua file as a detector. */
         if (fseek(file, 0, SEEK_END))
@@ -708,7 +729,12 @@ void loadCustomLuaModules(char *path)
             _dpd.errMsg("Failed to allocate the user lua detector %s\n",globs.gl_pathv[n]);
             goto next;
         }
-        fread(validatorBuffer, validatorBufferLen, 1, file);
+        if (fread(validatorBuffer, validatorBufferLen, 1, file) == 0)
+        {
+            _dpd.errMsg("Failed to read lua detector %s\n",globs.gl_pathv[n]);
+            free(validatorBuffer);
+            continue;
+        }
 
         validatorBuffer[validatorBufferLen] = 0;
 
@@ -717,55 +743,100 @@ void loadCustomLuaModules(char *path)
         MD5FINAL(digest, &context);
 
         /*calculate md5sum and mark the detector active if matched. */
-        detector = sfxhash_find(allocatedDetectorList, detectorName);
+        detector = sfghash_find(allocatedDetectorList, detectorName);
         if (detector)
         {
 
             if (!memcmp(digest, detector->digest, sizeof(digest)))
             {
                 detector->isActive = 1;
-                gNumActiveDetectors++;
+                detector->pAppidNewConfig = pConfig;
+		        free(validatorBuffer);
                 goto next;
             }
         }
 
-        luaCustomLoad(detectorName, (char *)validatorBuffer, validatorBufferLen, globs.gl_pathv[n], digest);
+        luaCustomLoad(detectorName, (char *)validatorBuffer, validatorBufferLen, digest, pConfig, isCustom);
 
 next:
         fclose(file);
     }
 
     globfree(&globs);
-
 }
 
-void luaDetectorsLoad(void)
+void FinalizeLuaModules(tAppIdConfig *pConfig)
+{
+    Detector *detector;
+    Detector *detector_list;
+    SFGHASH_NODE *node;
+
+    gNumActiveDetectors = 0;
+    for (node = sfghash_findfirst(allocatedDetectorList);
+         node;
+         node = sfghash_findnext(allocatedDetectorList))
+    {
+        detector_list = node->data;
+        for (detector = detector_list; detector; detector = detector->next)
+        {
+            // Detector loading is done. Its data in the current context can be cleaned.
+            // Its data in the new context is ready to use. Change pAppidOldConfig
+            // and pAppidActiveConfig appropriately.
+            detector->pAppidOldConfig = detector->pAppidActiveConfig;
+            detector->pAppidActiveConfig = pConfig;
+            if (detector->isActive)
+            {
+                gNumActiveDetectors++;
+
+                if (detector->server.pServiceElement)
+                    detector->server.pServiceElement->current_ref_count = detector->server.pServiceElement->ref_count;
+            }
+        }
+    }
+
+    luaDetectorsSetTrackerSize();
+}
+
+void LoadLuaModules(tAppIdConfig *pConfig)
 {
     char path[PATH_MAX];
+    Detector *detector;
+    Detector *detector_list;
+    SFGHASH_NODE *node;
 
-    luaDetectorsUnload();
-    
-    /*loadSFLuaModules(); */
+    for (node = sfghash_findfirst(allocatedDetectorList);
+         node;
+         node = sfghash_findnext(allocatedDetectorList))
+    {
+        detector_list = node->data;
+        for (detector = detector_list; detector; detector = detector->next)
+        {
+            detector->wasActive = detector->isActive;
+            detector->isActive = 0;
+            if (detector->server.pServiceElement)
+                detector->server.pServiceElement->ref_count = 0;
+        }
+    }
 
-    snprintf(path, sizeof(path), "%s/odp/lua", appIdCommandConfig->app_id_detector_path);
-    loadCustomLuaModules(path);
-    snprintf(path, sizeof(path), "%s/custom/lua", appIdCommandConfig->app_id_detector_path);
-    loadCustomLuaModules(path);
-    luaDetectorsSetTrackerSize();
-    luaDetectorsCleanInactive();
+    snprintf(path, sizeof(path), "%s/odp/lua", appidStaticConfig.app_id_detector_path);
+    loadCustomLuaModules(path, pConfig, 0);
+    snprintf(path, sizeof(path), "%s/custom/lua", appidStaticConfig.app_id_detector_path);
+    loadCustomLuaModules(path, pConfig, 1);
+    // luaDetectorsCleanInactive();
 }
 
+#if 0
 /** the inactive detectors are not deleted since some allocated values are used
  * in client and service lists.*/
 static void luaDetectorsCleanInactive(void)
 {
     Detector *detector;
     Detector *detector_list;
-    SFXHASH_NODE *node;
+    SFGHASH_NODE *node;
 
-    for (node = sfxhash_gfindfirst(allocatedDetectorList);
+    for (node = sfghash_findfirst(allocatedDetectorList);
          node;
-         node = sfxhash_gfindnext(allocatedDetectorList))
+         node = sfghash_findnext(allocatedDetectorList))
     {
         detector_list = node->data;
         for (detector = detector_list; detector; detector = detector->next)
@@ -830,11 +901,11 @@ static void luaDetectorsCleanInactive(void)
                     detector->detectorUserDataRef = LUA_REFNIL;
                 }
 
-                if (detector->chunkName)
+                if (detector->name)
                 {
-                    free(detector->chunkName);
+                    free(detector->name);
                     free(detector->validatorBuffer);
-                    detector->chunkName = NULL;
+                    detector->name = NULL;
                     detector->validatorBuffer = NULL;
                 }
 
@@ -848,21 +919,23 @@ static void luaDetectorsCleanInactive(void)
         }
     }
 }
-void luaDetectorsUnload(void)
+#endif
+
+void luaDetectorsUnload(tAppIdConfig *pConfig)
 {
     Detector *detector;
     Detector *detector_list;
-    SFXHASH_NODE *node;
+    SFGHASH_NODE *node;
 
-    for (node = sfxhash_gfindfirst(allocatedDetectorList);
+    for (node = sfghash_findfirst(allocatedDetectorList);
          node;
-         node = sfxhash_gfindnext(allocatedDetectorList))
+         node = sfghash_findnext(allocatedDetectorList))
     {
         detector_list = node->data;
         for (detector = detector_list; detector; detector = detector->next)
         {
             if (detector->isActive && detector->packageInfo.server.initFunctionName)
-                detectorRemoveAllPorts(detector);
+                detectorRemoveAllPorts(detector, pConfig);
             if (detector->isActive && detector->packageInfo.client.initFunctionName)
                 luaClientFini(detector);
             detector->isActive = 0;
@@ -877,20 +950,44 @@ void luaDetectorsSetTrackerSize(void)
 {
     Detector *detector;
     Detector *detector_list;
-    SFXHASH_NODE *node;
+    SFGHASH_NODE *node;
 
     gLuaTrackerSize = calculateLuaTrackerSize(512*1024*1024, gNumActiveDetectors);
 
-    _dpd.logMsg("    Setting tracker size to %u\n", gLuaTrackerSize);
+    DEBUG_WRAP(DebugMessage(DEBUG_APPID, "    Setting tracker size to %u\n", gLuaTrackerSize););
 
-    for (node = sfxhash_gfindfirst(allocatedDetectorList);
+    for (node = sfghash_findfirst(allocatedDetectorList);
          node;
-         node = sfxhash_gfindnext(allocatedDetectorList))
+         node = sfghash_findnext(allocatedDetectorList))
     {
         detector_list = node->data;
         for (detector = detector_list; detector; detector = detector->next)
             if (detector->isActive)
                 setLuaTrackerSize(detector->myLuaState, gLuaTrackerSize);
+    }
+}
+
+void UnloadLuaModules(tAppIdConfig *pConfig)
+{
+    Detector *detector;
+    Detector *detector_list;
+    SFGHASH_NODE *node;
+
+    for (node = sfghash_findfirst(allocatedDetectorList);
+         node;
+         node = sfghash_findnext(allocatedDetectorList))
+    {
+        detector_list = node->data;
+        for (detector = detector_list; detector; detector = detector->next)
+        {
+            if (detector->wasActive && detector->client.appFpId)
+                luaClientFini(detector);
+            detector->wasActive = 0;
+
+            // Detector cleanup is done. Move pAppidOldConfig to the current
+            // AppID context.
+            detector->pAppidOldConfig = detector->pAppidActiveConfig;
+        }
     }
 }
 
@@ -904,12 +1001,12 @@ void luaModuleInitAllServices(void)
 {
     Detector *detector_list;
     Detector *detector;
-    SFXHASH_NODE *node;
+    SFGHASH_NODE *node;
 
     /*reconfiguring server elements only. */
-    for (node = sfxhash_gfindfirst(allocatedDetectorList);
+    for (node = sfghash_findfirst(allocatedDetectorList);
          node;
-         node = sfxhash_gfindnext(allocatedDetectorList))
+         node = sfghash_findnext(allocatedDetectorList))
     {
         detector_list = node->data;
         for (detector = detector_list; detector; detector = detector->next)
@@ -932,12 +1029,12 @@ void luaModuleInitAllClients(void)
 {
     Detector *detector_list;
     Detector *detector;
-    SFXHASH_NODE *node;
+    SFGHASH_NODE *node;
 
     /*reconfiguring client elements. */
-    for (node = sfxhash_gfindfirst(allocatedDetectorList);
+    for (node = sfghash_findfirst(allocatedDetectorList);
          node;
-         node = sfxhash_gfindnext(allocatedDetectorList))
+         node = sfghash_findnext(allocatedDetectorList))
     {
         detector_list = node->data;
         for (detector = detector_list; detector; detector = detector->next)
@@ -953,12 +1050,12 @@ void luaModuleInitAllClients(void)
 void luaModuleCleanAllClients(void)
 {
     Detector *detector;
-    SFXHASH_NODE *node;
+    SFGHASH_NODE *node;
 
     /*reconfiguring client elements. */
-    for (node = sfxhash_gfindfirst(allocatedDetectorList);
+    for (node = sfghash_findfirst(allocatedDetectorList);
          node;
-         node = sfxhash_gfindnext(allocatedDetectorList))
+         node = sfghash_findnext(allocatedDetectorList))
     {
         detector = node->data;
         if (detector->packageInfo.client.initFunctionName)
@@ -984,7 +1081,7 @@ void luaModuleFini(void)
     /*flow can be freed during garbage collection */
 
     sflist_static_free_all(&allocatedFlowList, freeDetectorFlow);
-    sfxhash_delete(allocatedDetectorList);
+    sfghash_delete(allocatedDetectorList);
     allocatedDetectorList = NULL;
 }
 
@@ -992,15 +1089,17 @@ void RNAPndDumpLuaStats (void)
 {
     Detector *detector_list;
     Detector *detector;
-    SFXHASH_NODE *node;
+    SFGHASH_NODE *node;
     unsigned long long totalMem = 0;
     unsigned long long mem;
 
+    if (!allocatedDetectorList)
+        return;
 
     _dpd.logMsg("Lua detector Stats");
-    for (node = sfxhash_gfindfirst(allocatedDetectorList);
+    for (node = sfghash_findfirst(allocatedDetectorList);
          node;
-         node = sfxhash_gfindnext(allocatedDetectorList))
+         node = sfghash_findnext(allocatedDetectorList))
     {
         detector_list = node->data;
         for (detector = detector_list; detector; detector = detector->next)
@@ -1009,7 +1108,7 @@ void RNAPndDumpLuaStats (void)
             {
                 mem = lua_gc(detector->myLuaState, LUA_GCCOUNT,0);
                 totalMem += mem;
-                _dpd.logMsg("    Detector %s: Lua Memory usage %d kb", detector->chunkName, mem);
+                _dpd.logMsg("    Detector %s: Lua Memory usage %d kb", detector->name, mem);
             }
         }
     }

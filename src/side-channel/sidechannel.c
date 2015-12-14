@@ -373,7 +373,7 @@ int SideChannelEnqueueMessageRX(SCMsgHdr *hdr, const uint8_t *msg, uint32_t leng
 {
     int rval;
 
-    /* 
+    /*
      * Because the Snort main thread relinquishes control to DAQ_Acquire for up to a second,
      * we potentially need to preempt it and process RX messages as they are being enqueued
      * to avoid backups and overruns.
@@ -562,9 +562,13 @@ static void *SideChannelThread(void *arg)
                 from here, which are all expecting it (dequeue, timed wait, or done). */
 
             Side_Channel_Stats.tx_messages_processed++;
+#ifndef REG_TEST
             if (stop_processing)
                 goto done;
+#endif
         }
+        if (stop_processing)
+            goto done;
         gettimeofday(&tv, NULL);
         ts.tv_sec = tv.tv_sec + 10;
         ts.tv_nsec = tv.tv_usec * 1000;

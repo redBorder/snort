@@ -223,6 +223,8 @@ int SMTP_CopyEmailID(const uint8_t *start, int length, int command_type, MAIL_Lo
     {
         alt_buf[*alt_len] = ',';
         *alt_len = *alt_len + 1;
+        if(log_avail == length)
+            length--;
     }
 
     ret = SafeMemcpy(alt_buf + *alt_len, start, length, alt_buf, alt_buf + alt_size);

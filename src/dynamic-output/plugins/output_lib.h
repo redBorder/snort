@@ -160,6 +160,6 @@ typedef struct _DynamicOutputData
 extern DynamicOutputData _dod;
 
 
-OUTPUT_SO_PUBLIC int initOutputPlugins(void *dod);
+int initOutputPlugins(void *dod);
 
 #endif /* _OUTPUT_UTIL_H */

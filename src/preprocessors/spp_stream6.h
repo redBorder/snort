@@ -31,4 +31,9 @@
 /* list of function prototypes for this preprocessor */
 void SetupStream6(void);
 
+#if defined(FEAT_OPEN_APPID)
+void CallHttpHeaderProcessors(Packet* p, HttpParsedHeaders * const headers);
+bool IsAnybodyRegisteredForHttpHeader(void);
+#endif /* defined(FEAT_OPEN_APPID) */
+
 #endif  /* __SPP_STREAM6_H__ */

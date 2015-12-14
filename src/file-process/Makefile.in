@@ -100,8 +100,8 @@ am_libfileAPI_a_OBJECTS = file_service.$(OBJEXT) \
 	file_service_config.$(OBJEXT) file_mime_process.$(OBJEXT) \
 	file_resume_block.$(OBJEXT) file_mime_config.$(OBJEXT) \
 	file_capture.$(OBJEXT) file_stats.$(OBJEXT) \
-	circular_buffer.$(OBJEXT) file_mempool.$(OBJEXT) \
-	sf_email_attach_decode.$(OBJEXT)
+	file_segment_process.$(OBJEXT) circular_buffer.$(OBJEXT) \
+	file_mempool.$(OBJEXT) sf_email_attach_decode.$(OBJEXT)
 libfileAPI_a_OBJECTS = $(am_libfileAPI_a_OBJECTS)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -255,7 +255,6 @@ LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
 LUA_CFLAGS = @LUA_CFLAGS@
 LUA_LIBS = @LUA_LIBS@
-MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
 MKDIR_P = @MKDIR_P@
@@ -361,6 +360,8 @@ libfileAPI_a_SOURCES = \
 	file_capture.h \
 	file_stats.c \
 	file_stats.h \
+    file_segment_process.c \
+	file_segment_process.h \
 	circular_buffer.c \
 	circular_buffer.h \
 	file_mempool.c \
@@ -374,7 +375,7 @@ all: all-recursive
 
 .SUFFIXES:
 .SUFFIXES: .c .lo .o .obj
-$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__configure_deps)
+$(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
 	    *$$dep*) \
@@ -399,9 +400,9 @@ Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 $(top_builddir)/config.status: $(top_srcdir)/configure $(CONFIG_STATUS_DEPENDENCIES)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 
-$(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
+$(top_srcdir)/configure:  $(am__configure_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
-$(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
+$(ACLOCAL_M4):  $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
 

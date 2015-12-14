@@ -104,7 +104,7 @@ void SetupTCPFlagCheck(void)
 {
     RegisterRuleOption("flags", TCPFlagCheckInit, NULL, OPT_TYPE_DETECTION, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("flags", &tcpFlagsPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("flags", &tcpFlagsPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN, "Plugin: TCPFlagCheck Initialized!\n"););
 }

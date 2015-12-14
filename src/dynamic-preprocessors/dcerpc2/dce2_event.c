@@ -364,6 +364,16 @@ void DCE2_EventsInit(void)
             DCE2_EVENT_FLAG__SMB,
             DCE2_EVENT__SMB_EVASIVE_FILE_ATTRS,
             "SMB - Client attempted to create or set a file's attributes to readonly/hidden/system"
+        },
+        {
+            DCE2_EVENT_FLAG__SMB,
+            DCE2_EVENT__SMB_INVALID_FILE_OFFSET,
+            "SMB - File offset provided is greater than file size specified"
+        },
+        {
+            DCE2_EVENT_FLAG__SMB,
+            DCE2_EVENT__SMB_BAD_NEXT_COMMAND_OFFSET,
+            "SMB - Nextcommand specified in SMB2 header is beyond payload boundary"
         }
     };
 
