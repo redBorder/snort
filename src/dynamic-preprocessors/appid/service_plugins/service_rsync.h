@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule rsync_service_mod;
+extern tRNAServiceValidationModule rsync_service_mod;
 
 #endif  /* __SERVICE_RSYNC_H__ */
 

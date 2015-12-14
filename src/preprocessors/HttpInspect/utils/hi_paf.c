@@ -67,6 +67,7 @@
 #include "snort.h"
 #include "stream_api.h"
 #include "snort_debug.h"
+#include "snort_httpinspect.h"
 
 #ifdef DEBUG_MSGS
 #define HI_TRACE     // define for state trace
@@ -86,12 +87,24 @@
 #define HIF_PST 0x0800  // post (requires content-length or chunks)
 #define HIF_EOL 0x1000  // already saw at least one eol (for v09)
 
+enum FlowDepthState
+{
+    HI_FLOW_DEPTH_STATE_NONE = 0,       //start 
+    HI_FLOW_DEPTH_STATE_CONT_LEN,       //content length start
+    HI_FLOW_DEPTH_STATE_CHUNK_START,    //chunked encoding start
+    HI_FLOW_DEPTH_STATE_CHUNK_DISC_SKIP,//chunked encoding discard skip after flow depth
+    HI_FLOW_DEPTH_STATE_CHUNK_DISC_CONT,//chunked encoding discard continue till end of PDU
+};
+
+
 typedef struct {
     uint32_t len;
     uint16_t flags;
     uint8_t msg;
     uint8_t fsm;
     uint32_t pipe;
+    int flow_depth;
+    uint8_t flow_depth_state;
 } Hi5State;
 
 // config stuff
@@ -100,6 +113,9 @@ static uint32_t hi_cap = 0;
 // stats
 static uint32_t hi_paf_calls = 0;
 static uint32_t hi_paf_bytes = 0;
+
+//Reset flow depth if required ( for chunked transfer encoding )
+static bool flow_depth_reset = false;
 
 static uint8_t hi_paf_id = 0;
 
@@ -391,6 +407,10 @@ static HiRule hi_rule[] =
     { R8+ 0, R2   , R8+ 1, ACT_NOP, EOLS },
     { R8+ 1, R8   , R8   , ACT_NOP, ANYS },
 };
+
+static void hi_update_flow_depth_state(Hi5State *hip, uint32_t* fp, PAF_Status *paf );
+static void get_flow_depth(void *ssn, uint32_t flags, Hi5State *hip);
+
 
 //--------------------------------------------------------------------
 // trace stuff
@@ -725,6 +745,8 @@ static inline PAF_Status hi_exec (Hi5State* s, Action a, int c)
                 "%s: lnc=%u\n", __FUNCTION__, s->len);)
             if ( s->len )
                 return PAF_SKIP;
+            if( s->flags & HIF_NOF )
+                flow_depth_reset = true;
             s->flags &= ~HIF_NOF;
             s->msg = 3;
             break;
@@ -881,8 +903,11 @@ static PAF_Status hi_eoh (Hi5State* s, void* ssn)
     }
     if ( s->flags & HIF_CHK )
     {
+        uint32_t fp;
+        PAF_Status paf = PAF_SEARCH;
         hi_exec(s, ACT_CK0, 0);
-        return PAF_SEARCH;
+        hi_update_flow_depth_state(s, &fp, &paf );
+        return paf;
     }
     if ( (s->flags & (HIF_REQ|HIF_LEN)) )
         return PAF_FLUSH;
@@ -982,6 +1007,11 @@ static inline PAF_Status hi_scan_msg (
     else if ( paf != PAF_SEARCH )
         *fp = s->len;
 
+    if( paf != PAF_SEARCH && paf != PAF_ABORT )
+    {
+        hi_update_flow_depth_state(s, fp, &paf );
+    }
+
     return paf;
 }
 
@@ -989,7 +1019,7 @@ static inline PAF_Status hi_scan_msg (
 // utility
 //--------------------------------------------------------------------
 
-static void hi_reset (Hi5State* s, uint32_t flags)
+static void hi_reset (Hi5State* s, uint32_t flags, void *ssn)
 {
     s->len = s->msg = 0;
 
@@ -1002,6 +1032,14 @@ static void hi_reset (Hi5State* s, uint32_t flags)
         s->fsm = RSP_START_STATE;
     }
     s->flags = 0;
+    s->flow_depth = 0;
+    s->flow_depth_state = HI_FLOW_DEPTH_STATE_NONE;
+
+    if( flow_depth_reset )
+    {
+        get_flow_depth(ssn, flags, s);
+        flow_depth_reset = false;
+    }
 
     DEBUG_WRAP(DebugMessage(DEBUG_STREAM_PAF,
         "%s: fsm=%u, flags=0x%X\n", __FUNCTION__, s->fsm, s->flags);)
@@ -1032,7 +1070,9 @@ static PAF_Status hi_paf (
 
         *pv = hip;
 
-        hi_reset(hip, flags);
+        flow_depth_reset = true;
+
+        hi_reset(hip, flags, ssn );
     }
 
     DEBUG_WRAP(DebugMessage(DEBUG_STREAM_PAF,
@@ -1047,6 +1087,21 @@ static PAF_Status hi_paf (
     {
         return PAF_ABORT;
     }
+
+    hi_update_flow_depth_state(hip, fp, &paf);
+
+    if( paf != PAF_SEARCH )
+    {
+        hi_paf_calls++;
+
+        if ( paf == PAF_DISCARD_END )
+            hi_reset(hip, flags, ssn);
+
+        hi_paf_bytes += *fp;
+
+        return paf;
+    }
+
 
     while ( n < len )
     {
@@ -1070,13 +1125,15 @@ static PAF_Status hi_paf (
                 *fp = len;
                 break;
             }
+
             *fp += n;
 
-            if ( paf != PAF_SKIP )
-                hi_reset(hip, flags);
+            if ( paf != PAF_SKIP && paf != PAF_DISCARD_START )
+                hi_reset(hip, flags, ssn);
             break;
         }
     }
+
     DEBUG_WRAP(DebugMessage(DEBUG_STREAM_PAF,
         "%s: paf=%d, rfp=%u\n", __FUNCTION__, paf, *fp);)
 
@@ -1168,11 +1225,123 @@ bool hi_paf_simple_request (void* ssn)
 {
     if ( ssn )
     {
-	 Hi5State** s = (Hi5State **)stream_api->get_paf_user_data(ssn, 1, hi_paf_id);
+        Hi5State** s = (Hi5State **)stream_api->get_paf_user_data(ssn, 1, hi_paf_id);
 
         if ( s && *s )
             return ( (*s)->flags & HIF_V09 );
     }
     return false;
+}
+
+static void  get_flow_depth(void *ssn, uint32_t flags, Hi5State *hip)
+{
+    hip->flow_depth = GetHttpFlowDepth(ssn, flags);
+}
+
+static void hi_update_flow_depth_state(Hi5State *hip, uint32_t* fp, PAF_Status *paf )
+{
+    //sanity check
+    assert( hip );
+
+    if( !hip->flow_depth )
+        return;
+
+    if ( (hip->flags & HIF_ERR) ||
+            ((hip->flags & HIF_NOB) ))
+        return;
+
+    if( hip->flags & HIF_V09 )
+        return;
+
+    //Apply flow depth for POST in case of request
+    if( (hip->flags & HIF_REQ ) &&
+            !(hip->flags & HIF_PST) )
+        return;
+
+    switch( hip->flow_depth_state )
+    {
+        case HI_FLOW_DEPTH_STATE_NONE:
+            if( hip->flags & HIF_LEN )
+            {
+                if( hip->len > 0 )
+                {
+                    if( hip->flow_depth == -1 )
+                    {
+                        *paf = PAF_DISCARD_START;
+                        *fp = 0;
+                        hip->flow_depth_state = HI_FLOW_DEPTH_STATE_CONT_LEN;
+                    }
+                    else if( hip->flow_depth > 0 )
+                    {
+                        if( hip->len > hip->flow_depth )
+                        {
+                            *paf = PAF_DISCARD_START;
+                            *fp = hip->flow_depth;
+                            hip->flow_depth_state = HI_FLOW_DEPTH_STATE_CONT_LEN;
+                        }
+                    }
+                }
+            }
+            else if( hip->flags & HIF_NOF )
+            {
+                if( hip->flow_depth == -1 )
+                {
+                    *paf = PAF_DISCARD_START;
+                    *fp = 0;
+                    hip->flow_depth_state = HI_FLOW_DEPTH_STATE_CHUNK_DISC_CONT;
+                }
+                else if( hip->flow_depth > 0 )
+                {
+                    hip->flow_depth_state = HI_FLOW_DEPTH_STATE_CHUNK_START;
+                }
+
+            }
+            break;
+
+        case HI_FLOW_DEPTH_STATE_CONT_LEN:
+            *paf = PAF_DISCARD_END;
+            if( hip->flow_depth > 0 )
+                *fp = hip->len - hip->flow_depth;
+            else
+                *fp = hip->len;
+            break;
+
+        case HI_FLOW_DEPTH_STATE_CHUNK_START:
+            if( ( *paf == PAF_SKIP ) && ( hip->flow_depth <= hip->len ) )
+            {
+                *paf = PAF_DISCARD_START;
+                *fp = hip->flow_depth;
+                if( hip->flow_depth == hip->len )
+                    hip->flow_depth_state = HI_FLOW_DEPTH_STATE_CHUNK_DISC_CONT;
+                else
+                    hip->flow_depth_state = HI_FLOW_DEPTH_STATE_CHUNK_DISC_SKIP;
+                hip->len -= hip->flow_depth;
+            }
+            else if( *paf == PAF_SKIP )
+            {
+                hip->flow_depth -= hip->len;
+            }
+            break;
+
+        case HI_FLOW_DEPTH_STATE_CHUNK_DISC_SKIP:
+            if( hip->len )
+            {
+                *paf = PAF_SKIP;
+                *fp = hip->len;
+                hip->len = 0;
+            }
+            hip->flow_depth_state = HI_FLOW_DEPTH_STATE_CHUNK_DISC_CONT;
+            break;
+
+        case HI_FLOW_DEPTH_STATE_CHUNK_DISC_CONT:
+            if( !( hip->flags & HIF_NOF) )
+            {
+                *paf = PAF_DISCARD_END;
+            }
+            break;
+
+        default:
+            break;
+    }
 }
 

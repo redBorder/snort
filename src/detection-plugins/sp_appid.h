@@ -32,6 +32,7 @@ typedef struct _AppIdOptionData
 {
     int16_t  matched_appid;
     unsigned num_appid;
+    unsigned num_appid_allocated;
     AppIdInfo* appid_table;
 } AppIdOptionData;
 

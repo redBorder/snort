@@ -107,7 +107,7 @@ void SetupIcmpTypeCheck(void)
     /* map the keyword to an initialization/processing function */
     RegisterRuleOption("itype", IcmpTypeCheckInit, NULL, OPT_TYPE_DETECTION, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("itype", &icmpTypePerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("itype", &icmpTypePerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN,"Plugin: IcmpTypeCheck Initialized\n"););
 }

@@ -170,7 +170,7 @@ static void GTPInit(struct _SnortConfig *sc, char *argp)
         _dpd.addPreprocExit(GTPCleanExit, NULL, PRIORITY_LAST, PP_GTP);
 
 #ifdef PERF_PROFILING
-        _dpd.addPreprocProfileFunc("gtp", (void *)&gtpPerfStats, 0, _dpd.totalPerfStats);
+        _dpd.addPreprocProfileFunc("gtp", (void *)&gtpPerfStats, 0, _dpd.totalPerfStats, NULL);
 #endif
 
 #ifdef TARGET_BASED

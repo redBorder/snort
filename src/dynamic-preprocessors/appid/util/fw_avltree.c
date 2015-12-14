@@ -1,5 +1,4 @@
 /*
-** Copyright (C) 2001 Marc Norton
 ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
@@ -18,7 +17,6 @@
 ** along with this program; if not, write to the Free Software
 ** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
-
 
 #include <stdbool.h>
 #include "fw_avltree.h"

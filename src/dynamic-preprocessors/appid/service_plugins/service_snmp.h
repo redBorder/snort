@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule snmp_service_mod;
+extern tRNAServiceValidationModule snmp_service_mod;
 
 #endif  /* __SERVICE_SNMP_H__ */
 

@@ -51,8 +51,9 @@
 */
 #define SMTP_UU_DECODING_FAILED     13
 #define SMTP_AUTH_ABORT_AUTH        14
+#define SMTP_AUTH_COMMAND_OVERFLOW  15
 
-#define SMTP_EVENT_MAX  15
+#define SMTP_EVENT_MAX  16
 
 /* Messages for each event */
 #define SMTP_COMMAND_OVERFLOW_STR        "(smtp) Attempted command buffer overflow"
@@ -68,6 +69,7 @@
 #define SMTP_QP_DECODING_FAILED_STR      "(smtp) Quoted-Printable Decoding failed."
 #define SMTP_UU_DECODING_FAILED_STR      "(smtp) Unix-to-Unix Decoding failed."
 #define SMTP_AUTH_ABORT_AUTH_STR         "(smtp) Cyrus SASL authentication attack."
+#define SMTP_AUTH_COMMAND_OVERFLOW_STR   "(smtp) Attempted authentication command buffer overflow"
 
 #define EVENT_STR_LEN  256
 

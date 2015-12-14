@@ -189,7 +189,7 @@ static void IMAPInit(struct _SnortConfig *sc, char *args)
 #endif
 
 #ifdef PERF_PROFILING
-        _dpd.addPreprocProfileFunc("imap", (void*)&imapPerfStats, 0, _dpd.totalPerfStats);
+        _dpd.addPreprocProfileFunc("imap", (void*)&imapPerfStats, 0, _dpd.totalPerfStats, NULL);
 #endif
     }
 
@@ -349,7 +349,7 @@ static void registerPortsForDispatch( struct _SnortConfig *sc, IMAPConfig *polic
     for ( port = 0; port < MAXPORTS; port++ )
     {
         if( isPortEnabled( policy->ports, port ) )
-            _dpd.sessionAPI->enable_preproc_for_port( sc, PP_IMAP, PROTO_BIT__TCP, port ); 
+            _dpd.sessionAPI->enable_preproc_for_port( sc, PP_IMAP, PROTO_BIT__TCP, port );
     }
 }
 

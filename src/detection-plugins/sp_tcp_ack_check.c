@@ -104,7 +104,7 @@ void SetupTcpAckCheck(void)
     /* map the keyword to an initialization/processing function */
     RegisterRuleOption("ack", TcpAckCheckInit, NULL, OPT_TYPE_DETECTION, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("ack", &tcpAckPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("ack", &tcpAckPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN, "Plugin: TcpAckCheck Initialized\n"););
 }

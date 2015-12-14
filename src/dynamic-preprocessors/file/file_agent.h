@@ -46,7 +46,12 @@ typedef struct _FileInfo
 /* Initialize file processing.
  * This should be called when this preprocessor initialized (snort starts)
  */
-void file_agent_init(FileInspectConf *);
+void file_agent_init(void *);
+
+/* Initialize file processing thread.
+ * This should be called after initialization of daemon
+ */
+void file_agent_thread_init(struct _SnortConfig *sc, void *);
 
 /* Close file processing.
  * This should be called when snort exit

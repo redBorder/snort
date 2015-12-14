@@ -66,13 +66,14 @@ typedef struct _SERVICE_LPR_DATA
 static int lpr_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(lpr_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &lpr_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "lpr",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -81,7 +82,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule lpr_service_mod =
+tRNAServiceValidationModule lpr_service_mod =
 {
     "LPR",
     &lpr_init,
@@ -96,7 +97,7 @@ static int lpr_init(const InitServiceAPI * const init_api)
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&lpr_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&lpr_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -109,13 +110,13 @@ MakeRNAServiceValidationPrototype(lpr_validate)
 
     if (!size) goto inprocess;
 
-    ld = lpr_service_mod.api->data_get(flowp);
+    ld = lpr_service_mod.api->data_get(flowp, lpr_service_mod.flow_data_index);
     if (!ld)
     {
         ld = calloc(1, sizeof(*ld));
         if (!ld)
             return SERVICE_ENOMEM;
-        if (lpr_service_mod.api->data_add(flowp, ld, &free))
+        if (lpr_service_mod.api->data_add(flowp, ld, lpr_service_mod.flow_data_index, &free))
         {
             free(ld);
             return SERVICE_ENOMEM;
@@ -222,11 +223,11 @@ success:
     return SERVICE_SUCCESS;
 
 fail:
-    lpr_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+    lpr_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, lpr_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 
 bail:
-    lpr_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element);
+    lpr_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element, lpr_service_mod.flow_data_index, pConfig);
     return SERVICE_NOT_COMPATIBLE;
 }
 

@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule mdns_service_mod;
+extern tRNAServiceValidationModule mdns_service_mod;
 
 #endif  /* __SERVICE_MDNS_H__ */
 

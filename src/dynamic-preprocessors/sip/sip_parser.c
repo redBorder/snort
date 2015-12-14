@@ -1008,9 +1008,7 @@ static int sip_parse_content_len(SIPMsg *msg, const char *start, const char *end
 {
 	char *next = NULL;
 #ifdef DEBUG
-	int length;
-	length = end - start;
-	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Content length value: %.*s\n", length, start););
+	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Content length value: %.*s\n", (int)(end - start), start););
 #endif
 
 	msg->content_len = _dpd.SnortStrtoul(start, &next, 10);
@@ -1107,7 +1105,7 @@ static int sip_parse_sdp_o(SIPMsg *msg, const char *start, const char *end)
 static int sip_parse_sdp_c(SIPMsg *msg, const char *start, const char *end)
 {
 	int length;
-	sfip_t *ip;
+	sfaddr_t *ip;
 	char ipStr[INET6_ADDRSTRLEN + 5];     /* Enough for IPv4 plus netmask or
 		                                               full IPv6 plus prefix */
 	char *spaceIndex = NULL;
@@ -1144,7 +1142,7 @@ static int sip_parse_sdp_c(SIPMsg *msg, const char *start, const char *end)
 	{
 		ip = &(msg->mediaSession->medias->maddress);
 	}
-	if( (sfip_pton(ipStr, ip)) != SFIP_SUCCESS)
+	if( (sfaddr_pton(ipStr, ip)) != SFIP_SUCCESS)
 	{
 		DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Parsed error! \n"););
 		return SIP_PARSE_ERROR;

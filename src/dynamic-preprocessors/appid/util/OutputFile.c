@@ -40,8 +40,6 @@
 #include <errno.h>
 #include "sf_dynamic_preprocessor.h"
 
-static const char * const MODULE_NAME = "OutputFile";
-
 FILE *openOutputFile(const char * const filename, time_t tstamp)
 {
     FILE *fp;

@@ -120,7 +120,7 @@ void SetupIcmpCodeCheck(void)
     /* map the keyword to an initialization/processing function */
     RegisterRuleOption("icode", IcmpCodeCheckInit, NULL, OPT_TYPE_DETECTION, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("icode", &icmpCodePerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("icode", &icmpCodePerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
 
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN, "Plugin: IcmpCodeCheck Initialized\n"););

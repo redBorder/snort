@@ -187,7 +187,7 @@ void SetupPcre(void)
 {
     RegisterRuleOption("pcre", SnortPcreInit, NULL, OPT_TYPE_DETECTION, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("pcre", &pcrePerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("pcre", &pcrePerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
 }
 

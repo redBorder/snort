@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule irc_service_mod;
+extern tRNAServiceValidationModule irc_service_mod;
 
 #endif  /* __SERVICE_IRC_H__ */
 
