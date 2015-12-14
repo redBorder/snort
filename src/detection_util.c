@@ -116,7 +116,7 @@ void EventTrace_Log (const Packet* p, OptTreeNode* otn, int action)
 
     TextLog_Print(tlog,
         "\nEvt=%u, Gid=%u, Sid=%u, Rev=%u, Act=%s\n",
-        event_id, otn->sigInfo.generator, 
+        event_id, otn->sigInfo.generator,
         otn->sigInfo.id, otn->sigInfo.rev, acts
     );
     TextLog_Print(tlog,
@@ -125,9 +125,9 @@ void EventTrace_Log (const Packet* p, OptTreeNode* otn, int action)
         p->pkth->pktlen, p->pkth->caplen
     );
     TextLog_Print(tlog,
-        "Pkt Bits: Flags=0x%X, PP=0x%X, PPR=0x%X, Proto=0x%X"
+        "Pkt Bits: Flags=0x%X, PP=0x%" PRIx64 ", Proto=0x%X"
         ", Err=0x%X\n",
-        p->packet_flags, p->preprocessor_bits, p->preproc_reassembly_pkt_bits,
+        p->packet_flags, p->preprocessor_bits,
         (unsigned)p->proto_bits, (unsigned)p->error_flags
     );
     TextLog_Print(tlog,

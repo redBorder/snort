@@ -1,4 +1,5 @@
 ## $Id
+EXTRA_DIST=detection_leaf_node.c
 AUTOMAKE_OPTIONS=foreign no-dependencies
 
 noinst_LIBRARIES = libspd.a

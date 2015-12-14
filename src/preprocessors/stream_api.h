@@ -108,7 +108,9 @@ typedef enum {
     PAF_FLUSH,   /* flush at given offset */
     PAF_LIMIT,   /* if paf_max is reached, flush up to given offset*/
     PAF_SKIP,    /* skip ahead to given offset */
-    PAF_PERFORMED_LMT_FLUSH /* previously performed PAF_LIMIT  */
+    PAF_PERFORMED_LMT_FLUSH, /* previously performed PAF_LIMIT  */
+    PAF_DISCARD_START, /*start of the discard point */
+    PAF_DISCARD_END, /*end of the discard point */
 } PAF_Status;
 
 typedef PAF_Status (*PAF_Callback)(  /* return your scan state */
@@ -149,6 +151,7 @@ typedef void (*ServiceEventNotifierFunc)(void *ssnptr, ServiceEventType eventTyp
 
 typedef void (*Stream_Callback)(Packet *);
 
+struct _ExpectNode;
 typedef struct _stream_api
 {
     int version;
@@ -280,7 +283,7 @@ typedef struct _stream_api
      *     IP
      *     Port
      */
-    void (*update_direction)(void *, char, snort_ip_p, uint16_t );
+    void (*update_direction)(void *, char, sfaddr_t*, uint16_t );
 
     /* Get reassembly direction for given session
      *
@@ -486,8 +489,9 @@ typedef struct _stream_api
      *     0 on success
      *     -1 on failure
      */
-    int (*set_application_protocol_id_expected_preassign_callback)(const Packet *, snort_ip_p, uint16_t,
-                snort_ip_p, uint16_t, uint8_t, int16_t, uint32_t, void*, void (*)(void*), unsigned, Stream_Event);
+    int (*set_application_protocol_id_expected_preassign_callback)(const Packet *, sfaddr_t*, uint16_t,
+                sfaddr_t*, uint16_t, uint8_t, int16_t, uint32_t, void*, void (*)(void*), unsigned, Stream_Event,
+                struct _ExpectNode**);
 
     // print and reset normalization statistics
     void (*print_normalization_stats)(void);
@@ -498,10 +502,10 @@ typedef struct _stream_api
      *
      * Parameters
      *      Session Ptr
-     *      Snort Protocol Id for service application    
-     *      Snort Protocol Id for client application    
-     *      Snort Protocol Id for payload application    
-     *      Snort Protocol Id for misc application    
+     *      Snort Protocol Id for service application
+     *      Snort Protocol Id for client application
+     *      Snort Protocol Id for payload application
+     *      Snort Protocol Id for misc application
      */
     void (*set_application_id)(void* ssnptr, int16_t serviceAppid, int16_t clientAppid, int16_t payloadAppId, int16_t miscAppid);
 
@@ -509,10 +513,10 @@ typedef struct _stream_api
      *
      * Parameters
      *      Session Ptr
-     *      Snort Protocol Id for service application    
-     *      Snort Protocol Id for client application    
-     *      Snort Protocol Id for payload application    
-     *      Snort Protocol Id for misc application    
+     *      Snort Protocol Id for service application
+     *      Snort Protocol Id for client application
+     *      Snort Protocol Id for payload application
+     *      Snort Protocol Id for misc application
      */
     void (*get_application_id)(void* ssnptr, int16_t *serviceAppid, int16_t *clientAppid, int16_t *payloadAppId, int16_t *miscAppid);
 

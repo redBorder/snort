@@ -106,7 +106,7 @@ int hi_ui_server_lookup_init(SERVER_LOOKUP **ServerLookup)
 **  @retval HI_NONFATAL_ERR   key is already in table, don't overwrite
 **                            configuration.
 */
-int hi_ui_server_lookup_add(SERVER_LOOKUP *ServerLookup, sfip_t *Ip,
+int hi_ui_server_lookup_add(SERVER_LOOKUP *ServerLookup, sfcidr_t *Ip,
                             HTTPINSPECT_CONF *ServerConf)
 {
     int iRet;
@@ -146,7 +146,7 @@ int hi_ui_server_lookup_add(SERVER_LOOKUP *ServerLookup, sfip_t *Ip,
 **  @retval HI_NOT_FOUND IP not found
 */
 HTTPINSPECT_CONF  *hi_ui_server_lookup_find(SERVER_LOOKUP *ServerLookup,
-                                            snort_ip_p Ip, int *iError)
+                                            sfaddr_t* Ip, int *iError)
 {
     HTTPINSPECT_CONF *ServerConf;
 

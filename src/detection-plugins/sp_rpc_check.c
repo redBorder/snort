@@ -135,7 +135,7 @@ void SetupRpcCheck(void)
     RegisterRuleOption("rpc", RpcCheckInit, NULL, OPT_TYPE_DETECTION, NULL);
 
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("rpc", &rpcCheckPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("rpc", &rpcCheckPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
 
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN, "Plugin: RPCCheck Initialized\n"););

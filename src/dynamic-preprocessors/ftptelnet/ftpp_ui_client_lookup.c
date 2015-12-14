@@ -105,7 +105,7 @@ int ftpp_ui_client_lookup_cleanup(CLIENT_LOOKUP **ClientLookup)
 
 /*
  * Function: ftpp_ui_client_lookup_add(CLIENT_LOOKUP *ClientLookup,
- *                                 sfip_t* Ip,
+ *                                 sfcidr_t* Ip,
  *                                 FTP_CLIENT_PROTO_CONF *ClientConf)
  *
  * Purpose: Add a client configuration to the list.
@@ -124,7 +124,7 @@ int ftpp_ui_client_lookup_cleanup(CLIENT_LOOKUP **ClientLookup)
  */
 int ftpp_ui_client_lookup_add(
     CLIENT_LOOKUP *ClientLookup,
-    sfip_t* Ip, FTP_CLIENT_PROTO_CONF *ClientConf)
+    sfcidr_t* Ip, FTP_CLIENT_PROTO_CONF *ClientConf)
 {
     int iRet;
 
@@ -156,7 +156,7 @@ int ftpp_ui_client_lookup_add(
 
 /*
  * Function: ftpp_ui_client_lookup_find(CLIENT_LOOKUP *ClientLookup,
- *                                  snort_ip_p ip, int *iError)
+ *                                  sfaddr_t* ip, int *iError)
  *
  * Purpose: Find a client configuration given a IP.
  *          We look up a client configuration given an IP and
@@ -174,7 +174,7 @@ int ftpp_ui_client_lookup_add(
  */
 
 FTP_CLIENT_PROTO_CONF *ftpp_ui_client_lookup_find(CLIENT_LOOKUP *ClientLookup,
-                                            snort_ip_p Ip, int *iError)
+                                            sfaddr_t* Ip, int *iError)
 {
     FTP_CLIENT_PROTO_CONF *ClientConf = NULL;
 

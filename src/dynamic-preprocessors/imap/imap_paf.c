@@ -597,8 +597,8 @@ void register_imap_paf_service (struct _SnortConfig *sc, int16_t app, tSfPolicyI
 {
     if (_dpd.isPafEnabled())
     {
-       imap_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, true, imap_paf, true);
-       imap_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, false,imap_paf, true);
+        imap_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, true, imap_paf, true);
+        imap_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, false,imap_paf, true);
     }
 }
 #endif
@@ -608,7 +608,7 @@ void register_imap_paf_port(struct _SnortConfig *sc, unsigned int i, tSfPolicyId
 {
     if (_dpd.isPafEnabled())
     {
-       imap_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, true, imap_paf, true);
-       imap_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, false, imap_paf, true);
+        imap_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, true, imap_paf, true);
+        imap_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, false, imap_paf, true);
     }
 }

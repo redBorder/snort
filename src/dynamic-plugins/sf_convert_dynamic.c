@@ -876,7 +876,7 @@ static int ConvertByteExtractOption(SnortConfig *sc, Rule *rule, int index, OptT
     snort_byte->bytes_to_grab = so_byte->bytes;
     snort_byte->offset = so_byte->offset;
     snort_byte->align = so_byte->align;
-    snort_byte->name = strdup(so_byte->refId);
+    snort_byte->name = SnortStrdup(so_byte->refId);
 
     /* In an SO rule, setting multiplier to 0 means that the multiplier is
        ignored. This is not the case in the text rule version of byte_extract. */

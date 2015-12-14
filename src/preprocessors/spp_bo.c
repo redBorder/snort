@@ -259,7 +259,7 @@ static void BoInit(struct _SnortConfig *sc, char *args)
         AddFuncToPreprocCleanExitList(BoCleanExit, NULL, PRIORITY_LAST, PP_BO);
 
 #ifdef PERF_PROFILING
-        RegisterPreprocessorProfile("backorifice", &boPerfStats, 0, &totalPerfStats);
+        RegisterPreprocessorProfile("backorifice", &boPerfStats, 0, &totalPerfStats, NULL);
 #endif
     }
 

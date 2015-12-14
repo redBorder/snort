@@ -733,9 +733,6 @@ CPPFLAGS
 LDFLAGS
 CFLAGS
 CC
-MAINT
-MAINTAINER_MODE_FALSE
-MAINTAINER_MODE_TRUE
 AM_BACKSLASH
 AM_DEFAULT_VERBOSITY
 AM_DEFAULT_V
@@ -805,7 +802,6 @@ ac_subst_files=''
 ac_user_opts='
 enable_option_checking
 enable_silent_rules
-enable_maintainer_mode
 enable_dependency_tracking
 enable_shared
 enable_static
@@ -1504,9 +1500,6 @@ Optional Features:
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
   --enable-silent-rules   less verbose build output (undo: "make V=1")
   --disable-silent-rules  verbose build output (undo: "make V=0")
-  --enable-maintainer-mode
-                          enable make rules and dependencies not useful (and
-                          sometimes confusing) to the casual installer
   --enable-dependency-tracking
                           do not reject slow dependency extractors
   --disable-dependency-tracking
@@ -3201,7 +3194,7 @@ fi
 # Define the identity of the package.
 
  PACKAGE=snort
- VERSION=2.9.7.6
+ VERSION=2.9.8.0
 
 
 cat >>confdefs.h <<_ACEOF
@@ -3295,30 +3288,6 @@ END
 fi
 
 NO_OPTIMIZE="no"
-
-# Disable annoying practice of recursively re-running the autotools
-
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to enable maintainer-specific portions of Makefiles" >&5
-$as_echo_n "checking whether to enable maintainer-specific portions of Makefiles... " >&6; }
-    # Check whether --enable-maintainer-mode was given.
-if test "${enable_maintainer_mode+set}" = set; then :
-  enableval=$enable_maintainer_mode; USE_MAINTAINER_MODE=$enableval
-else
-  USE_MAINTAINER_MODE=no
-fi
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $USE_MAINTAINER_MODE" >&5
-$as_echo "$USE_MAINTAINER_MODE" >&6; }
-   if test $USE_MAINTAINER_MODE = yes; then
-  MAINTAINER_MODE_TRUE=
-  MAINTAINER_MODE_FALSE='#'
-else
-  MAINTAINER_MODE_TRUE='#'
-  MAINTAINER_MODE_FALSE=
-fi
-
-  MAINT=$MAINTAINER_MODE_TRUE
-
 
 DEPDIR="${am__leading_dot}deps"
 
@@ -13281,6 +13250,10 @@ $as_echo "#define AC_APPLE_UNIVERSAL_BUILD 1" >>confdefs.h
  presetting ac_cv_c_bigendian=no (or yes) will help" "$LINENO" 5 ;;
  esac
 
+# AC_C_BIGENDIAN implicitly defines WORDS_BIGENDIAN, but the CCONFIGFLAGS also needs to be affected.
+if test "x$ac_cv_c_bigendian" = "xyes"; then
+    CCONFIGFLAGS="${CCONFIGFLAGS} -DSF_BIGENDIAN"
+fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for inline" >&5
 $as_echo_n "checking for inline... " >&6; }
 if ${ac_cv_c_inline+:} false; then :
@@ -13397,9 +13370,16 @@ $as_echo "#define LINUX 1" >>confdefs.h
 
 $as_echo "#define HPUX 1" >>confdefs.h
 
+    if test "x$ac_cv_c_bigendian" = "xno"; then
+        # exception to AC_C_BIGENDIAN and test "x$ac_cv_c_bigendian" = "xyes" above
+        # causes the need for next three lines.
+        { $as_echo "$as_me:${as_lineno-$LINENO}: bigendian byte-order not detected but asserted for $host" >&5
+$as_echo "$as_me: bigendian byte-order not detected but asserted for $host" >&6;}
 
 $as_echo "#define WORDS_BIGENDIAN 1" >>confdefs.h
 
+        CCONFIGFLAGS="${CCONFIGFLAGS} -DSF_BIGENDIAN"
+    fi
 
     extra_incl="-I/usr/local/include"
     ;;
@@ -14743,7 +14723,6 @@ fi
 
 if test "x$with_daq_includes" != "xno"; then
    CPPFLAGS="${CPPFLAGS} -I${with_daq_includes}"
-   ICONFIGFLAGS="${ICONFIGFLAGS} -I${with_daq_includes}"
 fi
 
 if test "x$with_daq_libraries" != "xno"; then
@@ -15475,6 +15454,7 @@ fi
 
 if test "x$with_dnet_includes" != "xno"; then
     CPPFLAGS="${CPPFLAGS} -I${with_dnet_includes}"
+    ICONFIGFLAGS="${ICONFIGFLAGS} -I${with_dnet_includes}"
 else
     CPPFLAGS="${CPPFLAGS} `dnet-config --cflags 2>/dev/null`"
 fi
@@ -15850,6 +15830,47 @@ fi
 done
 
 
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for daq real addresses" >&5
+$as_echo_n "checking for daq real addresses... " >&6; }
+if test "$cross_compiling" = yes; then :
+  { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+as_fn_error $? "cannot run test program while cross compiling
+See \`config.log' for more details" "$LINENO" 5; }
+else
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+#include <daq.h>
+
+int
+main ()
+{
+
+   DAQ_PktHdr_t hdr;
+   hdr.n_real_dPort = 0;
+
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_run "$LINENO"; then :
+  have_daq_real_addresses="yes"
+else
+  have_daq_real_addresses="no"
+fi
+rm -f core *.core core.conftest.* gmon.out bb.out conftest$ac_exeext \
+  conftest.$ac_objext conftest.beam conftest.$ac_ext
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $have_daq_real_addresses" >&5
+$as_echo "$have_daq_real_addresses" >&6; }
+if test "x$have_daq_real_addresses" = "xyes"; then
+
+$as_echo "#define HAVE_DAQ_REAL_ADDRESSES 1" >>confdefs.h
+
+fi
+
 if test "x$ac_cv_func_daq_dp_add_dc" = "xyes"; then
 
     ac_fn_c_check_member "$LINENO" "struct _DAQ_DP_key_t" "sa.src_ip4" "ac_cv_member_struct__DAQ_DP_key_t_sa_src_ip4" "#include <daq_common.h>
@@ -15949,6 +15970,94 @@ $as_echo "$have_daq_flow_id" >&6; }
 if test "x$have_daq_flow_id" = "xyes"; then
 
 $as_echo "#define HAVE_DAQ_FLOW_ID 1" >>confdefs.h
+
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for daq extended flow modifiers" >&5
+$as_echo_n "checking for daq extended flow modifiers... " >&6; }
+if test "$cross_compiling" = yes; then :
+  { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+as_fn_error $? "cannot run test program while cross compiling
+See \`config.log' for more details" "$LINENO" 5; }
+else
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+#include <daq.h>
+
+int
+main ()
+{
+
+   DAQ_ModFlow_t mod;
+   mod.type = 0;
+   mod.length = 0;
+   mod.value = NULL;
+
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_run "$LINENO"; then :
+  have_daq_ext_modflow="yes"
+else
+  have_daq_ext_modflow="no"
+fi
+rm -f core *.core core.conftest.* gmon.out bb.out conftest$ac_exeext \
+  conftest.$ac_objext conftest.beam conftest.$ac_ext
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $have_daq_ext_modflow" >&5
+$as_echo "$have_daq_ext_modflow" >&6; }
+if test "x$have_daq_ext_modflow" = "xyes"; then
+    CCONFIGFLAGS="${CCONFIGFLAGS} -DHAVE_DAQ_EXT_MODFLOW"
+
+$as_echo "#define HAVE_DAQ_EXT_MODFLOW 1" >>confdefs.h
+
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for daq query flow" >&5
+$as_echo_n "checking for daq query flow... " >&6; }
+if test "$cross_compiling" = yes; then :
+  { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+as_fn_error $? "cannot run test program while cross compiling
+See \`config.log' for more details" "$LINENO" 5; }
+else
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+#include <daq.h>
+
+int
+main ()
+{
+
+   DAQ_QueryFlow_t mod;
+   mod.type = 0;
+   mod.length = 0;
+   mod.value = NULL;
+
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_run "$LINENO"; then :
+  have_daq_queryflow="yes"
+else
+  have_daq_queryflow="no"
+fi
+rm -f core *.core core.conftest.* gmon.out bb.out conftest$ac_exeext \
+  conftest.$ac_objext conftest.beam conftest.$ac_ext
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $have_daq_queryflow" >&5
+$as_echo "$have_daq_queryflow" >&6; }
+if test "x$have_daq_queryflow" = "xyes"; then
+    CCONFIGFLAGS="${CCONFIGFLAGS} -DHAVE_DAQ_QUERYFLOW"
+
+$as_echo "#define HAVE_DAQ_QUERYFLOW 1" >>confdefs.h
 
 fi
 
@@ -16100,7 +16209,7 @@ fi
 $as_echo "$gl_cv_cc_visibility" >&6; }
     CFLAGS="$gl_save_CFLAGS"
     if test "x$gl_cv_cc_visibility" = "xyes"; then
-        CCONFIGFLAGS="${CCONFIGFLAGS} -DSF_VISIBILITY -fvisibility=hidden"
+        CFLAGS="${CFLAGS} -DSF_VISIBILITY -fvisibility=hidden"
 
 $as_echo "#define HAVE_VISIBILITY 1" >>confdefs.h
 
@@ -17358,10 +17467,6 @@ else
   am__EXEEXT_FALSE=
 fi
 
-if test -z "${MAINTAINER_MODE_TRUE}" && test -z "${MAINTAINER_MODE_FALSE}"; then
-  as_fn_error $? "conditional \"MAINTAINER_MODE\" was never defined.
-Usually this means the macro was only invoked conditionally." "$LINENO" 5
-fi
 if test -z "${AMDEP_TRUE}" && test -z "${AMDEP_FALSE}"; then
   as_fn_error $? "conditional \"AMDEP\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5

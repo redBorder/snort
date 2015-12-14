@@ -47,7 +47,7 @@ int StreamFlushTalker(Packet *p, SessionControlBlock *scb);
 int StreamFlushClient(Packet *p, SessionControlBlock *scb);
 int StreamFlushServer(Packet *p, SessionControlBlock *scb);
 void TcpUpdateDirection(SessionControlBlock *ssn, char dir,
-        snort_ip_p ip, uint16_t port);
+        sfaddr_t* ip, uint16_t port);
 void StreamTcpSessionClear(Packet *p);
 SessionControlBlock *GetLWTcpSession(const SessionKey *key);
 int GetTcpRebuiltPackets(Packet *p, SessionControlBlock *ssn,
@@ -67,9 +67,9 @@ char StreamGetReassemblyFlushPolicyTcp(SessionControlBlock *scb, char dir);
 char StreamIsStreamSequencedTcp(SessionControlBlock *scb, char dir);
 int StreamMissingInReassembledTcp(SessionControlBlock *scb, char dir);
 char StreamPacketsMissingTcp(SessionControlBlock *scb, char dir);
-void s5TcpSetPortFilterStatus(struct _SnortConfig *sc, 
+void s5TcpSetPortFilterStatus(struct _SnortConfig *sc,
         unsigned short port, uint16_t status, tSfPolicyId policyId, int parsing );
-void s5TcpUnsetPortFilterStatus( struct _SnortConfig *sc, unsigned short port, uint16_t status, 
+void s5TcpUnsetPortFilterStatus( struct _SnortConfig *sc, unsigned short port, uint16_t status,
         tSfPolicyId policyId, int parsing );
 int s5TcpGetPortFilterStatus( struct _SnortConfig *sc, unsigned short port, tSfPolicyId policyId, int parsing );
 void s5TcpSetSynSessionStatus(struct _SnortConfig *sc, uint16_t status, tSfPolicyId policyId, int parsing);

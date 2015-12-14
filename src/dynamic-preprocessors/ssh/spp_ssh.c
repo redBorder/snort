@@ -46,9 +46,9 @@
 #include "snort_debug.h"
 
 #include "preprocids.h"
-#ifdef FEAT_OPEN_APPID
+#if defined(FEAT_OPEN_APPID)
 #include "appId.h"
-#endif
+#endif /* defined(FEAT_OPEN_APPID) */
 #include "spp_ssh.h"
 #include "sf_preproc_info.h"
 
@@ -185,7 +185,7 @@ static void SSHInit(struct _SnortConfig *sc, char *argp)
         _dpd.addPreprocExit(SSHCleanExit, NULL, PRIORITY_LAST, PP_SSH);
 
 #ifdef PERF_PROFILING
-        _dpd.addPreprocProfileFunc("ssh", (void *)&sshPerfStats, 0, _dpd.totalPerfStats);
+        _dpd.addPreprocProfileFunc("ssh", (void *)&sshPerfStats, 0, _dpd.totalPerfStats, NULL);
 #endif
 
 #ifdef TARGET_BASED
@@ -783,10 +783,11 @@ ProcessSSH( void* ipacketp, void* contextp )
                     sessp->num_client_bytes += (packetp->payload_size - offset);
                 }
 
-                if ( sessp->num_client_bytes >= ssh_eval_config->MaxClientBytes )
-#ifdef FEAT_OPEN_APPID
-                if ((_dpd.getAppId(packetp->stream_session) != APP_ID_SFTP))
-#endif
+                if ( (sessp->num_client_bytes >= ssh_eval_config->MaxClientBytes)
+#if defined(FEAT_OPEN_APPID)
+                     && (_dpd.getAppId(packetp->stream_session) != APP_ID_SFTP)
+#endif /* defined(FEAT_OPEN_APPID) */
+                   )
                 {
                     /* Probable exploit in progress.*/
                     if (sessp->version == SSH_VERSION_1)

@@ -200,8 +200,8 @@ static void ByteJumpOverride(char *keyword, char *option, RuleOptOverrideFunc ro
 {
     ByteJumpOverrideData *new = SnortAlloc(sizeof(ByteJumpOverrideData));
 
-    new->keyword = strdup(keyword);
-    new->option = strdup(option);
+    new->keyword = SnortStrdup(keyword);
+    new->option = SnortStrdup(option);
     new->func = roo_func;
 
     new->next = byteJumpOverrideFuncs;
@@ -253,7 +253,7 @@ void SetupByteJump(void)
     AddFuncToRuleOptParseCleanupList(ByteJumpOverrideFuncsFree);
 
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("byte_jump", &byteJumpPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("byte_jump", &byteJumpPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
 
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN,"Plugin: ByteJump Setup\n"););

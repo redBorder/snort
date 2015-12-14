@@ -374,7 +374,7 @@ int main()
 {
     vartable_t *table;
     sfip_var_t *var;
-    sfip_t *ip;
+    sfcidr_t *ip;
 
     puts("********************************************************************");
     puts("Testing variable table parsing:");

@@ -55,7 +55,7 @@
 #endif
 #endif
 
-#define PREPROCESSOR_DATA_VERSION 11
+#define PREPROCESSOR_DATA_VERSION 12
 
 #include "sf_dynamic_common.h"
 #include "sf_dynamic_engine.h"
@@ -70,6 +70,8 @@
 #endif
 #include "idle_processing.h"
 #include "file_api.h"
+
+struct _PreprocStats;
 
 #define MINIMUM_DYNAMIC_PREPROC_ID 10000
 typedef void (*PreprocessorInitFunc)(struct _SnortConfig *, char *);
@@ -101,8 +103,10 @@ typedef void (*PreprocRegisterFunc)(const char *, PreprocessorInitFunc,
                                     PreprocessorReloadSwapFreeFunc);
 typedef void *(*GetRelatedReloadDataFunc)(struct _SnortConfig *, const char *);
 #endif
-typedef int (*ThresholdCheckFunc)(unsigned int, unsigned int, snort_ip_p, snort_ip_p, long);
+typedef int (*ThresholdCheckFunc)(unsigned int, unsigned int, sfaddr_t*, sfaddr_t*, long);
 typedef void (*InlineDropFunc)(void *);
+typedef bool (*ActivePacketWasDroppedFunc)(void);
+typedef bool (*InlineRetryFunc)(void *);
 typedef void (*ActiveEnableFunc)(int);
 typedef void (*DisableDetectFunc)(void *);
 typedef int (*EnablePreprocessorFunc)(void *, uint32_t);
@@ -112,7 +116,8 @@ typedef void *(*GetRuleInfoByIdFunc)(int);
 typedef int (*printfappendfunc)(char *, int, const char *, ...);
 typedef char ** (*TokenSplitFunc)(const char *, const char *, const int, int *, const char);
 typedef void (*TokenFreeFunc)(char ***, int);
-typedef void (*AddPreprocProfileFunc)(const char *, void *, int, void *);
+typedef void (*PreprocStatsNodeFreeFunc)(struct _PreprocStats *stats);
+typedef void (*AddPreprocProfileFunc)(const char *, void *, int, void *, PreprocStatsNodeFreeFunc freefn);
 typedef int (*ProfilingFunc)(void);
 typedef int (*PreprocessFunc)(void *);
 typedef void (*PreprocStatsRegisterFunc)(const char *, void (*pp_stats_func)(int));
@@ -146,7 +151,6 @@ typedef char * (*PortArrayFunc)(char *, PortObject *, int *);
 
 typedef int (*AlertQueueLog)(void *);
 typedef void (*AlertQueueControl)(void);  /* reset, push, and pop */
-struct _SnortConfig;
 typedef void (*SetPolicyFunc)(struct _SnortConfig *, tSfPolicyId);
 typedef tSfPolicyId (*GetPolicyFromIdFunc)(uint16_t );
 typedef void (*ChangePolicyFunc)(tSfPolicyId, void *p);
@@ -194,8 +198,18 @@ typedef int (*RegisterIdleHandler)(IdleProcessingHandler);
 #define SND_BLK_RESP_FLAG_DO_SERVER 2
 typedef void (*DynamicSendBlockResponse)(void *packet, const uint8_t* buffer, uint32_t buffer_len, unsigned flags);
 typedef void (*ActiveInjectDataFunc)(void *, uint32_t, const uint8_t *, uint32_t);
+typedef void (*ActiveResponseFunc )(void *, const uint8_t *, uint32_t , uint32_t);
+// NOTE: DynamicActive_ResponseFunc must match func ptr def Active_ResponseFunc in active.h
+typedef void (*DynamicActive_ResponseFunc)(Packet *packet, void* data);
+typedef int  (*ActiveQueueResponseFunc )(DynamicActive_ResponseFunc cb, void *);
 #endif
 typedef int (*DynamicSetFlowId)(const void* p, uint32_t id);
+#ifdef HAVE_DAQ_EXT_MODFLOW
+typedef int (*DynamicModifyFlow)(const DAQ_PktHdr_t *hdr, const DAQ_ModFlow_t* mod);
+#endif
+#ifdef HAVE_DAQ_QUERYFLOW
+typedef int (*DynamicQueryFlow)(const DAQ_PktHdr_t *hdr, DAQ_QueryFlow_t* query);
+#endif
 
 typedef int (*DynamicIsStrEmpty)(const char * );
 typedef void (*AddPeriodicCheck)(void (*pp_check_func) (int, void *), void *arg, uint16_t, uint32_t, uint32_t);
@@ -216,13 +230,13 @@ typedef void (*RegisterGetAppIdFunc)(GetAppIdFunc);
 
 typedef struct urlQueryContext* (*UrlQueryCreateFunc)(const char *url);
 typedef void (*UrlQueryDestroyFunc)(struct urlQueryContext *context);
-typedef int  (*UrlQueryMatchFunc)(struct urlQueryContext *context, uint16_t inUrlCat, uint16_t inUrlMinRep, uint16_t inUrlMaxRep);
+typedef int  (*UrlQueryMatchFunc)(void *ssnptr, struct urlQueryContext *context, uint16_t inUrlCat, uint16_t inUrlMinRep, uint16_t inUrlMaxRep);
 typedef void (*RegisterUrlQueryFunc)(UrlQueryCreateFunc, UrlQueryDestroyFunc,UrlQueryMatchFunc);
 
-typedef int (*UserGroupIdGetFunc)(const snort_ip *snortIp, uint32_t *userId, unsigned *groupIdArray, unsigned groupIdArrayLen);
+typedef int (*UserGroupIdGetFunc)(void *ssnptr, uint32_t *userId, uint32_t *realmId, unsigned *groupIdArray, unsigned groupIdArrayLen);
 typedef void (*RegisterUserGroupIdGetFunc)(UserGroupIdGetFunc);
 
-typedef int (*GeoIpAddressLookupFunc)(const snort_ip *snortIp, uint16_t *geo);
+typedef int (*GeoIpAddressLookupFunc)(const sfaddr_t *snortIp, uint16_t *geo);
 typedef void (*RegisterGeoIpAddressLookupFunc)(GeoIpAddressLookupFunc);
 
 typedef void (*UpdateSSLSSnLogDataFunc)(void *ssnptr, uint8_t logging_on, uint8_t action_is_block, const char *ssl_cert_fingerprint,
@@ -244,12 +258,36 @@ typedef void (*GetIntfDataFunc)(void *ssnptr,int32_t *ingressIntfIndex, int32_t 
                 int32_t *ingressZoneIndex, int32_t *egressZoneIndex) ;
 typedef void (*RegisterGetIntfDataFunc)(GetIntfDataFunc);
 
+//
+// SSL Callbacks
+//
 typedef bool (*DynamicIsSSLPolicyEnabledFunc)(struct _SnortConfig *sc);
 typedef void (*DynamicSetSSLPolicyEnabledFunc)(struct _SnortConfig *sc, tSfPolicyId policy, bool value);
 typedef void (*SetSSLCallbackFunc)(void *);
 typedef void* (*GetSSLCallbackFunc)(void);
 
+typedef int (*_LoadLibraryFunc)(const char * const path, int indent);
+typedef void (*LoadAllLibsFunc)(const char * const path, _LoadLibraryFunc loadFunc);
+typedef void * _PluginHandle;
+typedef _PluginHandle (*OpenDynamicLibraryFunc)(const char * const library_name, int useGlobal);
+typedef void (*_dlsym_func)(void);
+typedef _dlsym_func (*GetSymbolFunc)(_PluginHandle handle, char * symbol, DynamicPluginMeta * meta, int fatal);
+typedef void (*CloseDynamicLibraryFunc)(_PluginHandle handle);
+
+#if defined(FEAT_OPEN_APPID)
+typedef bool (*IsAppIdRequiredFunc)(void);
+typedef void (*RegisterIsAppIdRequiredFunc)(IsAppIdRequiredFunc);
+typedef void (*UnregisterIsAppIdRequiredFunc)(IsAppIdRequiredFunc);
+struct AppIdApi;
+#endif /* defined(FEAT_OPEN_APPID) */
+
+typedef bool (*ReadModeFunc)(void);
+
+typedef int (*GetPerfIndicatorsFunc)(void *Request);
+
 typedef bool (*IsTestModeFunc)(void);
+
+typedef struct _SnortConfig* (*GetCurrentSnortConfigFunc)(void);
 
 #define ENC_DYN_FWD 0x80000000
 #define ENC_DYN_NET 0x10000000
@@ -294,7 +332,6 @@ typedef struct _DynamicPreprocessorData
     AlertQueueAdd alertAdd;
     GenSnortEvent genSnortEvent;
     ThresholdCheckFunc thresholdCheck;
-    InlineDropFunc  inlineDropAndReset;
 #ifdef ACTIVE_RESPONSE
     ActiveEnableFunc activeSetEnabled;
 #endif
@@ -303,7 +340,6 @@ typedef struct _DynamicPreprocessorData
     DisableDetectFunc disableDetect;
     DisableDetectFunc disableAllDetect;
     DisableDetectFunc disablePacketAnalysis;
-
     EnablePreprocessorFunc enablePreprocessor;
 
     SessionAPI *sessionAPI;
@@ -343,9 +379,6 @@ typedef struct _DynamicPreprocessorData
 #ifdef TARGET_BASED
     FindProtocolReferenceFunc findProtocolReference;
     AddProtocolReferenceFunc addProtocolReference;
-#if defined(FEAT_OPEN_APPID)
-    FindProtocolNameFunc findProtocolName;
-#endif /* defined(FEAT_OPEN_APPID) */
     IsAdaptiveConfiguredFunc isAdaptiveConfigured;
     IsAdaptiveConfiguredForSnortConfigFunc isAdaptiveConfiguredForSnortConfig;
 #endif
@@ -405,14 +438,25 @@ typedef struct _DynamicPreprocessorData
     GetPolicyFromIdFunc getPolicyFromId;
     ChangePolicyFunc changeNapRuntimePolicy;
     ChangePolicyFunc changeIpsRuntimePolicy;
-    InlineDropFunc  inlineForceDropPacket;
-    InlineDropFunc  inlineForceDropAndReset;
+    InlineDropFunc inlineDropPacket;
+    InlineDropFunc inlineForceDropPacket;
+    InlineDropFunc inlineDropSessionAndReset;
+    InlineDropFunc inlineForceDropSession;
+    InlineDropFunc inlineForceDropSessionAndReset;
+    ActivePacketWasDroppedFunc active_PacketWasDropped;
+    InlineRetryFunc inlineRetryPacket;
     DynamicIsStrEmpty SnortIsStrEmpty;
     AddMetaEvalFunc addMetaEval;
 #ifdef ACTIVE_RESPONSE
     DynamicSendBlockResponse dynamicSendBlockResponse;
 #endif
     DynamicSetFlowId dynamicSetFlowId;
+#ifdef HAVE_DAQ_EXT_MODFLOW
+    DynamicModifyFlow dynamicModifyFlow;
+#endif
+#ifdef HAVE_DAQ_QUERYFLOW
+    DynamicQueryFlow dynamicQueryFlow;
+#endif
     AddPeriodicCheck addPeriodicCheck;
     AddPostConfigFuncs addPostConfigFunc;
     AddToPostConfList addFuncToPostConfigList;
@@ -429,8 +473,9 @@ typedef struct _DynamicPreprocessorData
 
 #ifdef ACTIVE_RESPONSE
     ActiveInjectDataFunc activeInjectData;
+    ActiveResponseFunc activeSendResponse;
+    ActiveQueueResponseFunc activeQueueResponse;
 #endif
-    InlineDropFunc inlineDropPacket;
     GetSSLCallbackFunc getSSLCallback;
     SetSSLCallbackFunc setSSLCallback;
     SslAppIdLookupFunc         sslAppIdLookup;
@@ -464,7 +509,23 @@ typedef struct _DynamicPreprocessorData
     DynamicReadyForProcessFunc readyForProcess;
     DynamicIsSSLPolicyEnabledFunc isSSLPolicyEnabled;
     DynamicSetSSLPolicyEnabledFunc setSSLPolicyEnabled;
+
+    /* Preproc's fetch Snort performance indicators.  Used by IAB. */
+    GetPerfIndicatorsFunc getPerfIndicators;
+
+    LoadAllLibsFunc loadAllLibs;
+    OpenDynamicLibraryFunc openDynamicLibrary;
+    GetSymbolFunc getSymbol;
+    CloseDynamicLibraryFunc closeDynamicLibrary;
+#if defined(FEAT_OPEN_APPID)
+    struct AppIdApi *appIdApi;
+    RegisterIsAppIdRequiredFunc registerIsAppIdRequired;
+    UnregisterIsAppIdRequiredFunc unregisterIsAppIdRequired;
+    IsAppIdRequiredFunc isAppIdRequired;
+#endif /* defined(FEAT_OPEN_APPID) */
+    ReadModeFunc isReadMode;
     IsTestModeFunc isTestMode;
+    GetCurrentSnortConfigFunc getCurrentSnortConfig;
 } DynamicPreprocessorData;
 
 /* Function prototypes for Dynamic Preprocessor Plugins */
@@ -482,5 +543,4 @@ void RemoveDuplicatePreprocessorPlugins(void);
 NORETURN void DynamicPreprocessorFatalMessage(const char *format, ...);
 
 extern DynamicPreprocessorData _dpd;
-
 #endif /* _SF_DYNAMIC_PREPROCESSOR_H_ */

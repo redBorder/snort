@@ -50,8 +50,10 @@ typedef struct s_HI_SERVER_RESP
     COOKIE_PTR cookie;
     const u_char *cookie_norm;
     const u_char *body;
+    const u_char *body_raw;
 
     u_int body_size;
+    u_int body_raw_size;
     u_int status_code_size;
     u_int status_msg_size;
     u_int header_raw_size;

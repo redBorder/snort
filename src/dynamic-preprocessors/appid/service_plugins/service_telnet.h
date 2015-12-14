@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule telnet_service_mod;
+extern tRNAServiceValidationModule telnet_service_mod;
 
 #endif  /* __SERVICE_TELNET_H__ */
 

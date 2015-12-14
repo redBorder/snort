@@ -168,6 +168,13 @@ typedef struct {
     PortTable * udp_src, * udp_dst;
     PortTable * icmp_src,* icmp_dst;
     PortTable * ip_src,  * ip_dst;
+
+#ifdef TARGET_BASED
+    PortTable * ns_tcp_src, * ns_tcp_dst;
+    PortTable * ns_udp_src, * ns_udp_dst;
+    PortTable * ns_icmp_src,* ns_icmp_dst;
+    PortTable * ns_ip_src,  * ns_ip_dst;
+#endif
     
     PortObject * tcp_anyany;
     PortObject * udp_anyany;

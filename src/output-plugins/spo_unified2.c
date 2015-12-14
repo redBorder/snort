@@ -367,7 +367,7 @@ static int s_blocked_flag[] =
 static int GetU2Flags(const Packet* p, uint8_t* pimpact)
 {
     tActiveDrop dispos = Active_GetDisposition();
-    
+
     if ( dispos >= ACTIVE_DROP )
     {
         *pimpact = U2_FLAG_BLOCKED;
@@ -561,13 +561,13 @@ static void _AlertIP6(Packet *p, const char *msg, Unified2Config *config, Event 
 
         if(IPH_IS_VALID(p))
         {
-            snort_ip_p ip;
+            sfaddr_t* ip;
 
             ip = GET_SRC_IP(p);
-            alertdata.ip_source = *(struct in6_addr*)ip->ip32;
+            alertdata.ip_source = *(struct in6_addr*)sfaddr_get_ip6_ptr(ip);
 
             ip = GET_DST_IP(p);
-            alertdata.ip_destination = *(struct in6_addr*)ip->ip32;
+            alertdata.ip_destination = *(struct in6_addr*)sfaddr_get_ip6_ptr(ip);
 
             alertdata.protocol = GetEventProto(p);
 
@@ -633,13 +633,13 @@ static void _AlertIP6_v2(Packet *p, const char *msg, Unified2Config *config, Eve
 
         if(IPH_IS_VALID(p))
         {
-            snort_ip_p ip;
+            sfaddr_t* ip;
 
             ip = GET_SRC_IP(p);
-            alertdata.ip_source = *(struct in6_addr*)ip->ip32;
+            alertdata.ip_source = *(struct in6_addr*)sfaddr_get_ip6_ptr(ip);
 
             ip = GET_DST_IP(p);
-            alertdata.ip_destination = *(struct in6_addr*)ip->ip32;
+            alertdata.ip_destination = *(struct in6_addr*)sfaddr_get_ip6_ptr(ip);
 
             alertdata.protocol = GetEventProto(p);
 
@@ -869,12 +869,12 @@ static void Unified2LogAlert(Packet *p, const char *msg, void *arg, Event *event
 
         if(ScLogIPv6Extra() && IS_IP6(p))
         {
-            snort_ip_p ip = GET_SRC_IP(p);
+            sfaddr_t* ip = GET_SRC_IP(p);
             _WriteExtraData(config, event->event_id, event->ref_time.tv_sec,
-                &ip->ip8[0], sizeof(struct in6_addr),  EVENT_INFO_IPV6_SRC);
+                (uint8_t*)sfaddr_get_ip6_ptr(ip), sizeof(struct in6_addr),  EVENT_INFO_IPV6_SRC);
             ip = GET_DST_IP(p);
             _WriteExtraData(config, event->event_id, event->ref_time.tv_sec,
-                &ip->ip8[0], sizeof(struct in6_addr),  EVENT_INFO_IPV6_DST);
+                (uint8_t*)sfaddr_get_ip6_ptr(ip), sizeof(struct in6_addr),  EVENT_INFO_IPV6_DST);
         }
     }
 

@@ -76,6 +76,7 @@
 #define DEBUG_SKYPE           0x0000400000000000LL
 #define DEBUG_SSL             0x0000800000000000LL
 #define DEBUG_SMTP            0x0001000000000000LL
+#define DEBUG_APPID           0x0002000000000000LL
 #define DEBUG_PP_EXP          0x8000000000000000LL
 
 void DebugMessageFunc(uint64_t dbg, const char *fmt, ...);

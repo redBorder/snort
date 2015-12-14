@@ -107,7 +107,7 @@ void detection_filter_print_config(DetectionFilterConfig *df)
 
 int detection_filter_test (
     void* pv,
-    snort_ip_p sip, snort_ip_p dip,
+    sfaddr_t* sip, sfaddr_t* dip,
     long curtime )
 {
     if (pv == NULL)
