@@ -332,7 +332,7 @@ int ftpp_ui_config_reset_ftp_server(FTP_SERVER_PROTO_CONF *ServerConf,
  *
  */
 int ftpp_ui_config_add_ftp_server(FTPTELNET_GLOBAL_CONF *GlobalConf,
-                            sfip_t * ServerIP, FTP_SERVER_PROTO_CONF *ServerConf)
+                            sfcidr_t * ServerIP, FTP_SERVER_PROTO_CONF *ServerConf)
 {
     int iRet;
 
@@ -405,7 +405,7 @@ int ftpp_ui_config_reset_ftp_client(FTP_CLIENT_PROTO_CONF *ClientConf,
  *
  */
 int ftpp_ui_config_add_ftp_client(FTPTELNET_GLOBAL_CONF *GlobalConf,
-                            sfip_t * ClientIP, FTP_CLIENT_PROTO_CONF *ClientConf)
+                            sfcidr_t * ClientIP, FTP_CLIENT_PROTO_CONF *ClientConf)
 {
     int iRet;
 

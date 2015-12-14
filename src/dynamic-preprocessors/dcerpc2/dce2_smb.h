@@ -116,12 +116,26 @@ typedef struct _DCE2_SmbFileChunk
 
 typedef struct _DCE2_SmbFileTracker
 {
-    int fid;   // A signed integer so it can be set to sentinel
-    uint16_t uid;
-    uint16_t tid;
-    bool is_ipc;
-    char *file_name;
+    union
+    {
+        struct
+        {
+            int file_id;   // A signed integer so it can be set to sentinel
+            uint16_t u_id;
+            uint16_t tree_id;
+        } id_smb1;
 
+        struct
+        {
+            uint64_t file_id;
+        } id_smb2;
+
+    } file_key;
+
+    bool is_ipc;
+    bool is_smb2;
+    char *file_name;
+    uint16_t file_name_size;
     union
     {
         struct
@@ -155,10 +169,14 @@ typedef struct _DCE2_SmbFileTracker
 
     } tracker;
 
-#define fp_byte_mode   tracker.nmpipe.byte_mode
-#define fp_used        tracker.nmpipe.used
-#define fp_writex_raw  tracker.nmpipe.writex_raw
-#define fp_co_tracker  tracker.nmpipe.co_tracker
+#define fid_v1                file_key.id_smb1.file_id
+#define uid_v1                file_key.id_smb1.u_id
+#define tid_v1                file_key.id_smb1.tree_id
+#define fid_v2                file_key.id_smb2.file_id
+#define fp_byte_mode          tracker.nmpipe.byte_mode
+#define fp_used               tracker.nmpipe.used
+#define fp_writex_raw         tracker.nmpipe.writex_raw
+#define fp_co_tracker         tracker.nmpipe.co_tracker
 #define ff_file_size          tracker.file.file_size
 #define ff_file_offset        tracker.file.file_offset
 #define ff_bytes_processed    tracker.file.bytes_processed
@@ -168,6 +186,22 @@ typedef struct _DCE2_SmbFileTracker
 #define ff_sequential_only    tracker.file.sequential_only
 
 } DCE2_SmbFileTracker;
+
+typedef enum _DCE2_SmbVersion
+{
+    DCE2_SMB_VERISON_NULL,
+    DCE2_SMB_VERISON_1,
+    DCE2_SMB_VERISON_2
+} DCE2_SmbVersion;
+
+typedef struct _Smb2Request
+{
+    uint64_t message_id;   /* identifies a message uniquely on connection */
+	uint64_t offset;       /* data offset */
+	uint64_t file_id;      /* file id */
+	struct _Smb2Request *next;
+	struct _Smb2Request *previous;
+} Smb2Request;
 
 typedef struct _DCE2_SmbTransactionTracker
 {
@@ -265,6 +299,8 @@ typedef struct _DCE2_SmbSsnData
     // The file API supports one concurrent upload/download per session.
     // This is a reference to a file tracker so shouldn't be freed.
     DCE2_SmbFileTracker *fapi_ftracker;
+
+    Smb2Request *smb2_requests;
 
 #ifdef ACTIVE_RESPONSE
     DCE2_SmbFileTracker *fb_ftracker;

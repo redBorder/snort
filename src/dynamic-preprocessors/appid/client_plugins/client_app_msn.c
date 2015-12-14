@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 
+#include "appInfoTable.h"
 #include "client_app_api.h"
 #include "client_app_msn.h"
 
@@ -40,9 +41,10 @@ static MSN_CLIENT_APP_CONFIG msn_config;
 
 static CLIENT_APP_RETCODE msn_init(const InitClientAppAPI * const init_api, SF_LIST *config);
 static CLIENT_APP_RETCODE msn_validate(const uint8_t *data, uint16_t size, const int dir,
-                                        FLOW *flowp, const SFSnortPacket *pkt, struct _Detector *userData);
+                                        tAppIdData *flowp, SFSnortPacket *pkt, struct _Detector *userData,
+                                        const struct appIdConfig_ *pConfig);
 
-RNAClientAppModule msn_client_mod =
+tRNAClientAppModule msn_client_mod =
 {
     .name = "MSN",
     .proto = IPPROTO_TCP,
@@ -110,7 +112,7 @@ static CLIENT_APP_RETCODE msn_init(const InitClientAppAPI * const init_api, SF_L
 			_dpd.debugMsg(DEBUG_LOG,"registering patterns: %s: %d\n",(const char *)patterns[i].pattern,
                     patterns[i].index);
             init_api->RegisterPattern(&msn_validate, IPPROTO_TCP, patterns[i].pattern,
-                                      patterns[i].length, patterns[i].index);
+                                      patterns[i].length, patterns[i].index, init_api->pAppidConfig);
         }
     }
 
@@ -118,14 +120,15 @@ static CLIENT_APP_RETCODE msn_init(const InitClientAppAPI * const init_api, SF_L
 	for (j=0; j < sizeof(appIdRegistry)/sizeof(*appIdRegistry); j++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[j].appId);
-		init_api->RegisterAppId(&msn_validate, appIdRegistry[j].appId, appIdRegistry[j].additionalInfo, NULL);
+		init_api->RegisterAppId(&msn_validate, appIdRegistry[j].appId, appIdRegistry[j].additionalInfo, init_api->pAppidConfig);
 	}
 
     return CLIENT_APP_SUCCESS;
 }
 
 static CLIENT_APP_RETCODE msn_validate(const uint8_t *data, uint16_t size, const int dir,
-                                        FLOW *flowp, const SFSnortPacket *pkt, struct _Detector *userData)
+                                        tAppIdData *flowp, SFSnortPacket *pkt, struct _Detector *userData,
+                                        const struct appIdConfig_ *pConfig)
 {
 	const u_int8_t *end;
 	u_int8_t version[MAX_VERSION_SIZE];
@@ -203,7 +206,7 @@ static CLIENT_APP_RETCODE msn_validate(const uint8_t *data, uint16_t size, const
 
 done:
 	msn_client_mod.api->add_app(flowp, APP_ID_MSN_MESSENGER, product_id, (char *)version);
-    flow_mark(flowp, FLOW_CLIENTAPPDETECTED);
+    setAppIdExtFlag(flowp, APPID_SESSION_CLIENT_DETECTED);
     return CLIENT_APP_SUCCESS;
 }
 

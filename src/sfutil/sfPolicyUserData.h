@@ -85,10 +85,8 @@ int sfPolicyUserDataSet ( tSfPolicyUserContextId pContext, tSfPolicyId policyId,
 
 static inline void * sfPolicyUserDataGet ( tSfPolicyUserContextId pContext, tSfPolicyId policyId )
 {
-    if ((pContext != NULL) && (policyId < pContext->numAllocatedPolicies))
-    {
+    if (pContext && policyId < pContext->numAllocatedPolicies)
         return pContext->userConfig[policyId];
-    }
 
     return NULL;
 }

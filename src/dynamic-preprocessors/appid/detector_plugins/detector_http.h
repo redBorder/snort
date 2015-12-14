@@ -119,18 +119,25 @@ typedef struct _HEADER_MATCHED_PATTERNS
 } HeaderMatchedPatterns;
 #endif
 
-int getAppidByViaPattern(const u_int8_t *data, unsigned size, char *version);
-int getHTTPHeaderLocation(const uint8_t *data, unsigned size, HttpId id, int *start, int *end, HeaderMatchedPatterns *hmp);
-tAppId getAppIdFromUrl(char *host, char *url, char *payloadVersion, size_t payloadVersionLen,
+int getAppidByViaPattern(const u_int8_t *data, unsigned size, char **version, const tDetectorHttpConfig *pHttpConfig);
+int getHTTPHeaderLocation(const uint8_t *data, unsigned size, HttpId id, int *start, int *end, HeaderMatchedPatterns *hmp,
+                          const tDetectorHttpConfig *pHttpConfig);
+tAppId scanCHP (PatternType ptype, char *buf, int buf_size,
+                char **version, char **user, char **new_url, char **new_cookie,
+                int *total_found, httpSession *hsession, SFSnortPacket *p, const tDetectorHttpConfig *pHttpConfig);
+tAppId getAppIdFromUrl(char *host, char *url, char **version, 
                        char *referer, tAppId *clientAppId, tAppId *serviceAppId, 
-                       tAppId *payloadAppId, tAppId *referredPayloadAppId, unsigned from_rtmp);
-tAppId getAppidByContentType(const uint8_t *data, int size);
-tAppId scan_header_x_working_with(const uint8_t *data, uint32_t size, char * version);
-void identifyUserAgent(const u_int8_t *start, int size, tAppId *serviceAppId, tAppId *clientAppId, char *version);
-void getServerVendorVersion(const uint8_t *data, int len, char *version, char *vendor, RNAServiceSubtype **subtype);
-int ScanURLForClientApp(const u_int8_t *url, int size, tAppId *clientAppId, tAppId *serviceAppId, char *clientVersion);
-int http_detector_finalize(void);
-void http_detector_clean(void);
+                       tAppId *payloadAppId, tAppId *referredPayloadAppId, unsigned from_rtmp,
+                       const tDetectorHttpConfig *pHttpConfig);
+tAppId getAppidByContentType(const uint8_t *data, int size, const tDetectorHttpConfig *pHttpConfig);
+tAppId scan_header_x_working_with(const uint8_t *data, uint32_t size, char **version);
+void identifyUserAgent(const u_int8_t *start, int size, tAppId *serviceAppId, tAppId *clientAppId, char **version,
+                       const tDetectorHttpConfig *pHttpConfig);
+void getServerVendorVersion(const uint8_t *data, int len, char **version, char **vendor, RNAServiceSubtype **subtype);
+int webdav_found(HeaderMatchedPatterns *hmp);
+int http_detector_finalize(tAppIdConfig *pConfig);
+void http_detector_clean(tDetectorHttpConfig *pHttpConfig);
+void finalizeFflow (fflow_info *fflow, unsigned app_type_flags, tAppId target_appId, SFSnortPacket *p);
 
 #endif
 

@@ -63,6 +63,13 @@ uint16_t s5_paf_port_registration (void* pv, uint16_t port, bool c2s, bool flush
 uint16_t s5_paf_port_registration_all (void* pv, uint16_t port, bool c2s, bool flush);
 uint16_t s5_paf_service_registration (void* pv, uint16_t service, bool c2s, bool flush);
 
+enum FlushMode
+{
+    FLUSH_MODE_NORMAL = 0,
+    FLUSH_MODE_PRE_DISCARD,
+    FLUSH_MODE_DISCARD
+}FlushMode;
+
 typedef struct {
     void* user[MAX_PAF_USER];      // arbitrary user data
 
@@ -73,6 +80,7 @@ typedef struct {
     uint32_t tot;    // total bytes flushed
 
     PAF_Status paf;  // current scan state
+    uint8_t mode;
     uint16_t cb_mask; // callback mask
     uint8_t cb_id[MAX_PAF_USER];
 } PAF_State;         // per session direction

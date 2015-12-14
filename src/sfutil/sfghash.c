@@ -363,7 +363,7 @@ static void movetofront( SFGHASH *t , int index, SFGHASH_NODE * n )
 /*
 *  Find a Node based on the key, return users data.
 */
-static SFGHASH_NODE * sfghash_find_node( SFGHASH * t, const void * const key)
+SFGHASH_NODE * sfghash_find_node( SFGHASH * t, const void * const key)
 {
     unsigned    hashkey;
     int         index, klen;

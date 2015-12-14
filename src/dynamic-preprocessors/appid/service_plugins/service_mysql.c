@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 
+#include "appInfoTable.h"
 #include "flow.h"
 #include "service_api.h"
 
@@ -50,13 +51,14 @@ typedef struct _SERVICE_MYSQL_HEADER
 static int svc_mysql_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(svc_mysql_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &svc_mysql_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "mysql",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -65,7 +67,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule mysql_service_mod =
+tRNAServiceValidationModule mysql_service_mod =
 {
     "MYSQL",
     &svc_mysql_init,
@@ -83,7 +85,7 @@ static int svc_mysql_init(const InitServiceAPI * const init_api)
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&svc_mysql_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&svc_mysql_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -134,7 +136,7 @@ inprocess:
     return SERVICE_INPROCESS;
 
 fail:
-    mysql_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+    mysql_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, mysql_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 
 }

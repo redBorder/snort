@@ -83,19 +83,27 @@ include/sfcontrol.h \
 include/sidechannel_define.h \
 include/idle_processing.h \
 include/sf_seqnums.h \
+include/perf_indicators.h \
 include/file_api.h \
 include/file_mail_common.h \
 include/mpse_methods.h \
 include/sfdebug.h \
-include/sip_common.h \
-include/appId.h
+include/sip_common.h
 
 if FEAT_OPEN_APPID
-nodist_libsf_dynamic_preproc_la_SOURCES += include/sfprimetable.c include/sfxhash.c include/sfmemcap.c include/sfghash.c \
+preproclib_LTLIBRARIES += libsf_dynamic_utils.la
+
+libsf_dynamic_utils_la_CFLAGS = -fPIC -DPIC -DDYNAMIC_PREPROC_CONTEXT
+libsf_dynamic_utils_la_LDFLAGS = -static
+
+nodist_libsf_dynamic_utils_la_SOURCES = include/sfprimetable.c include/sfxhash.c include/sfmemcap.c include/sfghash.c \
 						  include/sfhashfcn.c include/sflsq.c include/md5.c
 
-nodist_preproc_HEADERS += include/sfprimetable.h include/sfxhash.h include/sfmemcap.h include/sfghash.h \
-						  include/sfhashfcn.h include/sflsq.h include/md5.h
+nodist_preproc_HEADERS += include/appId.h include/appIdApi.h include/thirdparty_appid_types.h \
+						  include/thirdparty_appid_utils.h include/thirdparty_appid_api.h \
+						  include/sfprimetable.h include/sfxhash.h include/sfmemcap.h \
+						  include/sfghash.h include/sfhashfcn.h include/sflsq.h include/md5.h \
+						  include/dns_defs.h
 endif
 all-local: $(LTLIBRARIES)
 	$(MAKE) DESTDIR=`pwd`/build install-preproclibLTLIBRARIES
@@ -171,12 +179,12 @@ BUILT_SOURCES = \
 	include/sidechannel_define.h \
 	include/idle_processing.h \
 	include/sf_seqnums.h \
+	include/perf_indicators.h \
 	include/file_api.h \
 	include/file_mail_common.h \
 	include/mpse_methods.h \
 	include/sfdebug.h \
 	include/sip_common.h \
-	include/appId.h \
 	ssl_common/ssl.h \
 	ssl_common/ssl.c \
 	ssl_common/ssl_include.h \
@@ -191,9 +199,13 @@ BUILT_SOURCES = \
 	libs/sfcommon.h
 
 if FEAT_OPEN_APPID
-BUILT_SOURCES += include/sfprimetable.h include/sfprimetable.c include/sfxhash.h include/sfxhash.c include/sfmemcap.h include/sfmemcap.c \
+BUILT_SOURCES += include/appId.h  include/appIdApi.h include/thirdparty_appid_types.h \
+				 include/thirdparty_appid_utils.h  include/thirdparty_appid_api.h \
+				 include/sfprimetable.h include/sfprimetable.c include/sfxhash.h \
+				 include/sfxhash.c include/sfmemcap.h include/sfmemcap.c \
 				 include/sfghash.c include/sfhashfcn.c include/sflsq.h include/sflsq.c \
-				 include/md5.h include/md5.c 
+				 include/md5.h include/md5.c \
+				 include/dns_defs.h
 endif
 sed_ipv6_headers = \
 	sed -e "s/->iph->ip_src/->ip4_header->source/" \
@@ -544,6 +556,9 @@ include/idle_processing.h: $(top_srcdir)/src/idle_processing.h
 include/sf_seqnums.h: $(top_srcdir)/src/sfutil/sf_seqnums.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
+include/perf_indicators.h: $(srcdir)/../preprocessors/perf_indicators.h
+	@src_header=$?; dst_header=$@; $(copy_headers)
+
 include/file_api.h: $(top_srcdir)/src/file-process/file_api.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
@@ -563,6 +578,21 @@ include/appId.h: $(srcdir)/appid/appId.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
 if FEAT_OPEN_APPID
+include/appIdApi.h: $(srcdir)/../appIdApi.h
+	@src_header=$?; dst_header=$@; $(copy_headers)
+
+include/thirdparty_appid_types.h: $(srcdir)/appid/thirdparty_appid_types.h
+	@src_header=$?; dst_header=$@; $(copy_headers)
+
+include/thirdparty_appid_utils.h: $(srcdir)/appid/thirdparty_appid_utils.h
+	@src_header=$?; dst_header=$@; $(copy_headers)
+
+include/thirdparty_appid_api.h: $(srcdir)/appid/thirdparty_appid_api.h
+	@src_header=$?; dst_header=$@; $(copy_headers)
+
+include/dns_defs.h: $(srcdir)/appid/dns_defs.h
+	@src_header=$?; dst_header=$@; $(copy_headers)
+
 include/md5.c: $(srcdir)/../sfutil/md5.c
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
@@ -665,12 +695,12 @@ include/Unified2_common.h \
 include/sfcontrol.h \
 include/idle_processing.h \
 include/sf_seqnums.h \
+include/perf_indicators.h \
 include/file_api.h \
 include/file_mail_common.h \
 include/mpse_methods.h \
 include/sfdebug.h \
 include/sip_common.h \
-include/appId.h \
 ssl_common/ssl.h \
 ssl_common/ssl.c \
 ssl_common/ssl_include.h \
@@ -684,8 +714,11 @@ ssl_common/ssl_ha.c \
 libs/sfparser.c 
 
 if FEAT_OPEN_APPID
-exported_files += include/sfprimetable.h include/sfxhash.h include/sfmemcap.h include/sfhashfcn.h \
-				  include/md5.h 
+exported_files += include/appId.h  include/appIdApi.h  include/thirdparty_appid_types.h \
+				  include/thirdparty_appid_utils.h  include/thirdparty_appid_api.h \
+				  include/sfprimetable.h include/sfxhash.h include/sfmemcap.h include/sfhashfcn.h \
+				  include/md5.h \
+				  include/dns_defs.h 
 endif
 
 install-data-local:

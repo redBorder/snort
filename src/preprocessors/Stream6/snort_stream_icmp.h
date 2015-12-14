@@ -19,7 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  ****************************************************************************/
- 
+
 #ifndef STREAM_ICMP_H_
 #define STREAM_ICMP_H_
 
@@ -34,7 +34,7 @@ void StreamIcmpPolicyInit(StreamIcmpConfig *, char *);
 int StreamVerifyIcmpConfig(StreamIcmpConfig *, tSfPolicyId);
 int StreamProcessIcmp(Packet *p);
 void IcmpUpdateDirection(SessionControlBlock *ssn, char dir,
-                         snort_ip_p ip, uint16_t port);
+                         sfaddr_t* ip, uint16_t port);
 void StreamIcmpConfigFree(StreamIcmpConfig *);
 
 uint32_t StreamGetIcmpPrunes(void);

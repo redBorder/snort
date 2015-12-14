@@ -444,8 +444,8 @@ static int FTPInitConf(SFSnortPacket *p, FTPTELNET_GLOBAL_CONF *GlobalConf,
 #ifdef TARGET_BASED
     int16_t app_id = 0;
 #endif
-    snort_ip sip;
-    snort_ip dip;
+    sfaddr_t sip;
+    sfaddr_t dip;
 
     //structure copy
     sip = SiInput->sip;
@@ -704,6 +704,7 @@ FTP_DATA_SESSION * FTPDataSessionNew(SFSnortPacket *p)
         return NULL;
 
     ftpdata->ft_ssn.proto = FTPP_SI_PROTO_FTP_DATA;
+    ftpdata->flow_id = 0;
 
     /* Get the ftp-ctrl session key */
     ftpdata->ftp_key = _dpd.sessionAPI->get_session_key(p);
@@ -725,6 +726,7 @@ FTP_DATA_SESSION * FTPDataSessionNew(SFSnortPacket *p)
 void FTPDataSessionFree(void *p_ssn)
 {
     FTP_DATA_SESSION *ssn = (FTP_DATA_SESSION *)p_ssn;
+    ssl_callback_interface_t *ssl_cb = (ssl_callback_interface_t *)_dpd.getSSLCallback();
 
     if (!ssn)
         return;
@@ -739,6 +741,9 @@ void FTPDataSessionFree(void *p_ssn)
     {
         free(ssn->filename);
     }
+
+    if ( ssl_cb )
+        ssl_cb->session_free(ssn->flow_id);
 
     free(ssn);
 }
@@ -798,8 +803,9 @@ static inline int FTPResetSession(FTP_SESSION *FtpSession)
     IP_CLEAR(FtpSession->serverIP);
     FtpSession->serverPort = 0;
     FtpSession->data_chan_state = NO_STATE;
-    FtpSession->data_chan_index = -1;
-    FtpSession->data_xfer_index = -1;
+    FtpSession->data_chan_index = 0;
+    FtpSession->data_xfer_index = 0;
+    FtpSession->ftp_cmd_pipe_index = 1;
 
     FtpSession->event_list.stack_count = 0;
 

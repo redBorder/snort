@@ -26,6 +26,8 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 
+#include "appIdApi.h"
+#include "appInfoTable.h"
 #include "flow.h"
 #include "service_api.h"
 
@@ -55,13 +57,14 @@ typedef struct _SERVICE_RSHELL_DATA
 static int rshell_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(rshell_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &rshell_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "rshell",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -70,14 +73,14 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule rshell_service_mod =
+tRNAServiceValidationModule rshell_service_mod =
 {
     "RSHELL",
     &rshell_init,
     pp
 };
 
-static tAppRegistryEntry appIdRegistry[] = {{APP_ID_SHELL, 0}};
+static tAppRegistryEntry appIdRegistry[] = {{APP_ID_SHELL, APPINFO_FLAG_SERVICE_ADDITIONAL}};
 
 static int16_t app_id = 0;
 
@@ -90,7 +93,7 @@ static int rshell_init(const InitServiceAPI * const init_api)
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&rshell_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&rshell_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -122,9 +125,9 @@ MakeRNAServiceValidationPrototype(rshell_validate)
     ServiceRSHELLData *tmp_rd;
     int i;
     uint32_t port;
-    FLOW *pf;
+    tAppIdData *pf;
 
-    rd = rshell_service_mod.api->data_get(flowp);
+    rd = rshell_service_mod.api->data_get(flowp, rshell_service_mod.flow_data_index);
     if (!rd)
     {
         if (!size)
@@ -132,7 +135,7 @@ MakeRNAServiceValidationPrototype(rshell_validate)
         rd = calloc(1, sizeof(*rd));
         if (!rd)
             return SERVICE_ENOMEM;
-        if (rshell_service_mod.api->data_add(flowp, rd, &rshell_free_state))
+        if (rshell_service_mod.api->data_add(flowp, rd, rshell_service_mod.flow_data_index, &rshell_free_state))
         {
             free(rd);
             return SERVICE_ENOMEM;
@@ -156,8 +159,8 @@ MakeRNAServiceValidationPrototype(rshell_validate)
         if (port > 65535) goto bail;
         if (port)
         {
-            snort_ip *sip;
-            snort_ip *dip;
+            sfaddr_t *sip;
+            sfaddr_t *dip;
 
             tmp_rd = calloc(1, sizeof(ServiceRSHELLData));
             if (tmp_rd == NULL)
@@ -166,12 +169,12 @@ MakeRNAServiceValidationPrototype(rshell_validate)
             tmp_rd->parent = rd;
             dip = GET_DST_IP(pkt);
             sip = GET_SRC_IP(pkt);
-            pf = rshell_service_mod.api->flow_new(pkt, dip, 0, sip, (uint16_t)port, IPPROTO_TCP, app_id);
+            pf = rshell_service_mod.api->flow_new(flowp, pkt, dip, 0, sip, (uint16_t)port, IPPROTO_TCP, app_id, APPID_EARLY_SESSION_FLAG_FW_RULE);
             if (pf)
             {
-                flow_mark(pf, FLOW_IGNORE_HOST | FLOW_NOT_A_SERVICE);
+                setAppIdExtFlag(pf, APPID_SESSION_IGNORE_HOST | APPID_SESSION_NOT_A_SERVICE);
                 pf->rnaClientState = RNA_STATE_FINISHED;
-                if (rshell_service_mod.api->data_add(pf, tmp_rd, &rshell_free_state))
+                if (rshell_service_mod.api->data_add(pf, tmp_rd, rshell_service_mod.flow_data_index, &rshell_free_state))
                 {
                     pf->rnaServiceState = RNA_STATE_FINISHED;
                     free(tmp_rd);
@@ -268,7 +271,7 @@ MakeRNAServiceValidationPrototype(rshell_validate)
     case RSHELL_STATE_STDERR_CONNECT_SYN_ACK:
         if (rd->parent && rd->parent->state == RSHELL_STATE_SERVER_CONNECT)
             rd->parent->state = RSHELL_STATE_USERNAME;
-        flow_mark(flowp, FLOW_SERVICEDETECTED);
+        setAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED);
         return SERVICE_SUCCESS;
     default:
         goto bail;
@@ -284,11 +287,11 @@ success:
     return SERVICE_SUCCESS;
 
 bail:
-    rshell_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element);
+    rshell_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element, rshell_service_mod.flow_data_index, pConfig);
     return SERVICE_NOT_COMPATIBLE;
 
 fail:
-    rshell_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+    rshell_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, rshell_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 }
 

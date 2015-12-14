@@ -66,13 +66,14 @@ typedef struct _SERVICE_TELNET_DATA
 static int telnet_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(telnet_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &telnet_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "telnet",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -82,7 +83,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule telnet_service_mod =
+tRNAServiceValidationModule telnet_service_mod =
 {
     "TELNET",
     &telnet_init,
@@ -97,7 +98,7 @@ static int telnet_init(const InitServiceAPI * const init_api)
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&telnet_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&telnet_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -113,13 +114,13 @@ MakeRNAServiceValidationPrototype(telnet_validate)
     if (dir != APP_ID_FROM_RESPONDER)
         goto inprocess;
 
-    td = telnet_service_mod.api->data_get(flowp);
+    td = telnet_service_mod.api->data_get(flowp, telnet_service_mod.flow_data_index);
     if (!td)
     {
         td = calloc(1, sizeof(*td));
         if (!td)
             return SERVICE_ENOMEM;
-        if (telnet_service_mod.api->data_add(flowp, td, &free))
+        if (telnet_service_mod.api->data_add(flowp, td, telnet_service_mod.flow_data_index, &free))
         {
             free(td);
             return SERVICE_ENOMEM;
@@ -158,7 +159,7 @@ success:
     return SERVICE_SUCCESS;
 
 fail:
-    telnet_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+    telnet_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, telnet_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 }
 

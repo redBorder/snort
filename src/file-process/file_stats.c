@@ -67,9 +67,21 @@ void printFileContext (FileContext* context)
 
     if ((context->file_name_size > 0) && (unused > (int) context->file_name_size))
     {
-        strncpy(cur, (char *)context->file_name, context->file_name_size );
-        unused -= context->file_name_size;
-        cur += context->file_name_size;
+        uint32_t i;
+        uint32_t size = context->file_name_size;
+        for (i = 0; i < size; i++)
+        {
+            if (isprint((int)context->file_name[i]))
+                cur[i] = (char)context->file_name[i];
+            else
+                cur[i] = '.';
+        }
+
+        if (!context->file_name[size-1])
+            size--;
+
+        unused -= size;
+        cur += size;
     }
 
     if (unused > 0)

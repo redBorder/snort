@@ -28,8 +28,9 @@
 #define _SHMEMLIB_H_
 
 #include <stdint.h>
+#include <sys/types.h>
 
-int   ShmemExists(const char *shmemName);
+int   ShmemExists(const char *shmemName, off_t *size);
 void* ShmemMap(const char* segment_name, uint32_t size, int mode);
 void  ShmemUnlink(const char *shmemName);
 void  ShmemDestroy(const char *shmemName);

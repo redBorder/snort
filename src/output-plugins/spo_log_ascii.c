@@ -181,7 +181,7 @@ static FILE *OpenLogFile(int mode, Packet * p)
     char proto[5];      /* logged packet protocol */
     char suffix[5];     /* filename suffix */
     FILE *log_ptr = NULL;
-    snort_ip_p ip;
+    sfaddr_t* ip;
 
 #ifdef WIN32
     SnortStrncpy(suffix, ".ids", sizeof(suffix));

@@ -101,7 +101,7 @@
 
 \begin{document}
 
-\title{SNORT\textsuperscript{\textregistered} Users Manual\\2.9.7.3}
+\title{SNORT\textsuperscript{\textregistered} Users Manual\\2.9.8.0}
 
 \author{The Snort Project}
 
@@ -1510,7 +1510,7 @@ during snort initialization. If a signal handler cannot be installed a warning
 will be logged and that has to be fixed, otherwise the functionality will be lost.
 
 \texttt{Signals used in snort}
-
+\label{signalactions}
 \begin{tabular}{|l|l|l|}
 \hline
 Signal name & Default value & Action \\
@@ -1615,6 +1615,10 @@ IPs may be specified individually, in a list, as a CIDR block, or any
 combination of the three.  IP variables should be specified using 'ipvar'
 instead of 'var'.  Using 'var' for an IP variable is still allowed for backward
 compatibility, but it will be deprecated in a future release.
+
+IP variable name can begin with an alphanumeric character [A-Za-z0-9] or '\_'
+and should be followed by characters and numbers. Only numbers are not
+accepted as variable names.
 
 IPs, IP lists, and CIDR blocks may be negated with '!'.  Negation is handled
 differently compared with Snort versions 2.7.x and earlier.  Previously, each
@@ -2435,6 +2439,10 @@ the default is off.  \\
 \texttt{config policy\_mode: tap|inline|inline\_test} & Sets the policy
 mode to either \texttt{passive}, \texttt{inline} or \texttt{inline\_test}. \\
 
+\hline
+\texttt{config disable\_replace} & Disables content replace option. Default
+behaviour is to replace content. \\
+
 \hline \texttt{config tunnel\_verdicts: gtp|teredo|6in4|4in6} & By default, whitelist
 and blacklist verdicts are handled internally by Snort for GTP, Teredo, 6in4 and 4in6
 encapsulated traffic.  This means Snort actually gives the DAQ a pass or block
@@ -2987,6 +2995,7 @@ address or network.
 
 \begin{verbatim}
     preprocessor stream5_tcp: \
+        [log_asymmetric_traffic <yes|no>], \
         [bind_to <ip_addr>], \
         [timeout <number secs>], [policy <policy_id>], \
         [overlap_limit <number>], [max_window <number>], \
@@ -3034,7 +3043,7 @@ Policy Name & Operating Systems.\\
 Favor first overlapped segment.\\
 
 \hline
-\texttt{last} & Favor first overlapped segment.\\
+\texttt{last} & Favor last overlapped segment.\\
 
 \hline
 \texttt{bsd} & FresBSD 4.x and newer, NetBSD 2.x and newer, OpenBSD 3.x and newer\\
@@ -7314,6 +7323,8 @@ Option & Argument & Required & Default\\
 \hline
 \texttt{smb\_fingerprint\_policy} & \texttt{<fp-policy>} & NO & OFF\\
 \hline
+\texttt{smb\_legacy\_mode} & NONE & NO & OFF\\
+\hline
 \end{tabular}
 \end{itemize}
 
@@ -7425,6 +7436,15 @@ Default is disabled.
 \item[] \texttt{smb\_fingerprint\_policy}
 \begin{itemize}
 
+\item[]  By default, SMBv1, SMBv2, and SMBv3 files are inspected. 
+        If legacy mode is configured, only SMBv1 file inspection is enabled. 
+
+
+\end{itemize}
+
+\item[] \texttt{legacy\_mode}
+\begin{itemize}
+
 \item[] In the initial phase of an SMB session, the client needs to authenticate
 with a SessionSetupAndX.  Both the request and response to this command
 contain OS and version information that can allow the preprocessor to
@@ -7449,6 +7469,7 @@ protection against Windows and Samba specific evasions.
     reassemble_threshold 500
     smb_fingerprint_policy both
     smb_fingerprint_policy client
+    smb_legacy_mode
 \end{verbatim}
 \normalsize
 
@@ -7684,7 +7705,9 @@ arguments, the default file depth is 16384 bytes.  An argument of -1 to
 \texttt{file-depth} disables setting the pointer for \texttt{file\_data}, effectively
 disabling SMB file inspection in rules.  An argument of 0 to
 \texttt{file-depth} means unlimited.  Default is \texttt{off}, i.e. no SMB file
-inspection is done in the preprocessor.
+inspection is done in the preprocessor. SMBv1, SMBv2, and SMBv3 are
+ supported.
+
 
 \end{itemize}
 
@@ -7836,10 +7859,8 @@ SID & Description\\
   3 & An SMB message type was specified in the header. Either a request was
       made by the server or a response was given by the client.\\
 \hline
-  4 & The SMB id does not equal \texttt{\textbackslash xffSMB}. Note that since
-      the preprocessor does not yet support SMB2, id of
-      \texttt{\textbackslash xfeSMB} is turned away before an eventable point is
-      reached.\\
+  4 & The SMB id does not equal \texttt{\textbackslash xffSMB} or
+      \texttt{\textbackslash xfeSMB}.\\
 \hline
   5 & The word count of the command header is invalid. SMB commands have
       pretty specific word counts and if the preprocessor sees a command with
@@ -8026,6 +8047,11 @@ SID & Description\\
       and the default folder options in Windows is not to display Hidden files.
       The preprocessor will alert if it detects a client attempt to set a
       file's attributes to ReadOnly/Hidden/System.\\
+\hline
+ 58 & File offset provided is greater than file size specified. This is applied
+      to read / write requests for file.\\
+\hline
+ 59 & Nextcommand specified in SMBv2 or SMBv3 header is beyond payload boundary.\\
 \hline
 \end{longtable}
 \end{itemize}
@@ -9827,7 +9853,7 @@ Option & Argument & Required & Default\\
 \item[] \texttt{ports}
 \begin{itemize}
 \item[]  This specifies on what ports to check for GTP messages. Typically, 
-     this will include 5060, 5061.
+     this will include 2123, 3386.
 \item[] \textit{Syntax}
 \begin{verbatim}
     ports { <port> [<port>< ... >] }
@@ -13232,45 +13258,51 @@ Rollover will occur at most once per second so if limit is too small for
 logging rate, limit will be exceeded.  Rollover works correctly if snort is
 stopped/restarted.
 
+%==============================================================================
+%                           HOST ATTRIBUTE TABLE
+%==============================================================================
 \section{Host Attribute Table}
 \label{targetbased}
 
-Starting with version 2.8.1, Snort has the capability to use information from
-an outside source to determine both the protocol for use with Snort rules, and
-IP-Frag policy (see section \ref{frag3 section}) and TCP Stream reassembly
-policies (see section \ref{stream5 section}).  This information is stored in an
-attribute table, which is loaded at startup.  The table is re-read during run
-time upon receipt of signal number 30.
-
-Snort associates a given packet with its attribute data from the table, if
-applicable.
-
-For rule evaluation, service information is used instead of the ports when the
-protocol metadata in the rule matches the service corresponding to the traffic.
-If the rule doesn't have protocol metadata, or the traffic doesn't have any
-matching service information, the rule relies on the port information.
+Snort can use information from an external source(s) to more accurately inspect
+network traffic. This information saved to a file is known as a host attributes
+table. Host attributes are used in IPS rule evalution, IP fragment (see section
+\ref{frag3 section})/TCP stream (see section \ref{stream5 section}) reassembly
+policy selection, and by the application preprocessors. Host attribute table is
+loaded during initialization and supports runtime reloads; Snort reloads the
+host attributes table when it receives the signal SIGNAL\_SNORT\_READ\_ATTR\_TBL
+(See \ref{signalactions} to learn more).
 
 \begin{note}
-
-To use a host attribute table, Snort must be configured with the
---enable-targetbased flag.
-
+To use a host attribute table and service information, Snort must be configured
+with the --enable-targetbased flag.
 \end{note}
 
-\subsection{Configuration Format}
+%===============================
+\subsection{Rule evaluation}
+
+In rule evaluation, service information can be used instead of the ports when the
+metadata service(s) in the rule matches the service corresponding to the traffic.
+If the rule does not have metadata service(s), or the packet service was not
+matched then the port checks are used exclusively.
+
+%===============================
+\subsection{Snort Configuration}
 
 \begin{verbatim}
-    attribute_table filename <path to file>
+attribute_table filename <PATH/TO/HOSTS.XML>
 \end{verbatim}
 
-\subsection{Attribute Table File Format}
+%===============================
+\subsection{Host Attribute Table File Format}
 
 The attribute table uses an XML format and consists of two sections, a mapping
 section, used to reduce the size of the file for common data elements, and the
 host attribute section.  The mapping section is optional.
 
-An example of the file format is shown below.
+Provided below is an example attribute table
 
+%===============================
 \begin{verbatim}
 <SNORT_ATTRIBUTES>
     <ATTRIBUTE_MAP>
@@ -13369,16 +13401,6 @@ An example of the file format is shown below.
 </SNORT_ATTRIBUTES>
 \end{verbatim}
 
-\begin{note}
-
-With Snort 2.8.1, for a given host entry, the stream and IP frag information
-are both used.  Of the service attributes, only the IP protocol (tcp, udp,
-etc), port, and protocol (http, ssh, etc) are used.  The application and
-version for a given service attribute, and any client attributes are ignored.
-They may be used in a future release.
-
-\end{note}
-
 A DTD for verification of the Host Attribute Table XML file is provided with
 the snort packages.
 
@@ -13386,18 +13408,33 @@ The confidence metric may be used to indicate the validity of a given service
 or client application and its respective elements.  That field is not
 currently used by Snort, but may be in future releases.
 
+\begin{note}
+
+    Snort requires that the file be a properly formatted schema of the
+    format defined above. Empty or incorrectly formatted files will likely
+    cause a Fatal Error.
+
+\end{note}
+
+%===============================
+%
+%===============================
 \subsection{Attribute Table Example}
 
 In the example above, a host running Red Hat 2.6 is described. This host has
 an IP address of 192.168.1.234.  On that host, TCP port 22 is ssh (running
 Open SSH), and TCP port 2300 is telnet.
 
-The IP stack fragmentation and stream reassembly is mimicked by the "linux"
+The IP fragmentation and TCP stream reassembly is mimicked by the "linux"
 configuration (see sections \ref{frag3 section} and \ref{stream5 section}).
 
-\subsubsection{Attribute Table Affect on preprocessors}
+%===============================
+%
+%===============================
+\subsection{Attribute Table Affect on preprocessors}
 
 \begin{itemize}
+
 \item{Network Layer Preprocessors}
 
 Each of the network layer preprocessors (frag3 and stream5) make use of the
@@ -13406,17 +13443,19 @@ how data is handled for reassembly for packets being received by that host.
 
 \item{Application Layer Preprocessors}
 
-The application layer preprocessors (HTTP, SMTP, FTP, Telnet, etc) make
-use of the \texttt{SERVICE} information for connections destined to that
-host on that port.  
+The application layer preprocessors (HTTP, SMTP, FTP, Telnet, etc) make use of
+the \texttt{SERVICE} information for connections destined to that host on that
+port.
 
-For example, even if the telnet portion of the FTP/Telnet preprocessor is
-only configured to inspect port 23, Snort will inspect packets for a connection
-to 192.168.1.234 port 2300 as telnet.
+For example, even if the telnet portion of the FTP/Telnet preprocessor is only
+configured to inspect port 23, Snort will inspect packets for a connection to
+192.168.1.234 port 2300 as telnet.
 
-Conversely, if, for example, HTTP Inspect is configured to inspect traffic
-on port 2300, HTTP Inspect will NOT process the packets on a connection
-to 192.168.1.234 port 2300 because it is identified as telnet.
+Conversely, if, for example, HTTP Inspect is configured to inspect traffic on
+port 2300, HTTP Inspect will NOT process the packets on a connection to
+192.168.1.234 port 2300 because it is identified as telnet.
+
+\end{itemize}
 
 Below is a list of the common services used by Snort's application layer
 preprocessors and Snort rules (see below).
@@ -13437,86 +13476,67 @@ imap & pop2 & pop3 & snmp & & & \\
 \end{tabular}
 \end{center}
 \end{table}
-\end{itemize}
 
 \subsubsection{Attribute Table Affect on rules}
 
-Similar to the application layer preprocessors, rules configured for specific
-ports that have a service metadata will be processed based on the service
-identified by the attribute table.
+Snort uses service information in two ways; initialization of detection engine 
+and as a detection criteria. To take advantage of this, Snort rules must
+contain the \texttt{metadata: service SERVICE} convention specified. During rule 
+evaluation the default behavior will check first that the packet has been matched
+to a service, and then check that the packet's service matches the service(s)
+specified in the rule; if both these checks passed then Snort will disable
+source and destination port checks for the rule.
 
-When both service metadata is present in the rule and in the connection, Snort uses
-the service rather than the port.  If there are rules that use the service
-and other rules that do not but the port matches, Snort will ONLY inspect the rules
-that have the service that matches the connection.
+Snort 2.9.8 provides new functionality to control how rules use service
+information known as "service overrides". Service overrides are specified in
+the same way that services are specified in the rule, or more simply as a
+"reserved" \texttt{SERVICE}. The table below defines the new reserved service
+override names.
 
-The following few scenarios identify whether a rule will be inspected or not.
+\begin{longtable}{| p{1.5in} | p{4.5in} |}
+\hline
+{\bf Metadata} & {\bf Description}\\
+\hline
+
+\hline
+\textbf{service and-ports} &
+\begin{itemize}
+\item{Packet service must be set.}
+\item{Packet service must match one of the rule services.}
+\item{Packet must match the ports specified in the rule header.}
+\end{itemize} \\
+
+\hline
+\textbf{service or-ports} &
+\begin{itemize}
+\item{Packet service is set and it matches one of the rule services (skipping port checks).}
+\item{Packet service is set but it DOES NOT match one of the rule services; packet must match the ports specified in the rule header.}
+\item{Packet service is NOT set, only perform port checks.}
+\end{itemize} \\
+
+\hline
+\textbf{service else-ports} &
+\begin{itemize}
+\item{Packet service is set, packet must match one of the rule services.}
+\item{Packet service is NOT set; then packet must match the ports specified in the rule header.}
+\end{itemize}
+
+This is the default behavior of a rule containing metadata service information. \\
+
+\hline
+\textbf{service unknown} &
+
+The keyword "unknown" is an alias for "service else-ports" above. It is intended
+for use in rules that do not contain metadata service information (port only
+rules). When used in a rule that doesn't otherwise contain metadata (rule only
+specifies ports), the evaluation is:
 
 \begin{itemize}
-\item{Alert: Rule Has Service Metadata, Connection Service Matches}
+\item{Packet service must NOT be set; then match ports.}
+\end{itemize} \\
 
-The following rule will be inspected and alert on traffic to host 192.168.1.234
-port 2300 because it is identified as telnet.
-
-\begin{verbatim}
-alert tcp any any -> any 23 (msg:"Telnet traffic"; flow:to_server,established;
-sid:10000001; metadata: service telnet;)
-\end{verbatim}
-
-\item{Alert: Rule Has Multiple Service Metadata, Connection Service Matches One of them}
-
-The following rule will be inspected and alert on traffic to host 192.168.1.234
-port 2300 because it is identified as telnet.
-
-\begin{verbatim}
-alert tcp any any -> any 23 (msg:"Telnet traffic"; flow:to_server,established;
-sid:10000002; metadata: service telnet, service smtp;)
-\end{verbatim}
-
-\item{No Alert: Rule Has Service Metadata, Connection Service Does Not Match, Port Matches}
-
-The following rule will NOT be inspected and NOT alert on traffic to host 192.168.1.234
-port 2300 because that traffic is identified as telnet, but the service is ssh.
-
-\begin{verbatim}
-alert tcp any any -> any 2300 (msg:"SSH traffic"; flow:to_server,established;
-sid:10000003; metadata: service ssh;)
-\end{verbatim}
-
-\item{Alert: Rule Has No Service Metadata, Port Matches}
-
-The following rule will be inspected and alert on traffic to host 192.168.1.234
-port 2300 because the port matches.
-
-\begin{verbatim}
-alert tcp any any -> any 2300 (msg:"Port 2300 traffic"; flow:to_server,established;
-sid:10000004;)
-\end{verbatim}
-
-\item{Alert: Rule Has No Service Metadata, Packet has service + other rules with service}
-
-The first rule will NOT be inspected and NOT alert on traffic to host 192.168.1.234
-port 2300 because the service is identified as telnet and there are other rules with
-that service.
-
-\begin{verbatim}
-alert tcp any any -> any 2300 (msg:"Port 2300 traffic"; flow:to_server,established;
-sid:10000005;)
-alert tcp any any -> any 2300 (msg:"Port 2300 traffic"; flow:to_server,established;
-sid:10000006; metadata: service telnet;)
-\end{verbatim}
-
-\item{No Alert: Rule Has No Service Metadata, Port Does Not Match}
-
-The following rule will NOT be inspected and NOT alert on traffic to host 192.168.1.234
-port 2300 because the port does not match.
-
-\begin{verbatim}
-alert tcp any any -> any 23 (msg:"Port 23 traffic"; flow:to_server,established;
-sid:10000007;)
-\end{verbatim}
-
-\end{itemize}
+\hline
+\end{longtable}
 
 \section{Dynamic Modules}
 
@@ -14809,10 +14829,7 @@ Target-Based Service Identifier & "http" \\
 \begin{note}
 
 The \texttt{service} Metadata Key is only meaningful when a Host Attribute
-Table is provided.  When the value exactly matches the service ID as specified
-in the table, the rule is applied to that packet, otherwise, the rule is not
-applied (even if the ports specified in the rule match).  See Section
-\ref{targetbased} for details on the Host Attribute Table.
+Table is provided. See Section \ref{targetbased} for details on the Host Attribute Table.
 
 \end{note}.
 
@@ -15242,7 +15259,7 @@ The value can also be set to a string value referencing a variable extracted by 
 
 \subsubsection{Example}
 
-The rule below maps to a regular expression of /ABC.\{1\}DEF/.
+The rule below maps to a regular expression of /ABC.\{1,\}DEF/.
 
 \begin{verbatim}
     alert tcp any any -> any any (content:"ABC"; content:"DEF"; distance:1;)
@@ -19999,7 +20016,7 @@ options.
   Serial Unified2 Header or EOF.
 
 \subsection{Unified2 Packet}
-    
+ 
 \begin{verbatim}
     sensor id               4 bytes
     event id                4 bytes

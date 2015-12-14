@@ -35,7 +35,7 @@ void StreamUdpPolicyInit(StreamUdpConfig *, char *);
 int StreamVerifyUdpConfig(struct _SnortConfig *, StreamUdpConfig *, tSfPolicyId);
 int StreamProcessUdp(Packet *, SessionControlBlock *, StreamUdpPolicy *, SessionKey *);
 void UdpUpdateDirection(SessionControlBlock *ssn, char dir,
-                        snort_ip_p ip, uint16_t port);
+                        sfaddr_t* ip, uint16_t port);
 SessionControlBlock *GetLWUdpSession(const SessionKey *key);
 void s5UdpSetPortFilterStatus(
         struct _SnortConfig *sc,
