@@ -51,8 +51,6 @@ typedef struct _config_item
 #define MAX_LINE    2048
 #define MAX_TOKS    256
 
-void ProcessListDirective(const char *section, char *toklist[], SF_LIST *list);
-
 extern time_t packetTimeOffset;
 extern time_t packetTime;
 extern int packetTimeOffsetSet;

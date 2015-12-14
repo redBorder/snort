@@ -44,6 +44,7 @@ struct tMlmpTree* mlmpCreate(void);
 int   mlmpAddPattern(struct tMlmpTree* root, const tMlmpPattern *patterns, void *metaData);
 int   mlmpProcessPatterns(struct tMlmpTree* root);
 void *mlmpMatchPatternUrl(struct tMlmpTree* root, tMlmpPattern *inputPatternList);
+void *mlmpMatchPatternGeneric(struct tMlmpTree* root, tMlmpPattern *inputPatternList);
 void  mlmpDestroy(struct tMlmpTree* root);
 void  mlmpDump(struct tMlmpTree* root);
 

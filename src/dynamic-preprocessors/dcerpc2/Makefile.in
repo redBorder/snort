@@ -122,8 +122,8 @@ LTLIBRARIES = $(dynamicpreprocessor_LTLIBRARIES)
 am_libsf_dce2_preproc_la_OBJECTS = dce2_debug.lo dce2_utils.lo \
 	dce2_list.lo dce2_memory.lo dce2_stats.lo dce2_event.lo \
 	dce2_config.lo dce2_roptions.lo spp_dce2.lo snort_dce2.lo \
-	dce2_smb.lo dce2_tcp.lo dce2_co.lo dce2_udp.lo dce2_cl.lo \
-	dce2_http.lo dce2_paf.lo
+	dce2_smb.lo dce2_smb2.lo dce2_tcp.lo dce2_co.lo dce2_udp.lo \
+	dce2_cl.lo dce2_http.lo dce2_paf.lo
 @SO_WITH_STATIC_LIB_FALSE@nodist_libsf_dce2_preproc_la_OBJECTS =  \
 @SO_WITH_STATIC_LIB_FALSE@	sf_dynamic_preproc_lib.lo sf_ip.lo \
 @SO_WITH_STATIC_LIB_FALSE@	sfrt.lo sfrt_dir.lo \
@@ -245,7 +245,6 @@ LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
 LUA_CFLAGS = @LUA_CFLAGS@
 LUA_LIBS = @LUA_LIBS@
-MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
 MKDIR_P = @MKDIR_P@
@@ -371,6 +370,8 @@ snort_dce2.c \
 snort_dce2.h \
 dce2_smb.c \
 dce2_smb.h \
+dce2_smb2.c \
+dce2_smb2.h \
 dce2_tcp.c \
 dce2_tcp.h \
 dce2_co.c \
@@ -391,7 +392,7 @@ all: all-am
 
 .SUFFIXES:
 .SUFFIXES: .c .lo .o .obj
-$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__configure_deps)
+$(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
 	    *$$dep*) \
@@ -416,9 +417,9 @@ Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 $(top_builddir)/config.status: $(top_srcdir)/configure $(CONFIG_STATUS_DEPENDENCIES)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 
-$(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
+$(top_srcdir)/configure:  $(am__configure_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
-$(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
+$(ACLOCAL_M4):  $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
 

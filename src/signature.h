@@ -101,6 +101,13 @@ typedef struct _ServiceInfo
     char *service;
     int16_t service_ordinal;
 } ServiceInfo;
+
+typedef enum _ServiceOverride {
+    ServiceOverride_ElsePorts = 0,
+    ServiceOverride_AndPorts,
+    ServiceOverride_OrPorts,
+    ServiceOverride_Nil
+} ServiceOverride;
 #endif
 
 typedef struct _SigInfo
@@ -121,10 +128,9 @@ typedef struct _SigInfo
 #ifdef TARGET_BASED
     unsigned int num_services;
     ServiceInfo *services;
-#if 0
-    char          *os;
+    ServiceOverride service_override;
 #endif
-#endif
+
 #if defined(FEAT_OPEN_APPID)
     unsigned int num_appid;
 #endif /* defined(FEAT_OPEN_APPID) */

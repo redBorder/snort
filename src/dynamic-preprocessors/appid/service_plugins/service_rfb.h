@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule rfb_service_mod;
+extern tRNAServiceValidationModule rfb_service_mod;
 
 #endif  /* __SERVICE_RFB_H__ */
 

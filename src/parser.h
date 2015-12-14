@@ -216,9 +216,10 @@
 #define CONFIG_OPT__FILE                            "file"
 #define CONFIG_OPT__TUNNEL_BYPASS                   "tunnel_verdicts"
 #ifdef SIDE_CHANNEL
-# define CONFIG_OPT__SIDE_CHANNEL                    "sidechannel"
+# define CONFIG_OPT__SIDE_CHANNEL                   "sidechannel"
 #endif
-#define CONFIG_OPT__MAX_IP6_EXTENSIONS              "max_ip6_extensions"             
+#define CONFIG_OPT__MAX_IP6_EXTENSIONS              "max_ip6_extensions"
+#define CONFIG_OPT__DISABLE_REPLACE                 "disable_replace"
 /* exported values */
 extern char *file_name;
 extern int file_line;
@@ -396,6 +397,7 @@ void ConfigControlSocketDirectory(SnortConfig *, char *);
 void ConfigFile(SnortConfig *, char *);
 void ConfigTunnelVerdicts(SnortConfig*, char*);
 void ConfigMaxIP6Extensions(SnortConfig *, char*);
+void ConfigDisableReplace(SnortConfig *, char*);
 
 int addRtnToOtn(
         OptTreeNode *otn,

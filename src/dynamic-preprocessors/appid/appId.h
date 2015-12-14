@@ -23,8 +23,9 @@
 #define __APP_ID_H__
 
 #include <stdint.h>
-
-typedef int32_t tAppId;
+#include <stdbool.h>
+#include "thirdparty_appid_types.h"
+#include "sf_dynamic_preprocessor.h"
 
 typedef enum
 {
@@ -990,9 +991,42 @@ typedef enum
     APP_ID_SSL_CLIENT=1296,
     APP_ID_MDNS=1755,
     APP_ID_APPLE_CORE_MEDIA=2253,
+    APP_ID_SPDY=2886,
+    APP_ID_ANYCONNECT=2921,
+    APP_ID_ANYCONNECT_SSL_CLIENT=2922,
+    APP_ID_ANYCONNECT_IPSEC_CLIENT=2923,
+    APP_ID_AOL=1419,
+    APP_ID_DOGPILE=2804,
+    APP_ID_LYCOS=2775,
+    APP_ID_FTP_ACTIVE=4002,
+    APP_ID_FTP_PASSIVE=4003,
 
     APP_ID_UNKNOWN_UI = 65535  /*This causes the UI to render Unknown instead of pending or blank */
 } appIdEnum;
 
-#endif  /* __APP_ID_H__ */
+#define SF_APPID_MAX            40000
+#define SF_APPID_BUILDIN_MAX    30000
+#define APPID_MAX_PRIORITY  3
+#define SF_APPID_CSD_MIN        1000000
+#define SF_APPID_DYNAMIC_MIN    2000000
+#define NUMBER_OF_PTYPES    9
+#define RESPONSE_CODE_PACKET_THRESHHOLD 0
 
+//Additional stuff
+typedef enum {
+    APP_ID_FROM_INITIATOR,
+    APP_ID_FROM_RESPONDER,
+    APP_ID_APPID_SESSION_DIRECTION_MAX /* Maximum value of a direction (must be last in the list */
+} APPID_SESSION_DIRECTION;
+
+typedef enum {
+    SERVICE_HOST_INFO_NETBIOS_NAME = 1
+} SERVICE_HOST_INFO_CODE;
+
+#define DHCP_OPTION55_LEN_MAX 255
+
+#define FINGERPRINT_UDP_FLAGS_XENIX 0x00000800
+#define FINGERPRINT_UDP_FLAGS_NT    0x00001000
+#define FINGERPRINT_UDP_FLAGS_MASK  (FINGERPRINT_UDP_FLAGS_XENIX | FINGERPRINT_UDP_FLAGS_NT)
+
+#endif  /* __APP_ID_H__ */

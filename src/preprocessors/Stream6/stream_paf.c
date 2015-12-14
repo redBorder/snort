@@ -60,7 +60,9 @@ typedef enum {
     FT_SFP,  // abort paf
     FT_PAF,  // flush to paf pt when len >= paf
     FT_LIMIT, // flush to paf. flags are not updated
-    FT_MAX   // flush len when len >= mfp
+    FT_MAX,   // flush len when len >= mfp
+    FT_DISC_S,// start of discard
+    FT_DISC_E // End of discard
 } FlushType;
 
 typedef struct {
@@ -116,6 +118,21 @@ static uint32_t s5_paf_flush (
         *flags |= PKT_PDU_TAIL;
         break;
 
+    case FT_DISC_S:
+        at = s5_len;
+        ps->mode = FLUSH_MODE_DISCARD;
+        if ( ps->fpt > s5_len )
+            ps->fpt -= s5_len;
+        else
+            ps->fpt = 0;
+        break;
+
+    case FT_DISC_E:
+        at = ps->fpt;
+        ps->mode = FLUSH_MODE_NORMAL;
+        *flags |= PKT_IGNORE | PKT_PDU_TAIL; //overloading existing flag
+        break;
+
     case FT_LIMIT:
         if (ps->fpt > s5_len)
         {
@@ -126,7 +143,7 @@ static uint32_t s5_paf_flush (
         {
             at = ps->fpt;
             ps->fpt = s5_len - ps->fpt; // number of characters scanned but not flushing
-        } 
+        }
         break;
 
     // use of s5_len is suboptimal here because the actual amount
@@ -136,6 +153,8 @@ static uint32_t s5_paf_flush (
     // now we try to circumvent such cases so we track correctly.
     case FT_MAX:
         at = s5_len;
+        if( ps->mode == FLUSH_MODE_DISCARD )
+            *flags |= PKT_IGNORE;
         if ( ps->fpt > s5_len )
             ps->fpt -= s5_len;
         else
@@ -210,7 +229,6 @@ static bool s5_paf_callback (
         {
             DEBUG_WRAP(DebugMessage(DEBUG_STREAM_PAF,
                 "%s: mask=%d, i=%u\n", __FUNCTION__, mask, i);)
-
             udata_idx = s5_paf_user_data_index(ps, i);
 
             if(udata_idx == -1)
@@ -269,7 +287,7 @@ static bool s5_paf_callback (
 //--------------------------------------------------------------------
 
 static inline bool s5_paf_eval (
-    PAF_Config* pc, PAF_State* ps, void* ssn, 
+    PAF_Config* pc, PAF_State* ps, void* ssn,
     uint16_t port, uint32_t flags, uint32_t fuzz,
     const uint8_t* data, uint32_t len, FlushType* ft)
 {
@@ -334,8 +352,64 @@ static inline bool s5_paf_eval (
         ps->fpt = 0;
         return true;
 
+    case PAF_DISCARD_START:
+        /*
+         * We can flush at this point,
+         * but this will result in splitting of segments
+         * so we will try flushing at s5_len if PDU end
+         * doesnt come before.
+         */
+        if( s5_len ==  ps->fpt )
+        {
+            *ft = FT_DISC_S;
+            ps->paf = PAF_SEARCH;
+            return true;
+        }
+        else if( s5_len > ps->fpt )
+        {
+            ps->mode = FLUSH_MODE_PRE_DISCARD;
+            ps->paf = PAF_SEARCH;
+            s5_idx = ps->fpt;
+            return true;
+        }
+
+        if ( s5_len >= pc->mfp + fuzz )
+        {
+            *ft = FT_MAX;
+            return false;
+        }
+        return false;
+    case PAF_DISCARD_END:
+        if( s5_len >= ps->fpt )
+        {
+            if( ps->mode != FLUSH_MODE_DISCARD )
+            {
+                ps->mode = FLUSH_MODE_NORMAL;
+                *ft = FT_PAF;
+            }
+            else
+                *ft = FT_DISC_E;
+            ps->paf = PAF_SEARCH;
+            return true;
+        }
+        if ( s5_len >= pc->mfp + fuzz )
+        {
+            /*
+             * If mode is set to PRE_DISCARD,
+             * we will anyway flush at s5_len
+             * so no need to set to FT_MAX
+             */
+            if( ps->mode != FLUSH_MODE_PRE_DISCARD )
+            {
+                *ft = FT_MAX;
+                return false;
+            }
+        }
+        return false;
+
     default:
         // PAF_ABORT || PAF_START
+        ps->mode = FLUSH_MODE_NORMAL;
         break;
     }
 
@@ -387,21 +461,22 @@ void s5_paf_setup (PAF_State* ps, uint16_t mask)
     //memset(ps, 0, sizeof(*ps));
     ps->paf = PAF_START;
     ps->cb_mask = mask;
+    ps->mode = FLUSH_MODE_NORMAL;
 }
 
 void s5_paf_clear (PAF_State* ps)
 {
-    int i;
+    int i;	
     // either require pp to manage in other session state
     // or provide user free func?
     for(i = 0; i < MAX_PAF_USER; i++)
     {
-	if ( ps->user[i] )
-	{
-	   free(ps->user[i]);
+    	if ( ps->user[i] )
+    	{
+           free(ps->user[i]);
            ps->user[i] = NULL;
-	}
-    }
+    	}
+    }	
     ps->paf = PAF_ABORT;
 }
 
@@ -454,16 +529,16 @@ uint32_t s5_paf_check (
     s5_idx = total - len;
 
     // if 'total' is greater than the maximum paf_max AND 'total' is greater
-    // than paf_max bytes + fuzz (i.e. after we have finished analyzing the 
-    // current segment, total bytes analyzed will be greater than the 
-    // configured (fuzz + paf_max) == (pc->mfp + fuzz), we must ensure a flush 
-    // occurs at the paf_max byte.  So, we manually set the data's length and 
+    // than paf_max bytes + fuzz (i.e. after we have finished analyzing the
+    // current segment, total bytes analyzed will be greater than the
+    // configured (fuzz + paf_max) == (pc->mfp + fuzz), we must ensure a flush
+    // occurs at the paf_max byte.  So, we manually set the data's length and
     // total queued bytes (s5_len) to guarantee that at most paf_max bytes will
     // be analyzed and flushed since the last flush point.  It should also be
     // noted that we perform the check here rather in in s5_paf_flush() to
-    // avoid scanning the same data twice. The first scan would analyze the 
+    // avoid scanning the same data twice. The first scan would analyze the
     // entire segment and the second scan would analyze this segments
-    // unflushed data. 
+    // unflushed data.
     if ( total >= MAXIMUM_PAF_MAX && total > pc->mfp + fuzz )
     {
         s5_len = MAXIMUM_PAF_MAX + fuzz;
@@ -484,7 +559,7 @@ uint32_t s5_paf_check (
 
         if ( ft != FT_NOP )
             return s5_paf_flush(pc, ps, ft, flags);
-        
+
         if ( !cont )
             break;
 
@@ -499,7 +574,10 @@ uint32_t s5_paf_check (
 
     } while ( 1 );
 
-    if ( (ps->paf != PAF_FLUSH) && (s5_len >= pc->mfp+fuzz) )
+    //start discarding from now on
+    if(ps->mode == FLUSH_MODE_PRE_DISCARD)
+        return s5_paf_flush(pc, ps, FT_DISC_S, flags);
+    else if ( (ps->paf != PAF_FLUSH) && (s5_len >= pc->mfp+fuzz) )
         return s5_paf_flush(pc, ps, FT_MAX, flags);
 
     return 0;

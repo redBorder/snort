@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule battlefield_service_mod;
+extern tRNAServiceValidationModule battlefield_service_mod;
 
 #endif  /* __SERVICE_BATTLEFIELD_H__ */
 

@@ -55,9 +55,10 @@ SFBASE sfBase;
 SFFLOW sfFlow;
 SFEVENT sfEvent;
 int perfmon_rotate_perf_file = 0;
+static uint32_t pkt_cnt = 0;
 
 static void UpdatePerfStats(SFPERF *, Packet *p);
-static bool CheckSampleInterval(SFPERF *, Packet *);
+static bool CheckSampleInterval(SFPERF *, time_t);
 static inline bool sfCheckFileSize(FILE *, uint32_t);
 static inline void sfProcessBaseStats(SFPERF *);
 static inline void sfProcessFlowStats(SFPERF *);
@@ -474,87 +475,91 @@ void sfPerformanceStats(SFPERF *sfPerf, Packet *p)
 
     if ((sfPerf->perf_flags & SFPERF_TIME_COUNT) && !PacketIsRebuilt(p))
     {
-        static uint32_t cnt = 0;
+        pkt_cnt++;
+        sfPerformanceStatsOOB(sfPerf, p->pkth->ts.tv_sec);
+    }
+}
 
-        cnt++;
-
-        if (cnt >= sfPerf->pkt_cnt)
+void sfPerformanceStatsOOB(SFPERF *sfPerf, time_t curr_time)
+{
+    if (sfPerf && pkt_cnt >= sfPerf->pkt_cnt) //For perfect alignment, sfPerf->pkt_count should be set to 0 in config
+    {
+        if (CheckSampleInterval(sfPerf, curr_time))
         {
-            if (CheckSampleInterval(sfPerf, p))
-            {
-                cnt = 0;
+            pkt_cnt = 0;
 
-                if (!(sfPerf->perf_flags & SFPERF_SUMMARY_BASE))
+            if (!(sfPerf->perf_flags & SFPERF_SUMMARY_BASE))
+            {
+                if (sfPerf->perf_flags & SFPERF_BASE)
                 {
                     sfProcessBaseStats(sfPerf);
                     InitBaseStats(&sfBase);
                 }
+            }
 
-                if (!(sfPerf->perf_flags & SFPERF_SUMMARY_FLOW))
+            if (!(sfPerf->perf_flags & SFPERF_SUMMARY_FLOW))
+            {
+                if (sfPerf->perf_flags & SFPERF_FLOW)
                 {
                     sfProcessFlowStats(sfPerf);
                     InitFlowStats(&sfFlow);
                 }
+            }
 
-                if (!(sfPerf->perf_flags & SFPERF_SUMMARY_FLOWIP))
+            if (!(sfPerf->perf_flags & SFPERF_SUMMARY_FLOWIP))
+            {
+                if (sfPerf->perf_flags & SFPERF_FLOWIP)
                 {
                     sfProcessFlowIpStats(sfPerf);
                     InitFlowIPStats(&sfFlow);
                 }
+            }
 
-                if (!(sfPerf->perf_flags & SFPERF_SUMMARY_EVENT))
+            if (!(sfPerf->perf_flags & SFPERF_SUMMARY_EVENT))
+            {
+                if (sfPerf->perf_flags & SFPERF_EVENT)
                 {
                     sfProcessEventStats(sfPerf);
                     InitEventStats(&sfEvent);
                 }
-
-                SetSampleTime(sfPerf, p);
             }
         }
     }
 }
 
-void SetSampleTime(SFPERF *sfPerf, Packet *p)
+static bool CheckSampleInterval(SFPERF *sfPerf, time_t curr_time)
 {
-    if (sfPerf == NULL)
-        return;
+    static time_t last_true = 0;
 
-    if (ScReadMode())
+    //Initial alignment
+    if (last_true == 0)
     {
-        if ((p == NULL) || (p->pkth == NULL))
-            sfPerf->sample_time = 0;
-        else
-            sfPerf->sample_time = p->pkth->ts.tv_sec;
+        last_true = curr_time;
+        last_true -= last_true % sfPerf->sample_interval;
     }
-    else
-    {
-        sfPerf->sample_time = time(NULL);
-    }
-}
 
-static bool CheckSampleInterval(SFPERF *sfPerf, Packet *p)
-{
-    time_t curr_time;
-
-    if (ScReadMode())
+    //Dump on aligned time if possible. If not, get close and say we did.
+    if (curr_time - last_true >= sfPerf->sample_interval)
     {
-        curr_time = p->pkth->ts.tv_sec;
+        curr_time -= curr_time % sfPerf->sample_interval;
         sfBase.time = curr_time;
         sfFlow.time = curr_time;
-    }
-    else
-    {
-        curr_time = time(NULL);
-    }
-
-    if ((curr_time - sfPerf->sample_time) >= sfPerf->sample_interval)
+        last_true = curr_time;
         return true;
+    }
 
     return false;
 }
 
 void InitPerfStats(SFPERF *sfPerf)
 {
+#ifdef LINUX_SMP
+    memset(&sfBase, 0, offsetof(SFBASE, sfProcPidStats));
+#else
+    memset(&sfBase, 0, sizeof(SFBASE));
+#endif
+    memset(&sfFlow, 0, sizeof(SFFLOW));
+    memset(&sfEvent, 0, sizeof(SFEVENT));
     if (sfPerf->perf_flags & SFPERF_BASE)
         InitBaseStats(&sfBase);
 

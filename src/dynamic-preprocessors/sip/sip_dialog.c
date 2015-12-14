@@ -419,7 +419,8 @@ static int SIP_ignoreChannels( SIP_DialogData *dialog, SFSnortPacket *p)
     	else
     	{
     	    _dpd.sessionAPI->ignore_session(p, &mdataA->maddress, mdataA->mport, &mdataB->maddress,
-    	                            mdataB->mport, IPPROTO_UDP, PP_SIP, SSN_DIR_BOTH, 0 /* Not permanent */ );
+    	                            mdataB->mport, IPPROTO_UDP, PP_SIP, SSN_DIR_BOTH, 0 /* Not permanent */,
+                                    &p->expectedSession );
     	}
     	sip_stats.ignoreChannels++;
     	mdataA = mdataA->nextM;
@@ -657,7 +658,7 @@ static int SIP_deleteDialog(SIP_DialogData *currDialog, SIP_DialogList *dList)
  *  None
  *
  *********************************************************************/
-static void sip_update_appid(const SFSnortPacket *p, const SIPMsg *sipMsg, const SIP_DialogData *dialog)
+static void sip_update_appid(SFSnortPacket *p, const SIPMsg *sipMsg, const SIP_DialogData *dialog)
 {
     SipHeaders hdrs;
     SipDialog        dlg;
@@ -677,7 +678,7 @@ static void sip_update_appid(const SFSnortPacket *p, const SIPMsg *sipMsg, const
     hdrs.fromLen= sipMsg->fromLen;
 
     sipEventData.headers = &hdrs;
-        
+
     if (dialog)
     {
         dlg.state = dialog->state;
@@ -686,7 +687,7 @@ static void sip_update_appid(const SFSnortPacket *p, const SIPMsg *sipMsg, const
         sipEventData.dialog = &dlg;
 
     }
-    else 
+    else
     {
         sipEventData.dialog = NULL;
     }

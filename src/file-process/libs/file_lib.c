@@ -138,7 +138,8 @@ void file_signature_sha256(FileContext* context, uint8_t* file_data,
     switch (position)
     {
     case SNORT_FILE_START:
-        context->file_signature_context = SnortAlloc(sizeof(SHA256CONTEXT));
+        if (!context->file_signature_context)
+            context->file_signature_context = SnortAlloc(sizeof(SHA256CONTEXT));
         SHA256INIT((SHA256CONTEXT *)context->file_signature_context);
         SHA256UPDATE((SHA256CONTEXT *)context->file_signature_context, file_data, data_size);
         break;
@@ -158,7 +159,8 @@ void file_signature_sha256(FileContext* context, uint8_t* file_data,
         context->file_state.sig_state = FILE_SIG_DONE;
         break;
     case SNORT_FILE_FULL:
-        context->file_signature_context = SnortAlloc(sizeof (SHA256CONTEXT));
+        if (!context->file_signature_context)
+            context->file_signature_context = SnortAlloc(sizeof (SHA256CONTEXT));
         SHA256INIT((SHA256CONTEXT *)context->file_signature_context);
         SHA256UPDATE((SHA256CONTEXT *)context->file_signature_context, file_data, data_size);
         context->sha256 = SnortAlloc(SHA256_HASH_SIZE);
@@ -186,6 +188,8 @@ static inline void cleanDynamicContext (FileContext *context)
         free(context->sha256);
     if(context->file_capture)
         file_capture_stop(context);
+    if(context->file_name && context->file_name_saved)
+        free(context->file_name);
 }
 
 void file_context_reset(FileContext *context)
@@ -206,11 +210,21 @@ void file_context_free(void *ctx)
 
 /*File properties*/
 /*Only set the pointer for performance, no deep copy*/
-void file_name_set (FileContext *context, uint8_t *file_name, uint32_t name_size)
+void file_name_set (FileContext *context, uint8_t *file_name, uint32_t name_size,
+        bool save_in_context)
 {
+    uint8_t *name = file_name;
     if (!context)
         return;
-    context->file_name = file_name;
+    if (save_in_context)
+    {
+        if (context->file_name && context->file_name_saved)
+            free(context->file_name);
+        name = SnortAlloc(name_size);
+        memcpy(name, file_name, name_size);
+        context->file_name_saved = true;
+    }
+    context->file_name = name;
     context->file_name_size = name_size;
 }
 

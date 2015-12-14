@@ -120,6 +120,18 @@ typedef struct _DCE2_Stats
     uint64_t cl_frag_reassembled;
     uint64_t cl_max_seqnum;
 
+    /* SMB2 stats */
+    uint64_t smb2_prunes;
+    uint64_t smb2_memory_in_use;
+    uint64_t smb2_memory_in_use_max;
+    uint64_t smb2_create;
+    uint64_t smb2_write;
+    uint64_t smb2_read;
+    uint64_t smb2_set_info;
+    uint64_t smb2_tree_connect;
+    uint64_t smb2_tree_disconnect;
+    uint64_t smb2_close;
+
 } DCE2_Stats;
 
 /********************************************************************

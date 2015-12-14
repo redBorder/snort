@@ -65,7 +65,7 @@ void SetupByteExtract(void)
     AddFuncToCleanExitList(ByteExtractCleanup, NULL);
 
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("byte_extract", &byteExtractPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("byte_extract", &byteExtractPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
 }
 

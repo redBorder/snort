@@ -244,7 +244,7 @@ void SetupReact(void)
 {
     RegisterRuleOption("react", React_Init, NULL, OPT_TYPE_ACTION, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("react", &reactPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("react", &reactPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
 }
 
@@ -471,9 +471,10 @@ static void React_Send (Packet* p,  void* pv)
         // Active_SendData sends a FIN, so need to bump seq by 1.
         sent++;
     }
-    rf = ENC_FLAG_SEQ | (ENC_FLAG_VAL & sent);
+    rf = df ^ ENC_FLAG_FWD;
+    df |= ENC_FLAG_SEQ | (ENC_FLAG_VAL & sent);
+    Active_SendReset(p, df);
     Active_SendReset(p, rf);
-    Active_SendReset(p, ENC_FLAG_FWD);
 
     PREPROC_PROFILE_END(reactPerfStats);
 }

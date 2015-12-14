@@ -23,6 +23,6 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule rtmp_service_mod;
+extern tRNAServiceValidationModule rtmp_service_mod;
 
 #endif    /* __SERVICE_RTMP_H__ */

@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule ssh_service_mod;
+extern tRNAServiceValidationModule ssh_service_mod;
 
 #endif  /* __SERVICE_SSH_H__ */
 

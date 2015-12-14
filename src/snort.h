@@ -39,7 +39,7 @@
 #include "sfdaq.h"
 #include "sf_types.h"
 #include "sfutil/sflsq.h"
-#include "sfutil//sfActionQueue.h"
+#include "sfutil/sfActionQueue.h"
 #include "profiler.h"
 #include "rules.h"
 #include "treenodes.h"
@@ -60,6 +60,7 @@
 #include "sfutil/sfPolicy.h"
 #include "detection_filter.h"
 #include "generators.h"
+#include "preprocids.h"
 #include <signal.h>
 #if defined(INLINE_FAILOPEN) || \
     defined(TARGET_BASED) || defined(SNORT_RELOAD)
@@ -575,7 +576,11 @@ typedef enum {
     TUNNEL_GTP    = 0x01,
     TUNNEL_TEREDO = 0x02,
     TUNNEL_6IN4   = 0x04,
-    TUNNEL_4IN6   = 0x08
+    TUNNEL_4IN6   = 0x08,
+    TUNNEL_4IN4   = 0x10,
+    TUNNEL_6IN6   = 0x20,
+    TUNNEL_GRE    = 0x40,
+    TUNNEL_MPLS   = 0x80
 } TunnelFlags;
 
 typedef struct _VarNode
@@ -596,8 +601,6 @@ typedef struct _TargetBasedConfig
 
 } TargetBasedConfig;
 #endif
-
-typedef uint32_t PreprocEnableMask;
 
 typedef struct _SnortPolicy
 {
@@ -627,8 +630,8 @@ typedef struct _SnortPolicy
     uint32_t policy_flags;
 
     /* mask of preprocessors that have registered runtime process functions */
-    int preproc_bit_mask;
-    int preproc_meta_bit_mask;
+    PreprocEnableMask preproc_bit_mask;
+    PreprocEnableMask preproc_meta_bit_mask;
 
     int num_detects;
     //int detect_bit_mask;
@@ -665,6 +668,7 @@ typedef struct _SnortPolicy
 #ifdef INTEL_SOFT_CPM
 struct _IntelPmHandles;
 #endif
+struct _MandatoryEarlySessionCreator;
 typedef struct _SnortConfig
 {
     RunMode run_mode;
@@ -716,8 +720,8 @@ typedef struct _SnortConfig
 #endif
 
     /* -h and -B */
-    sfip_t homenet;
-    sfip_t obfuscation_net;
+    sfcidr_t homenet;
+    sfcidr_t obfuscation_net;
 
     /* config disable_decode_alerts
      * config enable_decode_oversized_alerts
@@ -933,7 +937,7 @@ typedef struct _SnortConfig
     char *output_dir;
     void *file_config;
     int disable_all_policies;
-    uint32_t reenabled_preprocessor_bits; /* flags for preprocessors to check, if all policies are disabled */
+    PreprocEnableMask reenabled_preprocessor_bits; /* flags for preprocessors to check, if all policies are disabled */
 #ifdef SIDE_CHANNEL
     SideChannelConfig side_channel_config;
 #endif
@@ -962,6 +966,10 @@ typedef struct _SnortConfig
 
     int internal_log_level;
     int suppress_config_log;
+    uint8_t disable_replace_opt;
+
+    struct _MandatoryEarlySessionCreator* mandatoryESCreators;
+    bool normalizer_set;
 } SnortConfig;
 
 /* struct to collect packet statistics */
@@ -1758,7 +1766,7 @@ static inline int ScIsPreprocEnabled(uint32_t preproc_id, tSfPolicyId policy_id)
     if (policy == NULL)
         return 0;
 
-    if (policy->preproc_bit_mask & (1 << preproc_id))
+    if (policy->preproc_bit_mask & (UINT64_C(1) << preproc_id))
         return 1;
 
     return 0;
@@ -1819,5 +1827,9 @@ static inline int ScSuppressConfigLog(void)
     return snort_conf->suppress_config_log;
 }
 
+static inline int ScDisableReplaceOpt(void)
+{
+    return snort_conf->disable_replace_opt;
+}
 #endif  /* __SNORT_H__ */
 
