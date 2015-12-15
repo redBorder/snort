@@ -187,7 +187,7 @@ static void PerfMonitorInit(struct _SnortConfig *sc, char *args)
     AddFuncToPreprocPostConfigList(sc, PerfMonitorOpenLogFiles, NULL);
 
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("perfmon", &perfmonStats, 0, &totalPerfStats);
+    RegisterPreprocessorProfile("perfmon", &perfmonStats, 0, &totalPerfStats, NULL);
 #endif
 }
 
@@ -366,7 +366,7 @@ static void ParsePerfMonitorArgs(struct _SnortConfig *sc, SFPERF *pconfig, char 
                     || *endptr || (errno == ERANGE))
             {
                 ParseError("Perfmonitor:  Invalid argument to \"%s\".  The "
-                        "value must be an integer between 0 and %d.",
+                        "value must be an integer between 0 and %u.",
                         PERFMON_ARG__PKT_COUNT, UINT32_MAX);
             }
 
@@ -596,8 +596,6 @@ static void ProcessPerfMonitor(Packet *p, void *context)
             sfBase.pkt_stats.pkts_recv = ps->hw_packets_received;
             sfBase.pkt_stats.pkts_drop = ps->hw_packets_dropped;
         }
-
-        SetSampleTime(perfmon_config, p);
 
         first = false;
     }

@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 
+#include "appInfoTable.h"
 #include "flow.h"
 #include "service_api.h"
 
@@ -91,13 +92,14 @@ typedef struct _SERVICE_TNS_MSG
 static int tns_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(tns_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &tns_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "tns",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -106,7 +108,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-SO_PUBLIC RNAServiceValidationModule tns_service_mod =
+SF_SO_PUBLIC tRNAServiceValidationModule tns_service_mod =
 {
     svc_name,
     &tns_init,
@@ -120,12 +122,12 @@ static tAppRegistryEntry appIdRegistry[] =
 
 static int tns_init(const InitServiceAPI * const init_api)
 {
-    init_api->RegisterPattern(&tns_validate, IPPROTO_TCP, (const uint8_t *) TNS_BANNER, TNS_BANNER_LEN, 2, svc_name);
+    init_api->RegisterPattern(&tns_validate, IPPROTO_TCP, (const uint8_t *) TNS_BANNER, TNS_BANNER_LEN, 2, svc_name, init_api->pAppidConfig);
 	unsigned i;
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&tns_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&tns_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -141,13 +143,13 @@ MakeRNAServiceValidationPrototype(tns_validate)
     if (dir != APP_ID_FROM_RESPONDER)
         goto inprocess;
 
-    ss = tns_service_mod.api->data_get(flowp);
+    ss = tns_service_mod.api->data_get(flowp, tns_service_mod.flow_data_index);
     if (!ss)
     {
         ss = calloc(1, sizeof(*ss));
         if (!ss)
             return SERVICE_ENOMEM;
-        if (tns_service_mod.api->data_add(flowp, ss, &free))
+        if (tns_service_mod.api->data_add(flowp, ss, tns_service_mod.flow_data_index, &free))
         {
             free(ss);
             return SERVICE_ENOMEM;
@@ -304,7 +306,7 @@ success:
         return SERVICE_SUCCESS;
 
 fail:
-        tns_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+        tns_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, tns_service_mod.flow_data_index, pConfig);
         return SERVICE_NOMATCH;
 
 }

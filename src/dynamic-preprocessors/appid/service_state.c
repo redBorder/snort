@@ -43,7 +43,7 @@
 static SFXHASH *serviceStateCache4;
 static SFXHASH *serviceStateCache6;
 
-#define SERVICE_STATE_CACHE_ROWS    65537
+#define SERVICE_STATE_CACHE_ROWS    65536
 
 static int AppIdServiceStateFree(void *key, void *data)
 {
@@ -59,7 +59,7 @@ static int AppIdServiceStateFree(void *key, void *data)
 
 int AppIdServiceStateInit(unsigned long memcap)
 {
-    serviceStateCache4 = sfxhash_new(-SERVICE_STATE_CACHE_ROWS,
+    serviceStateCache4 = sfxhash_new(SERVICE_STATE_CACHE_ROWS,
                              sizeof(AppIdServiceStateKey4),
                              sizeof(AppIdServiceIDState),
                              memcap >> 1,
@@ -72,7 +72,7 @@ int AppIdServiceStateInit(unsigned long memcap)
         _dpd.errMsg( "Failed to allocate a hash table");
         return -1;
     }
-    serviceStateCache6 = sfxhash_new(-SERVICE_STATE_CACHE_ROWS,
+    serviceStateCache6 = sfxhash_new(SERVICE_STATE_CACHE_ROWS,
                              sizeof(AppIdServiceStateKey6),
                              sizeof(AppIdServiceIDState),
                              memcap >> 1,
@@ -102,23 +102,25 @@ void AppIdServiceStateCleanup(void)
     }
 }
 
-void AppIdRemoveServiceIDState(snort_ip *ip, uint16_t proto, uint16_t port)
+void AppIdRemoveServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port, uint32_t level)
 {
     AppIdServiceStateKey k;
     SFXHASH *cache;
 
-    if (ip->family == AF_INET6)
+    if (sfaddr_family(ip) == AF_INET6)
     {
         k.key6.proto = proto;
         k.key6.port = port;
-        memcpy(k.key6.ip, ip->ip8, sizeof(k.key6.ip));
+        memcpy(k.key6.ip, sfaddr_get_ip6_ptr(ip), sizeof(k.key6.ip));
+        k.key6.level = level;
         cache = serviceStateCache6;
     }
     else
     {
         k.key4.proto = proto;
         k.key4.port = port;
-        k.key4.ip = ip->ip32[0];
+        k.key4.ip = sfaddr_get_ip4_value(ip);
+        k.key4.level = level;
         cache = serviceStateCache4;
     }
     if (sfxhash_remove(cache, &k) != SFXHASH_OK)
@@ -126,29 +128,31 @@ void AppIdRemoveServiceIDState(snort_ip *ip, uint16_t proto, uint16_t port)
         char ipstr[INET6_ADDRSTRLEN];
 
         ipstr[0] = 0;
-        inet_ntop(ip->family, (void *)ip->ip32, ipstr, sizeof(ipstr));
+        inet_ntop(sfaddr_family(ip), (void *)sfaddr_get_ptr(ip), ipstr, sizeof(ipstr));
         _dpd.errMsg("Failed to remove from hash: %s:%u:%u\n",ipstr, (unsigned)proto, (unsigned)port);
     }
 }
 
-AppIdServiceIDState* AppIdGetServiceIDState(snort_ip *ip, uint16_t proto, uint16_t port)
+AppIdServiceIDState* AppIdGetServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port, uint32_t level)
 {
     AppIdServiceStateKey k;
     SFXHASH *cache;
     AppIdServiceIDState* ss;
 
-    if (ip->family == AF_INET6)
+    if (sfaddr_family(ip) == AF_INET6)
     {
         k.key6.proto = proto;
         k.key6.port = port;
-        memcpy(k.key6.ip, ip->ip8, sizeof(k.key6.ip));
+        memcpy(k.key6.ip, sfaddr_get_ip6_ptr(ip), sizeof(k.key6.ip));
+        k.key6.level = level;
         cache = serviceStateCache6;
     }
     else
     {
         k.key4.proto = proto;
         k.key4.port = port;
-        k.key4.ip = ip->ip32[0];
+        k.key4.ip = sfaddr_get_ip4_value(ip);
+        k.key4.level = level;
         cache = serviceStateCache4;
     }
     ss = sfxhash_find(cache, &k);
@@ -157,8 +161,8 @@ AppIdServiceIDState* AppIdGetServiceIDState(snort_ip *ip, uint16_t proto, uint16
     char ipstr[INET6_ADDRSTRLEN];
 
     ipstr[0] = 0;
-    inet_ntop(ip->family, (void *)ip->ip32, ipstr, sizeof(ipstr));
-    _dpd.logMsg("Read from hash: %s:%u:%u %p %u %p\n",ipstr, (unsigned)proto, (unsigned)port, ss, ss ? ss->state:0, ss ? ss->svc:NULL);
+    inet_ntop(sfaddr_family(ip), (void *)sfaddr_get_ptr(ip), ipstr, sizeof(ipstr));
+    _dpd.logMsg("ServiceState: Read from hash: %s:%u:%u:%u %p %u %p\n",ipstr, (unsigned)proto, (unsigned)port, level, ss, ss ? ss->state:0, ss ? ss->svc:NULL);
 #endif
 
     if (ss && ss->svc && !ss->svc->ref_count)
@@ -170,40 +174,42 @@ AppIdServiceIDState* AppIdGetServiceIDState(snort_ip *ip, uint16_t proto, uint16
     return ss;
 }
 
-AppIdServiceIDState* AppIdAddServiceIDState(snort_ip *ip, uint16_t proto, uint16_t port)
+AppIdServiceIDState* AppIdAddServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port, uint32_t level)
 {
     AppIdServiceStateKey k;
     AppIdServiceIDState *ss;
     SFXHASH *cache;
     char ipstr[INET6_ADDRSTRLEN];
 
-    if (ip->family == AF_INET6)
+    if (sfaddr_family(ip) == AF_INET6)
     {
         k.key6.proto = proto;
         k.key6.port = port;
-        memcpy(k.key6.ip, ip->ip8, sizeof(k.key6.ip));
+        memcpy(k.key6.ip, sfaddr_get_ip6_ptr(ip), sizeof(k.key6.ip));
+        k.key6.level = level;
         cache = serviceStateCache6;
     }
     else
     {
         k.key4.proto = proto;
         k.key4.port = port;
-        k.key4.ip = ip->ip32[0];
+        k.key4.ip = sfaddr_get_ip4_value(ip);
+        k.key4.level = level;
         cache = serviceStateCache4;
     }
 #ifdef DEBUG_SERVICE_STATE
     ipstr[0] = 0;
-    inet_ntop(ip->family, (void *)ip->ip32, ipstr, sizeof(ipstr));
+    inet_ntop(sfaddr_family(ip), (void *)sfaddr_get_ptr(ip), ipstr, sizeof(ipstr));
 #endif
     if ((sfxhash_add_return_data_ptr(cache, &k, (void **)&ss) < 0) || !ss)
     {
         ipstr[0] = 0;
-        inet_ntop(ip->family, (void *)ip->ip32, ipstr, sizeof(ipstr));
-        _dpd.errMsg("Failed to add to hash: %s:%u:%u\n",ipstr, (unsigned)proto, (unsigned)port);
+        inet_ntop(sfaddr_family(ip), (void *)sfaddr_get_ptr(ip), ipstr, sizeof(ipstr));
+        _dpd.errMsg("ServiceState: Failed to add to hash: %s:%u:%u:%u\n",ipstr, (unsigned)proto, (unsigned)port, level);
         return NULL;
     }
 #ifdef DEBUG_SERVICE_STATE
-    _dpd.logMsg("Added to hash: %s:%u:%u %p\n",ipstr, (unsigned)proto, (unsigned)port, ss);
+    _dpd.logMsg("ServiceState: Added to hash: %s:%u:%u:%u %p\n",ipstr, (unsigned)proto, (unsigned)port, level, ss);
 #endif
     return ss;
 }

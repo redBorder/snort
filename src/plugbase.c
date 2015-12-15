@@ -979,7 +979,7 @@ PreprocEvalFuncNode * AddFuncToPreprocList(SnortConfig *sc, PreprocEvalFunc pp_e
     node->func = pp_eval_func;
     node->priority = priority;
     node->preproc_id = preproc_id;
-    node->preproc_bit = (1 << preproc_id);
+    node->preproc_bit = (UINT64_C(1) << preproc_id);
     node->proto_mask = proto_mask;
 
     p->num_preprocs++;
@@ -1088,7 +1088,7 @@ PreprocMetaEvalFuncNode * AddFuncToPreprocMetaEvalList(
     node->func = pp_meta_eval_func;
     node->priority = priority;
     node->preproc_id = preproc_id;
-    node->preproc_bit = (1 << preproc_id);
+    node->preproc_bit = (UINT64_C(1) << preproc_id);
 
     p->num_meta_preprocs++;
     p->preproc_meta_bit_mask |= node->preproc_bit;
@@ -1544,15 +1544,15 @@ void DisableAllPolicies(SnortConfig *sc)
     if (!sc->disable_all_policies)
     {
         sc->disable_all_policies = 1;
-        sc->reenabled_preprocessor_bits = (1 << PP_FRAG3);
-        sc->reenabled_preprocessor_bits |= (1 << PP_STREAM);
-        sc->reenabled_preprocessor_bits |= (1 << PP_PERFMONITOR);
+        sc->reenabled_preprocessor_bits = (UINT64_C(1) << PP_FRAG3);
+        sc->reenabled_preprocessor_bits |= (UINT64_C(1) << PP_STREAM);
+        sc->reenabled_preprocessor_bits |= (UINT64_C(1) << PP_PERFMONITOR);
     }
 }
 
 int ReenablePreprocBit(SnortConfig *sc, unsigned int preproc_id)
 {
-    sc->reenabled_preprocessor_bits |= (1 << preproc_id);
+    sc->reenabled_preprocessor_bits |= (UINT64_C(1) << preproc_id);
     return 0;
 }
 

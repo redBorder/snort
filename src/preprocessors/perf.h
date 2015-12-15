@@ -86,7 +86,6 @@ typedef struct _SFPERF
     int perf_flags;
     uint32_t pkt_cnt;
     int sample_interval;
-    time_t sample_time;
     char *file;
     FILE *fh;
     int base_reset;
@@ -116,6 +115,7 @@ void sfCloseFlowIPStatsFile(SFPERF *sfPerf);
 int sfRotateBaseStatsFile(SFPERF *sfPerf);
 int sfRotateFlowStatsFile(SFPERF *sfPerf);
 void sfPerformanceStats(SFPERF *, Packet *);
+void sfPerformanceStatsOOB(SFPERF *, time_t);
 void sfPerfStatsSummary(SFPERF *);
 void SetSampleTime(SFPERF *, Packet *);
 void InitPerfStats(SFPERF *sfPerf);

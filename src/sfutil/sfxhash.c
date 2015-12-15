@@ -178,25 +178,18 @@ int sfxhash_calcrows(int num)
   maxmem of 0 indicates no memory limits.
 
 */
-SFXHASH * sfxhash_new( int nrows, int keysize, int datasize, unsigned long maxmem,
+SFXHASH * sfxhash_new( unsigned nrows, int keysize, int datasize, unsigned long maxmem,
                        int anr_flag,
                        SFXHASH_FREE_FCN anrfree,
                        SFXHASH_FREE_FCN usrfree,
                        int recycle_flag )
 {
-    int       i;
+    unsigned int i;
     SFXHASH * h;
 
-    if( nrows > 0 ) /* make sure we have a prime number */
-    {
-        /* If nrows is not a power of two, need to find the
-         * next highest power of two */
-        nrows = sfxhash_nearest_powerof2(nrows);
-    }
-    else   /* use the magnitude of nrows as is */
-    {
-        nrows = -nrows;
-    }
+    /* If nrows is not a power of two, need to find the
+     * next highest power of two */
+    nrows = sfxhash_nearest_powerof2(nrows);
 
     /* Allocate the table structure from general memory */
     h = (SFXHASH*)calloc(1, sizeof(SFXHASH));
@@ -1255,7 +1248,18 @@ int sfxhash_add_return_data_ptr( SFXHASH * t, const void * key, void **data )
     return sfxhash_add_ex(t, key, NULL, data);
 }
 
-
+/*
+ * Calculate memcap size based on number of entries and per-entry cost
+ *
+ * @param num_entries number of entries
+ * @param entry_cost cost of a single entry
+ *
+ * @return memcap size
+ */
+unsigned sfxhash_calc_maxmem(unsigned num_entries, unsigned entry_cost)
+{
+	return num_entries * (entry_cost + sizeof(SFXHASH_NODE) + sizeof(long));
+}
 
 /*
  * -----------------------------------------------------------------------------------------

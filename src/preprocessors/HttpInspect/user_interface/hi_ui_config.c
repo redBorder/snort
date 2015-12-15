@@ -503,7 +503,7 @@ int hi_ui_config_set_profile_all(HTTPINSPECT_CONF *ServerConf,
 **  @retval HI_NON_FATAL_ERR server has already been added
 */
 int hi_ui_config_add_server(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
-                            sfip_t *ServerIP, HTTPINSPECT_CONF *ServerConf)
+                            sfcidr_t *ServerIP, HTTPINSPECT_CONF *ServerConf)
 {
     int iRet;
 

@@ -115,6 +115,10 @@ void *extra_data_config = NULL;
 static bool old_config_freed = false;
 
 /*  P R O T O T Y P E S  ********************************************/
+#ifdef MPLS
+static void updateMplsHeaders(Packet *, SessionControlBlock *);
+#endif
+
 static void StreamPolicyInitTcp(struct _SnortConfig *, char *);
 static void StreamPolicyInitUdp(struct _SnortConfig *, char *);
 static void StreamPolicyInitIcmp(struct _SnortConfig *, char *);
@@ -151,7 +155,7 @@ static int StreamCheckSessionAlert(void *ssnptr, Packet *p, uint32_t gid, uint32
 static int StreamUpdateSessionAlert(void *ssnptr, Packet *p, uint32_t gid, uint32_t sid,
         uint32_t event_id, uint32_t event_second);
 static char StreamSetReassembly(void *ssnptr, uint8_t flush_policy, char dir, char flags);
-static void StreamUpdateDirection( void * scbptr, char dir, snort_ip_p ip, uint16_t port );
+static void StreamUpdateDirection( void * scbptr, char dir, sfaddr_t* ip, uint16_t port );
 static char StreamGetReassemblyDirection(void *ssnptr);
 static char StreamGetReassemblyFlushPolicy(void *ssnptr, char dir);
 static char StreamIsStreamSequenced(void *ssnptr, char dir);
@@ -194,14 +198,16 @@ static bool StreamSetHandler(void* ssnptr, unsigned id, Stream_Event);
 static void StreamResetPolicy(void* ssnptr, int dir, uint16_t policy, uint16_t mss);
 static void StreamSetSessionDecrypted(void* ssnptr, bool enable);
 static bool StreamIsSessionDecrypted(void* ssnptr);
-static int StreamSetApplicationProtocolIdExpectedPreassignCallbackId( const Packet *ctrlPkt, snort_ip_p srcIP,
-        uint16_t srcPort, snort_ip_p      dstIP, uint16_t dstPort, uint8_t protocol, int16_t protoId,
-        uint32_t preprocId, void *protoData, void (*protoDataFreeFn)(void*), unsigned cbId, Stream_Event se);
+struct _ExpectNode;
+static int StreamSetApplicationProtocolIdExpectedPreassignCallbackId( const Packet *ctrlPkt, sfaddr_t* srcIP,
+        uint16_t srcPort, sfaddr_t* dstIP, uint16_t dstPort, uint8_t protocol, int16_t protoId,
+        uint32_t preprocId, void *protoData, void (*protoDataFreeFn)(void*), unsigned cbId, Stream_Event se,
+        struct _ExpectNode** packetExpectedNode);
 
 #if defined(FEAT_OPEN_APPID)
 static void SetApplicationId(void* ssnptr, int16_t serviceAppId, int16_t clientAppId,
         int16_t payloadAppId, int16_t miscAppId);
-static void GetApplicationId(void* ssnptr, int16_t *serviceAppId, int16_t *clientAppId, 
+static void GetApplicationId(void* ssnptr, int16_t *serviceAppId, int16_t *clientAppId,
         int16_t *payloadAppId, int16_t *miscAppId);
 static int RegisterHttpHeaderCallback (Http_Processor_Callback cb);
 #endif /* defined(FEAT_OPEN_APPID) */
@@ -252,7 +258,7 @@ StreamAPI s5api = {
     /* .register_reassembly_port = */ registerReassemblyPort,
     /* .register_reassembly_port = */ unregisterReassemblyPort,
     /* .expire_session = */ StreamForceSessionExpiration,
-    /* .register_event_handler = */ StreamRegisterHandler,                              
+    /* .register_event_handler = */ StreamRegisterHandler,
     /* .set_event_handler = */ StreamSetHandler,
     /* .set_reset_policy = */ StreamResetPolicy,
     /* .set_session_decrypted = */ StreamSetSessionDecrypted,
@@ -278,13 +284,13 @@ void SetupStream6(void)
     RegisterPreprocessor("stream5_icmp", StreamPolicyInitIcmp);
     RegisterPreprocessor("stream5_ip", StreamPolicyInitIp);
 #else
-    RegisterPreprocessor("stream5_tcp", StreamPolicyInitTcp, StreamTcpReload, 
+    RegisterPreprocessor("stream5_tcp", StreamPolicyInitTcp, StreamTcpReload,
             StreamReloadVerify, StreamReloadSwap, StreamReloadSwapFree);
-    RegisterPreprocessor("stream5_udp", StreamPolicyInitUdp, StreamUdpReload, 
+    RegisterPreprocessor("stream5_udp", StreamPolicyInitUdp, StreamUdpReload,
             StreamReloadVerify, StreamReloadSwap, StreamReloadSwapFree);
     RegisterPreprocessor("stream5_icmp", StreamPolicyInitIcmp, StreamIcmpReload,
             StreamReloadVerify, StreamReloadSwap, StreamReloadSwapFree);
-    RegisterPreprocessor("stream5_ip", StreamPolicyInitIp, StreamIpReload, 
+    RegisterPreprocessor("stream5_ip", StreamPolicyInitIp, StreamIpReload,
             StreamReloadVerify, StreamReloadSwap, StreamReloadSwapFree);
 #endif
 
@@ -296,7 +302,7 @@ void SetupStream6(void)
 
 // Initialize the configuration object for a stream preprocessor policy. If this is the first stream configuration
 // being parsed for this NAP policy then allocate the config context object that holds the config settings for all
-// the possible stream protocols. This function is called before each protocol specific configuration string is 
+// the possible stream protocols. This function is called before each protocol specific configuration string is
 // processed for each NAP policy defined.
 static StreamConfig *initStreamPolicyConfig( struct _SnortConfig *sc, bool reload_config )
 {
@@ -313,11 +319,11 @@ static StreamConfig *initStreamPolicyConfig( struct _SnortConfig *sc, bool reloa
         if( !reload_config )
         {
 #ifdef PERF_PROFILING
-            RegisterPreprocessorProfile( "s5", &s5PerfStats, 0, &totalPerfStats );
-            RegisterPreprocessorProfile( "s5tcp", &s5TcpPerfStats, 1, &s5PerfStats );
-            RegisterPreprocessorProfile( "s5udp", &s5UdpPerfStats, 1, &s5PerfStats );
-            RegisterPreprocessorProfile( "s5icmp", &s5IcmpPerfStats, 1, &s5PerfStats );
-            RegisterPreprocessorProfile( "s5ip", &s5IpPerfStats, 1, &s5PerfStats );
+            RegisterPreprocessorProfile( "s5", &s5PerfStats, 0, &totalPerfStats , NULL);
+            RegisterPreprocessorProfile( "s5tcp", &s5TcpPerfStats, 1, &s5PerfStats , NULL);
+            RegisterPreprocessorProfile( "s5udp", &s5UdpPerfStats, 1, &s5PerfStats , NULL);
+            RegisterPreprocessorProfile( "s5icmp", &s5IcmpPerfStats, 1, &s5PerfStats , NULL);
+            RegisterPreprocessorProfile( "s5ip", &s5IpPerfStats, 1, &s5PerfStats , NULL);
 #endif
 
             AddFuncToPreprocCleanExitList( StreamCleanExit, NULL, PP_STREAM6_PRIORITY, PP_STREAM );
@@ -334,7 +340,7 @@ static StreamConfig *initStreamPolicyConfig( struct _SnortConfig *sc, bool reloa
     // set this policy id as current and get pointer to the struct of pointers to the
     // protocol specific configuration pointers for this policy...
     // if this pointer is NULL then this is the first stream protocol conf file we are
-    // parsing for this policy, so allocate required memory 
+    // parsing for this policy, so allocate required memory
     sfPolicyUserPolicySet( stream_parsing_config, policy_id );
     pCurrentPolicyConfig = ( StreamConfig * ) sfPolicyUserDataGetCurrent( stream_parsing_config );
     if( pCurrentPolicyConfig == NULL )
@@ -372,8 +378,8 @@ static inline tSfPolicyUserContextId getStreamConfigContext( bool parsing )
 }
 
 // return pointer to Stream configuration for the specified policy.  If parsing is
-// true return pointer to config struct the policy is being parsed into, otherwise pointer 
-// to the currently active config 
+// true return pointer to config struct the policy is being parsed into, otherwise pointer
+// to the currently active config
 StreamConfig *getStreamPolicyConfig( tSfPolicyId policy_id, bool parsing )
 {
     tSfPolicyUserContextId ctx;
@@ -695,9 +701,45 @@ static void StreamPrintStats(int exiting)
 
 static void checkOnewayStatus( uint32_t protocol, SessionControlBlock *scb )
 {
-    if( scb->in_oneway_list && scb->session_established ) 
+    if( scb->in_oneway_list && scb->session_established )
         session_api->remove_session_from_oneway_list( protocol, scb );
 }
+
+static void updateMplsHeaders(Packet *p, SessionControlBlock *scb )
+{
+    uint8_t layerIndex;
+    uint32_t direction = session_api->get_packet_direction(p);
+
+    if(direction == PKT_FROM_CLIENT && !(scb->clientMplsHeader->start))
+    {
+        for(layerIndex=0; layerIndex < p->next_layer; layerIndex++)
+        {
+             if( p->layers[layerIndex].proto == PROTO_MPLS && p->layers[layerIndex].start != NULL )
+             {
+                   scb->clientMplsHeader->length = p->layers[layerIndex].length;
+                   scb->clientMplsHeader->start  = (uint8_t*)SnortMalloc(scb->clientMplsHeader->length);
+                   memcpy(scb->clientMplsHeader->start,p->layers[layerIndex].start,scb->clientMplsHeader->length);
+                   break;
+             }
+        }
+    }
+    else if ( direction == PKT_FROM_SERVER && !(scb->serverMplsHeader->start))
+    {
+        for(layerIndex=0; layerIndex < p->next_layer; layerIndex++)
+        {
+             if( p->layers[layerIndex].proto == PROTO_MPLS && p->layers[layerIndex].start != NULL )
+             {
+                   scb->serverMplsHeader->length = p->layers[layerIndex].length;
+                   scb->serverMplsHeader->start  = (uint8_t*)SnortMalloc(scb->serverMplsHeader->length);
+                   memcpy(scb->serverMplsHeader->start,p->layers[layerIndex].start, scb->serverMplsHeader->length);
+                   break;
+             }
+        }
+    }
+    else
+        return;
+}
+
 
 /*
  * MAIN ENTRY POINT
@@ -740,6 +782,13 @@ void StreamProcess(Packet *p, void *context)
             return;
         }
     }
+#ifdef MPLS
+   if(scb->clientMplsHeader != NULL && scb->serverMplsHeader != NULL )
+   {
+        if(!(scb->clientMplsHeader->start) || !(scb->serverMplsHeader->start))
+            updateMplsHeaders(p,scb);
+   }
+#endif
 
     PREPROC_PROFILE_START(s5PerfStats);
      /* Call individual TCP/UDP/ICMP/IP processing, per GET_IPH_PROTO(p) */
@@ -1048,7 +1097,7 @@ static int StreamGetStreamSegments(
     return GetTcpStreamSegments(p, ssn, callback, userdata);
 }
 
-static void StreamUpdateDirection( void * scbptr, char dir, snort_ip_p ip, uint16_t port )
+static void StreamUpdateDirection( void * scbptr, char dir, sfaddr_t* ip, uint16_t port )
 {
     SessionControlBlock *scb = (SessionControlBlock *)scbptr;
 
@@ -1482,7 +1531,7 @@ static void registerReassemblyPort( char *network, uint16_t port, int reassembly
 
 static void unregisterReassemblyPort( char *network, uint16_t port, int reassembly_direction )
 {
-    unregisterPortForReassembly( network, port, reassembly_direction ); 
+    unregisterPortForReassembly( network, port, reassembly_direction );
 }
 
 #define CB_MAX 32
@@ -1530,7 +1579,7 @@ static void SetApplicationId(void* ssnptr, int16_t serviceAppId, int16_t clientA
     scb->app_protocol_id[APP_PROTOID_MISC] = miscAppId;
 }
 
-static void GetApplicationId(void* ssnptr, int16_t *serviceAppId, int16_t *clientAppId, 
+static void GetApplicationId(void* ssnptr, int16_t *serviceAppId, int16_t *clientAppId,
         int16_t *payloadAppId, int16_t *miscAppId)
 {
     SessionControlBlock *scb = (SessionControlBlock *)ssnptr;
@@ -1572,6 +1621,11 @@ void CallHttpHeaderProcessors(Packet* p, HttpParsedHeaders * const headers)
         http_header_processor_cb[id](p, headers);
     }
 }
+
+bool IsAnybodyRegisteredForHttpHeader(void)
+{
+    return ((http_header_processor_cb_idx - 1) > 0);
+}
 #endif /* defined(FEAT_OPEN_APPID) */
 
 #define SERVICE_EVENT_SUBSCRIBER_MAX 10
@@ -1583,7 +1637,7 @@ static bool serviceEventSubscribe(unsigned int preprocId, ServiceEventType event
     unsigned i;
     ServiceEventNotifierFunc *notifierPtr;
 
-    if (preprocId >= PP_MAX || eventType >= SERVICE_EVENT_TYPE_MAX) 
+    if (preprocId >= PP_MAX || eventType >= SERVICE_EVENT_TYPE_MAX)
         return false;
 
     notifierPtr = serviceEventRegistry[preprocId][eventType];
@@ -1606,7 +1660,7 @@ static bool serviceEventPublish(unsigned int preprocId, void *ssnptr, ServiceEve
     unsigned i;
     ServiceEventNotifierFunc *notifierPtr;
 
-    if (preprocId >= PP_MAX || eventType >= SERVICE_EVENT_TYPE_MAX) 
+    if (preprocId >= PP_MAX || eventType >= SERVICE_EVENT_TYPE_MAX)
         return false;
 
     notifierPtr = serviceEventRegistry[preprocId][eventType];
@@ -1628,14 +1682,16 @@ void StreamCallHandler( Packet* p, unsigned id )
     stream_cb[ id ]( p );
 }
 
-static int StreamSetApplicationProtocolIdExpectedPreassignCallbackId( const Packet *ctrlPkt, 
-        snort_ip_p srcIP, uint16_t srcPort, snort_ip_p dstIP, uint16_t dstPort,
+static int StreamSetApplicationProtocolIdExpectedPreassignCallbackId( const Packet *ctrlPkt,
+        sfaddr_t* srcIP, uint16_t srcPort, sfaddr_t* dstIP, uint16_t dstPort,
         uint8_t protocol, int16_t protoId, uint32_t preprocId, void *protoData,
-        void ( *protoDataFreeFn )( void * ), unsigned cbId, Stream_Event se)
+        void ( *protoDataFreeFn )( void * ), unsigned cbId, Stream_Event se,
+        struct _ExpectNode** packetExpectedNode)
 {
     return StreamExpectAddChannelPreassignCallback(ctrlPkt, srcIP, srcPort, dstIP, dstPort,
             SSN_DIR_BOTH, 0, protocol, STREAM_EXPECTED_CHANNEL_TIMEOUT,
-            protoId, preprocId, protoData, protoDataFreeFn, cbId, se);
+            protoId, preprocId, protoData, protoDataFreeFn, cbId, se,
+            packetExpectedNode);
 }
 
 #ifdef SNORT_RELOAD
@@ -1758,8 +1814,8 @@ static void *StreamReloadSwap( struct _SnortConfig *sc, void *swap_config )
     sfPolicyUserDataIterate( sc, old_config, StreamReloadSwapPolicy );
     if( sfPolicyUserPolicyGetActive( old_config ) == 0 )
         return old_config;
-   
-    // still some active sessions with ref to old config... 
+
+    // still some active sessions with ref to old config...
     return NULL;
 }
 

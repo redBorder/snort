@@ -93,7 +93,7 @@ typedef struct _FILE_MESSAGE_HEADER
 static int file_agent_save_file (FileInfo *, char *);
 static int file_agent_send_file (FileInfo *);
 #ifdef HAVE_S3FILE
-static int file_agent_send_s3(FileInspectConf* conf,const FileInfo *);
+static int file_agent_send_s3(const FileInfo *,struct s3_info*);
 #endif
 static FileInfo* file_agent_get_file(void);
 static FileInfo *file_agent_finish_file(void);
@@ -177,8 +177,13 @@ static void file_agent_send_data(int socket_fd, const uint8_t *resp,
 }
 
 /* Process all the files in the file queue*/
+#ifdef HAVE_S3FILE
 static inline void file_agent_process_files(CircularBuffer *file_list,
-        FileInspectConf* conf )
+        char *capture_dir, char *hostname, struct s3_info *s3)
+#else
+static inline void file_agent_process_files(CircularBuffer *file_list,
+        char *capture_dir, char *hostname)
+#endif
 {
     while (!cbuffer_is_empty(file_list))
     {
@@ -188,15 +193,15 @@ static inline void file_agent_process_files(CircularBuffer *file_list,
         if (file && file->sha256)
         {
             /* Save to disk */
-            if (conf->capture_dir)
-                file_agent_save_file(file, conf->capture_dir);
+            if (capture_dir)
+                file_agent_save_file(file, capture_dir);
             /* Send to other host */
-            if (conf->hostname)
+            if (hostname)
                 file_agent_send_file(file);
 #ifdef HAVE_S3FILE
             /* Send to S3 */
-            if (conf->s3.cluster) {
-                file_agent_send_s3(conf, file);
+            if (s3 && s3->cluster) {
+                file_agent_send_s3(file,s3);
             }
 #endif
             /* Default, memory only */
@@ -217,6 +222,14 @@ static inline void file_agent_process_files(CircularBuffer *file_list,
 static void* FileCaptureThread(void *arg)
 {
     FileInspectConf* conf = (FileInspectConf*) arg;
+    char *capture_dir = NULL;
+    char *hostname = NULL;
+#ifdef HAVE_S3FILE
+    struct s3_info s3 = {
+        .bucket = NULL, .cluster = NULL,
+        .access_key = NULL, .secret_key = NULL,
+    };
+#endif
 
 #if defined(LINUX) && defined(SYS_gettid)
     capture_thread_pid =  syscall(SYS_gettid);
@@ -228,9 +241,28 @@ static void* FileCaptureThread(void *arg)
 
     capture_disk_avaiable = conf->capture_disk_size<<20;
 
+    if (conf->capture_dir)
+        capture_dir = strdup(conf->capture_dir);
+    if (conf->hostname)
+        hostname = strdup(conf->hostname);
+#ifdef HAVE_S3FILE
+    if (conf->s3.bucket)
+        s3.bucket = strdup(conf->s3.bucket);
+    if (conf->s3.cluster)
+        s3.cluster = strdup(conf->s3.cluster);
+    if (conf->s3.access_key)
+        s3.access_key = strdup(conf->s3.access_key);
+    if (conf->s3.secret_key)
+        s3.secret_key = strdup(conf->s3.secret_key);
+#endif
+
     while(1)
     {
-        file_agent_process_files(file_list, conf);
+#ifdef HAVE_S3FILE
+        file_agent_process_files(file_list, capture_dir, hostname, &s3);
+#else
+        file_agent_process_files(file_list, capture_dir, hostname);
+#endif
 
         if (stop_file_capturing)
             break;
@@ -241,6 +273,10 @@ static void* FileCaptureThread(void *arg)
         pthread_mutex_unlock(&file_list_mutex);
     }
 
+    if (conf->capture_dir)
+        free(capture_dir);
+    if (conf->hostname)
+        free(hostname);
     capture_thread_running = false;
     return NULL;
 }
@@ -264,19 +300,9 @@ static SFXHASH * hash_table_s3_cache_new(const int rows,const size_t mem_m)
     return hts3cache;
 }
 
-static void file_agent_init0() {
-    FileInspectConf *conf = sfPolicyUserDataGetDefault(file_config);
-    file_agent_init(conf);
-}
-
-/* Add another thread for file capture to disk or network
- * When settings are changed, snort must be restarted to get it applied
- */
-void file_agent_init(FileInspectConf* conf)
+void file_agent_init(void *config)
 {
-    int rval;
-    const struct timespec thread_sleep = { 0, 100 };
-    sigset_t mask;
+    FileInspectConf* conf = (FileInspectConf *)config;
 
     /*Need to check configuration to decide whether to enable them*/
 
@@ -301,6 +327,18 @@ void file_agent_init(FileInspectConf* conf)
     {
         file_agent_init_socket(conf->hostname, conf->portno);
     }
+}
+
+/* Add another thread for file capture to disk or network
+ * When settings are changed, snort must be restarted to get it applied
+ */
+void file_agent_thread_init(struct _SnortConfig *sc, void *config)
+{
+    int rval;
+    const struct timespec thread_sleep = { 0, 100 };
+    sigset_t mask;
+    FileInspectConf* conf = (FileInspectConf *)config;
+
     /* Spin off the file capture handler thread. */
     sigemptyset(&mask);
     sigaddset(&mask, SIGTERM);
@@ -749,12 +787,11 @@ static void str_tolower(char *str,size_t str_len) {
         *str = tolower(*str);
 }
 
-static int file_agent_send_s3(FileInspectConf* conf,const FileInfo *file) {
+static int file_agent_send_s3(const FileInfo *file,struct s3_info *s3) {
     char sha256[SHA256_HASH_SIZE];
     char fsha[FILE_NAME_LEN];
     char path[FILE_NAME_LEN];
 
-    const struct s3_info *s3 = &conf->s3;
     struct s3_transference transference;
     memset(&transference,0,sizeof(transference));
     transference.file_mem = file->file_mem;

@@ -439,7 +439,7 @@ int sfthreshold_create(struct _SnortConfig *sc, ThresholdConfig *thd_config, THD
 */
 int sfthreshold_test(
     unsigned gen_id, unsigned  sig_id,
-    snort_ip_p sip, snort_ip_p dip,
+    sfaddr_t* sip, sfaddr_t* dip,
     long curtime )
 {
     if ((snort_conf->threshold_config == NULL) ||

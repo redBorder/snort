@@ -187,7 +187,7 @@ static void DNSInit( struct _SnortConfig *sc, char* argp )
         _dpd.addPreprocExit(DNSCleanExit, NULL, PRIORITY_LAST, PP_DNS);
 
 #ifdef PERF_PROFILING
-        _dpd.addPreprocProfileFunc("dns", (void *)&dnsPerfStats, 0, _dpd.totalPerfStats);
+        _dpd.addPreprocProfileFunc("dns", (void *)&dnsPerfStats, 0, _dpd.totalPerfStats, NULL);
 #endif
 
 #ifdef TARGET_BASED

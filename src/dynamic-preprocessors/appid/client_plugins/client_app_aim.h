@@ -24,7 +24,7 @@
 
 #include "client_app_api.h"
 
-extern RNAClientAppModule aim_client_mod;
+extern tRNAClientAppModule aim_client_mod;
 
 #endif  /* __CLIENT_APP_AIM_H__ */
 

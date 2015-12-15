@@ -86,7 +86,7 @@ SessionCache *proto_session_caches[ SESSION_PROTO_MAX ];
 
 MemPool sessionFlowMempool;
 
-uint32_t appHandlerDispatchMask[ INT16_MAX ];
+static PreprocEnableMask appHandlerDispatchMask[ INT16_MAX ];
 
 /*  P R O T O T Y P E S  ********************************************/
 void initializeSessionPreproc(struct _SnortConfig *, char *);
@@ -111,10 +111,15 @@ static void freeSessionConfiguration( void * );
 static void PrintSessionKey(SessionKey *);
 #endif
 
+#ifdef MPLS
+static void initMplsHeaders(SessionControlBlock*);
+static void freeMplsHeaders(SessionControlBlock*);
+#endif
+
 static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size, SessionCleanup clean_fcn);
 static void *getSessionControlBlock(void *, Packet *, SessionKey *);
 static void populateSessionKey(Packet *p, SessionKey *key);
-static int initSessionKeyFromPktHeader( snort_ip_p srcIP, uint16_t srcPort, snort_ip_p dstIP,
+static int initSessionKeyFromPktHeader( sfaddr_t* srcIP, uint16_t srcPort, sfaddr_t* dstIP,
         uint16_t dstPort, char proto, uint16_t vlan,
         uint32_t mplsId, uint16_t addressSpaceId, SessionKey *key);
 static void *getSessionControlBlockFromKey(void *, const SessionKey *);
@@ -122,6 +127,7 @@ static void *createSession(void *, Packet *, const SessionKey * );
 static bool isSessionVerified( void * );
 static void removeSessionFromProtoOneWayList(uint32_t proto, void *scb);
 static int deleteSession(void *, void *, char *reason);
+static int deleteSessionByKey(void *, char *reason);
 static void printSessionCache(void *);
 static int deleteSessionCache(uint32_t protocol);
 static int purgeSessionCache(void *);
@@ -140,8 +146,10 @@ static int isProtocolTrackingEnabled( IpProto proto );
 static uint32_t getPacketDirection( Packet *p );
 static void disableInspection(void *scbptr, Packet *p);
 static void stopInspection( void * scbptr, Packet *p, char dir, int32_t bytes, int response );
-static int ignoreChannel( const Packet *ctrlPkt, snort_ip_p srcIP, uint16_t srcPort, snort_ip_p dstIP,
-        uint16_t dstPort, uint8_t protocol, uint32_t preprocId, char direction, char flags);
+struct _ExpectNode;
+static int ignoreChannel( const Packet *ctrlPkt, sfaddr_t* srcIP, uint16_t srcPort, sfaddr_t* dstIP,
+        uint16_t dstPort, uint8_t protocol, uint32_t preprocId, char direction, char flags,
+        struct _ExpectNode** packetExpectedNode);
 static int getIgnoreDirection( void *scbptr );
 static int setIgnoreDirection( void *scbptr, int );
 static void resumeInspection( void *scbptr, char dir );
@@ -150,7 +158,7 @@ static int setApplicationData( void *scbptr, uint32_t protocol, void *data, Stre
 static void *getApplicationData( void *scbptr, uint32_t protocol );
 static StreamSessionKey * getSessionKeyFromPacket( Packet *p );
 static void * getApplicationDataFromSessionKey( const StreamSessionKey *key, uint32_t protocol);
-static void *getApplicationDataFromIpPort( snort_ip_p srcIP, uint16_t srcPort, snort_ip_p dstIP,
+static void *getApplicationDataFromIpPort( sfaddr_t* srcIP, uint16_t srcPort, sfaddr_t* dstIP,
         uint16_t dstPort, char ip_protocol, uint16_t vlan,
         uint32_t mplsId, uint16_t addressSpaceId, uint32_t protocol );
 static void setSessionExpirationTime(Packet *p, void *scbptr, uint32_t timeout);
@@ -160,20 +168,21 @@ static uint32_t getSessionFlags( void *scbptr );
 static tSfPolicyId getSessionPolicy(void *scbptr, int policy_type);
 static void setSessionPolicy(void *scbptr, int policy_type, tSfPolicyId id);
 static StreamFlowData *getFlowData( Packet *p );
-static int setAppProtocolIdExpected( const Packet *ctrlPkt, snort_ip_p srcIP, uint16_t srcPort, snort_ip_p dstIP,
+static int setAppProtocolIdExpected( const Packet *ctrlPkt, sfaddr_t* srcIP, uint16_t srcPort, sfaddr_t* dstIP,
         uint16_t dstPort, uint8_t protocol, int16_t protoId, uint32_t preprocId,
-        void* protoData, void (*protoDataFreeFn)(void*));
+        void* protoData, void (*protoDataFreeFn)(void*),
+        struct _ExpectNode** packetExpectedNode);
 #ifdef TARGET_BASED
 static void registerApplicationHandler( uint32_t preproc_id, int16_t app_id );
 static int16_t getAppProtocolId( void *scbptr );
 static int16_t setAppProtocolId( void *scbptr, int16_t id );
-static snort_ip_p getSessionIpAddress( void *scbptr, uint32_t direction );
+static sfaddr_t* getSessionIpAddress( void *scbptr, uint32_t direction );
 static void getSessionPorts( void *scbptr, uint16_t *client_port, uint16_t *server_port );
 #endif
 
 static uint16_t getPreprocessorStatusBit( void );
 static void getMaxSessions(tSfPolicyId policyId, StreamSessionLimits* limits);
-static void *getSessionHandleFromIpPort( snort_ip_p srcIP, uint16_t srcPort, snort_ip_p dstIP,
+static void *getSessionHandleFromIpPort( sfaddr_t* srcIP, uint16_t srcPort, sfaddr_t* dstIP,
         uint16_t dstPort, char ip_protocol, uint16_t vlan,
         uint32_t mplsId, uint16_t addressSpaceId );
 static const StreamSessionKey *getKeyFromSession(const void *scbptr);
@@ -191,7 +200,6 @@ static void enablePreprocAllPortsAllPolicies( SnortConfig *sc, uint32_t preproc_
 static bool isPreprocEnabledForPort( uint32_t preproc_id, uint16_t port );
 static void registerNapSelector( nap_selector nap_selector_func );
 
-
 SessionAPI session_api_dispatch_table = {
     /* .version = */ SESSION_API_VERSION1,
     /* .init_session_cache =  */  initSessionCache,
@@ -203,6 +211,7 @@ SessionAPI session_api_dispatch_table = {
     /* .is_session_verified = */ isSessionVerified,
     /* .remove_session_from_oneway_list = */ removeSessionFromProtoOneWayList,
     /* .delete_session = */ deleteSession,
+    /* .delete_session_by_key = */ deleteSessionByKey,
     /* .print_session_cache = */ printSessionCache,
     /* .delete_session_cache = */ deleteSessionCache,
     /* .purge_session_cache = */ purgeSessionCache,
@@ -264,7 +273,11 @@ SessionAPI session_api_dispatch_table = {
     /* .enable_preproc_all_ports = */ enablePreprocAllPorts,
     /* .enable_preproc_all_ports_all_policies = */ enablePreprocAllPortsAllPolicies,
     /* .is_preproc_enabled_for_port = */  isPreprocEnabledForPort,
-    /* .register_nap_selector =  */   registerNapSelector
+    /* .register_nap_selector =  */   registerNapSelector,
+    /* .register_mandatory_early_session_creator = */ registerMandatoryEarlySessionCreator,
+    /* .get_application_data_from_expected_node = */ getApplicationDataFromExpectedNode,
+    /* .add_application_data_to_expected_node = */ addApplicationDataToExpectedNode,
+    /* .get_next_expected_node = */ getNextExpectedNode,
 };
 
 
@@ -284,7 +297,7 @@ void SetupSessionManager(void)
             freeSessionConfiguration);
 
 # ifdef ENABLE_HA
-    RegisterPreprocessor("stream5_ha", 
+    RegisterPreprocessor("stream5_ha",
             SessionHAInit,
             SessionHAReload,
             SessionVerifyHAConfig,
@@ -304,8 +317,8 @@ static void selectRuntimePolicy( Packet *p, bool client_packet )
     tSfPolicyId id;
     int vlanId = ( p->vh ) ? VTH_VLAN( p->vh ) : -1;
 
-    snort_ip_p srcIp = ( p->iph ) ? GET_SRC_IP( p ) : ( snort_ip_p ) 0;
-    snort_ip_p dstIp = ( p->iph ) ? GET_DST_IP( p ) : ( snort_ip_p ) 0;
+    sfaddr_t* srcIp = ( p->iph ) ? GET_SRC_IP( p ) : NULL;
+    sfaddr_t* dstIp = ( p->iph ) ? GET_DST_IP( p ) : NULL;
 
     //set policy id for this packet
     id = sfGetApplicablePolicyId( snort_conf->policy_config, vlanId, srcIp, dstIp );
@@ -320,12 +333,12 @@ SessionConfiguration *getSessionConfiguration( bool reload_config )
     if( reload_config )
         return session_reload_configuration;
     else
-        return session_configuration; 
+        return session_configuration;
 }
 
 static SessionConfiguration *initSessionConfiguration( void )
 {
-    SessionConfiguration *sessionConfig = 
+    SessionConfiguration *sessionConfig =
         (SessionConfiguration *)SnortAlloc(sizeof(SessionConfiguration));
 
     sessionConfig->track_tcp_sessions = STREAM_TRACK_YES;
@@ -373,9 +386,9 @@ void initializeSessionPreproc(struct _SnortConfig *sc, char *args)
         session_configuration = initSessionConfiguration( );
 
 #ifdef PERF_PROFILING
-        RegisterPreprocessorProfile("session_manager", &sessionPerfStats, 0, &totalPerfStats);
+        RegisterPreprocessorProfile("session_manager", &sessionPerfStats, 0, &totalPerfStats, NULL);
 # ifdef ENABLE_HA
-        RegisterPreprocessorProfile("session_ha", &sessionHAPerfStats, 1, &sessionPerfStats);
+        RegisterPreprocessorProfile("session_ha", &sessionHAPerfStats, 1, &sessionPerfStats, NULL);
 # endif
 #endif
 
@@ -399,7 +412,7 @@ void initializeSessionPreproc(struct _SnortConfig *sc, char *args)
                 (  session_configuration->track_udp_sessions == STREAM_TRACK_NO) &&
                 (  session_configuration->track_icmp_sessions == STREAM_TRACK_NO) &&
                 (  session_configuration->track_ip_sessions == STREAM_TRACK_NO))
-        {  
+        {
             FatalError("%s(%d) ==> Session enabled, but not configured to track "
                     "TCP, UDP, ICMP, or IP.\n", file_name, file_line);
         }
@@ -818,7 +831,7 @@ static void parseSessionConfiguration( SessionConfiguration *config, char *args 
             {
                 config->max_active_responses = (uint8_t)SnortStrtoulRange(stoks[1], &endPtr, 10, 0, STREAM_MAX_ACTIVE_RESPONSES_MAX);
             }
-            if ((!stoks[1] || (endPtr == &stoks[1][0])) || *endPtr || 
+            if ((!stoks[1] || (endPtr == &stoks[1][0])) || *endPtr ||
                     (config->max_active_responses > STREAM_MAX_ACTIVE_RESPONSES_MAX))
             {
                 FatalError("%s(%d) => 'max_active_responses %d' invalid: "
@@ -875,7 +888,7 @@ static void parseSessionConfiguration( SessionConfiguration *config, char *args 
             // TBD-EDM - breaks reg tests, enable after merge and fix tests
             WarningMessage("%s(%d) Session disable option is set...supported option but nothing useful can come of this.\n",
                     file_name, file_line);
-#endif 
+#endif
         }
         else
         {
@@ -945,10 +958,10 @@ static void exitSessionCleanly( int signal, void *foo )
 #ifdef ENABLE_HA
     SessionCleanHA();
 #endif
-    
-    /* free expected session data structures... */ 
+
+    /* free expected session data structures... */
     StreamExpectCleanup();
- 
+
     mempool_destroy( &sessionFlowMempool );
     freeSessionPlugins( );
     SessionFreeConfig( session_configuration );
@@ -968,17 +981,23 @@ static int verifySessionConfig( struct _SnortConfig *sc )
 #ifdef ENABLE_HA
     if( session_configuration->enable_ha )
     {
-        if( ( SessionVerifyHAConfig( sc, session_configuration->ha_config ) != 0 ) ) 
+        if( ( SessionVerifyHAConfig( sc, session_configuration->ha_config ) != 0 ) )
         {
             FatalError( "Session HA misconfigured.  Session preprocessor exiting\n" );
         }
     }
 #endif
 
-    total_sessions = session_configuration->max_tcp_sessions + session_configuration->max_udp_sessions +
-        session_configuration->max_ip_sessions + session_configuration->max_icmp_sessions; 
+    if(session_configuration->track_tcp_sessions)
+       total_sessions += session_configuration->max_tcp_sessions;
+    if(session_configuration->track_udp_sessions)
+       total_sessions += session_configuration->max_udp_sessions;
+    if(session_configuration->track_icmp_sessions)
+       total_sessions += session_configuration->max_icmp_sessions;
+    if(session_configuration->track_ip_sessions)
+       total_sessions += session_configuration->max_ip_sessions;
 
-    if( total_sessions == 0 )
+    if( total_sessions == 0 && !session_configuration->disabled)
     {
         FatalError( "%s(%d) All protocols configured with 0 as max session count.\n", __FILE__, __LINE__ );
     }
@@ -998,13 +1017,20 @@ static int verifySessionConfig( struct _SnortConfig *sc )
         obj_size += ( sizeof( long ) - ( obj_size % sizeof( long ) ) );
     }
 
-    if( mempool_init( &sessionFlowMempool, total_sessions, obj_size ) != 0 )
+    if (total_sessions != 0)
     {
-        FatalError( "%s(%d) Could not initialize flow bits memory pool.\n", __FILE__, __LINE__ );
+        if( mempool_init( &sessionFlowMempool, total_sessions, obj_size ) != 0 )
+        {
+            FatalError( "%s(%d) Could not initialize flow bits memory pool.\n", __FILE__, __LINE__ );
+        }
     }
 
     session_configuration->numSnortPolicies = sc->num_policies_allocated;
     session_configuration->policy_ref_count = calloc( sc->num_policies_allocated, sizeof( uint32_t ) );
+    if( !session_configuration->policy_ref_count )
+    {
+        FatalError( "%s(%d) Could not allocate policy ref count.\n", __FILE__, __LINE__ );
+    }
 
     return 0;
 }
@@ -1038,7 +1064,7 @@ static void printSessionStatistics( int exiting )
 #endif
 }
 
-static void initPreprocDispatchList(  Packet *p ) 
+static void initPreprocDispatchList(  Packet *p )
 {
     PreprocEvalFuncNode *ppn;
     SnortPolicy *policy = snort_conf->targeted_policies[ getNapRuntimePolicy() ];
@@ -1046,7 +1072,7 @@ static void initPreprocDispatchList(  Packet *p )
     // set initial post session preproc enabled for the policy selected for
     // this session
     ppn = policy->preproc_eval_funcs;
-    while( ppn != NULL && ppn->priority <= PP_SESSION_PRIORITY ) 
+    while( ppn != NULL && ppn->priority <= PP_SESSION_PRIORITY )
         ppn = ppn->next;
 
     p->cur_pp = ppn;
@@ -1164,7 +1190,7 @@ void removeFromOneWaySessionList( SessionCache *session_cache, SessionControlBlo
     scb->ows_next = NULL;
     scb->ows_prev = NULL;
 
-    // set scb state to not in oneway list and decrement count of sessions 
+    // set scb state to not in oneway list and decrement count of sessions
     // in the oneway list
     scb->in_oneway_list = false;
     session_cache->ows_list.num_sessions--;
@@ -1179,26 +1205,34 @@ static void decrementPolicySessionRefCount( SessionControlBlock *scb )
         return;
 #endif
 
-    scb->session_config->policy_ref_count[ scb->napPolicyId ]--;
-    if( scb->session_config != session_configuration )
+    if( scb->napPolicyId < scb->session_config->numSnortPolicies )
     {
-        uint32_t i;
-        bool no_refs = true;
+        scb->session_config->policy_ref_count[ scb->napPolicyId ]--;
 
-        for( i = 0; i < scb->session_config->numSnortPolicies; i++ )
-            if( scb->session_config->policy_ref_count[ i ] > 0 )
-            {
-                no_refs = false;    
-               break;
-            }
+        if( scb->session_config != session_configuration )
+        {
+            uint32_t i;
+            bool no_refs = true;
 
-       if( no_refs )
-           SessionFreeConfig( scb->session_config );
+            for( i = 0; i < scb->session_config->numSnortPolicies; i++ )
+                if( scb->session_config->policy_ref_count[ i ] > 0 )
+                {
+                    no_refs = false;
+                   break;
+                }
+
+           if( no_refs )
+               SessionFreeConfig( scb->session_config );
+        }
+    }
+    else
+    {
+        WarningMessage("%s(%d) NAP Policy ID is UNBOUND or not valid: %u", file_name, file_line, scb->napPolicyId );
     }
 }
 
 void initializePacketPolicy( Packet *p, SessionControlBlock *scb )
-{   
+{
     SnortPolicy *policy;
 
     // opensource policy selector will set to true, product does not
@@ -1214,7 +1248,7 @@ void initializePacketPolicy( Packet *p, SessionControlBlock *scb )
             scb->initial_pp = NULL;
             scb->stream_config = NULL;
             scb->proto_policy = NULL;
-            scb->napPolicyId = SF_POLICY_UNBOUND; 
+            scb->napPolicyId = SF_POLICY_UNBOUND;
             scb->ipsPolicyId = SF_POLICY_UNBOUND;
             scb->session_config = session_configuration;
         }
@@ -1224,12 +1258,12 @@ void initializePacketPolicy( Packet *p, SessionControlBlock *scb )
          */
         if ( scb->napPolicyId == SF_POLICY_UNBOUND )
         {
-            getSessionPlugins()->select_session_nap( p, 
+            getSessionPlugins()->select_session_nap( p,
                                                      ( getPacketDirection( p ) & PKT_FROM_CLIENT ) ? true : false );
             scb->napPolicyId = getNapRuntimePolicy();
             session_configuration->policy_ref_count[ scb->napPolicyId ]++;
             scb->ipsPolicyId = getIpsRuntimePolicy();
-           
+
             // set the preproc enable mask for pps registered to handle traffic on this port
             policy = snort_conf->targeted_policies[ scb->napPolicyId ];
             scb->enabled_pps = policy->pp_enabled[ ntohs(scb->server_port) ];
@@ -1245,8 +1279,8 @@ void initializePacketPolicy( Packet *p, SessionControlBlock *scb )
             p->ips_os_selected = scb->ips_os_selected;
         }
 
-        initPreprocDispatchList( p ); 
-        EnablePreprocessors( p, scb->enabled_pps ); 
+        initPreprocDispatchList( p );
+        EnablePreprocessors( p, scb->enabled_pps );
 
         // save current ha state for ha processing after packet processing has completed
         scb->cached_ha_state = scb->ha_state;
@@ -1254,18 +1288,35 @@ void initializePacketPolicy( Packet *p, SessionControlBlock *scb )
     else
     {
         // no session, select policy from packet network parameters
-        getSessionPlugins()->select_session_nap( p, 
+        getSessionPlugins()->select_session_nap( p,
                                                  ( getPacketDirection( p ) & PKT_FROM_CLIENT ) ? true : false );
-        initPreprocDispatchList( p ); 
+        initPreprocDispatchList( p );
         policy = snort_conf->targeted_policies[ getNapRuntimePolicy() ];
-        EnablePreprocessors( p, policy->pp_enabled[ p->dp ] | policy->pp_enabled[ p->sp ] ); 
+        EnablePreprocessors( p, policy->pp_enabled[ p->dp ] | policy->pp_enabled[ p->sp ] );
     }
+}
+
+static inline SessionControlBlock *findPacketSessionControlBlock(SessionCache *sessionCache, Packet *p, SessionKey *key)
+{
+    SessionControlBlock *scb = NULL;
+
+    scb = getSessionControlBlock(sessionCache, p, key);
+#if defined(ENABLE_HA) && defined(HAVE_DAQ_QUERYFLOW)
+    if (!scb && session_configuration->enable_ha && session_configuration->ha_config->use_daq &&
+            (p->pkth->flags & DAQ_PKT_FLAG_HA_STATE_AVAIL) && SessionHAQueryDAQState(p->pkth) == 0)
+    {
+        scb = getSessionControlBlock(sessionCache, p, key);
+    }
+#endif
+
+    return scb;
 }
 
 static void sessionPacketProcessor(Packet *p, void *context)
 {
-    SessionKey key;
     SessionControlBlock *scb = NULL;
+    SessionKey key;
+    uint32_t flags;
 
     PROFILE_VARS;
 
@@ -1289,27 +1340,27 @@ static void sessionPacketProcessor(Packet *p, void *context)
         switch( GET_IPH_PROTO( p ) )
         {
             case IPPROTO_TCP:
-                scb = getSessionControlBlock( proto_session_caches[ SESSION_PROTO_TCP ], p, &key );
-                if ( ( scb == NULL ) && SessionTrackingEnabled( session_configuration, SESSION_PROTO_TCP ) ) 
+                scb = findPacketSessionControlBlock( proto_session_caches[ SESSION_PROTO_TCP ], p, &key );
+                if ( ( scb == NULL ) && SessionTrackingEnabled( session_configuration, SESSION_PROTO_TCP ) )
                     scb = createSession( proto_session_caches[ SESSION_PROTO_TCP ], p, &key );
 
                 if( ( scb != NULL ) && !scb->session_established && ( getSessionPlugins()->set_tcp_dir_ports != NULL ) )
                     getSessionPlugins()->set_tcp_dir_ports( p, scb );
-                
+
                 break;
 
             case IPPROTO_UDP:
-                scb = getSessionControlBlock( proto_session_caches[ SESSION_PROTO_UDP ], p, &key );
-                if( ( scb == NULL ) &&  SessionTrackingEnabled( session_configuration, SESSION_PROTO_UDP ) ) 
+                scb = findPacketSessionControlBlock( proto_session_caches[ SESSION_PROTO_UDP ], p, &key );
+                if( ( scb == NULL ) &&  SessionTrackingEnabled( session_configuration, SESSION_PROTO_UDP ) )
                     scb = createSession( proto_session_caches[ SESSION_PROTO_UDP ], p, &key );
 
-                if( scb && !scb->session_established && ( getSessionPlugins()->set_udp_dir_ports != NULL ) )  
+                if( scb && !scb->session_established && ( getSessionPlugins()->set_udp_dir_ports != NULL ) )
                     getSessionPlugins()->set_udp_dir_ports( p, scb );
-                
+
                 break;
 
             case IPPROTO_ICMP:
-                scb = getSessionControlBlock(proto_session_caches[ SESSION_PROTO_ICMP ], p, &key );
+                scb = findPacketSessionControlBlock( proto_session_caches[ SESSION_PROTO_ICMP ], p, &key );
                 if( scb != NULL )
                     break;
 
@@ -1324,24 +1375,35 @@ static void sessionPacketProcessor(Packet *p, void *context)
 
             case IPPROTO_IP:
             default:
-                scb = getSessionControlBlock(proto_session_caches[ SESSION_PROTO_IP ], p, &key );
-                if( ( scb == NULL ) && SessionTrackingEnabled( session_configuration, SESSION_PROTO_IP ) ) 
+                scb = findPacketSessionControlBlock( proto_session_caches[ SESSION_PROTO_IP ], p, &key );
+                if( ( scb == NULL ) && SessionTrackingEnabled( session_configuration, SESSION_PROTO_IP ) )
                     scb = createSession( proto_session_caches[ SESSION_PROTO_IP ], p, &key );
                 break;
         }
-
         // assign allocated SCB to the Packet structure
         p->ssnptr = scb;
     }
     else
     {
-        scb = p->ssnptr; 
-    } 
+        scb = p->ssnptr;
+    }
 
     initializePacketPolicy( p, scb );
 
-    if( ( getSessionFlags( scb ) & SSNFLAG_DETECTION_DISABLED ) == SSNFLAG_DETECTION_DISABLED )
+    flags = getSessionFlags( scb );
+    if( flags & SSNFLAG_FORCE_BLOCK )
+    {
         DisablePacketAnalysis( p );
+        /* Detect will turn on the perfmonitor preprocessor when this function returns */
+        scb->enabled_pps = PP_PERFMONITOR;
+        Active_ForceDropSession();
+    }
+    else if( flags & SSNFLAG_DETECTION_DISABLED )
+    {
+        DisablePacketAnalysis( p );
+        /* Detect will turn on the perfmonitor preprocessor when this function returns */
+        scb->enabled_pps = PP_PERFMONITOR;
+    }
 
     PREPROC_PROFILE_END(sessionPerfStats);
 }
@@ -1390,7 +1452,7 @@ static uint32_t getSessionPruneCount( uint32_t protocol )
             return 0;
     }
     else
-    { 
+    {
         WarningMessage("%s(%d) Invalid session protocol id: %d", file_name, file_line, protocol);
         return 0;
     }
@@ -1404,14 +1466,14 @@ static void resetSessionPruneCount( uint32_t protocol )
             proto_session_caches[protocol]->prunes = 0;
     }
     else
-    { 
+    {
         WarningMessage("%s(%d) Invalid session protocol id: %d", file_name, file_line, protocol);
     }
 }
 
-static int initSessionKeyFromPktHeader( snort_ip_p srcIP,
+static int initSessionKeyFromPktHeader( sfaddr_t* srcIP,
         uint16_t srcPort,
-        snort_ip_p dstIP,
+        sfaddr_t* dstIP,
         uint16_t dstPort,
         char proto,
         uint16_t vlan,
@@ -1421,6 +1483,8 @@ static int initSessionKeyFromPktHeader( snort_ip_p srcIP,
 {
     uint16_t sport;
     uint16_t dport;
+    sfaddr_t *src;
+    sfaddr_t *dst;
     /* Because the key is going to be used for hash lookups,
      * the lower of the values of the IP address field is
      * stored in the key->ip_l and the port for that ip is
@@ -1430,169 +1494,87 @@ static int initSessionKeyFromPktHeader( snort_ip_p srcIP,
     if (!key)
         return 0;
 
-    if (IS_IP4(srcIP))
+
+    switch (proto)
     {
-        uint32_t *src;
-        uint32_t *dst;
-
-        switch (proto)
-        {
-            case IPPROTO_TCP:
-            case IPPROTO_UDP:
+        case IPPROTO_TCP:
+        case IPPROTO_UDP:
+            sport = srcPort;
+            dport = dstPort;
+            break;
+        case IPPROTO_ICMP:
+            if (srcPort == ICMP_ECHOREPLY)
+            {
+                dport = ICMP_ECHO; /* Treat ICMP echo reply the same as request */
+                sport = 0;
+            }
+            else /* otherwise, every ICMP type gets different key */
+            {
                 sport = srcPort;
-                dport = dstPort;
-                break;
-            case IPPROTO_ICMP:
-                if (srcPort == ICMP_ECHOREPLY)
-                {
-                    dport = ICMP_ECHO; /* Treat ICMP echo reply the same as request */
-                    sport = 0;
-                }
-                else /* otherwise, every ICMP type gets different key */
-                {
-                    sport = srcPort;
-                    dport = 0;
-                }
-                break;
-            default:
-                sport = dport = 0;
-                break;
-        }
+                dport = 0;
+            }
+            break;
+        case IPPROTO_ICMPV6:
+            if (srcPort == ICMP6_REPLY)
+            {
+                dport = ICMP6_ECHO; /* Treat ICMPv6 echo reply the same as request */
+                sport = 0;
+            }
+            else /* otherwise, every ICMP type gets different key */
+            {
+                sport = srcPort;
+                dport = 0;
+            }
+            break;
+        default:
+            sport = dport = 0;
+            break;
+    }
 
-        src = srcIP->ip32;
-        dst = dstIP->ip32;
+    src = srcIP;
+    dst = dstIP;
 
-        /* These comparisons are done in this fashion for performance reasons */
-        if (*src < *dst)
+    if (sfip_fast_lt6(src, dst))
+    {
+        COPY4(key->ip_l, sfaddr_get_ip6_ptr(src));
+        key->port_l = sport;
+        COPY4(key->ip_h, sfaddr_get_ip6_ptr(dst));
+        key->port_h = dport;
+    }
+    else if (sfip_fast_eq6(src, dst))
+    {
+        COPY4(key->ip_l, sfaddr_get_ip6_ptr(src));
+        COPY4(key->ip_h, sfaddr_get_ip6_ptr(dst));
+        if (sport < dport)
         {
-            COPY4(key->ip_l, src);
-            COPY4(key->ip_h, dst);
             key->port_l = sport;
             key->port_h = dport;
         }
-        else if (*src == *dst)
-        {
-            COPY4(key->ip_l, src);
-            COPY4(key->ip_h, dst);
-            if (sport < dport)
-            {
-                key->port_l = sport;
-                key->port_h = dport;
-            }
-            else
-            {
-                key->port_l = dport;
-                key->port_h = sport;
-            }
-        }
         else
         {
-            COPY4(key->ip_l, dst);
             key->port_l = dport;
-            COPY4(key->ip_h, src);
             key->port_h = sport;
         }
-# ifdef MPLS
-        if (ScMplsOverlappingIp() &&
-                isPrivateIP(*src) && isPrivateIP(*dst))
-        {
-            key->mplsLabel = mplsId;
-        }
-        else
-        {
-            key->mplsLabel = 0;
-        }
-# else
-        key->mplsLabel = 0;
-# endif
     }
     else
     {
-        /* IPv6 */
-        sfip_t *src;
-        sfip_t *dst;
-
-        switch (proto)
-        {
-            case IPPROTO_TCP:
-            case IPPROTO_UDP:
-                sport = srcPort;
-                dport = dstPort;
-                break;
-            case IPPROTO_ICMP:
-                if (srcPort == ICMP_ECHOREPLY)
-                {
-                    dport = ICMP_ECHO; /* Treat ICMP echo reply the same as request */
-                    sport = 0;
-                }
-                else /* otherwise, every ICMP type gets different key */
-                {
-                    sport = srcPort;
-                    dport = 0;
-                }
-                break;
-            case IPPROTO_ICMPV6:
-                if (srcPort == ICMP6_REPLY)
-                {
-                    dport = ICMP6_ECHO; /* Treat ICMPv6 echo reply the same as request */
-                    sport = 0;
-                }
-                else /* otherwise, every ICMP type gets different key */
-                {
-                    sport = srcPort;
-                    dport = 0;
-                }
-                break;
-            default:
-                sport = dport = 0;
-                break;
-        }
-
-        src = srcIP;
-        dst = dstIP;
-
-        if (sfip_fast_lt6(src, dst))
-        {
-            COPY4(key->ip_l, src->ip32);
-            key->port_l = sport;
-            COPY4(key->ip_h, dst->ip32);
-            key->port_h = dport;
-        }
-        else if (sfip_fast_eq6(src, dst))
-        {
-            COPY4(key->ip_l, src->ip32);
-            COPY4(key->ip_h, dst->ip32);
-            if (sport < dport)
-            {
-                key->port_l = sport;
-                key->port_h = dport;
-            }
-            else
-            {
-                key->port_l = dport;
-                key->port_h = sport;
-            }
-        }
-        else
-        {
-            COPY4(key->ip_l, dst->ip32);
-            key->port_l = dport;
-            COPY4(key->ip_h, src->ip32);
-            key->port_h = sport;
-        }
-# ifdef MPLS
-        if (ScMplsOverlappingIp())
-        {
-            key->mplsLabel = mplsId;
-        }
-        else
-        {
-            key->mplsLabel = 0;
-        }
-# else
-        key->mplsLabel = 0;
-# endif
+        COPY4(key->ip_l, sfaddr_get_ip6_ptr(dst));
+        key->port_l = dport;
+        COPY4(key->ip_h, sfaddr_get_ip6_ptr(src));
+        key->port_h = sport;
     }
+# ifdef MPLS
+    if (ScMplsOverlappingIp())
+    {
+        key->mplsLabel = mplsId;
+    }
+    else
+    {
+        key->mplsLabel = 0;
+    }
+# else
+    key->mplsLabel = 0;
+# endif
 
     key->protocol = proto;
 
@@ -1656,7 +1638,7 @@ static void setPacketDirectionFlag(Packet *p, void *session)
 
     if(IS_IP4(p))
     {
-        if (sfip_fast_eq4(&p->ip4h->ip_src, &scb->client_ip))
+        if (sfip_fast_eq4(&p->ip4h->ip_addrs->ip_src, &scb->client_ip))
         {
             if (GET_IPH_PROTO(p) == IPPROTO_TCP)
                 determinePacketDirection(p, p->tcph->th_sport, scb->client_port, true);
@@ -1665,7 +1647,7 @@ static void setPacketDirectionFlag(Packet *p, void *session)
             else
                 p->packet_flags |= PKT_FROM_CLIENT;
         }
-        else if (sfip_fast_eq4(&p->ip4h->ip_dst, &scb->client_ip))
+        else if (sfip_fast_eq4(&p->ip4h->ip_addrs->ip_dst, &scb->client_ip))
         {
             if (GET_IPH_PROTO(p) == IPPROTO_TCP)
                 determinePacketDirection(p, p->tcph->th_dport, scb->client_port, false);
@@ -1677,7 +1659,7 @@ static void setPacketDirectionFlag(Packet *p, void *session)
     }
     else /* IS_IP6(p) */
     {
-        if (sfip_fast_eq6(&p->ip6h->ip_src, &scb->client_ip))
+        if (sfip_fast_eq6(&p->ip6h->ip_addrs->ip_src, &scb->client_ip))
         {
             if (GET_IPH_PROTO(p) == IPPROTO_TCP)
                 determinePacketDirection(p, p->tcph->th_sport, scb->client_port, true);
@@ -1686,7 +1668,7 @@ static void setPacketDirectionFlag(Packet *p, void *session)
             else
                 p->packet_flags |= PKT_FROM_CLIENT;
         }
-        else if (sfip_fast_eq6(&p->ip6h->ip_dst, &scb->client_ip))
+        else if (sfip_fast_eq6(&p->ip6h->ip_addrs->ip_dst, &scb->client_ip))
         {
             if (GET_IPH_PROTO(p) == IPPROTO_TCP)
                 determinePacketDirection(p, p->tcph->th_dport, scb->client_port, false);
@@ -1765,9 +1747,8 @@ static void freeSessionApplicationData(void *session)
         tmpData = appData->next;
         free(appData);
         appData = tmpData;
+        scb->appDataList = appData;
     }
-
-    scb->appDataList = NULL;
 }
 
 static int removeSession(SessionCache *session_cache, SessionControlBlock *scb )
@@ -1788,10 +1769,36 @@ static int removeSession(SessionCache *session_cache, SessionControlBlock *scb )
     return sfxhash_free_node(session_cache->hashTable, hnode);
 }
 
+static int deleteSessionByKey(void *session, char *delete_reason)
+{
+    SessionCache *session_cache;
+    SessionControlBlock *scb = ( SessionControlBlock  *) session;
+
+    assert( ( NULL != scb ) && ( NULL != scb->key ) );
+
+    switch(scb->key->protocol)
+    {
+        case IPPROTO_TCP:
+            session_cache = proto_session_caches[SESSION_PROTO_TCP];
+            break;
+        case IPPROTO_UDP:
+            session_cache = proto_session_caches[SESSION_PROTO_UDP];
+            break;
+        case IPPROTO_ICMP:
+            session_cache = proto_session_caches[SESSION_PROTO_ICMP];
+            if (session_cache) break;
+        default:
+            session_cache = proto_session_caches[SESSION_PROTO_IP];
+            break;
+    }
+
+    return deleteSession(session_cache, session, delete_reason);
+}
+
 static int deleteSession(void *sessionCache, void *session, char *delete_reason)
 {
-    sfip_t client_ip;
-    sfip_t server_ip;
+    sfaddr_t client_ip;
+    sfaddr_t server_ip;
     uint16_t client_port;
     uint16_t server_port;
     uint16_t lw_session_state;
@@ -1804,12 +1811,8 @@ static int deleteSession(void *sessionCache, void *session, char *delete_reason)
     SessionControlBlock *scb = ( SessionControlBlock  *) session;
     SessionCache *session_cache = (SessionCache *) sessionCache;
 
-    if( ( session_cache == NULL ) || ( scb == NULL ) )
-    {
-        LogMessage("Session Cache: %p and SCB: %p must not be NULL", (void*)session_cache, (void*)scb );
-        return 0;
-    }
-    
+    assert( ( NULL != session_cache ) && ( NULL != scb ) );
+
     /* Save the current mem in use before pruning */
     old_mem_in_use = session_mem_in_use;
 
@@ -1825,8 +1828,13 @@ static int deleteSession(void *sessionCache, void *session, char *delete_reason)
     sfip_set_ip(&client_ip, &scb->client_ip);
     sfip_set_ip(&server_ip, &scb->server_ip);
 
+#ifdef MPLS
+    if( scb->clientMplsHeader != NULL && scb->serverMplsHeader != NULL )
+        freeMplsHeaders(scb);
+#endif
+
 #ifdef ENABLE_HA
-    if (!(session_cache->flags & SESSION_CACHE_FLAG_PURGING))
+    if ( !(session_cache->flags & SESSION_CACHE_FLAG_PURGING) )
         SessionHANotifyDeletion(scb);
 #endif
 
@@ -1834,7 +1842,7 @@ static int deleteSession(void *sessionCache, void *session, char *delete_reason)
      * Call callback to cleanup the protocol (TCP/UDP/ICMP)
      * specific session details
      */
-    if (session_cache->cleanup_fcn)
+    if ( session_cache->cleanup_fcn )
         session_cache->cleanup_fcn(scb);
 
     freeSessionApplicationData(scb);
@@ -1852,28 +1860,28 @@ static int deleteSession(void *sessionCache, void *session, char *delete_reason)
 
     /* If we're pruning and we clobbered some large amount, log a
      * message about that session. */
-    if (prune_log_max
-            && ((old_mem_in_use - session_mem_in_use ) > prune_log_max))
+    if ( prune_log_max
+            && ((old_mem_in_use - session_mem_in_use ) > prune_log_max) )
     {
-        char *client_ip_str, *server_ip_str;
-        client_ip_str = SnortStrdup(inet_ntoa(&client_ip));
-        server_ip_str = SnortStrdup(inet_ntoa(&server_ip));
-        LogMessage("S5: Pruned session from cache that was "
-                "using %d bytes (%s). %s %d --> %s %d "
+      char *client_ip_str, *server_ip_str;
+      client_ip_str = SnortStrdup(inet_ntoa(&client_ip));
+      server_ip_str = SnortStrdup(inet_ntoa(&server_ip));
+      LogMessage("S5: Pruned session from cache that was "
+          "using %d bytes (%s). %s %d --> %s %d "
 #ifdef TARGET_BASED
-                "(%d) "
+          "(%d) "
 #endif
-                ": LWstate 0x%x LWFlags 0x%x\n",
-                old_mem_in_use - session_mem_in_use,
-                delete_reason,
-                client_ip_str, client_port,
-                server_ip_str, server_port,
+          ": LWstate 0x%x LWFlags 0x%x\n",
+          old_mem_in_use - session_mem_in_use,
+          delete_reason?delete_reason:"Unknown",
+          client_ip_str, client_port,
+          server_ip_str, server_port,
 #ifdef TARGET_BASED
-                app_proto_id,
+          app_proto_id,
 #endif
-                lw_session_state, lw_session_flags);
-        free(client_ip_str);
-        free(server_ip_str);
+          lw_session_state, lw_session_flags);
+      free(client_ip_str);
+      free(server_ip_str);
     }
 
     return ret;
@@ -1917,7 +1925,7 @@ static int purgeSessionCache(void *sessionCache)
 static int deleteSessionCache( uint32_t protocol )
 {
     int retCount = 0;
-    SessionCache *session_cache = NULL; 
+    SessionCache *session_cache = NULL;
 
     if( protocol < SESSION_PROTO_MAX )
         session_cache = proto_session_caches[ protocol ];
@@ -1929,12 +1937,12 @@ static int deleteSessionCache( uint32_t protocol )
         // release memory allocated for protocol specific session data
         mempool_destroy( session_cache->protocol_session_pool );
         free( session_cache->protocol_session_pool );
-        
+
         sfxhash_delete( session_cache->hashTable );
         free( session_cache );
         proto_session_caches[ protocol ] = NULL;
     }
-   
+
     return retCount;
 }
 
@@ -1992,6 +2000,7 @@ static void moveHashNodeToFront( SessionCache *session_cache )
     lastNode = sfxhash_lru_node(session_cache->hashTable);
     sfxhash_gmovetofront(session_cache->hashTable, lastNode);
 }
+static ThrottleInfo error_throttleInfo = {0,60,0};
 
 static int pruneSessionCache( void *sessionCache, uint32_t thetime, void *save_me_session, int memCheck )
 {
@@ -2124,7 +2133,7 @@ static int pruneSessionCache( void *sessionCache, uint32_t thetime, void *save_m
                 scb->ha_state.session_flags |= SSNFLAG_PRUNED;
                 deleteSession( session_cache, scb, "memcap/stale" );
                 pruned++;
-            } 
+            }
 
             if ( pruned >= session_cache->cleanup_sessions )
                 break;
@@ -2133,7 +2142,7 @@ static int pruneSessionCache( void *sessionCache, uint32_t thetime, void *save_m
 
     if( memCheck && pruned )
     {
-        LogMessage( "S5: Pruned %d sessions from cache for memcap. %d scbs remain.  memcap: %d/%d\n",
+	ErrorMessageThrottled(&error_throttleInfo,"S5: Pruned %d sessions from cache for memcap. %d scbs remain. memcap: %d/%d\n",
                     pruned, sfxhash_count( session_cache->hashTable ),
                     session_mem_in_use,
                     GetSessionMemCap() );
@@ -2146,6 +2155,31 @@ static int pruneSessionCache( void *sessionCache, uint32_t thetime, void *save_m
     Active_Resume();
     return pruned;
 }
+
+static void freeMplsHeaders(SessionControlBlock *scb)
+{
+    if ( scb->clientMplsHeader->start != NULL )
+    {
+         free(scb->clientMplsHeader->start);
+         scb->clientMplsHeader->start = NULL;
+    }
+    free(scb->clientMplsHeader);
+    scb->clientMplsHeader = NULL;
+    if (scb->serverMplsHeader->start != NULL )
+    {
+         free(scb->serverMplsHeader->start);
+         scb->serverMplsHeader->start = NULL;
+    }
+    free(scb->serverMplsHeader);
+    scb->serverMplsHeader = NULL;
+}
+
+static void initMplsHeaders(SessionControlBlock *scb)
+{
+    scb->clientMplsHeader = (MPLS_Hdr*)SnortAlloc(sizeof(MPLS_Hdr));
+    scb->serverMplsHeader = (MPLS_Hdr*)SnortAlloc(sizeof(MPLS_Hdr));
+}
+
 
 static void *createSession(void *sessionCache, Packet *p, const SessionKey *key )
 {
@@ -2202,11 +2236,26 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key 
 
         scb->stream_config = NULL;
         scb->proto_policy = NULL;
-        scb->napPolicyId = SF_POLICY_UNBOUND; 
+        scb->napPolicyId = SF_POLICY_UNBOUND;
         scb->ipsPolicyId = SF_POLICY_UNBOUND;
         scb->session_config = session_configuration;
 
         scb->port_guess = true;
+
+#ifdef MPLS
+   if( p != NULL )
+   {
+        uint8_t layerIndex;
+        for(layerIndex=0; layerIndex < p->next_layer; layerIndex++)
+        {
+             if( p->layers[layerIndex].proto == PROTO_MPLS && p->layers[layerIndex].start != NULL )
+             {
+                    initMplsHeaders(scb);
+                    break;
+             }
+        }
+   }
+#endif
 
 #ifdef ENABLE_HA
         if (session_configuration->enable_ha)
@@ -2226,8 +2275,8 @@ static void *createSession(void *sessionCache, Packet *p, const SessionKey *key 
             }
 
             memset( &scb->ha_state, '\0', sizeof( StreamHAState ) );
-            scb->ha_state.new_session = true;
             scb->cached_ha_state = scb->ha_state;
+            scb->new_session = true;
         }
 #endif
 
@@ -2253,7 +2302,7 @@ static void removeSessionFromProtoOneWayList( uint32_t proto, void *scb )
         removeFromOneWaySessionList( proto_session_caches[ proto ], ( SessionControlBlock * ) scb );
     }
     else
-    { 
+    {
         WarningMessage("%s(%d) Invalid session protocol id: %d", file_name, file_line, proto);
     }
 }
@@ -2266,7 +2315,7 @@ static void cleanProtocolSessionsPool( uint32_t protocol )
             mempool_clean( proto_session_caches[protocol]->protocol_session_pool );
     }
     else
-    { 
+    {
         WarningMessage("%s(%d) Invalid session protocol id: %d", file_name, file_line, protocol);
     }
 }
@@ -2280,7 +2329,7 @@ static void freeProtocolSessionsPool( uint32_t protocol, void *scb )
                     ( ( SessionControlBlock * ) scb )->proto_specific_data );
     }
     else
-    { 
+    {
         WarningMessage("%s(%d) Invalid session protocol id: %d", file_name, file_line, protocol);
     }
 }
@@ -2293,7 +2342,7 @@ static void *allocateProtocolSession( uint32_t protocol )
             return mempool_alloc( proto_session_caches[protocol]->protocol_session_pool );
     }
     else
-    { 
+    {
         WarningMessage("%s(%d) Invalid session protocol id: %d", file_name, file_line, protocol);
     }
 
@@ -2472,7 +2521,7 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
     int hashTableSize;
     SessionCache *sessionCache = NULL;
     uint32_t max_sessions = 0, session_timeout_min = 0, session_timeout_max = 0;
-    uint32_t cleanup_sessions = 5; 
+    uint32_t cleanup_sessions = 5;
 
     switch ( session_type )
     {
@@ -2519,7 +2568,7 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
     }
 
     // only create a case for session controls for this protocol if tracking is enabled
-    if( max_sessions > 0 ) 
+    if( max_sessions > 0 )
     {
         // set hash table size to max sessions value...adjust up to avoid collisions????
         hashTableSize = max_sessions;
@@ -2530,7 +2579,7 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
             sessionCache->timeoutAggressive = session_timeout_min;
             sessionCache->timeoutNominal = session_timeout_max;
             sessionCache->max_sessions = max_sessions;
-            if( cleanup_sessions < ( 2 * max_sessions ) ) 
+            if( cleanup_sessions < ( 2 * max_sessions ) )
                 sessionCache->cleanup_sessions = cleanup_sessions;
             else
                 sessionCache->cleanup_sessions = ( max_sessions / 2 );
@@ -2570,7 +2619,7 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
         }
         else
         {
-            FatalError( "%s(%d) Unable to create a stream session cache for protocol type: %d.\n", 
+            FatalError( "%s(%d) Unable to create a stream session cache for protocol type: %d.\n",
                     file_name, file_line, session_type);
         }
     }
@@ -2580,7 +2629,7 @@ static void *initSessionCache(uint32_t session_type, uint32_t protocol_scb_size,
                 file_name, file_line, session_type);
     }
 
-    proto_session_caches[ session_type ] = sessionCache; 
+    proto_session_caches[ session_type ] = sessionCache;
     return sessionCache;
 }
 
@@ -2607,11 +2656,11 @@ static void checkCacheFlowTimeout(uint32_t flowCount, time_t cur_time, SessionCa
 
         scb = ( SessionControlBlock * ) hnode->data;
         if( ( time_t ) ( scb->last_data_seen + cache->timeoutNominal ) > cur_time )
-        {                                                                                                 
-            uint64_t time_jiffies;                                                                        
-            /*  Give extra 1 second delay*/                                                                
-            time_jiffies = ((uint64_t)cur_time - 1) * TCP_HZ;                                             
-        
+        {
+            uint64_t time_jiffies;
+            /*  Give extra 1 second delay*/
+            time_jiffies = ((uint64_t)cur_time - 1) * TCP_HZ;
+
             if( !( ( scb->expire_time != 0 )  && ( cur_time != 0 ) && ( scb->expire_time <= time_jiffies ) ) )
                 break;
         }
@@ -2775,14 +2824,14 @@ static inline void * getSessionHandle(const SessionKey *key)
     return (void *)scb;
 }
 
-static void *getSessionHandleFromIpPort( snort_ip_p srcIP, uint16_t srcPort,
-        snort_ip_p dstIP, uint16_t dstPort,
+static void *getSessionHandleFromIpPort( sfaddr_t* srcIP, uint16_t srcPort,
+        sfaddr_t* dstIP, uint16_t dstPort,
         char ip_protocol, uint16_t vlan,
         uint32_t mplsId, uint16_t addressSpaceId )
 {
     SessionKey key;
 
-    initSessionKeyFromPktHeader(srcIP, srcPort, dstIP, dstPort, ip_protocol, 
+    initSessionKeyFromPktHeader(srcIP, srcPort, dstIP, dstPort, ip_protocol,
             vlan, mplsId, addressSpaceId, &key);
 
     return (void*)getSessionHandle(&key);
@@ -2818,9 +2867,9 @@ static void * getApplicationDataFromSessionKey(const StreamSessionKey *key, uint
     return getApplicationData(scb, protocol);
 }
 
-static void *getApplicationDataFromIpPort( snort_ip_p srcIP, uint16_t srcPort,
-        snort_ip_p dstIP, uint16_t dstPort,
-        char ip_protocol, uint16_t vlan, 
+static void *getApplicationDataFromIpPort( sfaddr_t* srcIP, uint16_t srcPort,
+        sfaddr_t* dstIP, uint16_t dstPort,
+        char ip_protocol, uint16_t vlan,
         uint32_t mplsId, uint16_t addressSpaceID, uint32_t protocol )
 {
     SessionControlBlock *scb;
@@ -2894,7 +2943,7 @@ static uint32_t setSessionFlags( void *scbptr, uint32_t flags )
 
             if( scb->protocol == IPPROTO_TCP
                     &&
-                    ( scb->ha_state.session_flags & HA_TCP_MAJOR_SESSION_FLAGS ) 
+                    ( scb->ha_state.session_flags & HA_TCP_MAJOR_SESSION_FLAGS )
                     != ( flags & HA_TCP_MAJOR_SESSION_FLAGS ) )
                 scb->ha_flags |= HA_FLAG_MAJOR_CHANGE;
 
@@ -2939,12 +2988,13 @@ void setSessionPolicy( void *scbptr, int policy_type, tSfPolicyId id )
         scb->ipsPolicyId = id;
 }
 
-static int ignoreChannel( const Packet *ctrlPkt, snort_ip_p srcIP, uint16_t srcPort,
-        snort_ip_p dstIP, uint16_t dstPort, uint8_t protocol, uint32_t preprocId,
-        char direction, char flags )
+static int ignoreChannel( const Packet *ctrlPkt, sfaddr_t* srcIP, uint16_t srcPort,
+        sfaddr_t* dstIP, uint16_t dstPort, uint8_t protocol, uint32_t preprocId,
+        char direction, char flags, struct _ExpectNode** packetExpectedNode )
 {
     return StreamExpectAddChannel( ctrlPkt, srcIP, srcPort, dstIP, dstPort, direction, flags,
-            protocol, STREAM_EXPECTED_CHANNEL_TIMEOUT, 0, preprocId, NULL, NULL );
+            protocol, STREAM_EXPECTED_CHANNEL_TIMEOUT, 0, preprocId, NULL, NULL,
+            packetExpectedNode );
 }
 
 static int getIgnoreDirection( void *scbptr )
@@ -3052,7 +3102,7 @@ static uint32_t getPacketDirection( Packet *p )
 {
     SessionControlBlock *scb;
 
-    if( ( p == NULL ) || ( p->ssnptr == NULL ) ) 
+    if( ( p == NULL ) || ( p->ssnptr == NULL ) )
         return 0;
 
     scb = ( SessionControlBlock * ) p->ssnptr;
@@ -3109,12 +3159,13 @@ static uint16_t getPreprocessorStatusBit( void )
     return preproc_filter_status_bit;
 }
 
-static int setAppProtocolIdExpected( const Packet *ctrlPkt, snort_ip_p srcIP, uint16_t srcPort,
-        snort_ip_p dstIP, uint16_t dstPort, uint8_t protocol, int16_t protoId, uint32_t preprocId,
-        void *protoData, void (*protoDataFreeFn)(void*))
+static int setAppProtocolIdExpected( const Packet *ctrlPkt, sfaddr_t* srcIP, uint16_t srcPort,
+        sfaddr_t* dstIP, uint16_t dstPort, uint8_t protocol, int16_t protoId, uint32_t preprocId,
+        void *protoData, void (*protoDataFreeFn)(void*), struct _ExpectNode** packetExpectedNode)
 {
     return StreamExpectAddChannel( ctrlPkt, srcIP, srcPort, dstIP, dstPort, SSN_DIR_BOTH, 0, protocol,
-            STREAM_EXPECTED_CHANNEL_TIMEOUT, protoId, preprocId, protoData, protoDataFreeFn );
+            STREAM_EXPECTED_CHANNEL_TIMEOUT, protoId, preprocId, protoData, protoDataFreeFn,
+            packetExpectedNode );
 }
 
 #ifdef TARGET_BASED
@@ -3156,7 +3207,7 @@ void setAppProtocolIdFromHostEntry( SessionControlBlock *scb, HostAttributeEntry
 {
     int16_t application_protocol;
 
-    if ( ( scb == NULL ) || ( host_entry == NULL ) ) 
+    if ( ( scb == NULL ) || ( host_entry == NULL ) )
         return;
 
     /* Cool, its already set! */
@@ -3170,7 +3221,7 @@ void setAppProtocolIdFromHostEntry( SessionControlBlock *scb, HostAttributeEntry
 
     if( direction == SSN_DIR_FROM_SERVER )
     {
-        application_protocol = getApplicationProtocolId( host_entry, scb->ha_state.ipprotocol, 
+        application_protocol = getApplicationProtocolId( host_entry, scb->ha_state.ipprotocol,
                 ntohs( scb->server_port ), SFAT_SERVICE );
     }
     else
@@ -3187,8 +3238,8 @@ void setAppProtocolIdFromHostEntry( SessionControlBlock *scb, HostAttributeEntry
 #endif
         // modify enabled preprocs mask to include only those always run and the ones
         // registered for this application id
-        scb->enabled_pps = appHandlerDispatchMask[ application_protocol ] 
-                           | 
+        scb->enabled_pps = appHandlerDispatchMask[ application_protocol ]
+                           |
                            ( scb->enabled_pps & ( PP_CLASS_NETWORK | PP_CLASS_NGFW ) );
 
     }
@@ -3228,13 +3279,13 @@ static void registerApplicationHandler( uint32_t preproc_id, int16_t app_id )
 
     if( app_id < 0 )
     {
-        WarningMessage( "(%s)(%d) Invalid application id: %d.  Application handler registration failed.", 
+        WarningMessage( "(%s)(%d) Invalid application id: %d.  Application handler registration failed.",
                 __FILE__, __LINE__, app_id );
         return;
     }
 
     // set bit for this preproc in the dispatch mask
-    appHandlerDispatchMask[ app_id ] |= ( 1 << preproc_id );
+    appHandlerDispatchMask[ app_id ] |= ( UINT64_C(1) << preproc_id );
 }
 
 static int16_t getAppProtocolId( void *scbptr )
@@ -3313,13 +3364,13 @@ static int16_t setAppProtocolId( void *scbptr, int16_t id )
     if( !scb->ha_state.ipprotocol )
         setIpProtocol( scb );
 
-    if( (scb->protocol == IPPROTO_TCP) && !StreamIsSessionDecryptedTcp( scb ) )
+    if( !(scb->protocol == IPPROTO_TCP) || !StreamIsSessionDecryptedTcp( scb ) )
         SFAT_UpdateApplicationProtocol( IP_ARG( scb->server_ip ), ntohs( scb->server_port ),
                 scb->ha_state.ipprotocol, id );
     return id;
 }
 
-static snort_ip_p getSessionIpAddress( void *scbptr, uint32_t direction )
+static sfaddr_t* getSessionIpAddress( void *scbptr, uint32_t direction )
 {
     SessionControlBlock *scb = ( SessionControlBlock * ) scbptr;
 
@@ -3328,10 +3379,10 @@ static snort_ip_p getSessionIpAddress( void *scbptr, uint32_t direction )
         switch( direction )
         {
             case SSN_DIR_FROM_SERVER:
-                return ( snort_ip_p ) ( &( ( SessionControlBlock * ) scb)->server_ip );
+                return ( sfaddr_t* ) ( &( ( SessionControlBlock * ) scb)->server_ip );
 
             case SSN_DIR_FROM_CLIENT:
-                return ( snort_ip_p ) ( &( ( SessionControlBlock * ) scb)->client_ip );
+                return ( sfaddr_t* ) ( &( ( SessionControlBlock * ) scb)->client_ip );
 
             default:
                 break;
@@ -3386,7 +3437,7 @@ static void disablePreprocForSession( void *scbptr, uint32_t preproc_id )
     SessionControlBlock *scb = ( SessionControlBlock * ) scbptr;
 
     if( scb != NULL )
-        scb->enabled_pps &= ~( 1 << preproc_id ); 
+        scb->enabled_pps &= ~( UINT64_C(1) << preproc_id );
 }
 
 
@@ -3401,7 +3452,7 @@ static void enablePreprocForPort( SnortConfig *sc, uint32_t preproc_id, uint32_t
         return;
     }
 
-    policy->pp_enabled[ port ] |= ( 1 << preproc_id );
+    policy->pp_enabled[ port ] |= ( UINT64_C(1) << preproc_id );
 }
 
 static void enablePreprocAllPorts( SnortConfig *sc, uint32_t preproc_id, uint32_t proto )
@@ -3417,7 +3468,7 @@ static void enablePreprocAllPorts( SnortConfig *sc, uint32_t preproc_id, uint32_
     }
 
     for( port = 0; port < MAX_PORTS; port++ )
-        policy->pp_enabled[ port ] |= ( 1 << preproc_id );
+        policy->pp_enabled[ port ] |= ( UINT64_C(1) << preproc_id );
 }
 
 static void enablePreprocAllPortsAllPolicies( SnortConfig *sc, uint32_t preproc_id, uint32_t proto )
@@ -3425,7 +3476,7 @@ static void enablePreprocAllPortsAllPolicies( SnortConfig *sc, uint32_t preproc_
     uint32_t i;
 
     for( i = 0; i < sc->num_policies_allocated; i++ )
-    if( ( sc->targeted_policies[ i ] != NULL ) && ( sc->targeted_policies[ i ]->num_preprocs > 0 ) ) 
+    if( ( sc->targeted_policies[ i ] != NULL ) && ( sc->targeted_policies[ i ]->num_preprocs > 0 ) )
     {
         setParserPolicy( sc, i );
         enablePreprocAllPorts( sc, preproc_id, proto );
@@ -3434,10 +3485,10 @@ static void enablePreprocAllPortsAllPolicies( SnortConfig *sc, uint32_t preproc_
 
 static bool isPreprocEnabledForPort( uint32_t preproc_id, uint16_t port )
 {
-    tSfPolicyId policy_id = getNapRuntimePolicy(); 
+    tSfPolicyId policy_id = getNapRuntimePolicy();
     SnortPolicy *policy = snort_conf->targeted_policies[ policy_id ];
 
-   if( policy->pp_enabled[ port ] & ( 1 << preproc_id ) )
+   if( policy->pp_enabled[ port ] & ( UINT64_C(1) << preproc_id ) )
        return true;
    else
        return false;
@@ -3457,44 +3508,31 @@ static void reloadSessionConfiguration( struct _SnortConfig *sc, char *args, voi
     SessionConfiguration *session_config = ( SessionConfiguration * ) *new_config;
 
     // session config is only in default policy... fatal error if not parsing default
-    if( getParserPolicy( sc ) == getDefaultPolicy( ) )
+    if( getParserPolicy( sc ) != getDefaultPolicy( ) )
     {
-        if ( session_config == NULL )
-        {
-            session_config = initSessionConfiguration( );
-            parseSessionConfiguration( session_config, args );
-            *new_config = session_config;
+        FatalError("%s(%d) Session configuration included in non-default policy.\n", __FILE__, __LINE__);
+    }
 
-            session_reload_configuration = session_config;
+    if ( session_config == NULL )
+    {
+        session_config = initSessionConfiguration( );
+        parseSessionConfiguration( session_config, args );
+        *new_config = session_config;
 
-            sc->run_flags |= RUN_FLAG__STATEFUL;
-        }
-        else
-        {
-// For 2.9.7 if there are multiple stream5_globals in the policy or stream5_global
-// is configured in a non-default policy all but the first set in the default policy
-// are ignored and a warning is written to the log file for any additional stream5_globals processed.
-// This is a workaround to enable snort 2.9.7 to handle pre-2.9.7 policy configurations that
-// include multiple stream5_global config settings.  This behavior is only supported in the 2.9.7.x
-// snort releases.
-#if 0
-            FatalError("stream5_global must only be configured once.\n");
-#else
-            WarningMessage("stream5_global must only be configured once. Ignoring this configuration element\n");
-            *new_config = NULL;
-#endif
-        }
+        session_reload_configuration = session_config;
+
+        sc->run_flags |= RUN_FLAG__STATEFUL;
     }
     else
     {
 #if 0
-        FatalError("%s(%d) Session configuration included in non-default policy.\n", __FILE__, __LINE__);
+        // EDM-TBD
+        FatalError("stream5_global must only be configured once.\n");
 #else
-        WarningMessage("stream5_global must only be configured in the default policy. Ignoring this configuration element\n");
+        WarningMessage("stream5_global must only be configured once. Ignoring this configuration element\n");
         *new_config = NULL;
 #endif
     }
-
 }
 
 static bool verifyConfigOptionUnchanged( uint32_t new, uint32_t old, char *name, SessionConfiguration *config )
@@ -3530,7 +3568,7 @@ static int verifyReloadedSessionConfiguration( struct _SnortConfig *sc, void *sw
     restart_required |= verifyConfigOptionUnchanged( ssc->memcap,
             session_configuration->memcap,
             "memcap", ssc );
-    restart_required |= verifyConfigOptionUnchanged( ssc->max_tcp_sessions, 
+    restart_required |= verifyConfigOptionUnchanged( ssc->max_tcp_sessions,
             session_configuration->max_tcp_sessions,
             "max_tcp", ssc );
     restart_required |= verifyConfigOptionUnchanged( ssc->tcp_cache_pruning_timeout,
@@ -3545,7 +3583,7 @@ static int verifyReloadedSessionConfiguration( struct _SnortConfig *sc, void *sw
     restart_required |= verifyConfigOptionUnchanged( ssc->udp_cache_pruning_timeout,
             session_configuration->udp_cache_pruning_timeout,
             "udp_cache_pruning_timeout", ssc );
-    restart_required |= verifyConfigOptionUnchanged( ssc->udp_cache_nominal_timeout, 
+    restart_required |= verifyConfigOptionUnchanged( ssc->udp_cache_nominal_timeout,
             session_configuration->udp_cache_nominal_timeout,
             "udp_cache_nominal_timeout", ssc );
     restart_required |= verifyConfigOptionUnchanged( ssc->max_icmp_sessions,
@@ -3577,6 +3615,8 @@ static int verifyReloadedSessionConfiguration( struct _SnortConfig *sc, void *sw
 
     ssc->numSnortPolicies = sc->num_policies_allocated;
     ssc->policy_ref_count = calloc( sc->num_policies_allocated, sizeof( uint32_t ) );
+    if (!ssc->policy_ref_count)
+        FatalError("%s(%d) policy_ref_count allocation failed.\n", __FILE__, __LINE__);
 
     printSessionConfiguration(session_configuration);
 
@@ -3600,7 +3640,7 @@ static void *activateSessionConfiguration( struct _SnortConfig *sc, void *data )
        {
             // some sessions still using config from old policy...
             LogMessage("Session Reload: Reference Count Non-zero for old configuration.\n");
-            return NULL;       
+            return NULL;
        }
 
     return old_config;
@@ -3608,7 +3648,7 @@ static void *activateSessionConfiguration( struct _SnortConfig *sc, void *data )
 
 static void freeSessionConfiguration( void *data )
 {
-    if( data == NULL ) 
+    if( data == NULL )
         return;
 
     LogMessage("Session Reload: Freeing Session Configuration Memory.\n");

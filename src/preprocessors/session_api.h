@@ -63,7 +63,7 @@
 #define STREAM_DEFAULT_TCP_CACHE_NOMINAL_TIMEOUT    ( 60 * 60 )   /*  1 hour */
 #define STREAM_DEFAULT_UDP_CACHE_PRUNING_TIMEOUT    30            /*  30 seconds */
 #define STREAM_DEFAULT_UDP_CACHE_NOMINAL_TIMEOUT    ( 3 * 60 )    /*  3 minutes */
-#define STREAM_MAX_CACHE_TIMEOUT                    ( 12 * 60 * 60 )  /*  12 hours */ 
+#define STREAM_MAX_CACHE_TIMEOUT                    ( 12 * 60 * 60 )  /*  12 hours */
 #define STREAM_MIN_PRUNE_LOG_MAX     1024      /* 1k packet data stored */
 #define STREAM_MAX_PRUNE_LOG_MAX     STREAM_RIDICULOUS_HI_MEMCAP  /* 1GB packet data stored */
 
@@ -192,16 +192,15 @@ typedef struct _StreamHAState
 
     char       direction;
     char       ignore_direction; /* flag to ignore traffic on this session */
-    bool        new_session;
 } StreamHAState;
 
 typedef enum {
     SE_REXMIT,
     SE_EOF,
-    SE_MAX  
+    SE_MAX
 } Stream_Event;
 
-//typedef void (*LogExtraData)(void *ssnptr, void *config, LogFunction *funcs, uint32_t max_count, 
+//typedef void (*LogExtraData)(void *ssnptr, void *config, LogFunction *funcs, uint32_t max_count,
 //                             uint32_t xtradata_mask, uint32_t id, uint32_t sec);
 
 #ifdef ENABLE_HA
@@ -220,8 +219,12 @@ typedef int ( *StreamHAConsumerFunc )( void *ssnptr, const uint8_t *data, uint8_
 #define SNORT_NAP_POLICY  0x00
 #define SNORT_IPS_POLICY  0x01
 
+struct _SnortConfig;
+struct _ExpectNode;
+
 typedef void( *SessionCleanup )( void *ssn );
 typedef void ( *nap_selector )( Packet *p, bool client_packet );
+typedef void (*MandatoryEarlySessionCreatorFn)(void *ssn, struct _ExpectNode*);
 
 typedef struct _session_api
 {
@@ -252,9 +255,9 @@ typedef struct _session_api
      *      Stream session key pointer
      */
      void (*populate_session_key)(Packet *, StreamSessionKey *);
-       
-       
-      /* Lookup session by IP and Port from packet and return pointer to Session Control Block 
+
+
+      /* Lookup session by IP and Port from packet and return pointer to Session Control Block
       *
       * Parameters
       *   Source IP
@@ -267,9 +270,9 @@ typedef struct _session_api
       *   Address Space ID
       *   Session Key
       */
-     int (*get_session_key_by_ip_port)(snort_ip_p, uint16_t, snort_ip_p, uint16_t, char, uint16_t,
+     int (*get_session_key_by_ip_port)(sfaddr_t*, uint16_t, sfaddr_t*, uint16_t, char, uint16_t,
                                        uint32_t, uint16_t, SessionKey *);
-     
+
      /* Lookup by session key and return Session Control Block
       *
       * Parameters
@@ -313,6 +316,14 @@ typedef struct _session_api
       */
      int (*delete_session)(void *, void *, char *);
 
+      /* Delete a session but without providing the session cache.
+      *
+      * Parameters
+      *   Session Control Block
+      *   Reason
+      */
+     int (*delete_session_by_key)(void *, char *);
+
      /* Print session cache
       *
       * Parameters
@@ -352,7 +363,7 @@ typedef struct _session_api
       *
       *  Parameters
       *      protocol
-      *      
+      *
       */
      void (*clean_protocol_session_pool)( uint32_t );
 
@@ -383,7 +394,7 @@ typedef struct _session_api
       *
       *  Parameters
       *      protocol
-      */  
+      */
      uint32_t (*get_session_prune_count)( uint32_t protocol );
 
      /*  Reset prune count by protocol
@@ -476,7 +487,8 @@ typedef struct _session_api
      *     0 on success
      *     -1 on failure
      */
-    int (*ignore_session)(const Packet *, snort_ip_p, uint16_t, snort_ip_p, uint16_t, uint8_t, uint32_t, char, char);
+    int (*ignore_session)(const Packet *, sfaddr_t*, uint16_t, sfaddr_t*, uint16_t, uint8_t,
+                          uint32_t, char, char, struct _ExpectNode**);
 
     /* Get direction that data is being ignored.
      *
@@ -526,7 +538,7 @@ typedef struct _session_api
      */
     void *(*get_application_data)(void *, uint32_t);
 
-    /* 
+    /*
      * Set Expiration Timeout
      *
      * Parameters
@@ -564,23 +576,23 @@ typedef struct _session_api
      */
     uint32_t (*get_session_flags)(void *);
 
-    /*  Get the runtime policy index for policy type 
+    /*  Get the runtime policy index for policy type
      *  specified
      *
      *  Parameters
      *     Session Ptr
      *     Policy Type: NAP or IPS
-     */ 
+     */
     tSfPolicyId (*get_runtime_policy)(void *, int);
 
-    /*  Set the runtime policy index for policy type 
+    /*  Set the runtime policy index for policy type
      *  specified
      *
      *  Parameters
      *     Session Ptr
      *     Policy Type: NAP or IPS
      *     Index for this policy
-     */ 
+     */
      void (*set_runtime_policy)(void *, int, tSfPolicyId);
 
 
@@ -602,7 +614,7 @@ typedef struct _session_api
      *  Parameters
      *      Preprocessor Id
      *      Application ID
-     */ 
+     */
     void (*register_service_handler)(uint32_t, int16_t);
 
 
@@ -638,7 +650,7 @@ typedef struct _session_api
      * Returns
      *  IP address. Contents at the buffer should not be changed. The
      */
-     snort_ip_p  (*get_session_ip_address)(void *, uint32_t);
+     sfaddr_t*  (*get_session_ip_address)(void *, uint32_t);
 
     /* Get server/client ports.
      *
@@ -690,8 +702,8 @@ typedef struct _session_api
      *     0 on success
      *     -1 on failure
      */
-    int (*set_application_protocol_id_expected)(const Packet *, snort_ip_p, uint16_t, snort_ip_p, uint16_t,
-                uint8_t, int16_t, uint32_t, void*, void (*)(void*));
+    int (*set_application_protocol_id_expected)(const Packet *, sfaddr_t*, uint16_t, sfaddr_t*, uint16_t,
+                uint8_t, int16_t, uint32_t, void*, void (*)(void*), struct _ExpectNode**);
 
 #ifdef ENABLE_HA
     /* Register a high availability producer and consumer function pair for a
@@ -725,8 +737,9 @@ typedef struct _session_api
      *
      * Parameters
      *      Session Ptr
+     *      DAQ Packet Header for the packet being processed (Could be NULL)
      */
-    void (*process_ha)(void *);
+    void (*process_ha)(void *, const DAQ_PktHdr_t *);
 #endif
 
     //Retrieve the maximum session limits for the given policy
@@ -756,7 +769,7 @@ typedef struct _session_api
      * Returns
      *     Stream session pointer
      */
-    void *(*get_session_ptr_from_ip_port)(snort_ip_p, uint16_t, snort_ip_p, uint16_t, char, 
+    void *(*get_session_ptr_from_ip_port)(sfaddr_t*, uint16_t, sfaddr_t*, uint16_t, char,
                                           uint16_t, uint32_t, uint16_t);
 
     /** Retrieve the session key given a stream session pointer.
@@ -809,7 +822,7 @@ typedef struct _session_api
      * Returns
      *     Application Data reference (pointer)
      */
-    void *(*get_application_data_from_ip_port)(snort_ip_p, uint16_t, snort_ip_p, uint16_t, char, 
+    void *(*get_application_data_from_ip_port)(sfaddr_t*, uint16_t, sfaddr_t*, uint16_t, char,
                                                uint16_t, uint32_t, uint16_t, uint32_t);
 
     void (*disable_preproc_for_session)( void *, uint32_t );
@@ -818,7 +831,11 @@ typedef struct _session_api
     void (*enable_preproc_all_ports_all_policies)( struct _SnortConfig *, uint32_t, uint32_t );
     bool (*is_preproc_enabled_for_port)( uint32_t, uint16_t );
     void (*register_nap_selector)( nap_selector );
-
+    void (*register_mandatory_early_session_creator)(struct _SnortConfig *,
+                                                     MandatoryEarlySessionCreatorFn callback);
+    void* (*get_application_data_from_expected_node)(struct _ExpectNode*, uint32_t);
+    int (*add_application_data_to_expected_node)(struct _ExpectNode*, uint32_t, void*, void (*)(void*));
+    struct _ExpectNode* (*get_next_expected_node)(struct _ExpectNode*);
 } SessionAPI;
 
 /* To be set by Session */
@@ -858,7 +875,7 @@ typedef enum {
  *      The port to check for in the mask.
  *
  * Returns:
- *  bool 
+ *  bool
  *      true if the port is set.
  *      false if the port is not set.
  *
