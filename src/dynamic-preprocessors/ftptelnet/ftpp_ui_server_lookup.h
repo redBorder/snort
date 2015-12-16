@@ -37,11 +37,11 @@
 
 int ftpp_ui_server_lookup_init(SERVER_LOOKUP **ServerLookup);
 int ftpp_ui_server_lookup_cleanup(SERVER_LOOKUP **ServerLookup);
-int ftpp_ui_server_lookup_add(SERVER_LOOKUP *ServerLookup, sfip_t *IP,
+int ftpp_ui_server_lookup_add(SERVER_LOOKUP *ServerLookup, sfcidr_t *IP,
                             FTP_SERVER_PROTO_CONF *ServerConf);
 
 FTP_SERVER_PROTO_CONF *ftpp_ui_server_lookup_find(SERVER_LOOKUP *ServerLookup,
-                                            snort_ip_p Ip, int *iError);
+                                            sfaddr_t* Ip, int *iError);
 int ftpp_ui_server_iterate(
     struct _SnortConfig *,
     SERVER_LOOKUP *ServerLookup,

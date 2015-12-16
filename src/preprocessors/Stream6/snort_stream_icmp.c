@@ -229,7 +229,7 @@ void StreamCleanIcmp(void)
     if ( icmp_lws_cache )
         s5stats.icmp_prunes = session_api->get_session_prune_count( SESSION_PROTO_ICMP );
 
-    /* Clean up session cache */ 
+    /* Clean up session cache */
     session_api->delete_session_cache( SESSION_PROTO_ICMP );
     icmp_lws_cache = NULL;
 }
@@ -287,8 +287,8 @@ static int ProcessIcmpUnreach(Packet *p)
     SessionControlBlock *ssn = NULL;
     uint16_t sport;
     uint16_t dport;
-    sfip_t *src;
-    sfip_t *dst;
+    sfaddr_t *src;
+    sfaddr_t *dst;
 
     /* No "orig" IP Header */
     if (!p->orig_iph)
@@ -307,14 +307,14 @@ static int ProcessIcmpUnreach(Packet *p)
 
     if (sfip_fast_lt6(src, dst))
     {
-        COPY4(skey.ip_l, src->ip32);
+        COPY4(skey.ip_l, sfaddr_get_ip6_ptr(src));
         skey.port_l = sport;
-        COPY4(skey.ip_h, dst->ip32);
+        COPY4(skey.ip_h, sfaddr_get_ip6_ptr(dst));
         skey.port_h = dport;
     }
-    else if (IP_EQUALITY(GET_ORIG_SRC(p), GET_ORIG_DST(p)))
+    else if (IP_EQUALITY(src, dst))
     {
-        COPY4(skey.ip_l, src->ip32);
+        COPY4(skey.ip_l, sfaddr_get_ip6_ptr(src));
         COPY4(skey.ip_h, skey.ip_l);
         if (sport < dport)
         {
@@ -329,8 +329,8 @@ static int ProcessIcmpUnreach(Packet *p)
     }
     else
     {
-        COPY4(skey.ip_l, dst->ip32);
-        COPY4(skey.ip_h, src->ip32);
+        COPY4(skey.ip_l, sfaddr_get_ip6_ptr(dst));
+        COPY4(skey.ip_h, sfaddr_get_ip6_ptr(src));
         skey.port_l = dport;
         skey.port_h = sport;
     }
@@ -377,10 +377,10 @@ static int ProcessIcmpEcho(Packet *p)
     return 0;
 }
 
-void IcmpUpdateDirection(SessionControlBlock *ssn, char dir, snort_ip_p ip, uint16_t port)
+void IcmpUpdateDirection(SessionControlBlock *ssn, char dir, sfaddr_t* ip, uint16_t port)
 {
     IcmpSession *icmpssn = ssn->proto_specific_data->data;
-    snort_ip tmpIp;
+    sfaddr_t tmpIp;
 
     if (!icmpssn)
     {

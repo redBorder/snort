@@ -45,6 +45,8 @@ snort_dce2.c \
 snort_dce2.h \
 dce2_smb.c \
 dce2_smb.h \
+dce2_smb2.c \
+dce2_smb2.h \
 dce2_tcp.c \
 dce2_tcp.h \
 dce2_co.c \

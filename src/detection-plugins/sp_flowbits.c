@@ -262,7 +262,7 @@ void SetupFlowBits(void)
     RegisterRuleOption("flowbits", FlowBitsInit, NULL, OPT_TYPE_DETECTION, NULL);
 
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("flowbits", &flowBitsPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("flowbits", &flowBitsPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
 
     AddFuncToCleanExitList(FlowBitsCleanExit, NULL);

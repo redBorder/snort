@@ -19,8 +19,8 @@
 */
 
 
-#ifndef _LUA_DETECTOR_FLOW_API_H_
-#define  _LUA_DETECTOR_FLOW_API_H_
+#ifndef _LUA_DETECTOR_APPID_SESSION_API_H_
+#define  _LUA_DETECTOR_APPID_SESSION_API_H_
 
 #include "flow.h"
 #include "luaDetectorApi.h"
@@ -31,7 +31,7 @@ typedef struct {
 
     /**Pointer to flow created by a validator.
      */
-    FLOW *pFlow;
+    tAppIdData *pFlow;
 
     /**Reference to lua userdata. This is a key into LUA_REGISTRYINDEX */
     int userDataRef;

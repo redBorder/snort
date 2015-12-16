@@ -130,7 +130,7 @@ void SetupIcmpSeqCheck(void)
     RegisterRuleOption("icmp_seq", IcmpSeqCheckInit, NULL, OPT_TYPE_DETECTION, NULL);
 
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("icmp_seq", &icmpSeqPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("icmp_seq", &icmpSeqPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN, "Plugin: IcmpSeqCheck Setup\n"););
 }

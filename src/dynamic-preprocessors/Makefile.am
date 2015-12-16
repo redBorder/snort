@@ -83,32 +83,43 @@ include/sfcontrol.h \
 include/sidechannel_define.h \
 include/idle_processing.h \
 include/sf_seqnums.h \
+include/perf_indicators.h \
 include/file_api.h \
 include/file_mail_common.h \
 include/mpse_methods.h \
 include/sfdebug.h \
-include/sip_common.h \
-include/appId.h
+include/sip_common.h
 
-SFXHASH_SRC_DEF = include/sfprimetable.c include/sfxhash.c include/sfmemcap.c include/sfghash.c \
+if FEAT_OPEN_APPID
+preproclib_LTLIBRARIES += libsf_dynamic_utils.la
+
+libsf_dynamic_utils_la_CFLAGS = -fPIC -DPIC -DDYNAMIC_PREPROC_CONTEXT
+libsf_dynamic_utils_la_LDFLAGS = -static
+
+nodist_libsf_dynamic_utils_la_SOURCES = include/sfprimetable.c include/sfxhash.c include/sfmemcap.c include/sfghash.c \
 						  include/sfhashfcn.c include/sflsq.c include/md5.c
-SFXHASH_HDR_DEF = include/sfprimetable.h include/sfxhash.h include/sfmemcap.h include/sfghash.h \
-						  include/sfhashfcn.h include/sflsq.h include/md5.h
 
-if FEAT_OPEN_APPID 
-SFXHASH_SRC = $(SFXHASH_SRC_DEF)
-SFXHASH_HDR = $(SFXHASH_HDR_DEF)
-endif
-
+nodist_preproc_HEADERS += include/appId.h include/appIdApi.h include/thirdparty_appid_types.h \
+						  include/thirdparty_appid_utils.h include/thirdparty_appid_api.h \
+						  include/sfprimetable.h include/sfxhash.h include/sfmemcap.h \
+						  include/sfghash.h include/sfhashfcn.h include/sflsq.h include/md5.h \
+						  include/dns_defs.h
+else
 if FEAT_FILE_INSPECT
-SFXHASH_SRC = $(SFXHASH_SRC_DEF)
-SFXHASH_HDR = $(SFXHASH_HDR_DEF)
+# FEAT_OPEN_APPID includes all needed header, but we do not have it enabled at this point
+preproclib_LTLIBRARIES += libsf_dynamic_utils.la
+
+libsf_dynamic_utils_la_CFLAGS = -fPIC -DPIC -DDYNAMIC_PREPROC_CONTEXT
+libsf_dynamic_utils_la_LDFLAGS = -static
+
+nodist_libsf_dynamic_utils_la_SOURCES = include/sfxhash.c include/sfmemcap.c include/sfprimetable.c \
+						  include/sfhashfcn.c
+
+nodist_preproc_HEADERS += include/sfghash.h include/sfmemcap.h include/sfprimetable.h \
+						  include/sfhashfcn.h
+
 endif
-
-nodist_libsf_dynamic_preproc_la_SOURCES += $(SFXHASH_SRC)
-
-nodist_preproc_HEADERS += $(SFXHASH_HDR)
-
+endif
 all-local: $(LTLIBRARIES)
 	$(MAKE) DESTDIR=`pwd`/build install-preproclibLTLIBRARIES
 
@@ -183,12 +194,12 @@ BUILT_SOURCES = \
 	include/sidechannel_define.h \
 	include/idle_processing.h \
 	include/sf_seqnums.h \
+	include/perf_indicators.h \
 	include/file_api.h \
 	include/file_mail_common.h \
 	include/mpse_methods.h \
 	include/sfdebug.h \
 	include/sip_common.h \
-	include/appId.h \
 	ssl_common/ssl.h \
 	ssl_common/ssl.c \
 	ssl_common/ssl_include.h \
@@ -202,7 +213,20 @@ BUILT_SOURCES = \
 	libs/sfparser.c \
 	libs/sfcommon.h
 
-BUILT_SOURCES += $(SFXHASH_HDR) $(SFXHASH_SRC)
+if FEAT_OPEN_APPID
+BUILT_SOURCES += include/appId.h  include/appIdApi.h include/thirdparty_appid_types.h \
+				 include/thirdparty_appid_utils.h  include/thirdparty_appid_api.h \
+				 include/sfprimetable.h include/sfprimetable.c include/sfxhash.h \
+				 include/sfxhash.c include/sfmemcap.h include/sfmemcap.c \
+				 include/sfghash.c include/sfhashfcn.c include/sflsq.h include/sflsq.c \
+				 include/md5.h include/md5.c \
+				 include/dns_defs.h
+else
+if FEAT_FILE_INSPECT
+BUILT_SOURCES += include/sfxhash.h include/sfxhash.c include/sfmemcap.h include/sfmemcap.c \
+				 include/sfprimetable.h include/sfprimetable.c include/sfhashfcn.c
+endif
+endif
 
 sed_ipv6_headers = \
 	sed -e "s/->iph->ip_src/->ip4_header->source/" \
@@ -553,6 +577,9 @@ include/idle_processing.h: $(top_srcdir)/src/idle_processing.h
 include/sf_seqnums.h: $(top_srcdir)/src/sfutil/sf_seqnums.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
+include/perf_indicators.h: $(srcdir)/../preprocessors/perf_indicators.h
+	@src_header=$?; dst_header=$@; $(copy_headers)
+
 include/file_api.h: $(top_srcdir)/src/file-process/file_api.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
@@ -569,6 +596,22 @@ include/sip_common.h: $(srcdir)/../preprocessors/sip_common.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
 include/appId.h: $(srcdir)/appid/appId.h
+	@src_header=$?; dst_header=$@; $(copy_headers)
+
+if FEAT_OPEN_APPID
+include/appIdApi.h: $(srcdir)/../appIdApi.h
+	@src_header=$?; dst_header=$@; $(copy_headers)
+
+include/thirdparty_appid_types.h: $(srcdir)/appid/thirdparty_appid_types.h
+	@src_header=$?; dst_header=$@; $(copy_headers)
+
+include/thirdparty_appid_utils.h: $(srcdir)/appid/thirdparty_appid_utils.h
+	@src_header=$?; dst_header=$@; $(copy_headers)
+
+include/thirdparty_appid_api.h: $(srcdir)/appid/thirdparty_appid_api.h
+	@src_header=$?; dst_header=$@; $(copy_headers)
+
+include/dns_defs.h: $(srcdir)/appid/dns_defs.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
 include/md5.c: $(srcdir)/../sfutil/md5.c
@@ -606,6 +649,31 @@ include/sflsq.h: $(srcdir)/../sfutil/sflsq.h
 
 include/sflsq.c: $(srcdir)/../sfutil/sflsq.c
 	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+else
+if FEAT_FILE_INSPECT
+include/sfxhash.h: $(srcdir)/../sfutil/sfxhash.h
+	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+include/sfxhash.c: $(srcdir)/../sfutil/sfxhash.c
+	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+include/sfmemcap.h: $(srcdir)/../sfutil/sfmemcap.h
+	@src_header=$?; dst_header=$@; $(copy_headers);  $(copy_error_message); $(replace_policy_globals)
+
+include/sfmemcap.c: $(srcdir)/../sfutil/sfmemcap.c
+	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+include/sfprimetable.h: $(srcdir)/../sfutil/sfprimetable.h
+	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+include/sfprimetable.c: $(srcdir)/../sfutil/sfprimetable.c
+	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+include/sfhashfcn.c: $(srcdir)/../sfutil/sfhashfcn.c
+	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+endif
+endif
 
 if FEAT_FILE_INSPECT
 FILE_INSPECT_DIR = file
@@ -671,12 +739,12 @@ include/Unified2_common.h \
 include/sfcontrol.h \
 include/idle_processing.h \
 include/sf_seqnums.h \
+include/perf_indicators.h \
 include/file_api.h \
 include/file_mail_common.h \
 include/mpse_methods.h \
 include/sfdebug.h \
 include/sip_common.h \
-include/appId.h \
 ssl_common/ssl.h \
 ssl_common/ssl.c \
 ssl_common/ssl_include.h \
@@ -689,18 +757,17 @@ ssl_common/ssl_ha.h \
 ssl_common/ssl_ha.c \
 libs/sfparser.c 
 
-SFXHASH_EXPORTED_FILES_DEF = include/sfprimetable.h include/sfxhash.h include/sfmemcap.h include/sfhashfcn.h \
-				  include/md5.h 
-
 if FEAT_OPEN_APPID
-SFXHASH_EXPORTED_FILES = SFXHASH_EXPORTED_FILES_DEF
+exported_files += include/appId.h  include/appIdApi.h  include/thirdparty_appid_types.h \
+				  include/thirdparty_appid_utils.h  include/thirdparty_appid_api.h \
+				  include/sfprimetable.h include/sfxhash.h include/sfmemcap.h include/sfhashfcn.h \
+				  include/md5.h \
+				  include/dns_defs.h 
 else
 if FEAT_FILE_INSPECT
-SFXHASH_EXPORTED_FILES = SFXHASH_EXPORTED_FILES_DEF
+exported_files += include/sfxhash.h include/sfmemcap.h include/sfprimetable.h
 endif
 endif
-
-exported_files += $(SFXHASH_EXPORTED_FILES)
 
 install-data-local:
 	@for f in $(exported_files); do \

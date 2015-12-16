@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 
+#include "appInfoTable.h"
 #include "flow.h"
 #include "service_base.h"
 
@@ -132,13 +133,14 @@ typedef struct _SERVICE_SSH_KEY_EXCHANGE_FINAL
 static int ssh_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(ssh_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &ssh_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "ssh",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -147,7 +149,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule ssh_service_mod =
+tRNAServiceValidationModule ssh_service_mod =
 {
     "SSH",
     &ssh_init,
@@ -161,12 +163,12 @@ static tAppRegistryEntry appIdRegistry[] =
 
 static int ssh_init(const InitServiceAPI * const init_api)
 {
-    init_api->RegisterPattern(&ssh_validate, IPPROTO_TCP, (uint8_t *)SSH_BANNER, sizeof(SSH_BANNER)-1, 0, "ssh");
+    init_api->RegisterPattern(&ssh_validate, IPPROTO_TCP, (uint8_t *)SSH_BANNER, sizeof(SSH_BANNER)-1, 0, "ssh", init_api->pAppidConfig);
 	unsigned i;
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&ssh_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&ssh_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -391,13 +393,13 @@ MakeRNAServiceValidationPrototype(ssh_validate)
     if (!size)
         goto inprocess;
 
-    ss = ssh_service_mod.api->data_get(flowp);
+    ss = ssh_service_mod.api->data_get(flowp, ssh_service_mod.flow_data_index);
     if (!ss)
     {
         ss = calloc(1, sizeof(*ss));
         if (!ss)
             return SERVICE_ENOMEM;
-        if (ssh_service_mod.api->data_add(flowp, ss, &ssh_free_state))
+        if (ssh_service_mod.api->data_add(flowp, ss, ssh_service_mod.flow_data_index, &ssh_free_state))
         {
             free(ss);
             return SERVICE_ENOMEM;
@@ -568,11 +570,11 @@ inprocess:
 
     case SERVICE_NOMATCH:
 fail:
-        ssh_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+        ssh_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, ssh_service_mod.flow_data_index, pConfig);
         return SERVICE_NOMATCH;
 
 not_compatible:
-        ssh_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element);
+        ssh_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element, ssh_service_mod.flow_data_index, pConfig);
         return SERVICE_NOT_COMPATIBLE;
 
     default:

@@ -81,6 +81,7 @@ typedef struct _FileContext
     uint8_t    *file_headers;
     uint32_t   file_headers_size;
 #endif
+    bool       file_name_saved;
     uint64_t   file_size;
 #ifdef HAVE_EXTRADATA_FILE
     char       file_size_str[32];
@@ -123,7 +124,7 @@ FileContext *file_context_create(void);
 void file_context_reset(FileContext *context);
 void file_context_free(void *context);
 /*File properties*/
-void file_name_set (FileContext *context, uint8_t *file_name, uint32_t name_size);
+void file_name_set (FileContext *context, uint8_t *file_name, uint32_t name_size, bool save_in_context);
 int file_name_get (FileContext *context, uint8_t **file_name, uint32_t *name_size);
 #ifdef HAVE_EXTRADATA_FILE
 void file_hostname_set (FileContext *context, uint8_t *file_hostname, uint32_t hostname_size);

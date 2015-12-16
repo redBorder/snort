@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule tftp_service_mod;
+extern tRNAServiceValidationModule tftp_service_mod;
 
 #endif  /* __SERVICE_TFTP_H__ */
 

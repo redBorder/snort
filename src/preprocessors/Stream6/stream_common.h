@@ -204,6 +204,7 @@ typedef struct _StreamTcpPolicy
     uint32_t   max_consec_small_segs;
     uint32_t   max_consec_small_seg_size;
     char       small_seg_ignore[MAX_PORTS/8];
+    bool       log_asymmetric_traffic;
 
 } StreamTcpPolicy;
 

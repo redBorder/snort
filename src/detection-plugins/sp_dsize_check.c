@@ -118,7 +118,7 @@ void SetupDsizeCheck(void)
     /* map the keyword to an initialization/processing function */
     RegisterRuleOption("dsize", DsizeCheckInit, NULL, OPT_TYPE_DETECTION, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("dsize_eq", &dsizePerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("dsize_eq", &dsizePerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN, "Plugin: DsizeCheck Initialized\n"););
 }

@@ -39,7 +39,7 @@ typedef enum {
     ENC_TCP_FIN,  ENC_TCP_RST,
     ENC_UNR_NET,  ENC_UNR_HOST,
     ENC_UNR_PORT, ENC_UNR_FW,
-    ENC_TCP_PUSH,
+    ENC_TCP_PUSH, ENC_UDP,
     ENC_MAX
 } EncodeType;
 

@@ -110,7 +110,7 @@ void SetupFileData(void)
     /* map the keyword to an initialization/processing function */
     RegisterRuleOption("file_data", FileDataInit, NULL, OPT_TYPE_DETECTION, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("file_data", &fileDataPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("file_data", &fileDataPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
 
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN,"Plugin: file_data Setup\n"););

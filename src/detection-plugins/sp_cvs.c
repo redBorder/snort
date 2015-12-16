@@ -127,7 +127,7 @@ void SetupCvs(void)
     RegisterRuleOption("cvs", CvsInit, NULL, OPT_TYPE_DETECTION, NULL);
 
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("cvs", &cvsPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("cvs", &cvsPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
 
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN, "Plugin: CVS Setup\n"););

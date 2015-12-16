@@ -690,7 +690,7 @@ static char * printIP(unsigned u )
 #endif
 
 int sfthd_test_rule(SFXHASH *rule_hash, THD_NODE *sfthd_node,
-                    snort_ip_p sip, snort_ip_p dip, long curtime)
+                    sfaddr_t* sip, sfaddr_t* dip, long curtime)
 {
     int status;
 
@@ -704,7 +704,7 @@ int sfthd_test_rule(SFXHASH *rule_hash, THD_NODE *sfthd_node,
 
 static inline int sfthd_test_suppress (
     THD_NODE* sfthd_node,
-    snort_ip_p sip, snort_ip_p dip)
+    sfaddr_t* sip,sfaddr_t* dip)
 {
     if (sfthd_node->tracking == THD_TRK_SRCDST){
         if( !sfthd_node->ip_address || !sfthd_node->dst_ip_address
@@ -908,14 +908,14 @@ static inline int sfthd_test_non_suppress(
 int sfthd_test_local(
     SFXHASH *local_hash,
     THD_NODE   * sfthd_node,
-    snort_ip_p   sip,
-    snort_ip_p   dip,
+    sfaddr_t*    sip,
+    sfaddr_t*    dip,
     time_t       curtime )
 {
     THD_IP_NODE_KEY key;
     THD_IP_NODE     data,*sfthd_ip_node;
     int             status=0;
-    snort_ip_p      ip;
+    sfaddr_t*       ip;
     tSfPolicyId policy_id = getIpsRuntimePolicy();
 
 #ifdef THD_DEBUG
@@ -962,7 +962,7 @@ int sfthd_test_local(
 
     /* Set up the key */
     key.policyId = policy_id;
-    key.ip     = IP_VAL(ip);
+    sfaddr_copy_to_raw(&key.ip, ip);
     key.thd_id = sfthd_node->thd_id;
 
     /* Set up a new data element */
@@ -1004,16 +1004,16 @@ static inline int sfthd_test_global(
     THD_NODE   * sfthd_node,
     unsigned     gen_id,     /* from current event */
     unsigned     sig_id,     /* from current event */
-    snort_ip_p   sip,        /* " */
-    snort_ip_p   dip,        /* " */
+    sfaddr_t*    sip,        /* " */
+    sfaddr_t*    dip,        /* " */
     time_t       curtime )
 {
     THD_IP_GNODE_KEY key;
     THD_IP_NODE      data, *sfthd_ip_node;
     int              status=0;
-    snort_ip_p       ip;
+    sfaddr_t*        ip;
     tSfPolicyId policy_id = getIpsRuntimePolicy();
-    snort_ip_p       secondary_ip;
+    sfaddr_t*        secondary_ip;
 
 #ifdef THD_DEBUG
     printf("THD_DEBUG-GLOBAL:  gen_id=%u, sig_id=%u\n",gen_id,sig_id);
@@ -1044,7 +1044,7 @@ static inline int sfthd_test_global(
         return sfthd_test_suppress(sfthd_node, sip,dip);
     }
 
-    /* Get The correct IP */
+    /* Get The right IP */
     if (sfthd_node->tracking == THD_TRK_SRC){
         ip = sip;
     }else if(sfthd_node->tracking == THD_TRK_SRCDST){
@@ -1059,9 +1059,10 @@ static inline int sfthd_test_global(
     */
 
     /* Set up the key */
-    key.ip     = IP_VAL(ip);
-    if(sfthd_node->tracking == THD_TRK_SRCDST)
-        key.secondary_ip = IP_VAL(secondary_ip);
+    sfaddr_copy_to_raw(&key.ip, ip);
+    if(sfthd_node->tracking == THD_TRK_SRCDST) {
+        sfaddr_copy_to_raw(&key.secondary_ip,secondary_ip);
+    }
     key.gen_id = sfthd_node->gen_id;
     key.sig_id = sig_id;
     key.policyId = policy_id;
@@ -1119,8 +1120,8 @@ int sfthd_test_threshold(
     THD_STRUCT *thd,
     unsigned   gen_id,
     unsigned   sig_id,
-    snort_ip_p sip,
-    snort_ip_p dip,
+    sfaddr_t*  sip,
+    sfaddr_t*  dip,
     long       curtime )
 {
     tThdItemKey key;

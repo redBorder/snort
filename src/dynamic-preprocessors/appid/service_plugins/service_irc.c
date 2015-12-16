@@ -69,13 +69,14 @@ typedef struct _SERVICE_IRC_DATA
 static int irc_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(irc_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &irc_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "irc",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -84,7 +85,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule irc_service_mod =
+tRNAServiceValidationModule irc_service_mod =
 {
     "IRC",
     &irc_init,
@@ -99,7 +100,7 @@ static int irc_init(const InitServiceAPI * const init_api)
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&irc_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&irc_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -116,13 +117,13 @@ MakeRNAServiceValidationPrototype(irc_validate)
     if (!size)
         goto inprocess;
 
-    id = irc_service_mod.api->data_get(flowp);
+    id = irc_service_mod.api->data_get(flowp, irc_service_mod.flow_data_index);
     if (!id)
     {
         id = calloc(1, sizeof(*id));
         if (!id)
             return SERVICE_ENOMEM;
-        if (irc_service_mod.api->data_add(flowp, id, &free))
+        if (irc_service_mod.api->data_add(flowp, id, irc_service_mod.flow_data_index, &free))
         {
             free(id);
             return SERVICE_ENOMEM;
@@ -291,11 +292,11 @@ success:
 fail:
     if (dir == APP_ID_FROM_RESPONDER)
     {
-        irc_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+        irc_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, irc_service_mod.flow_data_index, pConfig);
     }
     else
     {
-        irc_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element);
+        irc_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element, irc_service_mod.flow_data_index, pConfig);
     }
     return SERVICE_NOMATCH;
 }

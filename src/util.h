@@ -215,7 +215,7 @@ char *GetAbsolutePath(char *dir);
 char *StripPrefixDir(char *prefix, char *dir);
 void PrintPacketData(const uint8_t *, const uint32_t);
 
-char * ObfuscateIpToText(sfip_t *);
+char * ObfuscateIpToText(sfaddr_t *);
 
 #ifndef WIN32
 SF_LIST * SortDirectory(const char *);
@@ -233,6 +233,18 @@ char *fasthex(const u_char *, int);
 int xatol(const char *, const char *);
 unsigned int xatou(const char *, const char *);
 unsigned int xatoup(const char *, const char *); // return > 0
+
+static inline void* SnortMalloc (unsigned long size)
+{
+    void* pv = malloc(size);
+
+    if ( pv )
+        return pv;
+
+    FatalError("Unable to allocate memory!  (%lu requested)\n", size);
+
+    return NULL;
+}
 
 static inline void* SnortAlloc (unsigned long size)
 {

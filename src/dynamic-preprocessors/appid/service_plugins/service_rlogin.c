@@ -47,13 +47,14 @@ typedef struct _SERVICE_RLOGIN_DATA
 static int rlogin_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(rlogin_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &rlogin_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "rlogin",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -62,7 +63,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule rlogin_service_mod =
+tRNAServiceValidationModule rlogin_service_mod =
 {
     "RLOGIN",
     &rlogin_init,
@@ -77,7 +78,7 @@ static int rlogin_init(const InitServiceAPI * const init_api)
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&rlogin_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&rlogin_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -92,13 +93,13 @@ MakeRNAServiceValidationPrototype(rlogin_validate)
     if (dir != APP_ID_FROM_RESPONDER)
         goto inprocess;
 
-    rd = rlogin_service_mod.api->data_get(flowp);
+    rd = rlogin_service_mod.api->data_get(flowp, rlogin_service_mod.flow_data_index);
     if (!rd)
     {
         rd = calloc(1, sizeof(*rd));
         if (!rd)
             return SERVICE_ENOMEM;
-        if (rlogin_service_mod.api->data_add(flowp, rd, &free))
+        if (rlogin_service_mod.api->data_add(flowp, rd, rlogin_service_mod.flow_data_index, &free))
         {
             free(rd);
             return SERVICE_ENOMEM;
@@ -151,7 +152,7 @@ success:
     return SERVICE_SUCCESS;
 
 fail:
-    rlogin_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+    rlogin_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, rlogin_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 }
 

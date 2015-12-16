@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule bootp_service_mod;
+extern tRNAServiceValidationModule bootp_service_mod;
 
 #endif  /* __SERVICE_BOOTP_H__ */
 

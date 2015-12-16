@@ -104,7 +104,7 @@ typedef struct {
 typedef struct{
 
     int thd_id;
-    snort_ip ip;
+    struct in6_addr ip;
     tSfPolicyId policyId;
 
 } THD_IP_NODE_KEY ;
@@ -113,8 +113,8 @@ typedef struct{
 
     unsigned gen_id;
     unsigned sig_id;
-    snort_ip ip;
-    snort_ip secondary_ip;
+    struct in6_addr ip;
+    struct in6_addr secondary_ip;
     tSfPolicyId policyId;
 
 } THD_IP_GNODE_KEY ;
@@ -236,7 +236,7 @@ ThresholdObjects * sfthd_objs_new(void);
 void sfthd_objs_free(ThresholdObjects *);
 
 int sfthd_test_rule(SFXHASH *rule_hash, THD_NODE *sfthd_node,
-                    snort_ip_p sip, snort_ip_p dip, long curtime);
+                    sfaddr_t* sip, sfaddr_t* dip, long curtime);
 
 void * sfthd_create_rule_threshold(
    int id,
@@ -269,8 +269,8 @@ int sfthd_test_threshold(
     THD_STRUCT *,
     unsigned     gen_id,
     unsigned     sig_id,
-    snort_ip_p   sip,
-    snort_ip_p   dip,
+    sfaddr_t*    sip,
+    sfaddr_t*    dip,
     long         curtime ) ;
 
 
@@ -279,8 +279,8 @@ SFXHASH * sfthd_new_hash(unsigned, size_t, size_t);
 int sfthd_test_local(
     SFXHASH *local_hash,
     THD_NODE   * sfthd_node,
-    snort_ip_p   sip,
-    snort_ip_p   dip,
+    sfaddr_t*    sip,
+    sfaddr_t*    dip,
     time_t       curtime );
 
 #ifdef THD_DEBUG

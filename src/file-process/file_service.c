@@ -48,6 +48,7 @@
 #include "file_resume_block.h"
 #include "snort_httpinspect.h"
 #include "file_service.h"
+#include "file_segment_process.h"
 
 #ifdef HAVE_EXTRADATA_FILE
 #include "Unified2_common.h"
@@ -94,7 +95,8 @@ static uint64_t get_file_processed_size(void* ssnptr);
 static bool get_file_direction(void* ssnptr);
 static uint8_t *get_file_sig_sha256(void* ssnptr);
 
-static void set_file_name(void* ssnptr, uint8_t * fname, uint32_t name_size);
+static void set_file_name(void* ssnptr, uint8_t * fname, uint32_t name_size,
+        bool save_in_context);
 #ifdef HAVE_EXTRADATA_FILE
 static void set_file_hostname(void* ssnptr, uint8_t * fname, uint32_t name_size);
 static void set_file_mailfrom(void* ssnptr, uint8_t * fname, uint32_t name_size);
@@ -137,6 +139,7 @@ static uint32_t get_new_file_instance(void *ssnptr);
 
 /* File context based file processing*/
 FileContext* create_file_context(void *ssnptr);
+static void init_file_context(void *ssnptr, bool upload, FileContext *context);
 bool set_current_file_context(void *ssnptr, FileContext *ctx);
 FileContext* get_current_file_context(void *ssnptr);
 FileContext* get_main_file_context(void *ssnptr);
@@ -145,6 +148,7 @@ static int process_file_context(FileContext *ctx, void *p, uint8_t *file_data,
 static FilePosition get_file_position(void *pkt);
 static bool check_paf_abort(void* ssn);
 static int64_t get_max_file_capture_size(void *ssn);
+static void file_session_free(void *session_data);
 
 FileAPI fileAPI;
 FileAPI* file_api = NULL;
@@ -211,6 +215,7 @@ void init_fileAPI(void)
     fileAPI.get_new_file_instance = &get_new_file_instance;
 
     fileAPI.create_file_context = &create_file_context;
+    fileAPI.init_file_context = &init_file_context;
     fileAPI.set_current_file_context = &set_current_file_context;
     fileAPI.get_current_file_context = &get_current_file_context;
     fileAPI.get_main_file_context = &get_main_file_context;
@@ -221,7 +226,11 @@ void init_fileAPI(void)
     fileAPI.check_data_end = check_data_end;
     fileAPI.check_paf_abort = &check_paf_abort;
     fileAPI.get_max_file_capture_size = get_max_file_capture_size;
-
+    fileAPI.file_cache_update_entry = &file_cache_update_entry;
+    fileAPI.file_segment_process = &file_segment_process;
+    fileAPI.file_cache_create = &file_cache_create;
+    fileAPI.file_cache_free = &file_cache_free;
+    fileAPI.file_cache_status = &file_cache_status;
     file_api = &fileAPI;
     init_mime();
 }
@@ -447,7 +456,23 @@ void close_fileAPI(void)
 
 static inline FileSession* get_file_session(void *ssnptr)
 {
-    return((FileSession*) session_api->get_application_data(ssnptr, PP_FILE));
+    return ((FileSession*)session_api->get_application_data(ssnptr, PP_FILE));
+}
+
+static inline FileSession* get_create_file_session(void *ssnptr)
+{
+    FileSession *file_session = get_file_session(ssnptr);
+    if(!file_session)
+    {
+        file_session = (FileSession *)SnortAlloc(sizeof(*file_session));
+        if (session_api->set_application_data(ssnptr, PP_FILE, file_session,
+                file_session_free))
+        {
+            free(file_session);
+            return NULL;
+        }
+    }
+    return(file_session);
 }
 
 /*Get the current working file context*/
@@ -473,21 +498,27 @@ FileContext* get_main_file_context(void *ssnptr)
 /*Get the current working file context*/
 static inline void save_to_pending_context(void *ssnptr)
 {
-    FileSession *file_session = get_file_session (ssnptr);
+    FileSession *file_session = get_create_file_session (ssnptr);
     /* Save to pending_context */
     if (!file_session)
         return;
 
-    if (file_session->pending_context != file_session->main_context)
-        file_context_free(file_session->pending_context);
-    file_session->pending_context = file_session->main_context;
-
+    if (file_session->main_context)
+    {
+        if (file_session->pending_context != file_session->main_context)
+            file_context_free(file_session->pending_context);
+        file_session->pending_context = file_session->main_context;
+    }
+    else
+    {
+        file_session->pending_context = file_session->current_context;
+    }
 }
 
 /*Set the current working file context*/
 bool set_current_file_context(void *ssnptr, FileContext *ctx)
 {
-    FileSession *file_session = get_file_session (ssnptr);
+    FileSession *file_session = get_create_file_session (ssnptr);
 
     if (!file_session)
     {
@@ -505,24 +536,27 @@ static void file_session_free(void *session_data)
         return;
 
     /*Clean up all the file contexts*/
-    if ( file_session->pending_context &&
-            (file_session->main_context != file_session->pending_context))
+    if (file_session->main_context)
     {
-        file_context_free(file_session->pending_context);
-    }
+        if ( file_session->pending_context &&
+                (file_session->main_context != file_session->pending_context))
+        {
+            file_context_free(file_session->pending_context);
+        }
 
-    file_context_free(file_session->main_context);
+        file_context_free(file_session->main_context);
+    }
 
     free(file_session);
 }
 
-static inline void init_file_context(void *ssnptr, bool upload, FileContext *context)
+static void init_file_context(void *ssnptr, bool upload, FileContext *context)
 {
     context->file_type_enabled = file_type_id_enabled;
     context->file_signature_enabled = file_signature_enabled;
     context->file_capture_enabled = file_capture_enabled;
     file_direction_set(context,upload);
-
+    file_stats.files_total++;
 #ifdef TARGET_BASED
     /* Check file policy to see whether we want to do either file type, file
      * signature,  or file capture
@@ -548,7 +582,6 @@ static inline void init_file_context(void *ssnptr, bool upload, FileContext *con
 
 FileContext* create_file_context(void *ssnptr)
 {
-    FileSession *file_session;
     FileContext *context = file_context_create();
 
 #ifdef HAVE_EXTRADATA_FILE
@@ -565,14 +598,8 @@ FileContext* create_file_context(void *ssnptr)
 #endif
 
     /* Create file session if not yet*/
-    file_session = get_file_session (ssnptr);
-    if(!file_session)
-    {
-        file_session = (FileSession *)SnortAlloc(sizeof(*file_session));
-        session_api->set_application_data(ssnptr, PP_FILE, file_session,
-                file_session_free);
-    }
-    file_stats.files_total++;
+    get_create_file_session (ssnptr);
+
     return context;
 }
 
@@ -617,7 +644,6 @@ static inline FileContext* find_main_file_context(void* p, FilePosition position
                 context->xtra_file_headers_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_headers_id;
             }
 #endif
-            file_stats.files_total++;
             init_file_context(ssnptr, upload, context);
             context->file_id = file_session->max_file_id++;
             return context;
@@ -625,7 +651,7 @@ static inline FileContext* find_main_file_context(void* p, FilePosition position
     }
 
     context = create_file_context(ssnptr);
-    file_session = get_file_session (ssnptr);
+    file_session = get_create_file_session (ssnptr);
     file_session->main_context = context;
     init_file_context(ssnptr, upload, context);
     context->file_id = file_session->max_file_id++;
@@ -759,7 +785,9 @@ static inline void _file_signature_lookup(FileContext* context,
             /*Drop packets if not timeout*/
             if (pkt->pkth->ts.tv_sec <= context->expires)
             {
-                Active_ForceDropPacket();
+                if( !Active_DAQRetryPacket(pkt) )
+                    Active_ForceDropPacket();
+
                 return;
             }
             /*Timeout, let packet go through OR block based on config*/
@@ -776,9 +804,11 @@ static inline void _file_signature_lookup(FileContext* context,
         {
             FileConfig *file_config =  (FileConfig *)context->file_config;
             if (file_config)
-                context->expires = (time_t)(file_config->file_lookup_timeout
-                        + pkt->pkth->ts.tv_sec);
-	    Active_ForceDropPacket();
+                context->expires = (time_t)(file_config->file_lookup_timeout + pkt->pkth->ts.tv_sec);
+
+            if( !Active_DAQRetryPacket(pkt) )
+                Active_ForceDropPacket();
+
             stream_api->set_event_handler(ssnptr, s_cb_id, SE_REXMIT);
             save_to_pending_context(ssnptr);
             return;
@@ -800,6 +830,7 @@ static inline void finish_signature_lookup(FileContext *context)
     if (context->sha256)
     {
         context->file_signature_enabled = false;
+        file_capture_stop(context);
         file_stats.signatures_processed[context->file_type_id][context->upload]++;
 #ifdef TARGET_BASED
         file_stats.signatures_by_proto[context->app_id]++;
@@ -863,7 +894,7 @@ static uint32_t get_file_type_id(void *ssnptr)
 
 static uint32_t get_new_file_instance(void *ssnptr)
 {
-    FileSession *file_session = get_file_session (ssnptr);
+    FileSession *file_session = get_create_file_session (ssnptr);
 
     if (file_session)
     {
@@ -899,7 +930,8 @@ static void file_signature_callback(Packet* p)
     file_session = get_file_session (ssnptr);
     if (!file_session)
         return;
-    file_session->current_context = file_session->pending_context;
+    if (file_session->pending_context)
+        file_session->current_context = file_session->pending_context;
     file_signature_lookup(p, 1);
 }
 
@@ -991,6 +1023,7 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
                 verdict = file_type_cb(p, ssnptr, context->file_type_id,
                         context->upload, context->file_id);
                 file_stats.verdicts_type[verdict]++;
+                context->verdict = verdict;
             }
             context->file_type_enabled = false;
             file_stats.files_processed[context->file_type_id][context->upload]++;
@@ -1040,7 +1073,8 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
     /* file signature calculation */
     if (context->file_signature_enabled)
     {
-        file_signature_sha256(context, file_data, data_size, position);
+        if (!context->sha256)
+            file_signature_sha256(context, file_data, data_size, position);
         file_stats.data_processed[context->file_type_id][context->upload]
                                                          += data_size;
         updateFileSize(context, data_size, position);
@@ -1055,13 +1089,11 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
                 return 1;
         }
 
-        FILE_REG_DEBUG_WRAP(if (context->sha256) file_sha256_print(context->sha256);)
-
         /*Either get SHA or exceeding the SHA limit, need lookup*/
-        if (context->file_state.sig_state != FILE_SIG_PROCESSING)
+
+        if (context->file_state.sig_state == FILE_SIG_DEPTH_FAIL)
         {
-            if (context->file_state.sig_state == FILE_SIG_DEPTH_FAIL)
-                file_stats.files_sig_depth++;
+            file_stats.files_sig_depth++;
             _file_signature_lookup(context, p, false, suspend_block_verdict);
 
             /* Add the event with the File Type after signature process finishes,
@@ -1078,6 +1110,12 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
                 pkt->packet_flags |= PKT_FILE_EVENT_SET;
             }
         }
+        else if ((context->file_state.sig_state == FILE_SIG_DONE) && isFileEnd(position))
+        {
+            FILE_REG_DEBUG_WRAP(if (context->sha256) file_sha256_print(context->sha256);)
+            _file_signature_lookup(context, p, false, suspend_block_verdict);
+        }
+
     }
 #ifdef HAVE_EXTRADATA_FILE //(check to delete this piece of code since it will be mandatory enable signature from conf is sha256 is wanted in extradata)
     else if (context->xtra_file_sha256_id)
@@ -1128,10 +1166,11 @@ static int file_process( void* p, uint8_t* file_data, int data_size,
             suspend_block_verdict);
 }
 
-static void set_file_name (void* ssnptr, uint8_t* fname, uint32_t name_size)
+static void set_file_name (void* ssnptr, uint8_t* fname, uint32_t name_size,
+        bool save_in_context)
 {
     FileContext* context = get_current_file_context(ssnptr);
-    file_name_set(context, fname, name_size);
+    file_name_set(context, fname, name_size, save_in_context);
     FILE_REG_DEBUG_WRAP(printFileContext(context);)
 }
 
