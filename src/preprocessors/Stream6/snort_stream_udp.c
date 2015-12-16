@@ -389,7 +389,7 @@ void UdpSessionCleanup(void *ssn)
         /* Huh? */
         return;
     }
- 
+
     /* Cleanup the proto specific data */
     session_api->free_protocol_session_pool( SESSION_PROTO_UDP, scb );
     scb->proto_specific_data = NULL;
@@ -428,7 +428,7 @@ void StreamResetUdp(void)
 void StreamCleanUdp(void)
 {
     if ( udp_lws_cache )
-        s5stats.udp_prunes = session_api->get_session_prune_count( SESSION_PROTO_UDP ); 
+        s5stats.udp_prunes = session_api->get_session_prune_count( SESSION_PROTO_UDP );
 
     /* Clean up session cache */
     session_api->delete_session_cache( SESSION_PROTO_UDP );
@@ -495,7 +495,7 @@ int StreamProcessUdp( Packet *p, SessionControlBlock *scb,
     if( s5UdpPolicy == NULL )
     {
         int policyIndex;
-        StreamUdpConfig *udp_config = ( ( StreamConfig * ) scb->stream_config )->udp_config; 
+        StreamUdpConfig *udp_config = ( ( StreamConfig * ) scb->stream_config )->udp_config;
         if( udp_config == NULL )
         {
             DEBUG_WRAP(DebugMessage(DEBUG_STREAM,
@@ -504,7 +504,7 @@ int StreamProcessUdp( Packet *p, SessionControlBlock *scb,
             PREPROC_PROFILE_END( s5UdpPerfStats );
             return 0;
         }
- 
+
         /* Find an Udp policy for this packet */
         for( policyIndex = 0; policyIndex < udp_config->num_policies; policyIndex++ )
         {
@@ -549,7 +549,7 @@ int StreamProcessUdp( Packet *p, SessionControlBlock *scb,
             PREPROC_PROFILE_END(s5UdpPerfStats);
             return 0;
         }
-    
+
         scb->session_established = true;
         scb->proto_policy = s5UdpPolicy;
         s5stats.total_udp_sessions++;
@@ -714,10 +714,10 @@ static int ProcessUdp( SessionControlBlock *scb, Packet *p, StreamUdpPolicy *s5U
     return ACTION_NOTHING;
 }
 
-void UdpUpdateDirection(SessionControlBlock *ssn, char dir, snort_ip_p ip, uint16_t port)
+void UdpUpdateDirection(SessionControlBlock *ssn, char dir, sfaddr_t* ip, uint16_t port)
 {
     UdpSession *udpssn = (UdpSession *)ssn->proto_specific_data->data;
-    snort_ip tmpIp;
+    sfaddr_t tmpIp;
     uint16_t tmpPort;
 
     if (IP_EQUALITY(&udpssn->udp_sender_ip, ip) && (udpssn->udp_sender_port == port))

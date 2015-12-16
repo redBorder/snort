@@ -63,8 +63,8 @@
  */
 typedef struct _tagSessionKey
 {
-    snort_ip sip;  ///source IP address
-    snort_ip dip;  ///destination IP address
+    struct in6_addr sip;  ///source IP address
+    struct in6_addr dip;  ///destination IP address
 
     /* ports */
     uint16_t sp; ///source port
@@ -157,7 +157,7 @@ static inline unsigned int memory_per_node(
     }
     else if (hash == host_tag_cache_ptr)
     {
-        return sizeof(snort_ip)+sizeof(SFXHASH_NODE)+sizeof(TagNode);
+        return sizeof(sfaddr_t)+sizeof(SFXHASH_NODE)+sizeof(TagNode);
     }
 
     return 0;
@@ -314,7 +314,7 @@ static void PrintTagNode(TagNode *np)
  */
 static inline void SwapTag(TagNode *np)
 {
-    snort_ip tip;
+    struct in6_addr tip;
     uint16_t tport;
 
     tip = np->key.sip;
@@ -342,7 +342,7 @@ void InitTag(void)
 
     host_tag_cache_ptr = sfxhash_new(
                 hashTableSize,       /* number of hash buckets */
-                sizeof(snort_ip),    /* size of the key we're going to use */
+                sizeof(struct in6_addr), /* size of the key we're going to use */
                 0,                   /* size of the storage node */
                 0,                   /* disable memcap*/
                 0,                   /* use auto node recovery */
@@ -435,8 +435,8 @@ static void AddTagNode(Packet *p, TagData *tag, int mode, uint32_t now,
         return;
     }
 
-    IP_COPY_VALUE(idx->key.sip, GET_SRC_IP(p));
-    IP_COPY_VALUE(idx->key.dip, GET_DST_IP(p));
+    sfaddr_copy_to_raw(&idx->key.sip, GET_SRC_IP(p));
+    sfaddr_copy_to_raw(&idx->key.dip, GET_DST_IP(p));
     idx->key.sp = p->sp;
     idx->key.dp = p->dp;
     idx->proto = GET_IPH_PROTO(p);
@@ -543,8 +543,8 @@ int CheckTagList(Packet *p, Event *event, void** log_list)
 
     DEBUG_WRAP(DebugMessage(DEBUG_FLOW, "[*] Checking session tag list (forward)...\n"););
 
-    IP_COPY_VALUE(idx.key.sip, GET_SRC_IP(p));
-    IP_COPY_VALUE(idx.key.dip, GET_DST_IP(p));
+    sfaddr_copy_to_raw(&idx.key.sip, GET_SRC_IP(p));
+    sfaddr_copy_to_raw(&idx.key.dip, GET_DST_IP(p));
     idx.key.sp = p->sp;
     idx.key.dp = p->dp;
 
@@ -553,8 +553,8 @@ int CheckTagList(Packet *p, Event *event, void** log_list)
 
     if(returned == NULL)
     {
-        IP_COPY_VALUE(idx.key.dip, GET_SRC_IP(p));
-        IP_COPY_VALUE(idx.key.sip, GET_DST_IP(p));
+        sfaddr_copy_to_raw(&idx.key.dip, GET_SRC_IP(p));
+        sfaddr_copy_to_raw(&idx.key.sip, GET_DST_IP(p));
         idx.key.dp = p->sp;
         idx.key.sp = p->dp;
 
@@ -574,7 +574,7 @@ int CheckTagList(Packet *p, Event *event, void** log_list)
                 **  Only switch sip, because that's all we check for
                 **  the host tags.
                 */
-                IP_COPY_VALUE(idx.key.sip, GET_SRC_IP(p));
+                sfaddr_copy_to_raw(&idx.key.sip, GET_SRC_IP(p));
 
                 returned = (TagNode *) sfxhash_find(host_tag_cache_ptr, &idx);
             }

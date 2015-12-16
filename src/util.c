@@ -733,6 +733,7 @@ NORETURN void FatalError(const char *format,...)
  ****************************************************************************/
 static FILE *pid_lockfile = NULL;
 static FILE *pid_file = NULL;
+
 void CreatePidFile(const char *intf, pid_t pid)
 {
     struct stat pt;
@@ -853,6 +854,9 @@ void CreatePidFile(const char *intf, pid_t pid)
                 ClosePidFile();
                 FatalError("Failed to Lock PID File \"%s\" for PID \"%d\"\n", snort_conf->pid_filename, (int)pid);
             }
+
+            /* Give desired user control over lock file */
+            fchown(fileno(pid_lockfile), ScUid(), ScGid());
         }
     }
 #endif
@@ -864,6 +868,11 @@ void CreatePidFile(const char *intf, pid_t pid)
         LogMessage("Writing PID \"%d\" to file \"%s\"\n", (int)pid, snort_conf->pid_filename);
         fprintf(pid_file, "%d\n", (int)pid);
         fflush(pid_file);
+        
+#ifndef WIN32
+        /* Give desired user control over pid file */
+        fchown(fileno(pid_file), ScUid(), ScGid());
+#endif
     }
     else
     {
@@ -1092,11 +1101,11 @@ static void display_mallinfo(void)
     LogMessage("%s\n", STATS_SEPARATOR);
     LogMessage("Memory usage summary:\n");
     LogMessage("  Total non-mmapped bytes (arena):       %d\n", mi.arena);
-    LogMessage("  Bytes in mapped regions (hblkhd):      %d\n", mi.hblkhd);    
+    LogMessage("  Bytes in mapped regions (hblkhd):      %d\n", mi.hblkhd);
     LogMessage("  Total allocated space (uordblks):      %d\n", mi.uordblks);
     LogMessage("  Total free space (fordblks):           %d\n", mi.fordblks);
     LogMessage("  Topmost releasable block (keepcost):   %d\n", mi.keepcost);
-#ifdef DEBUG    
+#ifdef DEBUG
     LogMessage("  Number of free chunks (ordblks):       %d\n", mi.ordblks);
     LogMessage("  Number of free fastbin blocks (smblks):%d\n", mi.smblks);
     LogMessage("  Number of mapped regions (hblks):      %d\n", mi.hblks);
@@ -2383,7 +2392,7 @@ unsigned int xatoup(const char *s , const char *etext)
     return (unsigned int)val;
 }
 
-char * ObfuscateIpToText(sfip_t *ip)
+char * ObfuscateIpToText(sfaddr_t *ip)
 {
     static char ip_buf1[INET6_ADDRSTRLEN];
     static char ip_buf2[INET6_ADDRSTRLEN];
@@ -2402,21 +2411,21 @@ char * ObfuscateIpToText(sfip_t *ip)
     if (ip == NULL)
         return ip_buf;
 
-    if (!IP_IS_SET(snort_conf->obfuscation_net))
+    if (!sfip_is_set(&snort_conf->obfuscation_net))
     {
-        if (IS_IP6(ip))
+        if (sfaddr_family(ip) == AF_INET6)
             SnortSnprintf(ip_buf, buf_size, "x:x:x:x::x:x:x:x");
         else
             SnortSnprintf(ip_buf, buf_size, "xxx.xxx.xxx.xxx");
     }
     else
     {
-        sfip_t tmp;
+        sfaddr_t tmp;
         char *tmp_buf;
 
         IP_COPY_VALUE(tmp, ip);
 
-        if (IP_IS_SET(snort_conf->homenet))
+        if (sfip_is_set(&snort_conf->homenet))
         {
             if (sfip_contains(&snort_conf->homenet, &tmp) == SFIP_CONTAINS)
                 sfip_obfuscate(&snort_conf->obfuscation_net, &tmp);

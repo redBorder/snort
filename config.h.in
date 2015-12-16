@@ -40,11 +40,20 @@
 /* Define to 1 if you have the `daq_dp_add_dc' function. */
 #undef HAVE_DAQ_DP_ADD_DC
 
+/* DAQ version supports extended flow modifiers. */
+#undef HAVE_DAQ_EXT_MODFLOW
+
 /* DAQ version supports flow ID in header. */
 #undef HAVE_DAQ_FLOW_ID
 
 /* Define to 1 if you have the `daq_hup_apply' function. */
 #undef HAVE_DAQ_HUP_APPLY
+
+/* DAQ version supports query flow. */
+#undef HAVE_DAQ_QUERYFLOW
+
+/* DAQ version supports real addresses in header. */
+#undef HAVE_DAQ_REAL_ADDRESSES
 
 /* DAQ version supports DAQ_VERDICT_RETRY in DAQ_Verdict. */
 #undef HAVE_DAQ_VERDICT_RETRY

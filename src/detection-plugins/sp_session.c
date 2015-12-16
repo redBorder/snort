@@ -149,7 +149,7 @@ void SetupSession(void)
     /* map the keyword to an initialization/processing function */
     RegisterRuleOption("session", SessionInit, NULL, OPT_TYPE_LOGGING, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("session", &sessionPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("session", &sessionPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN, "Plugin: Session Setup\n"););
 }
@@ -369,7 +369,7 @@ FILE *OpenSessionFile(Packet *p)
     char filename[STD_BUF];
     char log_path[STD_BUF];
     char session_file[STD_BUF]; /* name of session file */
-    sfip_t *dst, *src;
+    sfaddr_t *dst, *src;
 
     FILE *ret;
 

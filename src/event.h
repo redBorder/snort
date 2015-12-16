@@ -33,8 +33,7 @@
 #include "pcap_pkthdr32.h"
 
 #if defined(FEAT_OPEN_APPID)
-#define MAX_EVENT_APPNAME_LEN  16
-
+#define MAX_EVENT_APPNAME_LEN  64
 #endif /* defined(FEAT_OPEN_APPID) */
 typedef struct _Event
 {

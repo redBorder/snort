@@ -110,7 +110,7 @@ void SetupUriLenCheck(void)
 {
     RegisterRuleOption("urilen", UriLenCheckInit, NULL, OPT_TYPE_DETECTION, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("urilen_check", &urilenCheckPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("urilen_check", &urilenCheckPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
 }
 

@@ -195,7 +195,7 @@ static void SMTPInit(struct _SnortConfig *sc, char *args)
 #endif
 
 #ifdef PERF_PROFILING
-        _dpd.addPreprocProfileFunc("smtp", (void*)&smtpPerfStats, 0, _dpd.totalPerfStats);
+        _dpd.addPreprocProfileFunc("smtp", (void*)&smtpPerfStats, 0, _dpd.totalPerfStats, NULL);
 #endif
     }
 

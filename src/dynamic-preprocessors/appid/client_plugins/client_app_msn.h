@@ -24,7 +24,7 @@
 
 #include "client_app_api.h"
 
-extern RNAClientAppModule msn_client_mod;
+extern tRNAClientAppModule msn_client_mod;
 
 #endif  /* __CLIENT_APP_MSN_H__ */
 

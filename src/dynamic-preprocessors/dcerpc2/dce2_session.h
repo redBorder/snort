@@ -44,6 +44,7 @@ typedef enum _DCE2_SsnFlag
     DCE2_SSN_FLAG__AUTODETECTED       = 0x0010,
     DCE2_SSN_FLAG__PAF_ABORT          = 0x0020,
     DCE2_SSN_FLAG__NO_INSPECT         = 0x0040,
+    DCE2_SSN_FLAG__SMB2               = 0x0080,
     DCE2_SSN_FLAG__ALL                = 0xffff
 
 } DCE2_SsnFlag;

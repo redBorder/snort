@@ -32,72 +32,77 @@
 #include "sf_dynamic_preprocessor.h"
 #include "hostPortAppCache.h"
 #include "ip_funcs.h"
-#include "sfghash.h"
+#include "sfxhash.h"
+#include "appIdConfig.h"
 
-static SFGHASH *hostPortCache;
-
-typedef struct _tHostPortKey {
-    struct in6_addr ip;
-    uint16_t port;
-    uint16_t proto;
-} tHostPortKey;
-
-
-void hostPortAppCacheInit()
+void hostPortAppCacheInit(tAppIdConfig *pConfig)
 {
-    if (!(hostPortCache = sfghash_new(-2000,
+    if (!(pConfig->hostPortCache = sfxhash_new(2048,
                                       sizeof(tHostPortKey),
+                                      sizeof(tHostPortVal),
                                       0,
-                                      NULL)))
+                                      0,
+                                      NULL,
+                                      NULL,
+                                      0)))
     {
         _dpd.errMsg( "failed to allocate HostPort map");
     }
 }
 
-void hostPortAppCacheFini()
+void hostPortAppCacheFini(tAppIdConfig *pConfig)
 {
-    if (hostPortCache)
+    if (pConfig->hostPortCache)
     {
-        sfghash_delete(hostPortCache);
-        hostPortCache = NULL;
+        sfxhash_delete(pConfig->hostPortCache);
+        pConfig->hostPortCache = NULL;
     }
 }
 
-
-tAppId hostPortAppCacheFind(const snort_ip *snort_ip, uint16_t port, uint16_t protocol)
+tHostPortVal *hostPortAppCacheFind(const sfaddr_t *snort_ip, uint16_t port, uint16_t protocol, const tAppIdConfig *pConfig)
 {
     tHostPortKey hk;
-    copySnortIpToIpv6Network(&hk.ip, snort_ip);
+    tHostPortVal *hv;
+    sfip_set_ip((sfaddr_t *)&hk.ip, snort_ip);
     hk.port = port;
     hk.proto = protocol;
 
-    return  (tAppId)sfghash_find(hostPortCache, &hk);
+    hv = (tHostPortVal*)sfxhash_find(pConfig->hostPortCache, &hk);
+    return hv;
 }
 
-int hostPortAppCacheAdd(const struct in6_addr *ip, uint16_t port, uint16_t proto, unsigned type, tAppId appId)
+int hostPortAppCacheAdd(const struct in6_addr *ip, uint16_t port, uint16_t proto, unsigned type, tAppId appId, tAppIdConfig *pConfig)
 {
     tHostPortKey hk;
+    tHostPortVal hv;
     memcpy(&hk.ip, ip, sizeof(hk.ip));
     hk.port = port;
     hk.proto = proto;
-    if (sfghash_add(hostPortCache, &hk, (void*)appId))
+    hv.appId = appId;
+    hv.type = type;
+    if (sfxhash_add(pConfig->hostPortCache, &hk, &hv))
     {
         return 0;
     }
 
     return 1;
 }
-void hostPortAppCacheDump(void)
+void hostPortAppCacheDump(const tAppIdConfig *pConfig)
 {
-    SFGHASH_NODE * node;
+    SFXHASH_NODE * node;
 
-   for( node = sfghash_findfirst(hostPortCache); node; node = sfghash_findnext(hostPortCache) )
+   for (node = sfxhash_findfirst(pConfig->hostPortCache); 
+         node;
+         node = sfxhash_findnext(pConfig->hostPortCache))
    {
-      char inet_buffer[INET6_ADDRSTRLEN];
-      tHostPortKey *key;
+       char inet_buffer[INET6_ADDRSTRLEN];
+       tHostPortKey *hk;
+       tHostPortVal *hv;
 
-      key = (tHostPortKey *)node->key;
-      inet_ntop(AF_INET6, &key->ip, inet_buffer, sizeof(inet_buffer));
-      printf("\tip=%s, \tport %d, \tproto %d, \tappId=%d\n", inet_buffer, key->port, key->proto, (signed)(node->data));
+       hk = (tHostPortKey *)node->key;
+       hv = (tHostPortVal *)node->data;
+
+       inet_ntop(AF_INET6, &hk->ip, inet_buffer, sizeof(inet_buffer));
+       printf("\tip=%s, \tport %d, \tproto %d, \ttype=%u, \tappId=%d\n", inet_buffer, hk->port, hk->proto, hv->type, hv->appId);
    }
 }

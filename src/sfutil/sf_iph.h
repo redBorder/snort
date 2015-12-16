@@ -26,8 +26,8 @@ struct _Packet;
 
 typedef struct _IPH_API
 {
-    sfip_t *   (*iph_ret_src)(const struct _Packet *);
-    sfip_t *   (*iph_ret_dst)(const struct _Packet *);
+    sfaddr_t *   (*iph_ret_src)(const struct _Packet *);
+    sfaddr_t *   (*iph_ret_dst)(const struct _Packet *);
     uint16_t   (*iph_ret_tos)(const struct _Packet *);
     uint8_t    (*iph_ret_ttl)(const struct _Packet *);
     uint16_t   (*iph_ret_len)(const struct _Packet *);
@@ -37,8 +37,8 @@ typedef struct _IPH_API
     uint8_t    (*iph_ret_ver)(const struct _Packet *);
     uint8_t    (*iph_ret_hlen)(const struct _Packet *);
 
-    sfip_t *   (*orig_iph_ret_src)(const struct _Packet *);
-    sfip_t *   (*orig_iph_ret_dst)(const struct _Packet *);
+    sfaddr_t *   (*orig_iph_ret_src)(const struct _Packet *);
+    sfaddr_t *   (*orig_iph_ret_dst)(const struct _Packet *);
     uint16_t   (*orig_iph_ret_tos)(const struct _Packet *);
     uint8_t    (*orig_iph_ret_ttl)(const struct _Packet *);
     uint16_t   (*orig_iph_ret_len)(const struct _Packet *);

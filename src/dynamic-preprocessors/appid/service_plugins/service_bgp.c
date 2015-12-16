@@ -93,13 +93,14 @@ typedef struct _SERVICE_BGP_V1_OPEN
 static int bgp_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(bgp_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &bgp_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "bgp",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -108,7 +109,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule bgp_service_mod =
+tRNAServiceValidationModule bgp_service_mod =
 {
     "BGP",
     &bgp_init,
@@ -125,12 +126,12 @@ static tAppRegistryEntry appIdRegistry[] = {{APP_ID_BGP, 0}};
 
 static int bgp_init(const InitServiceAPI * const init_api)
 {
-    init_api->RegisterPattern(&bgp_validate, IPPROTO_TCP, BGP_PATTERN, sizeof(BGP_PATTERN), 0, "bgp");
+    init_api->RegisterPattern(&bgp_validate, IPPROTO_TCP, BGP_PATTERN, sizeof(BGP_PATTERN), 0, "bgp", init_api->pAppidConfig);
 	unsigned i;
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&bgp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&bgp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -150,13 +151,13 @@ MakeRNAServiceValidationPrototype(bgp_validate)
     if (size < sizeof(ServiceBGPHeader))
         goto fail;
 
-    bd = bgp_service_mod.api->data_get(flowp);
+    bd = bgp_service_mod.api->data_get(flowp, bgp_service_mod.flow_data_index);
     if (!bd)
     {
         bd = calloc(1, sizeof(*bd));
         if (!bd)
             return SERVICE_ENOMEM;
-        if (bgp_service_mod.api->data_add(flowp, bd, &free))
+        if (bgp_service_mod.api->data_add(flowp, bd, bgp_service_mod.flow_data_index, &free))
         {
             free(bd);
             return SERVICE_ENOMEM;
@@ -233,7 +234,7 @@ inprocess:
     return SERVICE_INPROCESS;
 
 fail:
-    bgp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+    bgp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, bgp_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 
 success:

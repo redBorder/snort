@@ -116,7 +116,7 @@ am__snort_SOURCES_DIST = cdefs.h event.h generators.h sf_protocols.h \
 	detection_util.c detection_util.h rate_filter.c rate_filter.h \
 	obfuscation.c obfuscation.h rule_option_types.h sfdaq.c \
 	sfdaq.h idle_processing.c idle_processing.h \
-	idle_processing_funcs.h dump.c dump.h
+	idle_processing_funcs.h appIdApi.h dump.c dump.h
 @BUILD_SNPRINTF_TRUE@am__objects_1 = snprintf.$(OBJEXT)
 @BUILD_CONTROL_SOCKET_TRUE@am__objects_2 = dump.$(OBJEXT)
 am_snort_OBJECTS = debug.$(OBJEXT) decode.$(OBJEXT) encode.$(OBJEXT) \
@@ -298,7 +298,6 @@ LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
 LUA_CFLAGS = @LUA_CFLAGS@
 LUA_LIBS = @LUA_LIBS@
-MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
 MKDIR_P = @MKDIR_P@
@@ -407,7 +406,7 @@ snort_SOURCES = cdefs.h event.h generators.h sf_protocols.h \
 	detection_util.c detection_util.h rate_filter.c rate_filter.h \
 	obfuscation.c obfuscation.h rule_option_types.h sfdaq.c \
 	sfdaq.h idle_processing.c idle_processing.h \
-	idle_processing_funcs.h $(am__append_1)
+	idle_processing_funcs.h appIdApi.h $(am__append_1)
 snort_LDADD = output-plugins/libspo.a detection-plugins/libspd.a \
 	dynamic-plugins/libdynamic.a \
 	dynamic-output/plugins/liboutput.a preprocessors/libspp.a \
@@ -426,7 +425,7 @@ all: all-recursive
 
 .SUFFIXES:
 .SUFFIXES: .c .lo .o .obj
-$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__configure_deps)
+$(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
 	    *$$dep*) \
@@ -451,9 +450,9 @@ Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 $(top_builddir)/config.status: $(top_srcdir)/configure $(CONFIG_STATUS_DEPENDENCIES)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 
-$(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
+$(top_srcdir)/configure:  $(am__configure_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
-$(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
+$(ACLOCAL_M4):  $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
 install-binPROGRAMS: $(bin_PROGRAMS)

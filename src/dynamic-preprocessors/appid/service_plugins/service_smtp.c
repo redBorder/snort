@@ -37,7 +37,8 @@ typedef enum
     SMTP_STATE_CONNECTION,
     SMTP_STATE_HELO,
     SMTP_STATE_TRANSFER,
-    SMTP_STATE_CONNECTION_ERROR
+    SMTP_STATE_CONNECTION_ERROR,
+    SMTP_STATE_STARTTLS
 } SMTPState;
 
 typedef struct _SERVICE_SMTP_DATA
@@ -45,6 +46,7 @@ typedef struct _SERVICE_SMTP_DATA
     SMTPState state;
     int code;
     int multiline;
+    int set_flags;
 } ServiceSMTPData;
 
 #pragma pack(1)
@@ -60,13 +62,14 @@ typedef struct _SERVICE_SMTP_CODE
 static int smtp_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(smtp_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &smtp_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "smtp",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -75,7 +78,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule smtp_service_mod =
+tRNAServiceValidationModule smtp_service_mod =
 {
     "SMTP",
     &smtp_init,
@@ -87,20 +90,24 @@ RNAServiceValidationModule smtp_service_mod =
 #define SMTP_PATTERN3 "SMTP"
 #define SMTP_PATTERN4 "smtp"
 
-static tAppRegistryEntry appIdRegistry[] = {{APP_ID_SMTP, 0}};
+static tAppRegistryEntry appIdRegistry[] =
+{
+    {APP_ID_SMTP,  0},
+    {APP_ID_SMTPS, 0}
+};
 
 static int smtp_init(const InitServiceAPI * const init_api)
 {
-    init_api->RegisterPattern(&smtp_validate, IPPROTO_TCP, (uint8_t *)SMTP_PATTERN1, sizeof(SMTP_PATTERN1)-1, 0, "smtp");
-    init_api->RegisterPattern(&smtp_validate, IPPROTO_TCP, (uint8_t *)SMTP_PATTERN2, sizeof(SMTP_PATTERN2)-1, 0, "smtp");
-    init_api->RegisterPattern(&smtp_validate, IPPROTO_TCP, (uint8_t *)SMTP_PATTERN3, sizeof(SMTP_PATTERN3)-1, -1, "smtp");
-    init_api->RegisterPattern(&smtp_validate, IPPROTO_TCP, (uint8_t *)SMTP_PATTERN4, sizeof(SMTP_PATTERN4)-1, -1, "smtp");
+    init_api->RegisterPattern(&smtp_validate, IPPROTO_TCP, (uint8_t *)SMTP_PATTERN1, sizeof(SMTP_PATTERN1)-1, 0, "smtp", init_api->pAppidConfig);
+    init_api->RegisterPattern(&smtp_validate, IPPROTO_TCP, (uint8_t *)SMTP_PATTERN2, sizeof(SMTP_PATTERN2)-1, 0, "smtp", init_api->pAppidConfig);
+    init_api->RegisterPattern(&smtp_validate, IPPROTO_TCP, (uint8_t *)SMTP_PATTERN3, sizeof(SMTP_PATTERN3)-1, -1, "smtp", init_api->pAppidConfig);
+    init_api->RegisterPattern(&smtp_validate, IPPROTO_TCP, (uint8_t *)SMTP_PATTERN4, sizeof(SMTP_PATTERN4)-1, -1, "smtp", init_api->pAppidConfig);
 
 	unsigned i;
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&smtp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&smtp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -207,18 +214,31 @@ MakeRNAServiceValidationPrototype(smtp_validate)
     if (dir != APP_ID_FROM_RESPONDER)
         goto inprocess;
 
-    fd = smtp_service_mod.api->data_get(flowp);
+    fd = smtp_service_mod.api->data_get(flowp, smtp_service_mod.flow_data_index);
     if (!fd)
     {
         fd = calloc(1, sizeof(*fd));
         if (!fd)
             return SERVICE_ENOMEM;
-        if (smtp_service_mod.api->data_add(flowp, fd, &free))
+        if (smtp_service_mod.api->data_add(flowp, fd, smtp_service_mod.flow_data_index, &free))
         {
             free(fd);
             return SERVICE_ENOMEM;
         }
         fd->state = SMTP_STATE_CONNECTION;
+    }
+    else
+    {
+        if (getAppIdExtFlag(flowp, APPID_SESSION_ENCRYPTED) && fd->state == SMTP_STATE_TRANSFER)
+        {
+            fd->state = SMTP_STATE_STARTTLS;
+        }
+    }
+
+    if (!fd->set_flags)
+    {
+        fd->set_flags = 1;
+        setAppIdExtFlag(flowp, APPID_SESSION_CLIENT_GETS_SERVER_PACKETS);
     }
 
     offset = 0;
@@ -263,6 +283,13 @@ MakeRNAServiceValidationPrototype(smtp_validate)
                 goto fail;
             }
             break;
+        case SMTP_STATE_STARTTLS:
+            if (fd->code == 220)
+                goto success;
+            /* STARTTLS failed. */
+            clearAppIdExtFlag(flowp, APPID_SESSION_ENCRYPTED); // not encrypted after all
+            fd->state = SMTP_STATE_HELO; // revert the state
+            break;
         case SMTP_STATE_TRANSFER:
             goto success;
         case SMTP_STATE_CONNECTION_ERROR:
@@ -277,11 +304,11 @@ inprocess:
 
 success:
     smtp_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
-                                      APP_ID_SMTP, NULL, NULL, NULL);
+                                      fd->state == SMTP_STATE_STARTTLS ? APP_ID_SMTPS : APP_ID_SMTP, NULL, NULL, NULL);
     return SERVICE_SUCCESS;
 
 fail:
-    smtp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+    smtp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, smtp_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 }
 

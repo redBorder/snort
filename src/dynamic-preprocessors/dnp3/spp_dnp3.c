@@ -165,7 +165,7 @@ static inline void DNP3OneTimeInit(struct _SnortConfig *sc)
     _dpd.addPreprocExit(DNP3CleanExit, NULL, PRIORITY_LAST, PP_DNP3);
 
 #ifdef PERF_PROFILING
-    _dpd.addPreprocProfileFunc("dnp3", (void *)&dnp3PerfStats, 0, _dpd.totalPerfStats);
+    _dpd.addPreprocProfileFunc("dnp3", (void *)&dnp3PerfStats, 0, _dpd.totalPerfStats, NULL);
 #endif
 
     /* Set up target-based app id */

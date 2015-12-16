@@ -94,6 +94,10 @@ typedef HANDLE PluginHandle;
 #include "../dynamic-output/plugins/output.h"
 #include "file_api.h"
 #include "packet_time.h"
+#include "perf_indicators.h"
+#if defined(FEAT_OPEN_APPID)
+#include "appIdApi.h"
+#endif /* defined(FEAT_OPEN_APPID) */
 
 #ifdef TARGET_BASED
 #include "target-based/sftarget_protocol_reference.h"
@@ -1268,7 +1272,7 @@ int pcreExec(const void *code, const void *extra, const char *subj,
 
 static int setFlowId(const void* p, uint32_t id)
 {
-    return DAQ_ModifyFlow(p, id);
+    return DAQ_ModifyFlowOpaque(p, id);
 }
 
 static const uint8_t* getHttpBuffer (HTTP_BUFFER hb_type, unsigned* len)
@@ -1430,21 +1434,6 @@ int DynamicEnablePreprocessor(void *p, uint32_t preprocId)
     return EnablePreprocessor((Packet *)p, preprocId);
 }
 
-void DynamicDropReset(void *p)
-{
-    Active_DropSession((Packet*)p);
-}
-
-void DynamicForceDropPacket(void *p)
-{
-    Active_ForceDropSession();
-}
-
-void DynamicForceDropReset(void *p)
-{
-    Active_ForceDropResetAction((Packet *)p);
-}
-
 #ifdef ACTIVE_RESPONSE
 void DynamicActiveSetEnabled(int on_off)
 {
@@ -1462,10 +1451,10 @@ void *DynamicGetRuleClassById(int id)
     return (void *)ClassTypeLookupById(snort_conf, id);
 }
 
-void DynamicRegisterPreprocessorProfile(const char *keyword, void *stats, int layer, void *parent)
+void DynamicRegisterPreprocessorProfile(const char *keyword, void *stats, int layer, void *parent, PreprocStatsNodeFreeFunc freefn)
 {
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile(keyword, (PreprocStats *)stats, layer, (PreprocStats *)parent);
+    RegisterPreprocessorProfile(keyword, (PreprocStats *)stats, layer, (PreprocStats *)parent, freefn);
 #endif
 }
 
@@ -1590,16 +1579,59 @@ void DynamicSendBlockResponseMsg(void *p, const uint8_t* buffer, uint32_t buffer
         Active_SendData(packet, df, buffer, buffer_len);
 }
 
+void DynamicActiveResponseMsg(void *p, const uint8_t* buf, uint32_t blen, unsigned flags)
+{
+    EncodeFlags df = (SND_BLK_RESP_FLAG_DO_CLIENT) ? 0: ENC_FLAG_FWD;
+
+    Active_UDPInjectData((Packet *)p, df , buf, blen);
+}
 void DynamicActiveInjectData(void *p, uint32_t flags, const uint8_t *buf, uint32_t blen)
 {
     Active_InjectData((Packet *)p, (EncodeFlags)flags, buf, blen);
 }
+
+int DynamicActiveQueueResponse( Active_ResponseFunc cb, void *data )
+{
+    return Active_QueueResponse( cb, data );
+}
+
 #endif
 
 void DynamicDropPacket(void *p)
 {
     Active_DropPacket((Packet*)p);
 }
+
+bool DynamicRetryPacket(void *p)
+{
+    return Active_DAQRetryPacket( ( Packet * ) p );
+}
+
+bool DynamicActivePacketWasDropped(void)
+{
+    return Active_PacketWasDropped();
+}
+
+void DynamicForceDropPacket(void *p)
+{
+    Active_ForceDropPacket( );
+}
+
+void DynamicDropSessionAndReset(void *p)
+{
+    Active_DropSession((Packet*)p);
+}
+
+void DynamicForceDropSession(void *p)
+{
+    Active_ForceDropSession();
+}
+
+void DynamicForceDropSessionAndReset(void *p)
+{
+    Active_ForceDropResetAction((Packet *)p);
+}
+
 
 void DynamicSetParserPolicy(SnortConfig *sc, tSfPolicyId id)
 {
@@ -1681,6 +1713,11 @@ uint32_t DynamicGetSnortInstance(void)
 bool DynamicIsPafEnabled(void)
 {
     return ScPafEnabled();
+}
+
+bool DynamicIsReadMode(void)
+{
+    return ScReadMode();
 }
 
 time_t DynamicPktTime(void)
@@ -1820,10 +1857,10 @@ static void urlQueryDestroy(struct urlQueryContext *context)
     if (urlQueryDestroyFnPtr)
         (urlQueryDestroyFnPtr)(context);
 }
-static int urlQueryMatch(struct urlQueryContext *context, uint16_t inUrlCat, uint16_t inUrlMinRep, uint16_t inUrlMaxRep)
+static int urlQueryMatch(void *ssnptr, struct urlQueryContext *context, uint16_t inUrlCat, uint16_t inUrlMinRep, uint16_t inUrlMaxRep)
 {
     if (urlQueryMatchFnPtr)
-        return (urlQueryMatchFnPtr)(context, inUrlCat, inUrlMinRep, inUrlMaxRep);
+        return (urlQueryMatchFnPtr)(ssnptr, context, inUrlCat, inUrlMinRep, inUrlMaxRep);
     return -1;
 }
 
@@ -1831,10 +1868,11 @@ static void registerUserGroupIdGet(UserGroupIdGetFunc userIdFn)
 {
     userGroupIdGetFnPtr = userIdFn;
 }
-static int userGroupIdGet(const snort_ip *snortIp, uint32_t *userId, unsigned *groupIdArray, unsigned groupIdArrayLen)
+
+static int userGroupIdGet(void *ssnptr, uint32_t *userId, uint32_t *realmId, unsigned *groupIdArray, unsigned groupIdArrayLen)
 {
     if (userGroupIdGetFnPtr)
-        return (userGroupIdGetFnPtr)(snortIp, userId, groupIdArray, groupIdArrayLen);
+        return (userGroupIdGetFnPtr)(ssnptr, userId, realmId, groupIdArray, groupIdArrayLen);
     return -1;
 }
 
@@ -1842,7 +1880,7 @@ static void registerGeoIpAddressLookup(GeoIpAddressLookupFunc fn)
 {
     geoIpAddressLookupFnPtr = fn;
 }
-static int geoIpAddressLookup(const snort_ip *snortIp, uint16_t* geo)
+static int geoIpAddressLookup(const sfaddr_t *snortIp, uint16_t* geo)
 {
     if (geoIpAddressLookupFnPtr)
         return (geoIpAddressLookupFnPtr)(snortIp, geo);
@@ -1898,7 +1936,7 @@ static int getSSLActualAction(void *ssnptr, uint16_t *action)
     {
         return (getSSLActualActionFnPtr)(ssnptr, action);
     }
-    
+
     return -1;
 }
 
@@ -1935,10 +1973,18 @@ void *DynamicGetSSLCallback(void)
     return GetSSLCallback();
 }
 
-bool DynamicIsSSLPolicyEnabled(struct _SnortConfig *sc)
+/*
+   DynamicIsSSLPolicyEnabled( struct _SnortConfig * )
+
+   Notes: Durring reload/init SnortConfig MUST be provided.
+          Durring runtime/packet processing, NULL MUST be provided.
+
+   Arguments: (struct _SnortConfig*) sc
+   Returns: (bool) true || false
+*/
+bool DynamicIsSSLPolicyEnabled( struct _SnortConfig *sc )
 {
     tSfPolicyId policy;
-
     if (sc)
     {
         policy = getParserPolicy(sc);
@@ -1946,7 +1992,7 @@ bool DynamicIsSSLPolicyEnabled(struct _SnortConfig *sc)
     }
 
     policy = getNapRuntimePolicy();
-    return (snort_conf->targeted_policies[ policy ]->ssl_policy_enabled);
+    return (snort_conf->targeted_policies[ policy ]->ssl_policy_enabled );
 }
 
 void DynamicSetSSLPolicyEnabled(struct _SnortConfig *sc, tSfPolicyId policy, bool value)
@@ -1954,9 +2000,313 @@ void DynamicSetSSLPolicyEnabled(struct _SnortConfig *sc, tSfPolicyId policy, boo
     sc->targeted_policies[policy]->ssl_policy_enabled = value;
 }
 
+#if defined(FEAT_OPEN_APPID)
+typedef struct _IsAppIdRequiredFuncNode
+{
+    IsAppIdRequiredFunc               fn;
+    struct _IsAppIdRequiredFuncNode * next;
+}
+IsAppIdRequiredFuncNode;
+
+static IsAppIdRequiredFuncNode * isAppIdRequiredFuncList = NULL;
+
+static void registerIsAppIdRequired(IsAppIdRequiredFunc fn)
+{
+    IsAppIdRequiredFuncNode * curr;
+
+    if (fn == NULL)
+        return;
+
+    curr = isAppIdRequiredFuncList;
+    while (curr != NULL)
+    {
+        if (curr->fn == fn)
+            return;    /* function is already registered */
+        curr = curr->next;
+    }
+
+    curr = malloc(sizeof(IsAppIdRequiredFuncNode));
+    if (curr == NULL)
+        return;
+
+    curr->fn = fn;
+    curr->next = isAppIdRequiredFuncList;
+    isAppIdRequiredFuncList = curr;
+}
+
+static void unregisterIsAppIdRequired(IsAppIdRequiredFunc fn)
+{
+    IsAppIdRequiredFuncNode *  tmp;
+    IsAppIdRequiredFuncNode ** curr;
+
+    if (fn == NULL)
+        return;
+
+    curr = &isAppIdRequiredFuncList;
+    while (*curr != NULL)
+    {
+        if ((*curr)->fn == fn)
+            break;
+        curr = &((*curr)->next);
+    }
+
+    if (*curr == NULL)
+        return;    /* function is not currently registered */
+
+    tmp   = *curr;
+    *curr = (*curr)->next;
+    free(tmp);
+}
+
+static bool isAppIdRequired(void)
+{
+    IsAppIdRequiredFuncNode * curr;
+
+    curr = isAppIdRequiredFuncList;
+    while (curr != NULL)
+    {
+        if (curr->fn())
+            return true;
+        curr = curr->next;
+    }
+
+    return false;
+}
+
+static const char *dummyGetApplicationName(int32_t appId)
+{
+    return NULL;
+}
+
+static tAppId dummyGetApplicationId(const char *appName)
+{
+    return 0;
+}
+
+static tAppId dummyAppIdFFromAppIdData(struct AppIdData *session)
+{
+    return 0;
+}
+
+static bool dummyCheckAppIdData(struct AppIdData *session)
+{
+    return false;
+}
+
+static char *dummyGetUserName(struct AppIdData *session, tAppId *service, bool *isLoginSuccessful)
+{
+    return NULL;
+}
+
+static char *dummyGetClientVersion(struct AppIdData *session)
+{
+    return NULL;
+}
+
+static unsigned dummyGetAppIdSessionAttribute(struct AppIdData *session, unsigned int flag)
+{
+    return 0;
+}
+
+static APPID_FLOW_TYPE dummyGetFlowType(struct AppIdData *appIdData)
+{
+    return APPID_FLOW_TYPE_IGNORE;
+}
+
+static void dummyGetServiceInfo(struct AppIdData *appIdData, char **serviceVendor, char **serviceVersion, RNAServiceSubtype **serviceSubtype)
+{
+}
+
+static short dummyGetServicePort(struct AppIdData *appIdData)
+{
+    return 0;
+}
+
+static sfaddr_t *dummyGetServiceIp(struct AppIdData *appIdData)
+{
+    return NULL;
+}
+
+static char *dummyStringFromAppIdData(struct AppIdData *appIdData)
+{
+    return NULL;
+}
+
+static SEARCH_SUPPORT_TYPE dummySearchTypeFromAppIdData(struct AppIdData *appIdData)
+{
+    return NOT_A_SEARCH_ENGINE;
+}
+
+static uint16_t dummyOffsetFromAppIdData(struct AppIdData *appIdData)
+{
+    return 0;
+}
+
+static DhcpFPData *dummyGetDhcpFpData(struct AppIdData *appIdData)
+{
+    return NULL;
+}
+
+static void dummyFreeDhcpFpData(struct AppIdData *session, DhcpFPData *data)
+{
+}
+
+static DHCPInfo *dummyGetDhcpInfo(struct AppIdData *session)
+{
+    return NULL;
+}
+
+static void dummyFreeDhcpInfo(struct AppIdData *session, DHCPInfo *data)
+{
+}
+
+static FpSMBData *dummyGetSmbFpData(struct AppIdData *session)
+{
+    return NULL;
+}
+
+static void dummyFreeSmbFpData(struct AppIdData *session, FpSMBData *data)
+{
+}
+
+static char *dummyGetNetbiosName(struct AppIdData *session)
+{
+    return NULL;
+}
+
+static uint32_t dummyProduceHAState(void *lwssn, uint8_t *buf)
+{
+    return 0;
+}
+
+static uint32_t dummyConsumeHAState(void *lwssn, const uint8_t *buf, uint8_t length, uint8_t proto, sfaddr_t *ip)
+{
+    return 0;
+}
+
+static void *dummyGetFirewallEarlySessionData(struct AppIdData *session)
+{
+    return NULL;
+}
+
+static struct AppIdData *dummyGetAppIdData(void *lwssn)
+{
+    return NULL;
+}
+
+static char *dummyGetDNSQuery(struct AppIdData *session, uint8_t *query_len)
+{
+    if (query_len)
+        *query_len = 0;
+    return NULL;
+}
+static uint16_t dummyGetDNSQueryOffset(struct AppIdData *session)
+{
+    return 0;
+}
+static uint16_t dummyGetDNSRecordType(struct AppIdData *session)
+{
+    return 0;
+}
+static uint8_t dummyGetDNSResponseType(struct AppIdData *session)
+{
+    return 0;
+}
+static uint32_t dummyGetDNSTTL(struct AppIdData *session)
+{
+    return 0;
+}
+
+struct AppIdData* dummyRemoveExpectedAppIdData(struct AppIdData *appIdData)
+{
+    return NULL;
+}
+
+struct AppIdApi appIdApi = {
+    dummyGetApplicationName,    /* getApplicationName */
+    dummyGetApplicationId,      /* getApplicationId */
+
+    dummyAppIdFFromAppIdData,    /* getServiceAppId */
+    dummyAppIdFFromAppIdData,    /* getPortServiceAppId */
+    dummyAppIdFFromAppIdData,    /* getOnlyServiceAppId */
+    dummyAppIdFFromAppIdData,    /* getMiscAppId */
+    dummyAppIdFFromAppIdData,    /* getClientAppId */
+    dummyAppIdFFromAppIdData,    /* getPayloadAppId */
+    dummyAppIdFFromAppIdData,    /* getReferredAppId */
+    dummyAppIdFFromAppIdData,    /* getFwServiceAppId */
+    dummyAppIdFFromAppIdData,    /* getFwMiscAppId */
+    dummyAppIdFFromAppIdData,    /* getFwClientAppId */
+    dummyAppIdFFromAppIdData,    /* getFwPayloadAppId */
+    dummyAppIdFFromAppIdData,    /* getFwReferredAppId */
+
+    dummyCheckAppIdData,    /* isSessionSslDecrypted */
+    dummyCheckAppIdData,    /* isAppIdInspectingSession */
+    dummyCheckAppIdData,    /* isAppIdAvailable */
+
+    dummyGetUserName,         /* getUserName */
+    dummyGetClientVersion,    /* getClientVersion */
+
+    dummyGetAppIdSessionAttribute,    /* getAppIdSessionAttribute */
+
+    dummyGetFlowType,       /* getFlowType */
+    dummyGetServiceInfo,    /* getServiceInfo */
+    dummyGetServicePort,    /* getServicePort */
+    dummyGetServiceIp,      /* getServiceIp */
+
+    dummyStringFromAppIdData,    /* getHttpUserAgent */
+    dummyStringFromAppIdData,    /* getHttpHost */
+    dummyStringFromAppIdData,    /* getHttpUrl */
+    dummyStringFromAppIdData,    /* getHttpReferer */
+    dummyStringFromAppIdData,    /* getHttpNewUrl */
+    dummyStringFromAppIdData,    /* getHttpUri */
+    dummyStringFromAppIdData,    /* getHttpResponseCode */
+    dummyStringFromAppIdData,    /* getHttpCookie */
+    dummyStringFromAppIdData,    /* getHttpNewCookie */
+    dummyStringFromAppIdData,    /* getHttpContentType */
+    dummyStringFromAppIdData,    /* getHttpLocation */
+    dummyStringFromAppIdData,    /* getHttpBody */
+    dummyStringFromAppIdData,    /* getHttpReqBody */
+    dummyOffsetFromAppIdData,    /* getHttpUriOffset */
+    dummyOffsetFromAppIdData,    /* getHttpUriEndOffset */
+    dummyOffsetFromAppIdData,    /* getHttpCookieOffset */
+    dummyOffsetFromAppIdData,    /* getHttpCookieEndOffset */
+    dummySearchTypeFromAppIdData,       /* getHttpSearch */
+
+    dummyStringFromAppIdData,    /* getTlsHost */
+
+    dummyGetDhcpFpData,                  /* getDhcpFpData */
+    dummyFreeDhcpFpData,                 /* freeDhcpFpData */
+    dummyGetDhcpInfo,                    /* getDhcpInfo */
+    dummyFreeDhcpInfo,                   /* freeDhcpInfo */
+    dummyGetSmbFpData,                   /* getSmbFpData */
+    dummyFreeSmbFpData,                  /* freeSmbFpData */
+    dummyGetNetbiosName,                 /* getNetbiosName */
+    dummyProduceHAState,                 /* produceHAState */
+    dummyConsumeHAState,                 /* consumeHAState */
+
+    dummyGetAppIdData,              /* getAppIdData */
+
+    dummyGetDNSQuery,           /* getDNSQuery */
+    dummyGetDNSQueryOffset,     /* getDNSQueryoffset */
+    dummyGetDNSRecordType,      /* getDNSQueryType */
+    dummyGetDNSResponseType,    /* getDNSQueryResponseType */
+    dummyGetDNSTTL,             /* getDNSTTL */
+};
+#endif /* defined(FEAT_OPEN_APPID) */
+
+static int GetSnortPerfIndicators( void *p )
+{
+	    return( PerfIndicator_GetIndicators( (Perf_Indicator_Descriptor_p_t)p ) );
+}
+
 static bool DynamicIsTestMode(void)
 {
     return (ScTestMode()!= 0);
+}
+
+static SnortConfig* GetCurrentSnortConfig(void)
+{
+    return snort_conf;
 }
 
 int InitDynamicPreprocessors(void)
@@ -2000,14 +2350,11 @@ int InitDynamicPreprocessors(void)
     preprocData.alertAdd = &SnortEventqAdd;
     preprocData.genSnortEvent = &GenerateSnortEvent;
     preprocData.thresholdCheck = &sfthreshold_test;
-    preprocData.inlineDropAndReset = &DynamicDropReset;
-
     preprocData.detect = &DynamicDetect;
     preprocData.disableDetect = &DynamicDisableDetection;
     preprocData.disableAllDetect = &DynamicDisableAllDetection;
     preprocData.disablePacketAnalysis = &DynamicDisablePacketAnalysis;
     preprocData.enablePreprocessor = &DynamicEnablePreprocessor;
-
     preprocData.sessionAPI = session_api;
     preprocData.streamAPI = stream_api;
     preprocData.searchAPI = search_api;
@@ -2047,9 +2394,6 @@ int InitDynamicPreprocessors(void)
 #ifdef TARGET_BASED
     preprocData.findProtocolReference = &FindProtocolReference;
     preprocData.addProtocolReference = &AddProtocolReference;
-#if defined(FEAT_OPEN_APPID)
-    preprocData.findProtocolName = &FindProtocolName;
-#endif /* defined(FEAT_OPEN_APPID) */
     preprocData.isAdaptiveConfigured = &IsAdaptiveConfigured;
     preprocData.isAdaptiveConfiguredForSnortConfig = &IsAdaptiveConfiguredForSnortConfig;
 #endif
@@ -2115,8 +2459,13 @@ int InitDynamicPreprocessors(void)
     preprocData.changeNapRuntimePolicy = &DynamicChangeNapRuntimePolicy;
     preprocData.changeIpsRuntimePolicy = &DynamicChangeIpsRuntimePolicy;
 
-    preprocData.inlineForceDropPacket = &DynamicForceDropPacket;
-    preprocData.inlineForceDropAndReset = &DynamicForceDropReset;
+    preprocData.inlineDropPacket = &DynamicDropPacket;
+    preprocData.inlineRetryPacket = &DynamicRetryPacket;
+    preprocData.inlineForceDropPacket =&DynamicForceDropPacket;
+    preprocData.inlineDropSessionAndReset = &DynamicDropSessionAndReset;
+    preprocData.inlineForceDropSession = &DynamicForceDropSession;
+    preprocData.inlineForceDropSessionAndReset = &DynamicForceDropSessionAndReset;
+    preprocData.active_PacketWasDropped = &DynamicActivePacketWasDropped;
 #ifdef ACTIVE_RESPONSE
     preprocData.activeSetEnabled = &DynamicActiveSetEnabled;
 #endif
@@ -2125,6 +2474,12 @@ int InitDynamicPreprocessors(void)
     preprocData.dynamicSendBlockResponse = &DynamicSendBlockResponseMsg;
 #endif
     preprocData.dynamicSetFlowId = &setFlowId;
+#ifdef HAVE_DAQ_EXT_MODFLOW
+    preprocData.dynamicModifyFlow = &DAQ_ModifyFlow;
+#endif
+#ifdef HAVE_DAQ_QUERYFLOW
+    preprocData.dynamicQueryFlow = &DAQ_QueryFlow;
+#endif
     preprocData.addPeriodicCheck = &AddFuncToPeriodicCheckList;
     preprocData.addPostConfigFunc = &AddFuncToPreprocPostConfigList;
     preprocData.addFuncToPostConfigList = &AddFuncToPostConfigList;
@@ -2141,8 +2496,9 @@ int InitDynamicPreprocessors(void)
 
 #ifdef ACTIVE_RESPONSE
     preprocData.activeInjectData = &DynamicActiveInjectData;
+    preprocData.activeSendResponse = &DynamicActiveResponseMsg;
+    preprocData.activeQueueResponse = &DynamicActiveQueueResponse;
 #endif
-    preprocData.inlineDropPacket = &DynamicDropPacket;
     preprocData.readyForProcess = &DynamicReadyForProcess;
 
     preprocData.getSSLCallback = &DynamicGetSSLCallback;
@@ -2174,7 +2530,23 @@ int InitDynamicPreprocessors(void)
     preprocData.registerGetIntfData = &registerGetIntfData;
     preprocData.isSSLPolicyEnabled = &DynamicIsSSLPolicyEnabled;
     preprocData.setSSLPolicyEnabled = &DynamicSetSSLPolicyEnabled;
+    preprocData.getPerfIndicators = &GetSnortPerfIndicators;
+
+    preprocData.loadAllLibs = &LoadAllLibs;
+    preprocData.openDynamicLibrary = &openDynamicLibrary;
+    preprocData.getSymbol = &getSymbol;
+    preprocData.closeDynamicLibrary = &CloseDynamicLibrary;
+
+#if defined(FEAT_OPEN_APPID)
+    preprocData.appIdApi = &appIdApi;
+    preprocData.registerIsAppIdRequired = &registerIsAppIdRequired;
+    preprocData.unregisterIsAppIdRequired = &unregisterIsAppIdRequired;
+    preprocData.isAppIdRequired = &isAppIdRequired;
+#endif /* defined(FEAT_OPEN_APPID) */
+    preprocData.isReadMode = DynamicIsReadMode;
     preprocData.isTestMode = &DynamicIsTestMode;
+
+    preprocData.getCurrentSnortConfig = GetCurrentSnortConfig;
     return InitDynamicPreprocessorPlugins(&preprocData);
 }
 

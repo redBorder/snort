@@ -70,6 +70,8 @@ struct _CS_MESSAGE
 
 typedef struct _CS_MESSAGE CSMessage;
 
+
+/* ANY CHANGES MADE HERE SHOULD BE DUPLICATED TO src/sfutil/sfdebug.h */
 static void DumpHex(FILE *fp, const uint8_t *data, unsigned len)
 {
     char str[18];
@@ -100,11 +102,11 @@ static void DumpHex(FILE *fp, const uint8_t *data, unsigned len)
     }
     if (pos)
     {
-        str[pos] = 0;
         for (; pos < 17; pos++)
         {
             if (pos == 8)
             {
+                str[pos] = ' ';
                 pos++;
                 fprintf(fp, "%s", "    ");
             }
@@ -112,7 +114,9 @@ static void DumpHex(FILE *fp, const uint8_t *data, unsigned len)
             {
                 fprintf(fp, "%s", "   ");
             }
+            str[pos] = 0;
         }
+        str[pos] = 0;
         fprintf(fp, "  %s\n", str);
     }
 }

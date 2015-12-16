@@ -121,7 +121,7 @@ int ftpp_ui_server_lookup_cleanup(SERVER_LOOKUP **ServerLookup)
  *
  */
 int ftpp_ui_server_lookup_add(
-    SERVER_LOOKUP *ServerLookup, sfip_t* Ip, FTP_SERVER_PROTO_CONF *ServerConf )
+    SERVER_LOOKUP *ServerLookup, sfcidr_t* Ip, FTP_SERVER_PROTO_CONF *ServerConf )
 {
     int iRet;
 
@@ -142,7 +142,7 @@ int ftpp_ui_server_lookup_add(
 
 /*
  * Function: ftpp_ui_server_lookup_find(SERVER_LOOKUP *ServerLookup,
- *                                  snort_ip_p ip, int *iError)
+ *                                  sfaddr_t* ip, int *iError)
  *
  * Purpose: Find a server configuration given a IP.
  *          We look up a server configuration given an IP and
@@ -159,7 +159,7 @@ int ftpp_ui_server_lookup_add(
  *
  */
 FTP_SERVER_PROTO_CONF *ftpp_ui_server_lookup_find(
-    SERVER_LOOKUP *ServerLookup, snort_ip_p Ip, int *iError
+    SERVER_LOOKUP *ServerLookup, sfaddr_t* Ip, int *iError
 )
 {
     FTP_SERVER_PROTO_CONF *ServerConf = NULL;

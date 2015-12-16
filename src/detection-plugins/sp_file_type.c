@@ -163,7 +163,7 @@ void SetupFileType(void)
 
 #if defined(PERF_PROFILING)
     RegisterPreprocessorProfile("file_type", &_sp_file_type_perf_stats,
-            3, &ruleOTNEvalPerfStats);
+            3, &ruleOTNEvalPerfStats, NULL);
 #endif // PERF_PROFILING
 }
 

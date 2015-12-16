@@ -97,6 +97,7 @@
 #include "sfPolicy.h"
 #include "detection_filter.h"
 #include "encode.h"
+#include "stream_api.h"
 #if defined(FEAT_OPEN_APPID)
 #include "stream_common.h"
 #include "sp_appid.h"
@@ -397,7 +398,7 @@ int detection_option_key_compare_func(const void *k1, const void *k2, size_t n)
             break;
         case RULE_OPTION_TYPE_FILE_TYPE:
             ret = FileTypeCompare(key1->option_data, key2->option_data);
-            break; 
+            break;
         case RULE_OPTION_TYPE_PREPROCESSOR:
             ret = PreprocessorRuleOptionCompare(key1->option_data, key2->option_data);
             break;
@@ -857,7 +858,32 @@ int add_detection_option_tree(SnortConfig *sc, detection_option_tree_node_t *opt
     return DETECTION_OPTION_NOT_EQUAL;
 }
 
+static bool PacketSelection(Packet *p)
+{
+    if (stream_api->get_reassembly_direction(p->ssnptr) == SSN_DIR_NONE)
+        return true;
+
+    else
+    {
+        if(p->packet_flags & PKT_REBUILT_STREAM)
+            return true;
+
+        else
+            return false;
+    }
+}
+
 uint64_t rule_eval_pkt_count = 0;
+
+/* Include "detection_leaf_node.c"
+ *
+ * Service matches, toggles 'check_ports' and then evaluation
+ * of the leaf nodes (ie. the rule header stuffs).
+ *
+ * This defines the routine "detection_leaf_node_eval($,$)" which
+ * is called from the switch case RULE_OPTION_TYPE_LEAF_NODE below.
+ */
+#include "detection_leaf_node.c"
 
 int detection_option_node_evaluate(detection_option_tree_node_t *node, detection_option_eval_data_t *eval_data)
 {
@@ -979,57 +1005,40 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
             case RULE_OPTION_TYPE_LEAF_NODE:
                 /* Add the match for this otn to the queue. */
                 {
-                    OptTreeNode *otn = (OptTreeNode *)node->option_data;
-                    PatternMatchData *pmd = (PatternMatchData *)eval_data->pmd;
-                    int pattern_size = 0;
-                    int check_ports = 1;
-                    int eval_rtn_result;
-#ifdef TARGET_BASED
-                    unsigned int svc_idx;
-#endif
+                    int pattern_size    = 0;
+                    int eval_rtn_result = 1;
+                    int check_ports     = 1;
+                    OptTreeNode *otn = (OptTreeNode*) node->option_data;
+                    PatternMatchData *pmd = (PatternMatchData*) eval_data->pmd;
 
-                    if (pmd)
+                    if (pmd) 
                         pattern_size = pmd->pattern_size;
-#ifdef TARGET_BASED
-                    if (eval_data->p->application_protocol_ordinal != 0)
-                    {
-                        for (svc_idx = 0;
-                             svc_idx < otn->sigInfo.num_services;
-                             svc_idx++)
-                        {
-                            if (otn->sigInfo.services[svc_idx].service_ordinal != 0)
-                            {
-                                if (eval_data->p->application_protocol_ordinal == otn->sigInfo.services[svc_idx].service_ordinal)
-                                {
-                                    check_ports = 0;
-                                    break; /* out of for */
-                                }
-                            }
-                        }
 
-                        if (otn->sigInfo.num_services && check_ports) /* none of the services match */
-                        {
-                            DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
-                                "[**] SID %d not matched because of service mismatch (%d!=%d [**]\n",
-                                otn->sigInfo.id,
-                                eval_data->p->application_protocol_ordinal,
-                                otn->sigInfo.services[0].service_ordinal););
-                            break; /* out of case */
-                        }
+                    // See "detection_leaf_node.c" (detection_leaf_node_eval).
+                    switch (detection_leaf_node_eval (node, eval_data))
+                    {
+                        case Leaf_Abort:
+                            eval_rtn_result = 0;
+                            break;
+
+                        case Leaf_SkipPorts:
+                            check_ports = 0;
+                            // fall through
+
+                        case Leaf_CheckPorts:
+                            NODE_PROFILE_TMPEND(node);
+                            eval_rtn_result = fpEvalRTN (getRuntimeRtnFromOtn (otn), eval_data->p, check_ports);
+                            NODE_PROFILE_TMPSTART(node);
+                            break;
                     }
-#endif
-                    // Don't include RTN time
-                    NODE_PROFILE_TMPEND(node);
-                    eval_rtn_result = fpEvalRTN(getRuntimeRtnFromOtn(otn), eval_data->p, check_ports);
-                    NODE_PROFILE_TMPSTART(node);
 
                     if (eval_rtn_result)
                     {
-                        if ( !otn->detection_filter ||
-                             !detection_filter_test(
+			    if ((!otn->detection_filter) ||
+			     ((PacketSelection(eval_data->p) || OtnFlowIgnoreReassembled(otn)) && (!detection_filter_test(
                                  otn->detection_filter,
                                  GET_SRC_IP(eval_data->p), GET_DST_IP(eval_data->p),
-                                 eval_data->p->pkth->ts.tv_sec) )
+                                 eval_data->p->pkth->ts.tv_sec))))
                         {
 #ifdef PERF_PROFILING
                             if (PROFILING_RULES)
@@ -1044,6 +1053,7 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
                     }
                 }
                 break;
+
             case RULE_OPTION_TYPE_CONTENT:
                 if (node->evaluate)
                 {
@@ -1331,8 +1341,11 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
             && node->option_type == RULE_OPTION_TYPE_CONTENT
             && Replace_OffsetStored(&dup_content_option_data) && ScIpsInlineMode())
         {
+          if(!ScDisableReplaceOpt())
+          {
             Replace_QueueChange(&dup_content_option_data);
             prior_result = result;
+          }
         }
 
         NODE_PROFILE_TMPSTART(node);

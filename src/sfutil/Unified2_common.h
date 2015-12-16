@@ -61,7 +61,7 @@
 
 #define UNIFIED2_IDS_EVENT_APPSTAT   113
 
-#define MAX_EVENT_APPNAME_LEN        16
+#define MAX_EVENT_APPNAME_LEN        64
 #endif /* defined(FEAT_OPEN_APPID) */
 
 /* Data structure used for serialization of Unified2 Records */
