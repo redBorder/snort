@@ -19,7 +19,7 @@ endif
 
 libsf_file_preproc_la_LDFLAGS = -export-dynamic -module $(LS3) $(LXML2)  @XCCFLAGS@
 if SO_WITH_STATIC_LIB
-libsf_file_preproc_la_LIBADD = ../libsf_dynamic_preproc.la 
+libsf_file_preproc_la_LIBADD = ../libsf_dynamic_preproc.la ../libsf_dynamic_utils.la
 else
 nodist_libsf_file_preproc_la_SOURCES = \
 ../include/sf_dynamic_preproc_lib.c \
