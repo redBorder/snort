@@ -277,6 +277,16 @@ static void* FileCaptureThread(void *arg)
         free(capture_dir);
     if (conf->hostname)
         free(hostname);
+#ifdef HAVE_S3FILE
+    if (conf->s3.bucket)
+        free(s3.bucket);
+    if (conf->s3.cluster)
+        free(s3.cluster);
+    if (conf->s3.access_key)
+        free(s3.access_key);
+    if (conf->s3.secret_key)
+        free(s3.secret_key);
+#endif
     capture_thread_running = false;
     return NULL;
 }
