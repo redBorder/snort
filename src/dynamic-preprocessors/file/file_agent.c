@@ -992,6 +992,11 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
     if (!file_capture_enabled)
         return verdict;
 
+    /* File blacklisted and we do not want to save it, since we already know
+    what file is */
+    if (conf->dont_save_blacklist && verdict == FILE_VERDICT_BLOCK)
+        return verdict;
+
     /* Check whether there is any error during processing file*/
     if (state->capture_state != FILE_CAPTURE_SUCCESS)
     {

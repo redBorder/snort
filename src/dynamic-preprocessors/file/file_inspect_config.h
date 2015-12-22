@@ -66,6 +66,7 @@ typedef struct _fileInspectConfig
     char *hostname;
     int portno;
     ShaHash *sig_table;
+    bool dont_save_blacklist;
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
     int verdict_delay; /* used for debug, mimic delay to get verdicts */
 #endif

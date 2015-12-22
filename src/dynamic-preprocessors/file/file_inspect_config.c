@@ -48,6 +48,7 @@
 #define FILE_INSPECT_CAPTURE_DISK        "capture_disk"
 #define FILE_INSPECT_CAPTURE_NETWORK     "capture_network"
 #define FILE_INSPECT_CAPTURE_QUEUE_SIZE  "capture_queue_size"
+#define FILE_INSPECT_DONT_SAVE_BLACKLIST "dont_save_blacklist"
 #define FILE_INSPECT_BLACKLIST           "blacklist"
 #define FILE_INSPECT_GREYLIST            "greylist"
 #define FILE_INSPECT_SHA_CACHE_MIN_ROWS  "sha_cache_min_rows"
@@ -371,6 +372,10 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
             }
 
             file_config_signature(cur_tokenp, &blackList, config);
+        }
+        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_DONT_SAVE_BLACKLIST))
+        {
+            config->dont_save_blacklist = true;
         }
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_GREYLIST))
         {
