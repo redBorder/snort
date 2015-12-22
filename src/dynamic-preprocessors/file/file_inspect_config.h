@@ -34,6 +34,7 @@
 #include "sfPolicyUserData.h"
 #include "snort_bounds.h"
 #include "file_sha.h"
+#include "sfxhash.h"
 
 #if HAVE_S3FILE
 //#include "src/sfutil/sfxhash.h"
@@ -66,6 +67,7 @@ typedef struct _fileInspectConfig
     char *hostname;
     int portno;
     ShaHash *sig_table;
+    SFXHASH *sha256_cache;
     bool dont_save_blacklist;
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
     int verdict_delay; /* used for debug, mimic delay to get verdicts */
