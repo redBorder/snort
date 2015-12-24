@@ -48,8 +48,10 @@
 #define FILE_INSPECT_CAPTURE_DISK        "capture_disk"
 #define FILE_INSPECT_CAPTURE_NETWORK     "capture_network"
 #define FILE_INSPECT_CAPTURE_QUEUE_SIZE  "capture_queue_size"
+#define FILE_INSPECT_DONT_SAVE_BLACKLIST "dont_save_blacklist"
 #define FILE_INSPECT_BLACKLIST           "blacklist"
 #define FILE_INSPECT_GREYLIST            "greylist"
+#define FILE_INSPECT_SEENLIST            "seenlist"
 #define FILE_INSPECT_SHA_CACHE_MIN_ROWS  "sha_cache_min_rows"
 #define FILE_INSPECT_SHA_CACHE_MAX_SIZE_M "sha_cache_max_size_m"
 
@@ -256,6 +258,125 @@ static void file_config_signature(char *filename, FileSigInfo *sig_info,
     }
 }
 
+/*
+ * Load seen file list signature file
+ *
+ * Arguments:
+ *  filename: file name string
+ *  hashtable: Hash table to store results
+ *
+ * Returns:
+ *  None
+ *
+ * TODO:
+ *  Join with file_config_signature.
+ */
+static void file_config_signature_sfxhash(char *filename, SFXHASH *hashtable)
+{
+    FILE *fp = NULL;
+    char linebuf[MAX_SIG_LINE_LENGTH];
+    char full_path_filename[PATH_MAX+1];
+    int line_number = 0;
+    int no_memory = 0;
+
+    /* parse the file line by line, each signature one entry*/
+    _dpd.logMsg("File inspect: processing file %s\n", filename);
+
+    UpdatePathToFile(full_path_filename, PATH_MAX, filename);
+
+    if((fp = fopen(full_path_filename, "r")) == NULL)
+    {
+        char errBuf[STD_BUF];
+#ifdef WIN32
+        snprintf(errBuf, STD_BUF, "%s", strerror(errno));
+#else
+        strerror_r(errno, errBuf, STD_BUF);
+#endif
+        errBuf[STD_BUF-1] = '\0';
+        FILE_FATAL_ERROR("%s(%d) => Unable to open signature file %s, "
+                "Error: %s\n",
+                *(_dpd.config_file), *(_dpd.config_line), filename, errBuf);
+        return;
+    }
+
+    while( fgets(linebuf, MAX_SIG_LINE_LENGTH, fp) )
+    {
+        char *cmt = NULL;
+        char *sha256;
+
+        DEBUG_WRAP(DebugMessage(DEBUG_FILE, "File signatures: %s\n",linebuf ););
+
+        if(no_memory)
+        {
+            break;
+        }
+
+        line_number++;
+
+        /* Remove comments */
+        if( (cmt = strchr(linebuf, '#')) )
+            *cmt = '\0';
+
+        /* Remove newline as well, prevent double newline in logging.*/
+        if( (cmt = strchr(linebuf, '\n')) )
+            *cmt = '\0';
+
+        if (!strlen(linebuf))
+            continue;
+
+        sha256 = malloc(SHA256_HASH_SIZE);
+
+        if (!sha256)
+        {
+            FILE_FATAL_ERROR("%s(%d) => No memory for file: %s (%d), \n"
+                    "signature: %s\n",
+                    *(_dpd.config_file), *(_dpd.config_line),
+                    filename, line_number, linebuf);
+        }
+
+        if (str_to_sha(linebuf, sha256, strlen(linebuf)) < 0)
+        {
+            FILE_FATAL_ERROR("%s(%d) => signature format at file: %s (%d), \n"
+                    "signature: %s\n",
+                    *(_dpd.config_file), *(_dpd.config_line),
+                    filename, line_number, linebuf);
+        }
+
+        const int rc = sfxhash_add(hashtable, sha256, NULL);
+        switch(rc) {
+        case SFXHASH_NOMEM:
+            _dpd.errMsg("%s(%d) => No memory to save signature at file %s (%d), \n"
+                    "signature: %s\n",
+                    *(_dpd.config_file), *(_dpd.config_line),
+                    filename, line_number, linebuf);
+
+            no_memory = true;
+
+            break;
+
+        case SFXHASH_OK:
+            break;
+
+        case SFXHASH_INTABLE:
+            _dpd.errMsg("%s(%d) => signature redefined at file: %s (%d), \n"
+                    "signature: %s\n",
+                    *(_dpd.config_file), *(_dpd.config_line),
+                    filename, line_number, linebuf);
+            sfxhash_remove(hashtable, sha256);
+            break;
+
+        default:
+            _dpd.errMsg("%s(%d) => sha_table_add return unknown error %d at"
+                    " file: %s (%d), \n"
+                    "signature: %s\n",
+                    *(_dpd.config_file), *(_dpd.config_line),
+                    rc,
+                    filename, line_number, linebuf);
+            break;
+        };
+    }
+}
+
 /* Display the configuration for the File preprocessor.
  *
  * PARAMETERS:
@@ -294,6 +415,33 @@ static void DisplayFileConfig(FileInspectConf *config)
     _dpd.logMsg("\n");
 }
 
+/* Creates a new hash table, memory limited, to store SHA signatures
+ *
+ * PARAMETERS:
+ *   rows: Hashtable rows
+ *   mem_m: Memory, in MB, that table can allocate
+ *
+ * RETURNS: New hashtable
+ */
+static SFXHASH * hash_table_s3_cache_new(const int rows,const size_t mem_m)
+{
+    SFXHASH *hts3cache = NULL;
+    hts3cache = sfxhash_new(/*number of rows in hash table*/ rows,
+                            /*key size in bytes, same for all keys*/ SHA256_HASH_SIZE,
+                            /*datasize in bytes, zero indicates user manages data*/ 0,
+                            /*maximum memory to use in bytes*/ /* mem_m*1024*1024 */ 1024,
+                            /*Automatic Node Recovery boolean flag*/ 1,
+                            /*users Automatic Node Recovery memory release function*/ NULL,
+                            /* Auto free function */ NULL,
+                            /* Recycle nodes */ 1
+                            );
+    if (hts3cache == NULL)
+    {
+        _dpd.logMsg("File inspect: Failed to create s3 cache hash table \n");
+    }
+    return hts3cache;
+}
+
 /* Parses and processes the configuration arguments
  * supplied in the File preprocessor rule.
  *
@@ -308,6 +456,7 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
     char* cur_sectionp = NULL;
     char* next_sectionp = NULL;
     char* argcpyp = NULL;
+    char* seenList = NULL;
 
 
     if (config == NULL)
@@ -371,6 +520,29 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
             }
 
             file_config_signature(cur_tokenp, &blackList, config);
+        }
+        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_SEENLIST))
+        {
+            /* Seenlist could be huge, so it's better to save it in memory
+             * controlled cache
+             */
+            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
+            if(cur_tokenp == NULL)
+            {
+                FILE_FATAL_ERROR("%s(%d) => Please specify list file!\n",
+                        *(_dpd.config_file), *(_dpd.config_line));
+            }
+
+            seenList = strdup(cur_tokenp);
+            if(!seenList)
+            {
+                FILE_FATAL_ERROR("%s(%d) => Couldn't strdup!\n",
+                        *(_dpd.config_file), *(_dpd.config_line));
+            }
+        }
+        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_DONT_SAVE_BLACKLIST))
+        {
+            config->dont_save_blacklist = true;
         }
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_GREYLIST))
         {
@@ -552,6 +724,23 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
                 cur_sectionp ););
     }
 
+    if(config->sha256_cache_table_maxmem_m > 0)
+    {
+        config->sha256_cache = hash_table_s3_cache_new(
+            config->sha256_cache_table_rows,
+            config->sha256_cache_table_maxmem_m);
+
+        if(seenList)
+        {
+            file_config_signature_sfxhash(seenList, config->sha256_cache);
+        }
+    }
+
+    if(seenList)
+    {
+        free(seenList);
+    }
+
     DisplayFileConfig(config);
     free(argcpyp);
 }
@@ -611,6 +800,12 @@ void file_config_free(FileInspectConf* config)
     {
         sha_table_delete(config->sig_table);
         config->sig_table  = NULL;
+    }
+
+    if(config->sha256_cache)
+    {
+        sfxhash_delete(config->sha256_cache);
+        config->sha256_cache = NULL;
     }
 
 #if HAVE_S3FILE

@@ -41,7 +41,6 @@
 #include <signal.h>
 #include <errno.h>
 
-#include "sfxhash.h"
 #include "sf_types.h"
 #include "spp_file.h"
 #include "file_agent.h"
@@ -56,7 +55,6 @@ int using_s3 = 0;
 
 /*Use circular buffer to synchronize writer/reader threads*/
 static CircularBuffer* file_list;
-static SFXHASH* sha256_cache;
 
 static volatile bool stop_file_capturing = false;
 static volatile bool capture_thread_running = false;
@@ -291,25 +289,6 @@ static void* FileCaptureThread(void *arg)
     return NULL;
 }
 
-static SFXHASH * hash_table_s3_cache_new(const int rows,const size_t mem_m)
-{
-    SFXHASH *hts3cache = NULL;
-#if 1
-    hts3cache = sfxhash_new(/*number of rows in hash table*/ rows,
-                            /*key size in bytes, same for all keys*/ SHA256_HASH_SIZE,
-                            /*datasize in bytes, zero indicates user manages data*/ 0,
-                            /*maximum memory to use in bytes*/ /* mem_m*1024*1024 */ 1024,
-                            /*Automatic Node Recovery boolean flag*/ 1,
-                            /*users Automatic Node Recovery memory release function*/ NULL,
-                            /* Auto free function */ NULL,
-                            /* Recycle nodes */ 1
-                            );
-    if (hts3cache == NULL)
-        _dpd.logMsg("File inspect: Failed to create s3 cache hash table \n");
-#endif
-    return hts3cache;
-}
-
 void file_agent_init(void *config)
 {
     FileInspectConf* conf = (FileInspectConf *)config;
@@ -392,11 +371,6 @@ void file_agent_thread_init(struct _SnortConfig *sc, void *config)
         FILE_FATAL_ERROR("File capture: Unable to create file capture queue!");
     }
 
-    if(conf->sha256_cache_table_maxmem_m > 0) {
-        sha256_cache = hash_table_s3_cache_new(conf->sha256_cache_table_rows,
-            conf->sha256_cache_table_maxmem_m);
-    }
-
     if ((rval = pthread_create(&capture_thread_tid, NULL,
             &FileCaptureThread, conf)) != 0)
     {
@@ -443,22 +417,6 @@ static int file_agent_queue_file(void* ssnptr, void *file_mem)
     {
         free(finfo);
         return -1;
-    }
-
-    if(NULL != sha256_cache)
-    {
-        const unsigned before_find_success = sfxhash_find_success(sha256_cache);
-        const void *sfxhash_get_rc = sfxhash_get_node(sha256_cache, sha256);
-        if(NULL == sfxhash_get_rc)
-        {
-            _dpd.errMsg("File inspect: Can't get a node from cache!\n");
-        }
-        else if(sfxhash_find_success(sha256_cache) == before_find_success + 1)
-        {
-            file_inspect_stats.file_cbuffer_duplicates_total++;
-            free(finfo);
-            return 0;
-        }
     }
 
     memcpy(finfo->sha256, sha256, SHA256_HASH_SIZE);
@@ -895,12 +853,6 @@ void file_agent_close(void)
 
     cbuffer_free(file_list);
     
-    if(sha256_cache)
-    {
-        sfxhash_delete(sha256_cache);
-        sha256_cache = NULL;
-    }
-
     if (sockfd)
     {
         close(sockfd);
@@ -992,6 +944,11 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
     if (!file_capture_enabled)
         return verdict;
 
+    /* File blacklisted and we do not want to save it, since we already know
+    what file is */
+    if(conf->dont_save_blacklist && verdict == FILE_VERDICT_BLOCK)
+        return verdict;
+
     /* Check whether there is any error during processing file*/
     if (state->capture_state != FILE_CAPTURE_SUCCESS)
     {
@@ -1015,6 +972,28 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
     {
         _dpd.logMsg("File inspect: file size error %d != %d\n",
                 file_size, capture_file_size);
+    }
+
+    if(NULL != conf->sha256_cache)
+    {
+        /* See if we have sha256 cache configured, and if it already contains
+         * the file
+         *
+         * sfxhash_get_node will create a new node if it does not exists, so we
+         * have to know if we hit with "find_success"
+         */
+        const unsigned before_find_success = sfxhash_find_success(conf->sha256_cache);
+        const void *sfxhash_get_rc = sfxhash_get_node(conf->sha256_cache, file_sig);
+        if(NULL == sfxhash_get_rc)
+        {
+            _dpd.errMsg("File inspect: Can't get a node from cache!\n");
+        }
+        else if(sfxhash_find_success(conf->sha256_cache) == before_find_success + 1)
+        {
+            file_inspect_stats.file_cbuffer_duplicates_total++;
+            /* Don't want to queue, so we just return */
+            return verdict;
+        }
     }
 
     /*Save the file to our file queue*/
