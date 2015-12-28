@@ -845,6 +845,18 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
         {
             FILE_REG_DEBUG_WRAP(if (context->sha256) file_sha256_print(context->sha256);)
             _file_signature_lookup(context, p, false, suspend_block_verdict);
+#ifdef HAVE_EXTRADATA_FILE
+            /* Add the event with the File Type after signature process finishes. */
+            if (!(pkt->packet_flags & PKT_FILE_EVENT_SET) &&
+                context->file_type_id != SNORT_FILE_TYPE_CONTINUE &&
+                context->file_type_id != SNORT_FILE_TYPE_UNKNOWN)
+            {
+                file_eventq_add(GENERATOR_FILE_TYPE, context->file_type_id,
+                        file_type_name(context->file_config, context->file_type_id),
+                        RULE_TYPE__ALERT);
+                pkt->packet_flags |= PKT_FILE_EVENT_SET;
+            }
+#endif
         }
 
     }
