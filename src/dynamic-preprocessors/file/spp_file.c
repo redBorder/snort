@@ -62,6 +62,8 @@ const char *PREPROC_NAME = "SF_FILE";
 
 #define SetupFileInspect DYNAMIC_PREPROC_SETUP
 
+#define CS_TYPE_SIGNATURE_DATABASE_LOOKUP      ((GENERATOR_FILE_SIGNATURE *10) + 2)
+
 /*
  * Function prototype(s)
  */
@@ -87,6 +89,11 @@ static void * FileReloadSwap(struct _SnortConfig *, void *);
 static void FileReloadSwapFree(void *);
 #endif
 
+#ifdef CONTROL_SOCKET
+static int File_Signature_CS_Lookup(uint16_t type, const uint8_t *data,
+    uint32_t length, void **new_config, char *statusBuf, int statusBufLen);
+#endif
+
 File_Stats file_inspect_stats;
 
 /* Called at preprocessor setup time. Links preprocessor keyword
@@ -106,6 +113,11 @@ void SetupFileInspect(void)
 #else
     _dpd.registerPreproc("file_inspect", FileInit, FileReload, FileReloadVerify,
             FileReloadSwap, FileReloadSwapFree);
+#endif
+
+#ifdef CONTROL_SOCKET
+    _dpd.controlSocketRegisterHandler(CS_TYPE_SIGNATURE_DATABASE_LOOKUP,
+        &File_Signature_CS_Lookup, NULL, NULL);
 #endif
 }
 
@@ -434,3 +446,122 @@ static void print_file_stats(int exiting)
 
 
 }
+
+#ifdef CONTROL_SOCKET
+
+static int File_Signature_CS_Lookup(uint16_t type, const uint8_t *data,
+    uint32_t length, void **new_config, char *statusBuf, int statusBufLen)
+{
+    char sha256[SHA256_HASH_SIZE];
+    FileSigInfo *pfile_verdict = NULL;
+    int file_verdict;
+    char *tokstr, *save, *data_copy;
+    FileInspectConf *conf = (FileInspectConf *)sfPolicyUserDataGetCurrent(file_config);
+    CSMessageDataHeader *msg_hdr = (CSMessageDataHeader *)data;
+
+    statusBuf[0] = 0;
+
+    if (length <= sizeof(*msg_hdr))
+    {
+        return -1;
+    }
+    length -= sizeof(*msg_hdr);
+    if (length != (uint32_t)ntohs(msg_hdr->length))
+    {
+        return -1;
+    }
+
+    data += sizeof(*msg_hdr);
+    data_copy = malloc(length + 1);
+    if (data_copy == NULL)
+    {
+        return -1;
+    }
+    memcpy(data_copy, data, length);
+    data_copy[length] = 0;
+
+    tokstr = strtok_r(data_copy, " \t\n", &save);
+    if (tokstr == NULL)
+    {
+        free(data_copy);
+        return -1;
+    }
+
+    /* Convert tokstr to sha256 type */
+    if (str_to_sha(tokstr, sha256, save - tokstr) != 0)
+    {
+        free(data_copy);
+        return -1;
+    }
+
+    /* Get the SHA256 verdict info */
+    if (conf->sig_table)
+    {
+        pfile_verdict = (FileSigInfo *)sha_table_find(conf->sig_table, sha256);
+    }
+
+    if (!pfile_verdict && conf->sha256_cache)
+    {
+        /* 2nd chance: seen files table. No need to footprints here. */
+        void *n = sfxhash_find_node(conf->sha256_cache, sha256);
+        if (n)
+        {
+            file_verdict = FILE_VERDICT_STOP;
+            conf->sha256_cache->find_success--;
+        }
+        else
+        {
+            file_verdict = FILE_VERDICT_UNKNOWN;
+            conf->sha256_cache->find_fail--;
+        }
+    }
+    else
+    {
+        file_verdict = FILE_VERDICT_UNKNOWN;
+    }
+
+    const char *decision;
+
+    switch (file_verdict)
+    {
+        case FILE_VERDICT_LOG:
+        decision = "LOG";
+        break;
+
+        case FILE_VERDICT_STOP:
+        decision = "STOP";
+        break;
+
+        case FILE_VERDICT_BLOCK:
+        decision = "BLOCK";
+        break;
+
+        case FILE_VERDICT_REJECT:
+        decision = "REJECT";
+        break;
+
+        case FILE_VERDICT_PENDING:
+        decision = "PENDING";
+        break;
+
+        case FILE_VERDICT_STOP_CAPTURE:
+        decision = "STOP_CAPTURE";
+        break;
+
+        case FILE_VERDICT_UNKNOWN:
+        case FILE_VERDICT_MAX:
+        default:
+        decision = "UNKNOWN";
+        break;
+    };
+
+    snprintf(statusBuf, statusBufLen,
+        "SHA256 signature %s with verdict %s",
+        tokstr, decision
+        );
+
+    free(data_copy);
+    return 0;
+}
+
+#endif
