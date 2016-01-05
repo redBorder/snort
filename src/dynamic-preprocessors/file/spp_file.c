@@ -62,6 +62,7 @@ const char *PREPROC_NAME = "SF_FILE";
 
 #define SetupFileInspect DYNAMIC_PREPROC_SETUP
 
+#define CS_TYPE_SIGNATURE_SHAREMEM             ((GENERATOR_FILE_SIGNATURE *10) + 1)
 #define CS_TYPE_SIGNATURE_DATABASE_LOOKUP      ((GENERATOR_FILE_SIGNATURE *10) + 2)
 
 /*
@@ -90,6 +91,8 @@ static void FileReloadSwapFree(void *);
 #endif
 
 #ifdef CONTROL_SOCKET
+static int File_Signature_PreControl(uint16_t type, const uint8_t *data,
+    uint32_t length, void **new_config, char *statusBuf, int statusBufLen);
 static int File_Signature_CS_Lookup(uint16_t type, const uint8_t *data,
     uint32_t length, void **new_config, char *statusBuf, int statusBufLen);
 #endif
@@ -116,6 +119,9 @@ void SetupFileInspect(void)
 #endif
 
 #ifdef CONTROL_SOCKET
+    _dpd.controlSocketRegisterHandler(CS_TYPE_SIGNATURE_SHAREMEM,
+        &File_Signature_PreControl, /*&File_Signature_Control*/ NULL,
+        /*&File_Signature_PostControl*/ NULL);
     _dpd.controlSocketRegisterHandler(CS_TYPE_SIGNATURE_DATABASE_LOOKUP,
         &File_Signature_CS_Lookup, NULL, NULL);
 #endif
@@ -448,6 +454,62 @@ static void print_file_stats(int exiting)
 }
 
 #ifdef CONTROL_SOCKET
+
+static int File_Signature_PreControl(uint16_t type, const uint8_t *data, uint32_t length, void **new_config,
+        char *statusBuf, int statusBufLen)
+{
+    static FileSigInfo blackList = {FILE_VERDICT_BLOCK};
+    static FileSigInfo greyList = {FILE_VERDICT_LOG};
+
+    FileInspectConf *pDefaultPolicyConfig = NULL;
+    FileInspectConf *nextConfig = NULL;
+
+    statusBuf[0] = 0;
+
+    pDefaultPolicyConfig = (FileInspectConf *)sfPolicyUserDataGetDefault(file_config);
+
+    if (!pDefaultPolicyConfig)
+    {
+        *new_config = NULL;
+        return -1;
+    }
+
+    nextConfig = (FileInspectConf *)calloc(1, sizeof(FileInspectConf));
+
+    if (!nextConfig)
+    {
+        *new_config = NULL;
+        return -1;
+    }
+
+    /* Update new SHA files */
+    if (pDefaultPolicyConfig->blacklist_path)
+    {
+        file_config_signature(pDefaultPolicyConfig->blacklist_path, &blackList,
+            nextConfig);
+        _dpd.logMsg("    File Preprocessor: Received new blacklist\n");
+    }
+
+    if (pDefaultPolicyConfig->greylist_path)
+    {
+        file_config_signature(pDefaultPolicyConfig->greylist_path, &greyList,
+        nextConfig);
+        _dpd.logMsg("    File Preprocessor: Received new greylist\n");
+    }
+
+    if (pDefaultPolicyConfig->seenlist_path)
+    {
+        nextConfig->sha256_cache_table_rows = pDefaultPolicyConfig->sha256_cache_table_rows;
+        nextConfig->sha256_cache_table_maxmem_m = pDefaultPolicyConfig->sha256_cache_table_maxmem_m;
+
+        file_config_setup_seenlist(pDefaultPolicyConfig->seenlist_path,nextConfig);
+        _dpd.logMsg("    File Preprocessor: Received new seenlist\n");
+    }
+
+    *new_config = nextConfig;
+
+    return 0;
+}
 
 static int File_Signature_CS_Lookup(uint16_t type, const uint8_t *data,
     uint32_t length, void **new_config, char *statusBuf, int statusBufLen)
