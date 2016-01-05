@@ -519,6 +519,10 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
                         *(_dpd.config_file), *(_dpd.config_line));
             }
 
+#ifdef CONTROL_SOCKET
+            config->blacklist_path = strdup(cur_tokenp);
+#endif
+
             file_config_signature(cur_tokenp, &blackList, config);
         }
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_SEENLIST))
@@ -539,6 +543,11 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
                 FILE_FATAL_ERROR("%s(%d) => Couldn't strdup!\n",
                         *(_dpd.config_file), *(_dpd.config_line));
             }
+
+#ifdef CONTROL_SOCKET
+            config->seenlist_path = strdup(seenList);
+#endif
+
         }
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_DONT_SAVE_BLACKLIST))
         {
@@ -552,6 +561,10 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
                 FILE_FATAL_ERROR("%s(%d) => Please specify list file!\n",
                         *(_dpd.config_file), *(_dpd.config_line));
             }
+
+#ifdef CONTROL_SOCKET
+            config->greylist_path = strdup(cur_tokenp);
+#endif
 
             file_config_signature(cur_tokenp, &greyList, config);
         }
@@ -840,5 +853,23 @@ void file_config_free(FileInspectConf* config)
         config->s3.secret_key = NULL;
     }
 #endif
+
+#ifdef CONTROL_SOCKET
+    if (config->blacklist_path)
+    {
+        free(config->blacklist_path);
+        config->blacklist_path = NULL;
+    }
+    if (config->greylist_path)
+    {
+        free(config->greylist_path);
+        config->greylist_path = NULL;
+    }
+    if (config->seenlist_path)
+    {
+        free(config->seenlist_path);
+        config->seenlist_path = NULL;
+    }
+#endif /* CONTROL_SOCKET */
 }
 

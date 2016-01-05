@@ -68,6 +68,15 @@ typedef struct _fileInspectConfig
     int portno;
     ShaHash *sig_table;
     SFXHASH *sha256_cache;
+/* #ifdef CONTROL_SOCKET */
+    /* Needed to reload via control socket */
+    /* Can't use conditional compilation since file_agent.c does not compile with
+       this flag
+    */
+    char *blacklist_path;
+    char *greylist_path;
+    char *seenlist_path;
+/* #endif */
     bool dont_save_blacklist;
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
     int verdict_delay; /* used for debug, mimic delay to get verdicts */
