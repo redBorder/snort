@@ -162,7 +162,7 @@ static int UpdatePathToFile(char *full_path_filename, unsigned int max_size,
  * Returns:
  *  None
  */
-static void file_config_signature(char *filename, FileSigInfo *sig_info,
+void file_config_signature(char *filename, FileSigInfo *sig_info,
         FileInspectConf *config)
 {
     FILE *fp = NULL;
@@ -442,7 +442,7 @@ static SFXHASH * hash_table_s3_cache_new(const int rows,const size_t mem_m)
     return hts3cache;
 }
 
-static void file_config_setup_seenlist(char *seenList,FileInspectConf *config)
+void file_config_setup_seenlist(char *seenList,FileInspectConf *config)
 {
     if(config->sha256_cache_table_maxmem_m > 0)
     {
