@@ -429,7 +429,7 @@ static SFXHASH * hash_table_s3_cache_new(const int rows,const size_t mem_m)
     hts3cache = sfxhash_new(/*number of rows in hash table*/ rows,
                             /*key size in bytes, same for all keys*/ SHA256_HASH_SIZE,
                             /*datasize in bytes, zero indicates user manages data*/ 0,
-                            /*maximum memory to use in bytes*/ /* mem_m*1024*1024 */ 1024,
+                            /*maximum memory to use in bytes*/ mem_m*1024*1024,
                             /*Automatic Node Recovery boolean flag*/ 1,
                             /*users Automatic Node Recovery memory release function*/ NULL,
                             /* Auto free function */ NULL,
@@ -729,6 +729,13 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
         config->sha256_cache = hash_table_s3_cache_new(
             config->sha256_cache_table_rows,
             config->sha256_cache_table_maxmem_m);
+
+        if (NULL == config->sha256_cache)
+        {
+            FILE_FATAL_ERROR("%s(%d) => Couldn't create sha256 cache. Please "
+                "decrease rows or increase maxmem?)\n",
+                *(_dpd.config_file), *(_dpd.config_line));
+        }
 
         if(seenList)
         {
