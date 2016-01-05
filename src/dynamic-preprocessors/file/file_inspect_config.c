@@ -442,6 +442,28 @@ static SFXHASH * hash_table_s3_cache_new(const int rows,const size_t mem_m)
     return hts3cache;
 }
 
+static void file_config_setup_seenlist(char *seenList,FileInspectConf *config)
+{
+    if(config->sha256_cache_table_maxmem_m > 0)
+    {
+        config->sha256_cache = hash_table_s3_cache_new(
+            config->sha256_cache_table_rows,
+            config->sha256_cache_table_maxmem_m);
+
+        if (NULL == config->sha256_cache)
+        {
+            FILE_FATAL_ERROR("%s(%d) => Couldn't create sha256 cache. Please "
+                "decrease rows or increase maxmem?)\n",
+                *(_dpd.config_file), *(_dpd.config_line));
+        }
+
+        if(seenList)
+        {
+            file_config_signature_sfxhash(seenList, config->sha256_cache);
+        }
+    }
+}
+
 /* Parses and processes the configuration arguments
  * supplied in the File preprocessor rule.
  *
@@ -737,24 +759,7 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
                 cur_sectionp ););
     }
 
-    if(config->sha256_cache_table_maxmem_m > 0)
-    {
-        config->sha256_cache = hash_table_s3_cache_new(
-            config->sha256_cache_table_rows,
-            config->sha256_cache_table_maxmem_m);
-
-        if (NULL == config->sha256_cache)
-        {
-            FILE_FATAL_ERROR("%s(%d) => Couldn't create sha256 cache. Please "
-                "decrease rows or increase maxmem?)\n",
-                *(_dpd.config_file), *(_dpd.config_line));
-        }
-
-        if(seenList)
-        {
-            file_config_signature_sfxhash(seenList, config->sha256_cache);
-        }
-    }
+    file_config_setup_seenlist(seenList,config);
 
     if(seenList)
     {
