@@ -62,6 +62,9 @@ const char *PREPROC_NAME = "SF_FILE";
 
 #define SetupFileInspect DYNAMIC_PREPROC_SETUP
 
+#define CS_TYPE_SIGNATURE_SHAREMEM             ((GENERATOR_FILE_SIGNATURE *10) + 1)
+#define CS_TYPE_SIGNATURE_DATABASE_LOOKUP      ((GENERATOR_FILE_SIGNATURE *10) + 2)
+
 /*
  * Function prototype(s)
  */
@@ -86,6 +89,17 @@ static void * FileReloadSwap(struct _SnortConfig *, void *);
 static void FileReloadSwapFree(void *);
 #endif
 
+#ifdef CONTROL_SOCKET
+static int File_Signature_Reload(uint16_t type, const uint8_t *data,
+    uint32_t length, void **new_config, char *statusBuf, int statusBufLen);
+static int File_Signature_ReloadSwap(uint16_t type, void *new_config,
+    void **old_config);
+static void File_Signature_ReloadFree(uint16_t type, void *old_config,
+    struct _THREAD_ELEMENT *te, ControlDataSendFunc f);
+static int File_Signature_CS_Lookup(uint16_t type, const uint8_t *data,
+    uint32_t length, void **new_config, char *statusBuf, int statusBufLen);
+#endif
+
 File_Stats file_inspect_stats;
 
 /* Called at preprocessor setup time. Links preprocessor keyword
@@ -105,6 +119,14 @@ void SetupFileInspect(void)
 #else
     _dpd.registerPreproc("file_inspect", FileInit, FileReload, FileReloadVerify,
             FileReloadSwap, FileReloadSwapFree);
+#endif
+
+#ifdef CONTROL_SOCKET
+    _dpd.controlSocketRegisterHandler(CS_TYPE_SIGNATURE_SHAREMEM,
+        &File_Signature_Reload, &File_Signature_ReloadSwap,
+        &File_Signature_ReloadFree);
+    _dpd.controlSocketRegisterHandler(CS_TYPE_SIGNATURE_DATABASE_LOOKUP,
+        &File_Signature_CS_Lookup, NULL, NULL);
 #endif
 }
 
@@ -433,3 +455,234 @@ static void print_file_stats(int exiting)
 
 
 }
+
+#ifdef CONTROL_SOCKET
+
+/* Snort spawn a new thread to call this function */
+static int File_Signature_Reload(uint16_t type, const uint8_t *data, uint32_t length, void **new_config,
+        char *statusBuf, int statusBufLen)
+{
+    static FileSigInfo blackList = {FILE_VERDICT_BLOCK};
+    static FileSigInfo greyList = {FILE_VERDICT_LOG};
+
+    int rc = 0;
+    FileInspectConf *pDefaultPolicyConfig = NULL;
+    FileInspectConf *nextConfig = NULL;
+
+    statusBuf[0] = 0;
+
+    pDefaultPolicyConfig = (FileInspectConf *)sfPolicyUserDataGetDefault(file_config);
+
+    if (!pDefaultPolicyConfig)
+    {
+        *new_config = NULL;
+        return -1;
+    }
+
+    nextConfig = (FileInspectConf *)calloc(1, sizeof(FileInspectConf));
+
+    if (!nextConfig)
+    {
+        *new_config = NULL;
+        return -1;
+    }
+
+    /* Update new SHA files */
+    if (pDefaultPolicyConfig->blacklist_path)
+    {
+        const int rc = file_config_signature(pDefaultPolicyConfig->blacklist_path,
+            &blackList, nextConfig, 0 /* allow_fatal */);
+        if (0 == rc)
+        {
+            _dpd.logMsg("    File Preprocessor: Received new blacklist\n");
+        }
+    }
+
+    if (0 == rc && pDefaultPolicyConfig->greylist_path)
+    {
+        const int rc = file_config_signature(pDefaultPolicyConfig->greylist_path,
+            &greyList, nextConfig, 0 /* allow_fatal */);
+        if (0 == rc)
+        {
+            _dpd.logMsg("    File Preprocessor: Received new greylist\n");
+        }
+    }
+
+    if (0 == rc && pDefaultPolicyConfig->seenlist_path)
+    {
+        nextConfig->sha256_cache_table_rows = pDefaultPolicyConfig->sha256_cache_table_rows;
+        nextConfig->sha256_cache_table_maxmem_m = pDefaultPolicyConfig->sha256_cache_table_maxmem_m;
+
+        file_config_setup_seenlist(pDefaultPolicyConfig->seenlist_path,nextConfig, 0 /* allow_fatal */);
+        _dpd.logMsg("    File Preprocessor: Received new seenlist\n");
+    }
+
+    if (0 == rc)
+    {
+        *new_config = nextConfig;
+    }
+    else
+    {
+        /* Error. Clean & exit */
+        file_config_free(nextConfig);
+        *new_config = NULL;
+        return -1;
+    }
+
+    return 0;
+}
+
+/* Swap two pointers */
+#define SWAP_POINTERS(a,b) do{void *t=a;a=b;b=t;} while(0)
+
+/* Snort calls this function in the main thread, so there will be no packet
+   processing here */
+static int File_Signature_ReloadSwap(uint16_t type, void *new_config, void **old_config)
+{
+    FileInspectConf *config = (FileInspectConf *) new_config;
+    FileInspectConf *pDefaultPolicyConfig = (FileInspectConf *)sfPolicyUserDataGetDefault(file_config);
+
+    if (NULL != config && NULL != old_config)
+    {
+        SWAP_POINTERS(pDefaultPolicyConfig->sig_table,config->sig_table);
+        SWAP_POINTERS(pDefaultPolicyConfig->sha256_cache,config->sha256_cache);
+
+        *old_config = config;
+        return 0;
+    }
+
+    return -1;
+}
+
+/* This will be executed in the same thread created for
+   File_Signature_Reload */
+static void File_Signature_ReloadFree(uint16_t type, void *old_config, struct _THREAD_ELEMENT *te, ControlDataSendFunc f)
+{
+    FileInspectConf *config = (FileInspectConf *) old_config;
+    FileInspectConf *pDefaultPolicyConfig = (FileInspectConf *)sfPolicyUserDataGetDefault(file_config);
+
+    if (!config || !pDefaultPolicyConfig)
+        return;
+
+    DEBUG_WRAP(_dpd.logMsg("***Switched to new SHA database\n"));
+
+    file_config_free(config);
+    free(config);
+}
+
+static int File_Signature_CS_Lookup(uint16_t type, const uint8_t *data,
+    uint32_t length, void **new_config, char *statusBuf, int statusBufLen)
+{
+    char sha256[SHA256_HASH_SIZE];
+    FileSigInfo *pfile_verdict = NULL;
+    int file_verdict;
+    char *tokstr, *save, *data_copy;
+    FileInspectConf *conf = (FileInspectConf *)sfPolicyUserDataGetCurrent(file_config);
+    CSMessageDataHeader *msg_hdr = (CSMessageDataHeader *)data;
+
+    statusBuf[0] = 0;
+
+    if (length <= sizeof(*msg_hdr))
+    {
+        return -1;
+    }
+    length -= sizeof(*msg_hdr);
+    if (length != (uint32_t)ntohs(msg_hdr->length))
+    {
+        return -1;
+    }
+
+    data += sizeof(*msg_hdr);
+    data_copy = malloc(length + 1);
+    if (data_copy == NULL)
+    {
+        return -1;
+    }
+    memcpy(data_copy, data, length);
+    data_copy[length] = 0;
+
+    tokstr = strtok_r(data_copy, " \t\n", &save);
+    if (tokstr == NULL)
+    {
+        free(data_copy);
+        return -1;
+    }
+
+    /* Convert tokstr to sha256 type */
+    if (str_to_sha(tokstr, sha256, save - tokstr) != 0)
+    {
+        free(data_copy);
+        return -1;
+    }
+
+    /* Get the SHA256 verdict info */
+    if (conf->sig_table)
+    {
+        pfile_verdict = (FileSigInfo *)sha_table_find(conf->sig_table, sha256);
+    }
+
+    if (!pfile_verdict && conf->sha256_cache)
+    {
+        /* 2nd chance: seen files table. No need to footprints here. */
+        void *n = sfxhash_find_node(conf->sha256_cache, sha256);
+        if (n)
+        {
+            file_verdict = FILE_VERDICT_STOP;
+            conf->sha256_cache->find_success--;
+        }
+        else
+        {
+            file_verdict = FILE_VERDICT_UNKNOWN;
+            conf->sha256_cache->find_fail--;
+        }
+    }
+    else
+    {
+        file_verdict = FILE_VERDICT_UNKNOWN;
+    }
+
+    const char *decision;
+
+    switch (file_verdict)
+    {
+        case FILE_VERDICT_LOG:
+        decision = "LOG";
+        break;
+
+        case FILE_VERDICT_STOP:
+        decision = "STOP";
+        break;
+
+        case FILE_VERDICT_BLOCK:
+        decision = "BLOCK";
+        break;
+
+        case FILE_VERDICT_REJECT:
+        decision = "REJECT";
+        break;
+
+        case FILE_VERDICT_PENDING:
+        decision = "PENDING";
+        break;
+
+        case FILE_VERDICT_STOP_CAPTURE:
+        decision = "STOP_CAPTURE";
+        break;
+
+        case FILE_VERDICT_UNKNOWN:
+        case FILE_VERDICT_MAX:
+        default:
+        decision = "UNKNOWN";
+        break;
+    };
+
+    snprintf(statusBuf, statusBufLen,
+        "SHA256 signature %s with verdict %s",
+        tokstr, decision
+        );
+
+    free(data_copy);
+    return 0;
+}
+
+#endif
