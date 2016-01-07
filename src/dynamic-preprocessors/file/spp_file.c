@@ -461,6 +461,7 @@ static int File_Signature_PreControl(uint16_t type, const uint8_t *data, uint32_
     static FileSigInfo blackList = {FILE_VERDICT_BLOCK};
     static FileSigInfo greyList = {FILE_VERDICT_LOG};
 
+    int rc = 0;
     FileInspectConf *pDefaultPolicyConfig = NULL;
     FileInspectConf *nextConfig = NULL;
 
@@ -485,28 +486,44 @@ static int File_Signature_PreControl(uint16_t type, const uint8_t *data, uint32_
     /* Update new SHA files */
     if (pDefaultPolicyConfig->blacklist_path)
     {
-        file_config_signature(pDefaultPolicyConfig->blacklist_path, &blackList,
-            nextConfig);
-        _dpd.logMsg("    File Preprocessor: Received new blacklist\n");
+        const int rc = file_config_signature(pDefaultPolicyConfig->blacklist_path,
+            &blackList, nextConfig, 0 /* allow_fatal */);
+        if (0 == rc)
+        {
+            _dpd.logMsg("    File Preprocessor: Received new blacklist\n");
+        }
     }
 
-    if (pDefaultPolicyConfig->greylist_path)
+    if (0 == rc && pDefaultPolicyConfig->greylist_path)
     {
-        file_config_signature(pDefaultPolicyConfig->greylist_path, &greyList,
-        nextConfig);
-        _dpd.logMsg("    File Preprocessor: Received new greylist\n");
+        const int rc = file_config_signature(pDefaultPolicyConfig->greylist_path,
+            &greyList, nextConfig, 0 /* allow_fatal */);
+        if (0 == rc)
+        {
+            _dpd.logMsg("    File Preprocessor: Received new greylist\n");
+        }
     }
 
-    if (pDefaultPolicyConfig->seenlist_path)
+    if (0 == rc && pDefaultPolicyConfig->seenlist_path)
     {
         nextConfig->sha256_cache_table_rows = pDefaultPolicyConfig->sha256_cache_table_rows;
         nextConfig->sha256_cache_table_maxmem_m = pDefaultPolicyConfig->sha256_cache_table_maxmem_m;
 
-        file_config_setup_seenlist(pDefaultPolicyConfig->seenlist_path,nextConfig);
+        file_config_setup_seenlist(pDefaultPolicyConfig->seenlist_path,nextConfig, 0 /* allow_fatal */);
         _dpd.logMsg("    File Preprocessor: Received new seenlist\n");
     }
 
-    *new_config = nextConfig;
+    if (0 == rc)
+    {
+        *new_config = nextConfig;
+    }
+    else
+    {
+        /* Error. Clean & exit */
+        file_config_free(nextConfig);
+        *new_config = NULL;
+        return -1;
+    }
 
     return 0;
 }

@@ -97,10 +97,11 @@ typedef struct _fileInspectConfig
 
 void file_config_parse(FileInspectConf*, const u_char* );
 
-void file_config_signature(char *filename, FileSigInfo *sig_info,
-        FileInspectConf *config);
+int file_config_signature(char *filename, FileSigInfo *sig_info,
+        FileInspectConf *config, int allow_fatal);
 
-void file_config_setup_seenlist(char *seenList,FileInspectConf *config);
+int file_config_setup_seenlist(char *seenList,FileInspectConf *config,
+    int allow_fatal);
 
 /* Return values
  *  0: equal
