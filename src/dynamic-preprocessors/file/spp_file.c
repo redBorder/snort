@@ -91,11 +91,11 @@ static void FileReloadSwapFree(void *);
 #endif
 
 #ifdef CONTROL_SOCKET
-static int File_Signature_PreControl(uint16_t type, const uint8_t *data,
+static int File_Signature_Reload(uint16_t type, const uint8_t *data,
     uint32_t length, void **new_config, char *statusBuf, int statusBufLen);
-static int File_Signature_Control(uint16_t type, void *new_config,
+static int File_Signature_ReloadSwap(uint16_t type, void *new_config,
     void **old_config);
-static void File_Signature_PostControl(uint16_t type, void *old_config,
+static void File_Signature_ReloadFree(uint16_t type, void *old_config,
     struct _THREAD_ELEMENT *te, ControlDataSendFunc f);
 static int File_Signature_CS_Lookup(uint16_t type, const uint8_t *data,
     uint32_t length, void **new_config, char *statusBuf, int statusBufLen);
@@ -124,8 +124,8 @@ void SetupFileInspect(void)
 
 #ifdef CONTROL_SOCKET
     _dpd.controlSocketRegisterHandler(CS_TYPE_SIGNATURE_SHAREMEM,
-        &File_Signature_PreControl, &File_Signature_Control,
-        &File_Signature_PostControl);
+        &File_Signature_Reload, &File_Signature_ReloadSwap,
+        &File_Signature_ReloadFree);
     _dpd.controlSocketRegisterHandler(CS_TYPE_SIGNATURE_DATABASE_LOOKUP,
         &File_Signature_CS_Lookup, NULL, NULL);
 #endif
@@ -460,7 +460,7 @@ static void print_file_stats(int exiting)
 #ifdef CONTROL_SOCKET
 
 /* Snort spawn a new thread to call this function */
-static int File_Signature_PreControl(uint16_t type, const uint8_t *data, uint32_t length, void **new_config,
+static int File_Signature_Reload(uint16_t type, const uint8_t *data, uint32_t length, void **new_config,
         char *statusBuf, int statusBufLen)
 {
     static FileSigInfo blackList = {FILE_VERDICT_BLOCK};
@@ -538,7 +538,7 @@ static int File_Signature_PreControl(uint16_t type, const uint8_t *data, uint32_
 
 /* Snort calls this function in the main thread, so there will be no packet
    processing here */
-static int File_Signature_Control(uint16_t type, void *new_config, void **old_config)
+static int File_Signature_ReloadSwap(uint16_t type, void *new_config, void **old_config)
 {
     FileInspectConf *config = (FileInspectConf *) new_config;
     FileInspectConf *pDefaultPolicyConfig = (FileInspectConf *)sfPolicyUserDataGetDefault(file_config);
@@ -556,8 +556,8 @@ static int File_Signature_Control(uint16_t type, void *new_config, void **old_co
 }
 
 /* This will be executed in the same thread created for
-   File_Signature_PreControl */
-static void File_Signature_PostControl(uint16_t type, void *old_config, struct _THREAD_ELEMENT *te, ControlDataSendFunc f)
+   File_Signature_Reload */
+static void File_Signature_ReloadFree(uint16_t type, void *old_config, struct _THREAD_ELEMENT *te, ControlDataSendFunc f)
 {
     FileInspectConf *config = (FileInspectConf *) old_config;
     FileInspectConf *pDefaultPolicyConfig = (FileInspectConf *)sfPolicyUserDataGetDefault(file_config);
