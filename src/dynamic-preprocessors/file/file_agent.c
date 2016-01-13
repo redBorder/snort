@@ -312,6 +312,11 @@ void file_agent_init(void *config)
         file_capture_enabled = true;
     }
 
+#ifdef HAVE_EXTRADATA_FILE
+    if (conf->file_extradata_enabled)
+        _dpd.fileAPI->enable_file_extradata();
+#endif
+
     if (conf->hostname)
     {
         file_agent_init_socket(conf->hostname, conf->portno);
