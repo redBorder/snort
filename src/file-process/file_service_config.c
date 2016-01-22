@@ -166,6 +166,7 @@ int file_sevice_config_verify(SnortConfig *old, SnortConfig *new)
     next->xtra_file_mailfrom_id = curr->xtra_file_mailfrom_id;
     next->xtra_file_rcptto_id   = curr->xtra_file_rcptto_id;
     next->xtra_file_headers_id  = curr->xtra_file_headers_id;
+    next->xtra_file_ftp_user_id = curr->xtra_file_ftp_user_id;
 #endif
 
     /* Enable file type, file signature or file capture requires a restart*/

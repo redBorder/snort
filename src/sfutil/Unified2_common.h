@@ -201,7 +201,8 @@ typedef enum _EventInfoEnum
     EVENT_INFO_FILE_HOSTNAME,   /* 17 */
     EVENT_INFO_FILE_MAILFROM,   /* 18 */
     EVENT_INFO_FILE_RCPTTO,     /* 19 */
-    EVENT_INFO_FILE_EMAIL_HDRS  /* 20 */
+    EVENT_INFO_FILE_EMAIL_HDRS, /* 20 */
+    EVENT_INFO_FILE_FTP_USER,   /* 21 */
 #endif
 }EventInfoEnum;
 

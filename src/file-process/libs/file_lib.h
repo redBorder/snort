@@ -80,6 +80,8 @@ typedef struct _FileContext
     uint32_t   file_rcptto_size;
     uint8_t    *file_headers;
     uint32_t   file_headers_size;
+    uint8_t    *file_ftp_user;
+    uint32_t   file_ftp_user_size;
 #endif
     bool       file_name_saved;
     uint64_t   file_size;
@@ -112,6 +114,7 @@ typedef struct _FileContext
     uint32_t xtra_file_mailfrom_id;
     uint32_t xtra_file_rcptto_id;
     uint32_t xtra_file_headers_id;
+    uint32_t xtra_file_ftp_user_id;
 #endif
 } FileContext;
 
@@ -135,6 +138,8 @@ void file_rcptto_set (FileContext *context, uint8_t *file_rcptto, uint32_t file_
 int file_rcptto_get (FileContext *context, uint8_t **file_rcptto, uint32_t *file_rcptto_size);
 void file_headers_set (FileContext *context, uint8_t *file_headers, uint32_t file_headers_size);
 int file_headers_get (FileContext *context, uint8_t **file_headers, uint32_t *file_headers_size);
+void file_ftp_user_set (FileContext *context, uint8_t *file_headers, uint32_t file_headers_size);
+int file_ftp_user_get (FileContext *context, uint8_t **file_headers, uint32_t *file_headers_size);
 #endif
 void file_size_set (FileContext *context, uint64_t file_size);
 uint64_t file_size_get (FileContext *context);

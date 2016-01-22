@@ -80,6 +80,10 @@ extern int16_t ftp_data_app_id;
 extern unsigned s_ftpdata_eof_cb_id;
 #endif
 
+#ifdef HAVE_EXTRADATA_FILE
+#define EXTRADATA_FTP_CMD__USER "USER"
+#endif
+
 #if 0
 /*
  * Function: getIP(char **ip_start,
@@ -1856,6 +1860,28 @@ int check_ftp(FTP_SESSION  *ftpssn, SFSnortPacket *p, int iMode)
                         CmdConf->max_param_len));
                     iRet = FTPP_ALERT;
                 }
+
+#ifdef HAVE_EXTRADATA_FILE
+                if ( !strncmp(EXTRADATA_FTP_CMD__USER,req->cmd_begin, req->cmd_size)
+                    && req->param_begin && req->param_size )
+                {
+                    /* Saving user to send it in file event */
+                    if ( ftpssn->user_info > 0 )
+                    {
+                        /* There was a previous user */
+                        free(ftpssn->user);
+                        ftpssn->user = NULL;
+                        ftpssn->user_info = 0;
+                    }
+
+                    ftpssn->user = malloc(req->param_size);
+                    if (ftpssn->user)
+                    {
+                        ftpssn->user_info = req->param_size;
+                        memcpy(ftpssn->user,req->param_begin,req->param_size);
+                    }
+                }
+#endif
 
                 if (CmdConf->data_chan_cmd)
                 {
