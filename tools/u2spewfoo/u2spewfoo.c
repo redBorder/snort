@@ -347,7 +347,53 @@ static void extradata_dump(u2record *record) {
             printf("IPv6 Destination Address: %s\n",
                     ip6buf);
             break;
-
+#ifdef HAVE_EXTRADATA_FILE
+        case EVENT_INFO_FILE_SHA256:
+            data = record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData);
+            printf("\n\tSHA256: ");
+            for(i=0; i < len; i++) {
+                if(iscntrl(data[i]))
+                    printf("%02x", '.');
+                else
+                    printf("%02x", data[i]);
+            }
+            printf("\n");
+            break;
+        case EVENT_INFO_FILE_SIZE:
+            printf("\n\tFile Size: %.*s\n", len,
+                   record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
+            break;
+        case EVENT_INFO_FILE_NAME:
+            printf("\n\tFile Name: %.*s\n", len,
+                   record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
+            break;
+        case EVENT_INFO_FILE_HOSTNAME:
+            printf("\n\tFile Hostname: ");
+            data = record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData);
+            for(i=0; i < len; i++)
+            {
+                if(iscntrl(data[i]))
+                    printf("%c",'.');
+                else
+                    printf("%c",data[i]);
+            }
+            printf("\n");
+            break;
+        case EVENT_INFO_FILE_MAILFROM:
+            printf("\n\tFile Mail From: %.*s\n", len,
+                   record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
+            break;
+        case EVENT_INFO_FILE_RCPTTO:
+            printf("\n\tFile Mail To: %.*s\n",
+                len, record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
+            break;
+        case EVENT_INFO_FILE_EMAIL_HDRS:
+            printf("\n\n\t==== File Email Headers ====\n");
+            printf("%.*s", len,
+                   record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
+            printf("\t== End File Email Headers ==\n");
+            break;
+#endif
         default :
             break;
     }
