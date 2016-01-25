@@ -686,6 +686,13 @@ static void FTPFreeSession(void *preproc_session)
         free(ssn->filename);
     }
 
+#ifdef HAVE_EXTRADATA_FILE
+    if (ssn->user)
+    {
+        free(ssn->user);
+    }
+#endif
+
     if ( ssl_cb )
         ssl_cb->session_free(ssn->flow_id);
     free(ssn);

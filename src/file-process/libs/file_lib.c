@@ -190,6 +190,10 @@ static inline void cleanDynamicContext (FileContext *context)
         file_capture_stop(context);
     if(context->file_name && context->file_name_saved)
         free(context->file_name);
+#ifdef HAVE_EXTRADATA_FILE
+    if (context->file_ftp_user)
+        free(context->file_ftp_user);
+#endif
 }
 
 void file_context_reset(FileContext *context)
@@ -337,6 +341,47 @@ int file_headers_get (FileContext *context, uint8_t **file_headers, uint32_t *fi
         *file_headers_size = context->file_headers_size;
     else
         return 0;
+    return 1;
+}
+
+void file_ftp_user_set (FileContext *context, uint8_t *ftp_user, uint32_t ftp_user_size)
+{
+    if (!context)
+        return;
+    if (context->file_ftp_user)
+        free(context->file_ftp_user);
+
+    context->file_ftp_user = SnortStrdup((const char *)ftp_user);
+
+    if (context->file_ftp_user)
+        context->file_ftp_user_size = ftp_user_size;
+}
+
+int file_ftp_user_get (FileContext *context, uint8_t **file_ftp_user, uint32_t *file_ftp_user_size)
+{
+    if (!context)
+    {
+        return 0;
+    }
+
+    if (file_ftp_user)
+    {
+        *file_ftp_user = context->file_ftp_user;
+    }
+    else
+    {
+        return 0;
+    }
+
+    if (file_ftp_user_size)
+    {
+        *file_ftp_user_size = context->file_ftp_user_size;
+    }
+    else
+    {
+        return 0;
+    }
+
     return 1;
 }
 #endif

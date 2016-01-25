@@ -65,6 +65,7 @@ typedef struct _fileConfig
     uint32_t xtra_file_mailfrom_id;
     uint32_t xtra_file_rcptto_id;
     uint32_t xtra_file_headers_id;
+    uint32_t xtra_file_ftp_user_id;
 #endif
 
 } FileConfig;

@@ -4524,6 +4524,14 @@ int SnortFTPData(SFSnortPacket *p)
     }
     else
     {
+#ifdef HAVE_EXTRADATA_FILE
+        if (ftp_ssn->user_info)
+        {
+            _dpd.fileAPI->set_file_ftp_user(p->stream_session,
+                (uint8_t *)ftp_ssn->user, ftp_ssn->user_info);
+        }
+#endif
+
         initFilePosition(&data_ssn->position,
                 _dpd.fileAPI->get_file_processed_size(p->stream_session));
         if (p->tcp_header && (p->tcp_header->flags & TCPHEADER_FIN))

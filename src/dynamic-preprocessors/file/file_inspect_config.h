@@ -93,15 +93,6 @@ typedef struct _fileInspectConfig
     } s3;
 #endif
     uint32_t capture_disk_size;  /* In megabytes*/
-#ifdef HAVE_EXTRADATA_FILE
-    uint32_t xtra_file_sha256_id;
-    uint32_t xtra_file_size_id;
-    uint32_t xtra_file_name_id;
-    uint32_t xtra_file_hostname_id;
-    uint32_t xtra_file_mailfrom_id;
-    uint32_t xtra_file_rcptto_id;
-    uint32_t xtra_file_headers_id;
-#endif
 
     uint32_t sha256_cache_table_rows;
     uint32_t sha256_cache_table_maxmem_m;

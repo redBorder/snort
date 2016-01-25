@@ -166,6 +166,11 @@ typedef struct s_FTP_SESSION
     uint16_t serverPort;
     uint32_t ftp_cmd_pipe_index;
 
+#ifdef HAVE_EXTRADATA_FILE
+    char *user;
+    int user_info; /* 0: unknown, >0: user_length */
+#endif
+
     /* A file is being transfered on ftp-data channel */
     char *filename;
     int file_xfer_info; /* -1: ignore, 0: unknown, >0: filename length */
