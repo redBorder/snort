@@ -48,6 +48,7 @@
 #define FILE_ALL_OFF                        0x00000000
 #define MAX_FILE                            1024
 #define MAX_EMAIL                           1024
+#define MAX_UNICODE_FILE_NAME               1024
 
 #define FILE_RESUME_BLOCK                   0x01
 #define FILE_RESUME_LOG                     0x02
@@ -112,6 +113,13 @@ typedef struct _FileState
     FileSigState     sig_state;
 } FileState;
 
+typedef struct _FileCacheStatus
+{
+    uint64_t prunes;  /* number of file entries pruned due to memcap*/
+    uint64_t segment_mem_in_use; /* memory used currently */
+    uint64_t segment_mem_in_use_max; /* Maximal memory usage */
+} FileCacheStatus;
+
 struct s_MAIL_LogState;
 struct _DecodeConfig;
 struct s_MAIL_LogConfig;
@@ -122,6 +130,7 @@ struct _FileCaptureInfo;
 typedef struct _FileCaptureInfo FileCaptureInfo;
 struct _SnortConfig;
 struct _FileContext;
+struct _FileCache;
 
 #define FILE_API_VERSION   4
 
@@ -143,17 +152,19 @@ typedef int (*Get_file_hostname_func) (void* ssnptr, uint8_t **file_hostname, ui
 typedef int (*Get_file_mailfrom_func) (void* ssnptr, uint8_t **file_mailfrom, uint32_t *mailfrom_len);
 typedef int (*Get_file_rcptto_func) (void* ssnptr, uint8_t **file_rcptto, uint32_t *rcptto_len);
 typedef int (*Get_file_headers_func) (void* ssnptr, uint8_t **file_headers, uint32_t *headers_len);
+typedef int (*Get_file_ftp_user_func) (void *ssnptr, uint8_t **file_ftp_user, uint32_t *user_len);
 #endif
 typedef uint64_t (*Get_file_size_func) (void* ssnptr);
 typedef bool (*Get_file_direction_func) (void* ssnptr);
 typedef uint8_t *(*Get_file_sig_sha256_func) (void* ssnptr);
 
-typedef void (*Set_file_name_func) (void* ssnptr, uint8_t *, uint32_t);
+typedef void (*Set_file_name_func) (void* ssnptr, uint8_t *, uint32_t, bool);
 #ifdef HAVE_EXTRADATA_FILE
 typedef void (*Set_file_hostname_func) (void* ssnptr, uint8_t *, uint32_t);
 typedef void (*Set_file_mailfrom_func) (void* ssnptr, uint8_t *, uint32_t);
 typedef void (*Set_file_rcptto_func) (void* ssnptr, uint8_t *, uint32_t);
 typedef void (*Set_file_headers_func) (void* ssnptr, uint8_t *, uint32_t);
+typedef void (*Set_file_ftp_user_func) (void *ssnptr, uint8_t *, uint32_t);
 #endif
 typedef void (*Set_file_direction_func) (void* ssnptr, bool);
 
@@ -208,11 +219,20 @@ typedef uint32_t (*Get_new_file_instance)(void *);
 
 /*Context based file process functions*/
 typedef struct _FileContext* (*Create_file_context_func)(void *ssnptr);
+typedef void (*Init_file_context_func)(void *ssnptr, bool upload, struct _FileContext  *ctx);
 typedef struct _FileContext* (*Get_file_context_func)(void *ssnptr);
 typedef bool (*Set_file_context_func)(void *ssnptr, struct _FileContext *ctx);
 typedef int (*Process_file_func)( struct _FileContext *ctx, void *p,
         uint8_t *file_data, int data_size, FilePosition position,
         bool suspend_block_verdict);
+typedef void *(*File_cache_update_entry_func) (struct _FileCache *fileCache, void* p, uint64_t file_id,
+        uint8_t *file_name, uint32_t file_name_size,  uint64_t file_size);
+typedef int (*File_segment_process_func)( struct _FileCache *fileCache, void* p, uint64_t file_id,
+        uint64_t file_size, const uint8_t* file_data, int data_size, uint64_t offset,
+        bool upload);
+typedef struct _FileCache * (*File_cache_create_func)(uint64_t memcap, uint32_t cleanup_files);
+typedef void (*File_cache_free_func)(struct _FileCache *fileCache);
+typedef FileCacheStatus * (*File_cache_status_func)(struct _FileCache *fileCache);
 typedef int64_t (*Get_max_file_capture_size)(void *ssn);
 
 typedef struct _file_api
@@ -325,6 +345,22 @@ typedef struct _file_api
      *    0: file headers is unavailable
      */
     Get_file_headers_func get_file_headers;
+
+    /* Get file FTP user and the length of user
+     * Note: this is updated after file processing. It will be available
+     * for file event logging, but might not be available during file type
+     * callback or file signature callback, because those callbacks are called
+     * during file processing.
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     *    uint8_t **file_ftp_user: address for ftp user to be saved
+     *    uint32_t *user_len: address to save ftp user length
+     * Returns
+     *    1: file headers available,
+     *    0: file headers is unavailable
+     */
+    Get_file_ftp_user_func get_file_ftp_user;
 #endif
 
     /* Get file size
@@ -380,6 +416,8 @@ typedef struct _file_api
      *    void* ssnptr: session pointer
      *    uint8_t *file_name: file name to be saved
      *    uint32_t name_len: file name length
+     *    bool save_in_context: true if file name is saved in context
+     *                          instead of session
      * Returns
      *    None
      */
@@ -429,6 +467,17 @@ typedef struct _file_api
      *    None
      */
     Set_file_headers_func set_file_headers;
+
+    /* Set FTP user and the length of FTP user
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     *    uint8_t *ftp_user: FTP user to be saved
+     *    uint32_t user_len: FTP user len
+     * Returns
+     *    None
+     */
+    Set_file_ftp_user_func set_file_ftp_user;
 #endif
 
     /* Get file direction
@@ -636,6 +685,15 @@ typedef struct _file_api
      */
     Create_file_context_func create_file_context;
 
+    /* Intialize a file context
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     * Returns:
+     *    FileContext *: file context.
+     */
+    Init_file_context_func init_file_context;
+
     /* Set file context to be the current
      *
      * Arguments:
@@ -679,6 +737,65 @@ typedef struct _file_api
      *    0: ignore this file (no further processing needed)
      */
     Process_file_func process_file;
+
+    /* Create the file cache that store file segments and properties.
+     *
+     * Arguments:
+     *    uint64_t: total memory available for file cache, including file contexts
+     *    uint32_t: maximal number of files pruned when memcap is reached
+     * Returns:
+     *    struct _FileCache *: file cache pointer
+     */
+    File_cache_create_func file_cache_create;
+
+    /* Free the file cache that store file segments and properties.
+     *
+     * Arguments:
+     *    struct _FileCache *: file cache pointer
+     * Returns:
+     *    None
+     */
+    File_cache_free_func file_cache_free;
+
+    /* Get the status of file cache for troubleshooting.
+     *
+     * Arguments:
+     *    struct _FileCache *: file cache pointer
+     * Returns:
+     *    FileCacheStatus *: status of file cache
+     */
+    File_cache_status_func file_cache_status;
+
+    /* Get a new file entry in the file cache, if already exists, update file name
+     *
+     * Arguments:
+     *    struct _FileCache *: file cache that stores file segments
+     *    void* : packet pointer
+     *    uint64_t: file id that is unique
+     *    uint8_t *: file name
+     *    uint32_t:  file name size
+     * Returns:
+     *    None
+     */
+    File_cache_update_entry_func file_cache_update_entry;
+
+    /* Process file segment, when file segment is in order, file data will be
+     * processed; otherwise it is stored.
+     *
+     * Arguments:
+     *    struct _FileCache *: file cache that stores file segments
+     *    void* : packet pointer
+     *    uint64_t: file id that is unique
+     *    uint64_t: total file size,
+     *    const uint8_t*: file data
+     *    int: file data size
+     *    uint64_t: file data offset in the file
+     *    bool: true for upload, false for download
+     * Returns:
+     *    1: continue processing/log/block this file
+     *    0: ignore this file (no further processing needed)
+     */
+    File_segment_process_func file_segment_process;
 
     /* Return a unique file instance number
      *

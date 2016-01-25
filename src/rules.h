@@ -138,18 +138,6 @@ typedef struct _ActivateListNode
 
 } ActivateListNode;
  
-
-#if 0 /* RELOCATED to parser/IpAddrSet.h */
-typedef struct _IpAddrSet
-{
-    uint32_t ip_addr;   /* IP addr */
-    uint32_t netmask;   /* netmask */
-    uint8_t  addr_flags; /* flag for normal/exception processing */
-
-    struct _IpAddrSet *next;
-} IpAddrSet;
-#endif /* RELOCATED to parser/IpAddrSet.h */
-
 struct _RuleListNode;
 
 typedef struct _ListHead

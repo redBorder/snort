@@ -156,6 +156,19 @@ int file_sevice_config_verify(SnortConfig *old, SnortConfig *new)
         file_service_config_defaults(next);
     }
 
+#ifdef HAVE_EXTRADATA_FILE
+    /* We know that this is not "to verify", but it's the best place to put
+    this with the less possible modifications*/
+    next->xtra_file_sha256_id   = curr->xtra_file_sha256_id;
+    next->xtra_file_size_id     = curr->xtra_file_size_id;
+    next->xtra_file_name_id     = curr->xtra_file_name_id;
+    next->xtra_file_hostname_id = curr->xtra_file_hostname_id;
+    next->xtra_file_mailfrom_id = curr->xtra_file_mailfrom_id;
+    next->xtra_file_rcptto_id   = curr->xtra_file_rcptto_id;
+    next->xtra_file_headers_id  = curr->xtra_file_headers_id;
+    next->xtra_file_ftp_user_id = curr->xtra_file_ftp_user_id;
+#endif
+
     /* Enable file type, file signature or file capture requires a restart*/
     if (file_service_reconfigured)
     {

@@ -276,7 +276,7 @@ void SetupByteTest(void)
     AddFuncToRuleOptParseCleanupList(ByteTestOverrideFuncsFree);
 
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("byte_test", &byteTestPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("byte_test", &byteTestPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN,"Plugin: ByteTest Setup\n"););
 }

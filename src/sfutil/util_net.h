@@ -19,14 +19,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  ****************************************************************************/
- 
+
 /**
  * @file   util_net.h
  * @author Chris Green <cmg@sourcefire.com>
  * @date   Fri Jun 27 10:20:31 2003
- * 
+ *
  * @brief  simple network related functions
- * 
+ *
  * Put your simple network related functions here
  */
 
@@ -36,7 +36,7 @@
 #include "sf_types.h"
 #include "ipv6_port.h"
 
-char *inet_ntoax(sfip_t *);
+char *inet_ntoax(const sfaddr_t *);
 
 char * mktcpflag_str(int flags);
 

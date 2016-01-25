@@ -61,8 +61,10 @@
 #include "sf_types.h"
 #include "active.h"
 #include "detection_util.h"
+#include "preprocids.h"
 #if defined(FEAT_OPEN_APPID)
 #include "sp_appid.h"
+#include "appIdApi.h"
 #endif /* defined(FEAT_OPEN_APPID) */
 
 #ifdef PORTLISTS
@@ -110,8 +112,11 @@ static void DispatchPreprocessors( Packet *p, tSfPolicyId policy_id, SnortPolicy
 {
     SessionControlBlock *scb = NULL;
     PreprocEvalFuncNode *ppn;
-    uint32_t pps_enabled_foo;
+    PreprocEnableMask pps_enabled_foo;
     bool alerts_processed = false;
+
+    // No expected sessions yet.
+    p->expectedSession = NULL;
 
     // until we are in a Session context dispatch preprocs from the policy list if there is one
     p->cur_pp = policy->preproc_eval_funcs;
@@ -121,7 +126,7 @@ static void DispatchPreprocessors( Packet *p, tSfPolicyId policy_id, SnortPolicy
         LogMessage("WARNING: No preprocessors configured for policy %d.\n", policy_id);
         return;
     }
-   
+
     pps_enabled_foo = policy->pp_enabled[ p->dp ] | policy->pp_enabled[ p->sp ];
     EnablePreprocessors( p, pps_enabled_foo );
     do {
@@ -140,14 +145,14 @@ static void DispatchPreprocessors( Packet *p, tSfPolicyId policy_id, SnortPolicy
 
         if( scb == NULL && p->ssnptr != NULL )
             scb = ( SessionControlBlock * ) p->ssnptr;
-        // if we now have session, update enabled pps if changed by previous preproc 
+        // if we now have session, update enabled pps if changed by previous preproc
         if( scb != NULL && pps_enabled_foo != scb->enabled_pps )
         {
             EnablePreprocessors( p, scb->enabled_pps );
             pps_enabled_foo = scb->enabled_pps;
         }
 
-    } while ( ( p->cur_pp != NULL ) && !( p->packet_flags & PKT_PASS_RULE ) ); 
+    } while ( ( p->cur_pp != NULL ) && !( p->packet_flags & PKT_PASS_RULE ) );
 
     // queued decoder alerts are processed after the selection of the
     // IPS rule config for the flow, if not yet done then process them now
@@ -196,7 +201,7 @@ int Preprocess(Packet * p)
     // If the packet has errors, we won't analyze it.
     if ( p->error_flags )
     {
-        // process any decoder alerts now that policy has been selected... 
+        // process any decoder alerts now that policy has been selected...
         DecodePolicySpecific(p);
 
         //actions are queued only for IDS case
@@ -340,7 +345,7 @@ static void updateEventAppName (Packet *p, OptTreeNode *otn, Event *event)
     const char *appName;
     AppIdOptionData *app_data = (AppIdOptionData*)otn->ds_list[PLUGIN_APPID];
 
-    if (app_data && (app_data->matched_appid) && (appName = FindProtocolName(app_data->matched_appid)))
+    if (app_data && (app_data->matched_appid) && (appName = appIdApi.getApplicationName(app_data->matched_appid)))
         memcpy(event->app_name, appName, sizeof(event->app_name));
     else if (p->ssnptr)
     {
@@ -359,7 +364,7 @@ static void updateEventAppName (Packet *p, OptTreeNode *otn, Event *event)
                 pickedProtoId = clientProtoId;
         }
 
-        if ((pickedProtoId) && (appName = FindProtocolName(pickedProtoId)))
+        if ((pickedProtoId) && (appName = appIdApi.getApplicationName(pickedProtoId)))
         {
             memcpy(event->app_name, appName, sizeof(event->app_name));
         }
@@ -578,8 +583,8 @@ int CheckAddrPort(
                 Packet *p,
                 uint32_t flags, int mode)
 {
-    snort_ip_p pkt_addr;              /* packet IP address */
-    u_short pkt_port;           /* packet port */
+    sfaddr_t* pkt_addr;              /* packet IP address */
+    u_short pkt_port;                /* packet port */
     int global_except_addr_flag = 0; /* global exception flag is set */
     int any_port_flag = 0;           /* any port flag set */
     int except_port_flag = 0;        /* port exception flag set */
@@ -739,7 +744,7 @@ void DumpList(IpAddrNode *idx, int negated)
     {
        DEBUG_WRAP(DebugMessage(DEBUG_RULES,
                         "[%d]    %s",
-                        i++, sfip_ntoa(idx->ip)););
+                        i++, sfip_ntoa(&idx->ip->addr)););
 
        if(negated)
        {
@@ -882,7 +887,7 @@ int CheckSrcIP(Packet * p, struct _RuleTreeNode * rtn_idx, RuleFpList * fp_list,
 // XXX NOT YET IMPLEMENTED - debugging in Snort6
 #if 0
 #ifdef DEBUG_MSGS
-            sfip_t ip;
+            sfaddr_t ip;
             if(idx->addr_flags & EXCEPT_IP) {
                 DebugMessage(DEBUG_DETECT, "  SIP exception match\n");
             }
@@ -1135,10 +1140,8 @@ int PassAction(void)
     return 1;
 }
 
-int ActivateAction(Packet * p, OptTreeNode * otn, Event *event)
+int ActivateAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
 {
-    RuleTreeNode *rtn = getRuntimeRtnFromOtn(otn);
-
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
                    "        <!!> Activating and generating alert! \"%s\"\n",
                    otn->sigInfo.message););
@@ -1172,12 +1175,15 @@ int ActivateAction(Packet * p, OptTreeNode * otn, Event *event)
     return 1;
 }
 
-int AlertAction(Packet * p, OptTreeNode * otn, Event *event)
+int AlertAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
 {
-    RuleTreeNode *rtn = getRuntimeRtnFromOtn(otn);
-
-    if (rtn == NULL)
-        return 0;
+    if (!rtn)
+    {
+        // This function may be called from ppm, which doesn't do an RTN lookup
+        rtn = getRuntimeRtnFromOtn(otn);
+        if (!rtn)
+            return 0;
+    }
 
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
                 "        <!!> Generating alert! \"%s\", policyId %d\n", otn->sigInfo.message, getIpsRuntimePolicy()););
@@ -1217,10 +1223,8 @@ int AlertAction(Packet * p, OptTreeNode * otn, Event *event)
     return 1;
 }
 
-int DropAction(Packet * p, OptTreeNode * otn, Event *event)
+int DropAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
 {
-    RuleTreeNode *rtn = getRuntimeRtnFromOtn(otn);
-
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
                "        <!!> Generating Alert and dropping! \"%s\"\n",
                otn->sigInfo.message););
@@ -1254,7 +1258,7 @@ int DropAction(Packet * p, OptTreeNode * otn, Event *event)
     return 1;
 }
 
-int SDropAction(Packet * p, OptTreeNode * otn, Event *event)
+int SDropAction(Packet * p, OptTreeNode * otn, Event * event)
 {
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
                "        <!!> Dropping without Alerting! \"%s\"\n",
@@ -1266,10 +1270,8 @@ int SDropAction(Packet * p, OptTreeNode * otn, Event *event)
     return 1;
 }
 
-int DynamicAction(Packet * p, OptTreeNode * otn, Event *event)
+int DynamicAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
 {
-    RuleTreeNode *rtn = getRuntimeRtnFromOtn(otn);
-
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT, "   => Logging packet data and"
                             " adjusting dynamic counts (%d/%d)...\n",
                             rtn->countdown, otn->countdown););
@@ -1296,10 +1298,8 @@ int DynamicAction(Packet * p, OptTreeNode * otn, Event *event)
     return 1;
 }
 
-int LogAction(Packet * p, OptTreeNode * otn, Event *event)
+int LogAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
 {
-    RuleTreeNode *rtn = getRuntimeRtnFromOtn(otn);
-
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT,"   => Logging packet data and returning...\n"););
 
     CallLogFuncs(p, otn->sigInfo.message, rtn->listhead, event);

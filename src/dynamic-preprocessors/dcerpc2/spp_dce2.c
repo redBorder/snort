@@ -39,6 +39,7 @@
 #include "dce2_event.h"
 #include "dce2_paf.h"
 #include "dce2_smb.h"
+#include "dce2_smb2.h"
 #include "snort_dce2.h"
 #include "preprocids.h"
 #include "profiler.h"
@@ -222,29 +223,29 @@ static void DCE2_InitGlobal(struct _SnortConfig *sc, char *args)
         _dpd.addPreprocExit(DCE2_CleanExit, NULL, PRIORITY_LAST, PP_DCE2);
 
 #ifdef PERF_PROFILING
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__MAIN, &dce2_pstat_main, 0, _dpd.totalPerfStats);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SESSION, &dce2_pstat_session, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__NEW_SESSION, &dce2_pstat_new_session, 2, &dce2_pstat_session);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SSN_STATE, &dce2_pstat_session_state, 2, &dce2_pstat_session);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__LOG, &dce2_pstat_log, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__DETECT, &dce2_pstat_detect, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_SEG, &dce2_pstat_smb_seg, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_REQ, &dce2_pstat_smb_req, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_UID, &dce2_pstat_smb_uid, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_TID, &dce2_pstat_smb_tid, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FID, &dce2_pstat_smb_fid, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FILE, &dce2_pstat_smb_file, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FILE_DETECT, &dce2_pstat_smb_file_detect, 2, &dce2_pstat_smb_file);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FILE_API, &dce2_pstat_smb_file_api, 2, &dce2_pstat_smb_file);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FP, &dce2_pstat_smb_fingerprint, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_NEG, &dce2_pstat_smb_negotiate, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__CO_SEG, &dce2_pstat_co_seg, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__CO_FRAG, &dce2_pstat_co_frag, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__CO_REASS, &dce2_pstat_co_reass, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__CO_CTX, &dce2_pstat_co_ctx, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__CL_ACTS, &dce2_pstat_cl_acts, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__CL_FRAG, &dce2_pstat_cl_frag, 1, &dce2_pstat_main);
-        _dpd.addPreprocProfileFunc(DCE2_PSTAT__CL_REASS, &dce2_pstat_cl_reass, 1, &dce2_pstat_main);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__MAIN, &dce2_pstat_main, 0, _dpd.totalPerfStats, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SESSION, &dce2_pstat_session, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__NEW_SESSION, &dce2_pstat_new_session, 2, &dce2_pstat_session, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SSN_STATE, &dce2_pstat_session_state, 2, &dce2_pstat_session, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__LOG, &dce2_pstat_log, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__DETECT, &dce2_pstat_detect, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_SEG, &dce2_pstat_smb_seg, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_REQ, &dce2_pstat_smb_req, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_UID, &dce2_pstat_smb_uid, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_TID, &dce2_pstat_smb_tid, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FID, &dce2_pstat_smb_fid, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FILE, &dce2_pstat_smb_file, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FILE_DETECT, &dce2_pstat_smb_file_detect, 2, &dce2_pstat_smb_file, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FILE_API, &dce2_pstat_smb_file_api, 2, &dce2_pstat_smb_file, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_FP, &dce2_pstat_smb_fingerprint, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__SMB_NEG, &dce2_pstat_smb_negotiate, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__CO_SEG, &dce2_pstat_co_seg, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__CO_FRAG, &dce2_pstat_co_frag, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__CO_REASS, &dce2_pstat_co_reass, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__CO_CTX, &dce2_pstat_co_ctx, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__CL_ACTS, &dce2_pstat_cl_acts, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__CL_FRAG, &dce2_pstat_cl_frag, 1, &dce2_pstat_main, NULL);
+        _dpd.addPreprocProfileFunc(DCE2_PSTAT__CL_REASS, &dce2_pstat_cl_reass, 1, &dce2_pstat_main, NULL);
 #endif
 
 #ifdef TARGET_BASED
@@ -396,6 +397,9 @@ static int DCE2_CheckConfigPolicy(
     /* Register routing table memory */
     if (pPolicyConfig->sconfigs != NULL)
         DCE2_RegMem(sfrt_usage(pPolicyConfig->sconfigs), DCE2_MEM_TYPE__RT);
+
+    if (!pPolicyConfig->gconfig->legacy_mode)
+        DCE2_Smb2Init(pPolicyConfig->gconfig->memcap);
 
     return 0;
 }
@@ -704,6 +708,23 @@ static void DCE2_PrintStats(int exiting)
             _dpd.logMsg("        Current request tracking: %u\n", dce2_memory.smb_req);
             _dpd.logMsg("        Maximum request tracking: %u\n", dce2_memory.smb_req_max);
 #endif
+            /* SMB2 stats */
+            if (!exiting)
+            {
+            	DCE2_Smb2UpdateStats();
+            }
+            _dpd.logMsg("    SMB2\n");
+            _dpd.logMsg("      Smb2 prunes: "STDu64"\n", dce2_stats.smb2_prunes);
+            _dpd.logMsg("      Memory used for smb2 processing: "STDu64"\n", dce2_stats.smb2_memory_in_use);
+            _dpd.logMsg("      Maximum memory used for smb2 processing: "STDu64"\n", dce2_stats.smb2_memory_in_use_max);
+            _dpd.logMsg("      SMB2 command requests/responses processed\n");
+            _dpd.logMsg("        smb2 create         : "STDu64"\n", dce2_stats.smb2_create);
+            _dpd.logMsg("        smb2 write          : "STDu64"\n", dce2_stats.smb2_write);
+            _dpd.logMsg("        smb2 read           : "STDu64"\n", dce2_stats.smb2_read);
+            _dpd.logMsg("        smb2 set info       : "STDu64"\n", dce2_stats.smb2_set_info);
+            _dpd.logMsg("        smb2 tree connect   : "STDu64"\n", dce2_stats.smb2_tree_connect);
+            _dpd.logMsg("        smb2 tree disconnect: "STDu64"\n", dce2_stats.smb2_tree_disconnect);
+            _dpd.logMsg("        smb2 close          : "STDu64"\n", dce2_stats.smb2_close);
         }
 
         if (dce2_stats.tcp_sessions > 0)
@@ -962,6 +983,7 @@ static void DCE2_CleanExit(int signal, void *data)
     dce2_config = NULL;
 
     DCE2_FreeGlobals();
+    DCE2_Smb2Close();
 }
 
 #ifdef SNORT_RELOAD

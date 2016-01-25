@@ -132,6 +132,12 @@ int SDFOptionInit(struct _SnortConfig *sc, char *name, char *args, void **data)
         sdf_data->pii = strdup(token);
         sdf_data->validate_func = NULL;
     }
+    if (!sdf_data->pii)
+    {
+        free(sdf_data);
+        DynamicPreprocessorFatalMessage("%s(%d) Failed to allocate memory for "
+                "SDF pattern data.", __FILE__, __LINE__);
+    }
 
     *data = (void *)sdf_data;
     return 1;

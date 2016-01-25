@@ -79,13 +79,14 @@ typedef struct _FLAP_HEADER
 static int flap_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(flap_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &flap_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "flap",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -96,7 +97,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule flap_service_mod =
+tRNAServiceValidationModule flap_service_mod =
 {
     "FLAP",
     &flap_init,
@@ -110,12 +111,12 @@ static tAppRegistryEntry appIdRegistry[] = {{APP_ID_AOL_INSTANT_MESSENGER, 0}};
 
 static int flap_init(const InitServiceAPI * const init_api)
 {
-    init_api->RegisterPattern(&flap_validate, IPPROTO_TCP, FLAP_PATTERN, sizeof(FLAP_PATTERN), 0, "flap");
+    init_api->RegisterPattern(&flap_validate, IPPROTO_TCP, FLAP_PATTERN, sizeof(FLAP_PATTERN), 0, "flap", init_api->pAppidConfig);
 	unsigned i;
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&flap_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&flap_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -134,13 +135,13 @@ MakeRNAServiceValidationPrototype(flap_validate)
     if (dir != APP_ID_FROM_RESPONDER)
         goto inprocess;
 
-    sf = flap_service_mod.api->data_get(flowp);
+    sf = flap_service_mod.api->data_get(flowp, flap_service_mod.flow_data_index);
     if (!sf)
     {
         sf = calloc(1, sizeof(*sf));
         if (!sf)
             return SERVICE_ENOMEM;
-        if (flap_service_mod.api->data_add(flowp, sf, &free))
+        if (flap_service_mod.api->data_add(flowp, sf, flap_service_mod.flow_data_index, &free))
         {
             free(sf);
             return SERVICE_ENOMEM;
@@ -210,7 +211,7 @@ MakeRNAServiceValidationPrototype(flap_validate)
     }
 
 fail:
-    flap_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+    flap_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, flap_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 
 success:

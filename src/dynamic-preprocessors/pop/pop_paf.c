@@ -30,6 +30,7 @@
 #include "pop_config.h"
 #include "file_api.h"
 
+static uint8_t pop_paf_id = 0;
 
 // global variables defined in snort_pop.c
 extern const POPToken pop_known_cmds[];
@@ -206,7 +207,7 @@ static inline int valid_response(const uint8_t data)
  */
 static inline void set_server_state(void *ssn, PopExpectedResp state)
 {
-    PopPafData *server_data = *(_dpd.streamAPI->get_paf_user_data(ssn, 0));
+    PopPafData *server_data = *(_dpd.streamAPI->get_paf_user_data(ssn, 0, pop_paf_id));
 
     // ERROR IF SERVER DATA DOES NOT EXIST!! SHOULD NOT BE POSSIBLE!!
     if (server_data)
@@ -463,7 +464,7 @@ bool is_data_end (void* ssn)
 {
     if ( ssn )
     {
-        PopPafData** s = (PopPafData **)_dpd.streamAPI->get_paf_user_data(ssn, 0);
+        PopPafData** s = (PopPafData **)_dpd.streamAPI->get_paf_user_data(ssn, 0, pop_paf_id);
 
         if ( s && (*s) )
             return ((*s)->end_of_data);
@@ -477,8 +478,8 @@ void register_pop_paf_service (struct _SnortConfig *sc, int16_t app, tSfPolicyId
 {
     if (_dpd.isPafEnabled())
     {
-        _dpd.streamAPI->register_paf_service(sc, policy, app, true, pop_paf, true);
-        _dpd.streamAPI->register_paf_service(sc, policy, app, false,pop_paf, true);
+       pop_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, true, pop_paf, true);
+       pop_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, false,pop_paf, true);
     }
 }
 #endif
@@ -488,7 +489,7 @@ void register_pop_paf_port(struct _SnortConfig *sc, unsigned int i, tSfPolicyId 
 {
     if (_dpd.isPafEnabled())
     {
-        _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, true, pop_paf, true);
-        _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, false, pop_paf, true);
+        pop_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, true, pop_paf, true);
+        pop_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, false, pop_paf, true);
     }
 }

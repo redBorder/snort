@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule directconnect_service_mod;
+extern tRNAServiceValidationModule directconnect_service_mod;
 
 #endif  /* __SERVICE_DIRECTCONNECT_H__ */
 

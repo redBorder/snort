@@ -1342,8 +1342,8 @@ void PrintICMPHeader(FILE * fp, Packet * p)
             }
 
 /* written this way since inet_ntoa was typedef'ed to use sfip_ntoa
- * which requires sfip_t instead of inaddr's.  This call to inet_ntoa
- * is a rare case that doesn't use sfip_t's. */
+ * which requires sfcidr_t instead of inaddr's.  This call to inet_ntoa
+ * is a rare case that doesn't use sfcidr_t's. */
 
 // XXX-IPv6 NOT YET IMPLEMENTED - IPV6 addresses technically not supported - need to change ICMP header
 
