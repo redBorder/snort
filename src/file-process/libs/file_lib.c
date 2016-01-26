@@ -193,6 +193,8 @@ static inline void cleanDynamicContext (FileContext *context)
 #ifdef HAVE_EXTRADATA_FILE
     if (context->file_ftp_user)
         free(context->file_ftp_user);
+    if (context->file_smb_user_id)
+        free(context->file_smb_user_id);
 #endif
 }
 
@@ -376,6 +378,50 @@ int file_ftp_user_get (FileContext *context, uint8_t **file_ftp_user, uint32_t *
     if (file_ftp_user_size)
     {
         *file_ftp_user_size = context->file_ftp_user_size;
+    }
+    else
+    {
+        return 0;
+    }
+
+    return 1;
+}
+
+void file_smb_user_id_set (FileContext *context, uint8_t *smb_user_id, uint32_t smb_user_id_size)
+{
+    if (!context)
+        return;
+    if (context->file_smb_user_id)
+        free(context->file_smb_user_id);
+
+    context->file_smb_user_id = SnortAlloc(smb_user_id_size);
+
+    if (context->file_smb_user_id)
+    {
+        memcpy(context->file_smb_user_id,smb_user_id,smb_user_id_size);
+        context->file_smb_user_id_size = smb_user_id_size;
+    }
+}
+
+int file_smb_user_id_get (FileContext *context, uint8_t **file_smb_user_id, uint32_t *file_smb_user_id_size)
+{
+    if (!context)
+    {
+        return 0;
+    }
+
+    if (file_smb_user_id)
+    {
+        *file_smb_user_id = context->file_smb_user_id;
+    }
+    else
+    {
+        return 0;
+    }
+
+    if (file_smb_user_id_size)
+    {
+        *file_smb_user_id_size = context->file_smb_user_id_size;
     }
     else
     {

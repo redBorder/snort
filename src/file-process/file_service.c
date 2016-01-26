@@ -91,6 +91,8 @@ static int get_file_rcptto(void* ssnptr, uint8_t **fname, uint32_t *name_size);
 static int get_file_headers(void* ssnptr, uint8_t **fname, uint32_t *name_size);
 
 static int get_file_ftp_user(void* ssnptr, uint8_t **fuser, uint32_t *user_size);
+
+static int get_file_smb_user_id(void* ssnptr, uint8_t **fuser, uint32_t *user_size);
 #endif
 static uint64_t get_file_size(void* ssnptr);
 static uint64_t get_file_processed_size(void* ssnptr);
@@ -105,6 +107,8 @@ static void set_file_mailfrom(void* ssnptr, uint8_t * fname, uint32_t name_size)
 static void set_file_rcptto(void* ssnptr, uint8_t * fname, uint32_t name_size);
 static void set_file_headers(void* ssnptr, uint8_t * fname, uint32_t name_size);
 static void set_file_ftp_user(void* ssnptr, uint8_t * fuser, uint32_t user_size);
+
+static void set_file_smb_user_id(void* ssnptr, uint8_t *fuser, uint32_t user_size);
 #endif
 static void set_file_direction(void* ssnptr, bool upload);
 
@@ -123,6 +127,7 @@ static int GetFileMailFrom(void *data, uint8_t **buf, uint32_t *len, uint32_t *t
 static int GetFileRcptTo(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 static int GetFileHeaders(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
 static int GetFileFtpUser(void* data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileSmbUserId(void* data, uint8_t **buf, uint32_t *len, uint32_t *type);
 #endif
 static void set_file_action_log_callback(Log_file_action_func);
 
@@ -183,6 +188,7 @@ void init_fileAPI(void)
     fileAPI.set_file_rcptto = &set_file_rcptto;
     fileAPI.set_file_headers = &set_file_headers;
     fileAPI.set_file_ftp_user = &set_file_ftp_user;
+    fileAPI.set_file_smb_user_id = &set_file_smb_user_id;
 #endif
     fileAPI.set_file_direction = &set_file_direction;
     fileAPI.set_file_policy_callback = &set_file_policy_callback;
@@ -284,6 +290,7 @@ static void FileRegisterXtraDataFuncs(FileConfig *file_config)
     file_config->xtra_file_rcptto_id = stream_api->reg_xtra_data_cb(GetFileRcptTo);
     file_config->xtra_file_headers_id = stream_api->reg_xtra_data_cb(GetFileHeaders);
     file_config->xtra_file_ftp_user_id = stream_api->reg_xtra_data_cb(GetFileFtpUser);
+    file_config->xtra_file_smb_user_id_id = stream_api->reg_xtra_data_cb(GetFileSmbUserId);
 }
 
 static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
@@ -457,6 +464,29 @@ static int GetFileFtpUser(void *data, uint8_t **buf, uint32_t *len, uint32_t *ty
 
     return 0;
 }
+
+static int GetFileSmbUserId(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->file_smb_user_id_size > 0)
+    {
+        *buf = context->file_smb_user_id;
+        *len = context->file_smb_user_id_size;
+        *type = EVENT_INFO_FILE_SMB_USER_ID;
+        return 1;
+    }
+
+    return 0;
+}
 #endif
 
 static void start_file_processing(void)
@@ -625,6 +655,7 @@ FileContext* create_file_context(void *ssnptr)
         context->xtra_file_rcptto_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_rcptto_id;
         context->xtra_file_headers_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_headers_id;
         context->xtra_file_ftp_user_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_ftp_user_id;
+        context->xtra_file_smb_user_id_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_smb_user_id_id;
     }
 #endif
 
@@ -675,6 +706,7 @@ static inline FileContext* find_main_file_context(void* p, FilePosition position
                 context->xtra_file_rcptto_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_rcptto_id;
                 context->xtra_file_headers_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_headers_id;
                 context->xtra_file_ftp_user_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_ftp_user_id;
+                context->xtra_file_smb_user_id_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_smb_user_id_id;
             }
 #endif
 
@@ -1000,6 +1032,7 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
     pkt->xtradata_mask |= BIT(context->xtra_file_rcptto_id);
     pkt->xtradata_mask |= BIT(context->xtra_file_headers_id);
     pkt->xtradata_mask |= BIT(context->xtra_file_ftp_user_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_smb_user_id_id);
     //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_sha256_id);
     //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_size_id);
     //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_name_id);
@@ -1008,6 +1041,7 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
     //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_rcptto_id);
     //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_headers_id);
     //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_ftp_user_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_smb_user_id_id);
 #endif
 
     if ((!context->file_type_enabled) && (!context->file_signature_enabled))
@@ -1277,6 +1311,18 @@ static void set_file_ftp_user(void* ssnptr, uint8_t *fuser, uint32_t user_size)
 static int get_file_ftp_user(void* ssnptr, uint8_t **fuser, uint32_t *user_size)
 {
     return file_ftp_user_get(get_current_file_context(ssnptr), fuser, user_size);
+}
+
+static void set_file_smb_user_id(void* ssnptr, uint8_t *user_id, uint32_t user_id_size)
+{
+    FileContext* context = get_current_file_context(ssnptr);
+    file_smb_user_id_set(context, user_id, user_id_size);
+    FILE_REG_DEBUG_WRAP(printFileContext(context);)
+}
+
+static int get_file_smb_user_id(void* ssnptr, uint8_t **user_id, uint32_t *user_id_size)
+{
+    return file_smb_user_id_get(get_current_file_context(ssnptr), user_id, user_id_size);
 }
 
 #endif
