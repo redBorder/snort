@@ -154,6 +154,7 @@ typedef int (*Get_file_rcptto_func) (void* ssnptr, uint8_t **file_rcptto, uint32
 typedef int (*Get_file_headers_func) (void* ssnptr, uint8_t **file_headers, uint32_t *headers_len);
 typedef int (*Get_file_ftp_user_func) (void *ssnptr, uint8_t **file_ftp_user, uint32_t *user_len);
 typedef int (*Get_file_smb_user_id_func) (void *ssnptr, uint8_t **file_ftp_user, uint32_t *user_len);
+typedef int (*Get_file_smb_is_upload_func) (void *ssnptr, uint8_t *file_ftp_is_upload);
 #endif
 typedef uint64_t (*Get_file_size_func) (void* ssnptr);
 typedef bool (*Get_file_direction_func) (void* ssnptr);
@@ -167,6 +168,7 @@ typedef void (*Set_file_rcptto_func) (void* ssnptr, uint8_t *, uint32_t);
 typedef void (*Set_file_headers_func) (void* ssnptr, uint8_t *, uint32_t);
 typedef void (*Set_file_ftp_user_func) (void *ssnptr, uint8_t *, uint32_t);
 typedef void (*Set_file_smb_user_id_func) (void *ssnptr, uint8_t *, uint32_t);
+typedef void (*Set_file_smb_is_upload_func) (void *ssnptr, uint8_t);
 #endif
 typedef void (*Set_file_direction_func) (void* ssnptr, bool);
 
@@ -507,6 +509,16 @@ typedef struct _file_api
      *    None
      */
     Set_file_smb_user_id_func set_file_smb_user_id;
+
+    /* Set SMB is upload boolean
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     *    uint8_t is upload
+     * Returns
+     *    None
+     */
+    Set_file_smb_is_upload_func set_file_smb_is_upload;
 #endif
 
     /* Get file direction

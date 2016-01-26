@@ -67,6 +67,7 @@ typedef struct _fileConfig
     uint32_t xtra_file_headers_id;
     uint32_t xtra_file_ftp_user_id;
     uint32_t xtra_file_smb_user_id_id;
+    uint32_t xtra_file_smb_is_upload_id;
 #endif
 
 } FileConfig;

@@ -84,6 +84,8 @@ typedef struct _FileContext
     uint32_t   file_ftp_user_size;
     uint8_t    *file_smb_user_id;
     uint32_t   file_smb_user_id_size;
+    uint8_t    file_smb_is_upload;
+    uint8_t    file_smb_is_upload_valid;
 #endif
     bool       file_name_saved;
     uint64_t   file_size;
@@ -118,6 +120,7 @@ typedef struct _FileContext
     uint32_t xtra_file_headers_id;
     uint32_t xtra_file_ftp_user_id;
     uint32_t xtra_file_smb_user_id_id;
+    uint32_t xtra_file_smb_is_upload_id;
 #endif
 } FileContext;
 
@@ -145,6 +148,8 @@ void file_ftp_user_set (FileContext *context, uint8_t *file_headers, uint32_t fi
 int file_ftp_user_get (FileContext *context, uint8_t **file_headers, uint32_t *file_headers_size);
 void file_smb_user_id_set (FileContext *context, uint8_t *smb_user_id, uint32_t smb_user_id_size);
 int file_smb_user_id_get (FileContext *context, uint8_t **file_smb_user_id, uint32_t *file_smb_user_id_size);
+void file_smb_is_upload_set (FileContext *context, uint8_t is_upload);
+int file_smb_is_upload_get (FileContext *context, uint8_t *is_upload);
 #endif
 void file_size_set (FileContext *context, uint64_t file_size);
 uint64_t file_size_get (FileContext *context);

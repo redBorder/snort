@@ -430,6 +430,27 @@ int file_smb_user_id_get (FileContext *context, uint8_t **file_smb_user_id, uint
 
     return 1;
 }
+
+void file_smb_is_upload_set (FileContext *context, uint8_t is_upload)
+{
+    if (!context)
+        return;
+
+    context->file_smb_is_upload_valid = 1;
+    context->file_smb_is_upload = is_upload;
+}
+
+int file_smb_is_upload_get (FileContext *context, uint8_t *is_upload)
+{
+    if (!context)
+        return 0;
+
+    if (!context->file_smb_is_upload_valid)
+        return 0;
+
+    *is_upload = context->file_smb_is_upload;
+    return 1;
+}
 #endif
 
 void file_size_set (FileContext *context, uint64_t file_size)

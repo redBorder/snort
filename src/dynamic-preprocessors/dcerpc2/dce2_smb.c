@@ -9683,7 +9683,8 @@ static DCE2_Ret DCE2_SmbFileAPIProcess(DCE2_SmbSsnData *ssd,
             (uint8_t *)&ftracker->file_key.id_smb1.u_id,
             sizeof(ftracker->file_key.id_smb1.u_id));
     }
-    // ftracker->tracker.file.file_direction
+
+    _dpd.fileAPI->set_file_smb_is_upload(ssd->sd.wire_pkt->stream_session,upload);
 #endif
 
     if (!_dpd.fileAPI->file_process((void *)ssd->sd.wire_pkt,
