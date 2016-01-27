@@ -622,7 +622,11 @@ static int File_Signature_CS_Lookup(uint16_t type, const uint8_t *data,
         pfile_verdict = (FileSigInfo *)sha_table_find(conf->sig_table, sha256);
     }
 
-    if (!pfile_verdict && conf->sha256_cache)
+    if (pfile_verdict)
+    {
+        file_verdict = pfile_verdict->verdict;
+    }
+    else if (conf->sha256_cache)
     {
         /* 2nd chance: seen files table. No need to footprints here. */
         void *n = sfxhash_find_node(conf->sha256_cache, sha256);
