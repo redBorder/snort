@@ -353,7 +353,7 @@ void file_ftp_user_set (FileContext *context, uint8_t *ftp_user, uint32_t ftp_us
     if (context->file_ftp_user)
         free(context->file_ftp_user);
 
-    context->file_ftp_user = SnortStrdup((const char *)ftp_user);
+    context->file_ftp_user = (uint8_t *)SnortStrdup((const char *)ftp_user);
 
     if (context->file_ftp_user)
         context->file_ftp_user_size = ftp_user_size;
