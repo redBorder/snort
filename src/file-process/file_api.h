@@ -153,6 +153,8 @@ typedef int (*Get_file_mailfrom_func) (void* ssnptr, uint8_t **file_mailfrom, ui
 typedef int (*Get_file_rcptto_func) (void* ssnptr, uint8_t **file_rcptto, uint32_t *rcptto_len);
 typedef int (*Get_file_headers_func) (void* ssnptr, uint8_t **file_headers, uint32_t *headers_len);
 typedef int (*Get_file_ftp_user_func) (void *ssnptr, uint8_t **file_ftp_user, uint32_t *user_len);
+typedef int (*Get_file_smb_user_id_func) (void *ssnptr, uint8_t **file_ftp_user, uint32_t *user_len);
+typedef int (*Get_file_smb_is_upload_func) (void *ssnptr, uint8_t *file_ftp_is_upload);
 #endif
 typedef uint64_t (*Get_file_size_func) (void* ssnptr);
 typedef bool (*Get_file_direction_func) (void* ssnptr);
@@ -165,6 +167,8 @@ typedef void (*Set_file_mailfrom_func) (void* ssnptr, uint8_t *, uint32_t);
 typedef void (*Set_file_rcptto_func) (void* ssnptr, uint8_t *, uint32_t);
 typedef void (*Set_file_headers_func) (void* ssnptr, uint8_t *, uint32_t);
 typedef void (*Set_file_ftp_user_func) (void *ssnptr, uint8_t *, uint32_t);
+typedef void (*Set_file_smb_user_id_func) (void *ssnptr, uint8_t *, uint32_t);
+typedef void (*Set_file_smb_is_upload_func) (void *ssnptr, uint8_t);
 #endif
 typedef void (*Set_file_direction_func) (void* ssnptr, bool);
 
@@ -361,6 +365,22 @@ typedef struct _file_api
      *    0: file headers is unavailable
      */
     Get_file_ftp_user_func get_file_ftp_user;
+
+    /* Get file smb user and the size of it
+     * Note: this is updated after file processing. It will be available
+     * for file event logging, but might not be available during file type
+     * callback or file signature callback, because those callbacks are called
+     * during file processing.
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     *    uint8_t **file_ftp_user: address for ftp user to be saved
+     *    uint32_t *user_len: address to save ftp user length
+     * Returns
+     *    1: file headers available,
+     *    0: file headers is unavailable
+     */
+    Get_file_smb_user_id_func get_file_smb_user_id;
 #endif
 
     /* Get file size
@@ -478,6 +498,27 @@ typedef struct _file_api
      *    None
      */
     Set_file_ftp_user_func set_file_ftp_user;
+
+    /* Set SMB user id and the length of SMB user id
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     *    uint8_t *smb_user_id: SMB user to be saved
+     *    uint32_t user_len: SMB user len
+     * Returns
+     *    None
+     */
+    Set_file_smb_user_id_func set_file_smb_user_id;
+
+    /* Set SMB is upload boolean
+     *
+     * Arguments:
+     *    void* ssnptr: session pointer
+     *    uint8_t is upload
+     * Returns
+     *    None
+     */
+    Set_file_smb_is_upload_func set_file_smb_is_upload;
 #endif
 
     /* Get file direction
