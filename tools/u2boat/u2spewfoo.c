@@ -237,7 +237,79 @@ static void extradata_dump(const u2record *record,FILE *out_file) {
             fprintf(out_file,"IPv6 Destination Address: %s\n",
                     ip6buf);
             break;
-
+#ifdef HAVE_EXTRADATA_FILE
+        case EVENT_INFO_FILE_SHA256:
+            data = record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData);
+            fprintf(out_file, "\n\tSHA256: ");
+            for(i=0; i < len; i++) {
+                if(iscntrl(data[i]))
+                    printf("%02x", '.');
+                else
+                    printf("%02x", data[i]);
+            }
+            printf("\n");
+            break;
+        case EVENT_INFO_FILE_SIZE:
+            fprintf(out_file, "\n\tFile Size: %.*s\n", len,
+                   record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
+            break;
+        case EVENT_INFO_FILE_NAME:
+            fprintf(out_file, "\n\tFile Name: %.*s\n", len,
+                   record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
+            break;
+        case EVENT_INFO_FILE_HOSTNAME:
+            fprintf(out_file, "\n\tFile Hostname: ");
+            data = record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData);
+            for(i=0; i < len; i++) {
+                if(iscntrl(data[i]))
+                    fprintf(out_file, "%c",'.');
+                else
+                    fprintf(out_file, "%c",data[i]);
+            }
+            fprintf(out_file, "\n");
+            break;
+        case EVENT_INFO_FILE_MAILFROM:
+            fprintf(out_file, "\n\tFile Mail From: %.*s\n", len,
+                   record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
+            break;
+        case EVENT_INFO_FILE_RCPTTO:
+            fprintf(out_file, "\n\tFile Mail To: %.*s\n",
+                len, record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
+            break;
+        case EVENT_INFO_FILE_EMAIL_HDRS:
+            fprintf(out_file, "\n\t==== File Email Headers ====\n");
+            fprintf(out_file, "%.*s", len,
+                   record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
+            fprintf(out_file, "\t== End File Email Headers ==\n");
+            break;
+        case EVENT_INFO_FTP_USER:
+            fprintf(out_file, "\n\tFTP User: %.*s\n", len,
+                   record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
+            break;
+        case EVENT_INFO_SMB_UID:
+            {
+                fprintf(out_file, "\n\tSMB UID: ");
+                if (len == 2) {
+                    const uint16_t u_id = ntohs(*(uint16_t *)(record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData)));
+                    fprintf(out_file, "%u\n", u_id);
+                }
+                else if (len == 4) {
+                    const uint32_t u_id = ntohl(*(uint32_t *)(record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData)));
+                    fprintf(out_file, "%u\n", u_id);
+                }
+            }
+            break;
+        case EVENT_INFO_SMB_IS_UPLOAD:
+            fprintf(out_file, "\n\tSMB is upload: ");
+            {
+                const uint8_t upload = ntohs(*(uint8_t *)(record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData)));
+                if (upload == 0)
+                    fprintf(out_file, "False\n");
+                else
+                    fprintf(out_file, "True\n");
+            }
+            break;
+#endif
         default :
             break;
     }
