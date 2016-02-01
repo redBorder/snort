@@ -393,11 +393,11 @@ static void extradata_dump(u2record *record) {
                    record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
             printf("\t== End File Email Headers ==\n");
             break;
-        case EVENT_INFO_FTP_USER:
+        case EVENT_INFO_FILE_FTP_USER:
             printf("\n\tFTP User: %.*s\n", len,
                    record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
             break;
-        case EVENT_INFO_SMB_UID:
+        case EVENT_INFO_FILE_SMB_USER_ID:
             {
                 printf("\n\tSMB UID: ");
                 if (len == 2) {
@@ -411,7 +411,7 @@ static void extradata_dump(u2record *record) {
 
             }
             break;
-        case EVENT_INFO_SMB_IS_UPLOAD:
+        case EVENT_INFO_FILE_SMB_IS_UPLOAD:
             printf("\n\tSMB is upload: ");
             {
                 const uint8_t upload = ntohs(*(uint8_t *)(record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData)));

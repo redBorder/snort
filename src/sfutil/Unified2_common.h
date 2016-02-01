@@ -61,7 +61,7 @@
 
 #define UNIFIED2_IDS_EVENT_APPSTAT   113
 
-#define MAX_EVENT_APPNAME_LEN        16
+#define MAX_EVENT_APPNAME_LEN        64
 #endif /* defined(FEAT_OPEN_APPID) */
 
 /* Data structure used for serialization of Unified2 Records */
@@ -201,10 +201,10 @@ typedef enum _EventInfoEnum
     EVENT_INFO_FILE_HOSTNAME,   /* 17 */
     EVENT_INFO_FILE_MAILFROM,   /* 18 */
     EVENT_INFO_FILE_RCPTTO,     /* 19 */
-    EVENT_INFO_FILE_EMAIL_HDRS,  /* 20 */
-    EVENT_INFO_FTP_USER,         /* 21 */
-    EVENT_INFO_SMB_UID,          /* 22 */
-    EVENT_INFO_SMB_IS_UPLOAD,    /* 23 */
+    EVENT_INFO_FILE_EMAIL_HDRS, /* 20 */
+    EVENT_INFO_FILE_FTP_USER,   /* 21 */
+    EVENT_INFO_FILE_SMB_USER_ID, /* 22 */
+    EVENT_INFO_FILE_SMB_IS_UPLOAD, /* 23 */
 #endif
 }EventInfoEnum;
 
