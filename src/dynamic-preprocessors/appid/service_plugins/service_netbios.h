@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule netbios_service_mod;
+extern tRNAServiceValidationModule netbios_service_mod;
 
 #endif  /* __SERVICE_NETBIOS_H__ */
 

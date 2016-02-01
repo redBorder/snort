@@ -25,13 +25,45 @@
 
 void luaModuleInit(void);
 void luaModuleFini(void);
+/**
+ * \brief Load all Lua modules into a detector list
+ *
+ * Each RNA detector file in the folder \e app_id_detector_path is parsed for
+ * detector information. If it is a valid detector, a detector data structure
+ * is created for it and stored in \e allocatedDetectorList.
+ *
+ * @param - pointer to new AppId context
+ * @return None
+ */
+void LoadLuaModules(tAppIdConfig *pConfig);
+
+/**
+ * \brief Finalize Lua modules
+ *
+ * This function should be called after LoadLuaModules(). It sets up proper AppId references
+ * and tracker size for all the detectors.
+ *
+ * @param pConfig - pointer to active AppId context
+ * @return void
+ */
+void FinalizeLuaModules(tAppIdConfig *pConfig);
+
+/**
+ * \brief Unload Lua modules
+ *
+ * This function cleans up all the data structures that were created for the Lua detectors
+ * in a given AppId context. It should be called after FinalizeLuaModules().
+ *
+ * @param Pointer to old AppId context
+ * @return None
+ */
+void UnloadLuaModules(tAppIdConfig *pConfig);
 void luaModuleInitAllServices(void);
 void luaModuleCleanAllClients(void);
 void luaModuleInitAllClients(void);
 void RNAPndDumpLuaStats (void);
 
-void luaDetectorsLoad(void);
-void luaDetectorsUnload(void);
+void luaDetectorsUnload(tAppIdConfig *pConfig);
 void luaDetectorsSetTrackerSize(void);
 
 extern SF_LIST allocatedFlowList;

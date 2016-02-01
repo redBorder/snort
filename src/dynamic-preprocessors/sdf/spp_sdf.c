@@ -162,7 +162,7 @@ void SDFInit(struct _SnortConfig *sc, char *args)
         _dpd.addPreprocExit(SDFCleanExit, NULL, PRIORITY_LAST, PP_SDF);
 
 #ifdef PERF_PROFILING
-        _dpd.addPreprocProfileFunc("sensitive_data", (void *)&sdfPerfStats, 0, _dpd.totalPerfStats);
+        _dpd.addPreprocProfileFunc("sensitive_data", (void *)&sdfPerfStats, 0, _dpd.totalPerfStats, NULL);
 #endif
     }
 
@@ -335,10 +335,19 @@ static void SDFSearchRecursively(SDFConfig *config, SFSnortPacket *packet,
                         if (match_length > SDF_OBFUSCATION_DIGITS_SHOWN)
                             ob_length = match_length - SDF_OBFUSCATION_DIGITS_SHOWN;
 
-                        /* The CC# and SS# patterns now contain non-digits on either
-                           side of the actual number. Adjust the mask to match. */
-                        offset = offset + 1;
-                        ob_length = ob_length - 2;
+                        /* Generally, the CC# and SS# patterns contain non-digits on either
+                         * side of the actual number. Sometimes, for the patterns from the
+                         * first line of the data might start  with a digit, instead of a
+                         * non-digit. Adjust the mask to match.
+                         */
+                        if (isdigit((int)*position[0]))
+                            ob_length = ob_length - 1;
+
+                        else
+                        {
+                            offset = offset + 1;
+                            ob_length = ob_length - 2;
+                        }
 
                         _dpd.obApi->addObfuscationEntry(packet, offset, ob_length,
                                                         SDF_OBFUSCATION_CHAR);
@@ -668,6 +677,12 @@ static void ParseSDFArgs(SDFConfig *config, char *args)
                 DynamicPreprocessorFatalMessage("Error parsing Social Security "
                         "group data from file: %s", cur_tokenp);
             }
+        }
+
+        else
+        {
+                DynamicPreprocessorFatalMessage("%s(%d) => Unknown SDF configuration option %s\n",
+                                            *(_dpd.config_file), *(_dpd.config_line), cur_tokenp);
         }
 
         cur_tokenp = strtok(NULL, " ");

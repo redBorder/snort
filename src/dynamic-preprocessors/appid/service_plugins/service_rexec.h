@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule rexec_service_mod;
+extern tRNAServiceValidationModule rexec_service_mod;
 
 #endif  /* __SERVICE_REXEC_H__ */
 

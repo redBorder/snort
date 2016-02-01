@@ -109,7 +109,7 @@ typedef struct _sfxhash
 *   HASH PROTOTYPES
 */
 int             sfxhash_calcrows(int num);
-SFXHASH       * sfxhash_new( int nrows, int keysize, int datasize, unsigned long memcap,
+SFXHASH       * sfxhash_new( unsigned nrows, int keysize, int datasize, unsigned long memcap,
                              int anr_flag,
                              SFXHASH_FREE_FCN anrfunc,
                              SFXHASH_FREE_FCN usrfunc,
@@ -237,5 +237,6 @@ int sfxhash_set_keyops( SFXHASH *h ,
 SFXHASH_NODE *sfxhash_gfindfirst( SFXHASH * t );
 SFXHASH_NODE *sfxhash_gfindnext( SFXHASH * t );
 int sfxhash_add_return_data_ptr( SFXHASH * t, const void * key, void **data );
+unsigned sfxhash_calc_maxmem(unsigned num_entries, unsigned entry_cost);
 #endif
 

@@ -33,10 +33,10 @@ static const DetectorApi detector_api =
     .data_add = &detector_flowdata_add,
 };
 
-/*static const char * const MODULE_NAME = "Detector"; */
 extern RNADetectorValidationModule imap_detector_mod;
 extern RNADetectorValidationModule pop3_detector_mod;
 extern RNADetectorValidationModule kerberos_detector_mod;
+extern RNADetectorValidationModule pattern_detector_mod;
 
 static RNADetectorValidationModule *static_detector_list[] =
 {
@@ -74,7 +74,7 @@ static int detectorLoadCallback(void *symbol)
     }
 
     svm->api = &detector_api;
-    svm->flow_data_index = detector_module_index | FLOW_DATA_DETECTOR_MODSTATE_BIT;
+    svm->flow_data_index = detector_module_index | APPID_SESSION_DATA_DETECTOR_MODSTATE_BIT;
     svm->streamAPI = _dpd.streamAPI;
     detector_module_index++;
 

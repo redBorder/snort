@@ -341,8 +341,8 @@ void AlertSFSocket(Packet *packet, const char *msg, void *arg, Event *event)
     //   can be determined by reading 1 byte
     // * addresses could be moved to end of struct in uint8_t[32]
     //   and only 1st 8 used for ip4
-    sar.src_ip =  ntohl(GET_SRC_IP(packet)->ip32[0]);
-    sar.dest_ip = ntohl(GET_DST_IP(packet)->ip32[0]);
+    sar.src_ip =  ntohl(sfaddr_get_ip4_value(GET_SRC_IP(packet)));
+    sar.dest_ip = ntohl(sfaddr_get_ip4_value(GET_DST_IP(packet)));
     sar.protocol = GET_IPH_PROTO(packet);
 
     if(sar.protocol == IPPROTO_UDP || sar.protocol == IPPROTO_TCP)

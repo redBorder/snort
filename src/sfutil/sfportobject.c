@@ -736,7 +736,7 @@ PortObject2 * PortObject2Dup( PortObject * po )
 
     if( !ponew->name )
     {
-        free( ponew );
+        PortObject2Free(ponew);
         return NULL;
     }
 
@@ -749,7 +749,10 @@ PortObject2 * PortObject2Dup( PortObject * po )
       {
         poinew = PortObjectItemDup( poi );
         if(!poinew)
+        {
+              PortObject2Free(ponew);
               return 0;
+        }
 
         PortObjectAddItem( (PortObject*)ponew, poinew, NULL );
       }
@@ -765,6 +768,7 @@ PortObject2 * PortObject2Dup( PortObject * po )
               prule = calloc(1,sizeof(int));
               if(!prule)
               {
+                 PortObject2Free(ponew);
                  return NULL;
               }
               *prule = *prid;

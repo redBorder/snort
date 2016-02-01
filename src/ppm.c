@@ -373,7 +373,7 @@ void ppm_pkt_log(ppm_cfg_t *ppm_cfg, Packet* p)
         }
         else
         {
-            snort_ip cleared;
+            sfaddr_t cleared;
             IP_CLEAR(cleared);
 
             filterEvent = sfthreshold_test(
@@ -386,7 +386,7 @@ void ppm_pkt_log(ppm_cfg_t *ppm_cfg, Packet* p)
         if(filterEvent < 0)
             filterEvent = 0;
         else
-            AlertAction(p, potn, &ev);
+            AlertAction(p, potn, NULL, &ev);
     }
 
     if (ppm_cfg->pkt_log & PPM_LOG_MESSAGE)
@@ -394,7 +394,7 @@ void ppm_pkt_log(ppm_cfg_t *ppm_cfg, Packet* p)
         char src[INET6_ADDRSTRLEN];
         char dst[INET6_ADDRSTRLEN];
 
-        sfip_t* addr = GET_SRC_IP(p);
+        sfaddr_t* addr = GET_SRC_IP(p);
         sfip_ntop(addr, src, sizeof(src));
 
         addr = GET_DST_IP(p);
@@ -494,7 +494,7 @@ void ppm_rule_log(ppm_cfg_t *ppm_cfg, uint64_t pktcnt, Packet *p)
                 }
                 else
                 {
-                    snort_ip cleared;
+                    sfaddr_t cleared;
                     IP_CLEAR(cleared);
 
                     filterEvent = sfthreshold_test(
@@ -507,7 +507,7 @@ void ppm_rule_log(ppm_cfg_t *ppm_cfg, uint64_t pktcnt, Packet *p)
                 if(filterEvent < 0)
                     filterEvent = 0;
                 else
-                    AlertAction(p, otn, &ev);
+                    AlertAction(p, otn, NULL, &ev);
 
                 otn->sigInfo.message = tmp;
             }
@@ -568,7 +568,7 @@ void ppm_rule_log(ppm_cfg_t *ppm_cfg, uint64_t pktcnt, Packet *p)
                 }
                 else
                 {
-                    snort_ip cleared;
+                    sfaddr_t cleared;
                     IP_CLEAR(cleared);
 
                     filterEvent = sfthreshold_test(
@@ -581,7 +581,7 @@ void ppm_rule_log(ppm_cfg_t *ppm_cfg, uint64_t pktcnt, Packet *p)
                 if(filterEvent < 0)
                     filterEvent = 0;
                 else
-                    AlertAction(p, otn, &ev);
+                    AlertAction(p, otn, NULL, &ev);
                 otn->sigInfo.message = tmp;
             }
         }
@@ -592,7 +592,7 @@ void ppm_rule_log(ppm_cfg_t *ppm_cfg, uint64_t pktcnt, Packet *p)
             char src[INET6_ADDRSTRLEN];
             char dst[INET6_ADDRSTRLEN];
 
-            sfip_t* addr = GET_SRC_IP(p);
+            sfaddr_t* addr = GET_SRC_IP(p);
             sfip_ntop(addr, src, sizeof(src));
 
             addr = GET_DST_IP(p);

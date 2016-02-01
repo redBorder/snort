@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule radius_service_mod;
+extern tRNAServiceValidationModule radius_service_mod;
 
 #endif  /* __SERVICE_RADIUS_H__ */
 

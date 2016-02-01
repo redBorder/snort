@@ -63,13 +63,14 @@ typedef struct _SERVICE_NTP_OPTIONAL
 static int ntp_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(ntp_validate);
 
-static RNAServiceElement svc_element =
+static tRNAServiceElement svc_element =
 {
     .next = NULL,
     .validate = &ntp_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "ntp",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -79,7 +80,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule ntp_service_mod =
+tRNAServiceValidationModule ntp_service_mod =
 {
     "NTP",
     &ntp_init,
@@ -95,7 +96,7 @@ static int ntp_init(const InitServiceAPI * const init_api)
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&ntp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&ntp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -150,7 +151,7 @@ inprocess:
     return SERVICE_INPROCESS;
 
 fail:
-    ntp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element);
+    ntp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, ntp_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 }
 

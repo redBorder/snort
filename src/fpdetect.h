@@ -40,6 +40,7 @@
 #include "decode.h"
 #include "sflsq.h"
 #include "event_queue.h"
+#include "sfPolicy.h"
 
 #define REBUILD_FLAGS (PKT_REBUILT_FRAG | PKT_REBUILT_STREAM)
 
@@ -98,7 +99,25 @@ void OtnxMatchDataFree(OTNX_MATCH_DATA *);
 
 int fpAddMatch( OTNX_MATCH_DATA *omd_local, int pLen, OptTreeNode *otn);
 void fpEvalIpProtoOnlyRules(SF_LIST **, Packet *);
-OptTreeNode * GetOTN(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, const char *);
+
+OptTreeNode *GetOtnForPolicy(
+    uint32_t,
+    uint32_t,
+    uint32_t,
+    uint32_t,
+    uint32_t,
+    const char *,
+    tSfPolicyId
+    );
+
+OptTreeNode *GetApplicableOtn(
+    uint32_t,
+    uint32_t,
+    uint32_t,
+    uint32_t,
+    uint32_t,
+    const char *
+    );
 
 #define TO_SERVER 1
 #define TO_CLIENT 0

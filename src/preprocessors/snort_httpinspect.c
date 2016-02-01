@@ -107,6 +107,8 @@ extern char *snort_conf_dir;
 
 extern MemPool *hi_gzip_mempool;
 
+extern tSfPolicyUserContextId hi_config;
+
 
 /* Stats tracking for HTTP Inspect */
 HIStats hi_stats;
@@ -536,7 +538,7 @@ static int ProcessMaxGzipMem(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
         char *ErrorString, int ErrStrLen)
 {
     char *pcToken, *pcEnd;
-    unsigned int max_gzip_mem;
+    int max_gzip_mem;
 
     pcToken = strtok(NULL, CONF_SEPARATORS);
     if(pcToken == NULL)
@@ -546,7 +548,7 @@ static int ProcessMaxGzipMem(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
         return -1;
     }
 
-    max_gzip_mem = SnortStrtoulRange(pcToken, &pcEnd, 10, 0, UINT_MAX);
+    max_gzip_mem = SnortStrtolRange(pcToken, &pcEnd, 10, 0, INT_MAX);
     if ((pcEnd == pcToken) || *pcEnd || (errno == ERANGE))
     {
         SnortSnprintf(ErrorString, ErrStrLen,
@@ -560,7 +562,7 @@ static int ProcessMaxGzipMem(HTTPINSPECT_GLOBAL_CONF *GlobalConf,
                       "Invalid argument to '%s'.", MAX_GZIP_MEM);
         return -1;
     }
-    GlobalConf->max_gzip_mem = max_gzip_mem;
+    GlobalConf->max_gzip_mem = (unsigned int)max_gzip_mem;
 
     return 0;
 
@@ -1734,7 +1736,7 @@ static int Add_XFF_Field( HTTPINSPECT_CONF *ServerConf, uint8_t *Prec_Array, uin
         return -1;
     }
 
-    cp = Field_Name;
+    cp = (unsigned char*)Field_Name;
     while( *cp != '\0' )
     {
         *cp = (uint8_t)toupper(*cp);  // Fold to upper case for runtime comparisons
@@ -3243,7 +3245,7 @@ int ProcessUniqueServerConf(struct _SnortConfig *sc, HTTPINSPECT_GLOBAL_CONF *Gl
     char *pIpAddressList2 = NULL;
     char *brkt = NULL;
     char firstIpAddress = 1;
-    sfip_t Ip;
+    sfcidr_t Ip;
     HTTPINSPECT_CONF *ServerConf = NULL;
     int iRet;
     int retVal = -1;
@@ -3706,12 +3708,15 @@ static inline void HttpLogFuncs(HTTPINSPECT_GLOBAL_CONF *GlobalConf, HttpSession
     if ( !iCallDetect )
         stream_api->clear_extra_data(p->ssnptr, p, 0);
 
-    if(hsd->true_ip)
+    if ( hsd->tList_start != NULL )
     {
-        if(!(p->packet_flags & PKT_STREAM_INSERT) && !(p->packet_flags & PKT_REBUILT_STREAM))
-            SetExtraData(p, GlobalConf->xtra_trueip_id);
-        else
-            stream_api->set_extra_data(p->ssnptr, p, GlobalConf->xtra_trueip_id);
+        if( hsd->tList_start->tID == hsd->http_resp_id || hsd->tList_end->tID == hsd->http_req_id )
+        {
+           if(!(p->packet_flags & PKT_STREAM_INSERT) && !(p->packet_flags & PKT_REBUILT_STREAM))
+               SetExtraData(p, GlobalConf->xtra_trueip_id);
+           else
+               stream_api->set_extra_data(p->ssnptr, p, GlobalConf->xtra_trueip_id);
+        }
     }
 
     if(hsd->log_flags & HTTP_LOG_URI)
@@ -3742,7 +3747,7 @@ static inline void setFileName(Packet *p)
     uint32_t len = 0;
     uint32_t type = 0;
     GetHttpUriData(p->ssnptr, &buf, &len, &type);
-    file_api->set_file_name (p->ssnptr, buf, len);
+    file_api->set_file_name (p->ssnptr, buf, len, false);
 }
 
 #ifdef HAVE_EXTRADATA_FILE
@@ -3756,9 +3761,62 @@ static inline void setFileHostname(Packet *p)
 }
 #endif
 
+static inline int processPostFileData(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p, HI_SESSION *Session, HttpSessionData *hsd)
+{
+    uint8_t *start = (uint8_t *)(Session->client.request.content_type);
+
+    if ( !PacketHasPAFPayload(p) )
+        return 0;
+
+    if ( hsd && start )
+    {
+        /* mime parsing
+         * mime boundary should be processed before this
+         */
+        uint8_t *end;
+
+        if (!hsd->mime_ssn)
+        {
+            hsd->mime_ssn = (MimeState *)SnortAlloc(sizeof(MimeState));
+            if (!hsd->mime_ssn)
+                return -1;
+            hsd->mime_ssn->log_config = &(GlobalConf->mime_conf);
+            hsd->mime_ssn->decode_conf = &(GlobalConf->decode_conf);
+            hsd->mime_ssn->mime_mempool = mime_decode_mempool;
+            hsd->mime_ssn->log_mempool = mime_log_mempool;
+            /*Set log buffers per session*/
+            if (file_api->set_log_buffers(&(hsd->mime_ssn->log_state),
+                    hsd->mime_ssn->log_config, hsd->mime_ssn->log_mempool) < 0)
+            {
+                return -1;
+            }
+        }
+        else
+        {
+            file_api->reset_mime_paf_state(&(hsd->mime_ssn->mime_boundary));
+        }
+
+        end = (uint8_t *)(Session->client.request.post_raw + Session->client.request.post_raw_size);
+        file_api->process_mime_data(p, start, end, hsd->mime_ssn, 1, false);
+    }
+    else
+    {
+        if (file_api->file_process(p,(uint8_t *)Session->client.request.post_raw,
+                (uint16_t)Session->client.request.post_raw_size,
+                    file_api->get_file_position(p), true, false))
+        {
+            setFileName(p);
+#ifdef HAVE_EXTRADATA_FILE
+            setFileHostname(p);
+#endif
+        }
+    }
+    return 0;
+}
+
 static inline void processFileData(Packet *p, HttpSessionData *hsd, bool *fileProcessed)
 {
-    if (*fileProcessed)
+    if (*fileProcessed || !PacketHasPAFPayload(p))
         return;
 
     if (hsd->mime_ssn)
@@ -3891,6 +3949,25 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
 
     hsd = GetHttpSessionData(p);
 
+    /*
+     ** HI_EO_SERVER_PROTOCOL_OTHER alert added to detect 'SSH tunneling over HTTP',
+     ** In SSH over HTTP evasion, first data message will always be 'HTTP response with SSH server
+     ** version/banner' (without any client request). If the HTTP server response is the
+     ** first message in http_session, this alert will be generated
+     */
+    if(!hsd && ( SiInput.pdir == HI_SI_SERVER_MODE ) && (p->packet_flags & PKT_STREAM_ORDER_OK))
+    {
+        if(p->ssnptr &&
+             ((session_api->get_session_flags(p->ssnptr) &(SSNFLAG_SEEN_BOTH|SSNFLAG_MIDSTREAM)) == SSNFLAG_SEEN_BOTH))
+        {
+            if(hi_eo_generate_event(Session, HI_EO_SERVER_PROTOCOL_OTHER))
+            {
+                hi_eo_server_event_log(Session, HI_EO_SERVER_PROTOCOL_OTHER, NULL, NULL);
+            }
+            LogEvents(Session, p, iInspectMode, hsd);
+        }
+    }
+
     if ( ScPafEnabled() &&
         (p->packet_flags & PKT_STREAM_INSERT) &&
         (!(p->packet_flags & PKT_PDU_TAIL)) )
@@ -3904,7 +3981,7 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
         }
         else
         {
-            ApplyFlowDepth(Session->server_conf, p, hsd, 0, 0, GET_PKT_SEQ(p));
+            ApplyFlowDepth(Session->server_conf, p, hsd, 0, 1, GET_PKT_SEQ(p));
         }
 
         p->packet_flags |= PKT_HTTP_DECODE;
@@ -3949,6 +4026,8 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
     **  requests in this way doesn't require any memory or tracking overhead.
     **  Instead, we just process each request linearly.
     */
+    if (hsd->decomp_state)
+        hsd->decomp_state->stage = HTTP_DECOMP_START;
     do
     {
         /*
@@ -4062,51 +4141,8 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
             {
                 if(Session->client.request.post_raw)
                 {
-                    uint8_t *start = (uint8_t *)(Session->client.request.content_type);
-
-                    if ( hsd && start )
-                    {
-                        /* mime parsing
-                         * mime boundary should be processed before this
-                         */
-                        uint8_t *end;
-
-                        if (!hsd->mime_ssn)
-                        {
-                            hsd->mime_ssn = (MimeState *)SnortAlloc(sizeof(MimeState));
-                            if (!hsd->mime_ssn)
-                                return 0;
-                            hsd->mime_ssn->log_config = &(GlobalConf->mime_conf);
-                            hsd->mime_ssn->decode_conf = &(GlobalConf->decode_conf);
-                            hsd->mime_ssn->mime_mempool = mime_decode_mempool;
-                            hsd->mime_ssn->log_mempool = mime_log_mempool;
-                            /*Set log buffers per session*/
-                            if (file_api->set_log_buffers(&(hsd->mime_ssn->log_state),
-                                    hsd->mime_ssn->log_config, hsd->mime_ssn->log_mempool) < 0)
-                            {
-                                return 0;
-                            }
-                        }
-                        else
-                        {
-                            file_api->reset_mime_paf_state(&(hsd->mime_ssn->mime_boundary));
-                        }
-
-                        end = (uint8_t *)(Session->client.request.post_raw + Session->client.request.post_raw_size);
-                        file_api->process_mime_data(p, start, end, hsd->mime_ssn, 1, false);
-                    }
-                    else
-                    {
-                        if (file_api->file_process(p,(uint8_t *)Session->client.request.post_raw,
-                                (uint16_t)Session->client.request.post_raw_size,
-                                    file_api->get_file_position(p), true, false))
-                        {
-                            setFileName(p);
-#ifdef HAVE_EXTRADATA_FILE
-                            setFileHostname(p);
-#endif
-                        }
-                    }
+                    if(processPostFileData(GlobalConf, p, Session, hsd) != 0)
+                        return 0;
 
                     if(Session->server_conf->post_depth > -1)
                     {
@@ -4321,13 +4357,13 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                      Session->server.response.status_msg_size);
              }
 
-             if(Session->server.response.body_size > 0)
+             if(Session->server.response.body_raw_size > 0)
              {
                  int detect_data_size = (int)Session->server.response.body_size;
 
                  /*body_size is included in the data_extracted*/
                  if((Session->server_conf->server_flow_depth > 0) &&
-                         (hsd->resp_state.data_extracted  < (Session->server_conf->server_flow_depth + (int)Session->server.response.body_size)))
+                         (hsd->resp_state.data_extracted  < (Session->server_conf->server_flow_depth + (int)Session->server.response.body_raw_size)))
                  {
                      /*flow_depth is smaller than data_extracted, need to subtract*/
                      if(Session->server_conf->server_flow_depth < hsd->resp_state.data_extracted)
@@ -4346,7 +4382,7 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                      uint16_t Data_Len;
                      const uint8_t *Data;
 
-                     hsd->fd_state->Next_In = (uint8_t *) (Data = Session->server.response.body);
+                     hsd->fd_state->Next_In = (uint8_t *) (Data = Session->server.response.body_raw);
                      hsd->fd_state->Avail_In = (Data_Len = (uint16_t) detect_data_size);
 
                      (void)File_Decomp_SetBuf( hsd->fd_state );
@@ -4356,7 +4392,9 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                      if( Ret_Code == File_Decomp_DecompError )
                      {
                          Session->server.response.body = Data;
+                         Session->server.response.body_raw = Data;
                          Session->server.response.body_size = Data_Len;
+                         Session->server.response.body_raw_size = Data_Len;
 
                          if(hi_eo_generate_event(Session, hsd->fd_state->Error_Event))
                          {
@@ -4376,6 +4414,8 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                      {
                          Session->server.response.body = hsd->fd_state->Buffer;
                          Session->server.response.body_size = hsd->fd_state->Total_Out;
+                         Session->server.response.body_raw = hsd->fd_state->Buffer;
+                         Session->server.response.body_raw_size = hsd->fd_state->Total_Out;
                      }
 
                      setFileDataPtr(Session->server.response.body, (uint16_t)Session->server.response.body_size);
@@ -4386,8 +4426,8 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                  }
 
                  if( ScPafEnabled() && PacketHasPAFPayload( p )
-                     && file_api->file_process( p, (uint8_t *)Session->server.response.body,
-                                                (uint16_t)Session->server.response.body_size,
+                     && file_api->file_process( p, (uint8_t *)Session->server.response.body_raw,
+                                                (uint16_t)Session->server.response.body_raw_size,
                                                 file_api->get_file_position( p ), false, false ) )
                  {
                      setFileName(p);
@@ -4446,7 +4486,20 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
         */
         iCallDetect = 0;
 
-    } while(Session->client.request.pipeline_req);
+#ifdef PPM_MGR
+        /*
+        **  Check PPM here to ensure decompression loop doesn't spin indefinitely
+        */
+        if( PPM_PKTS_ENABLED() )
+        {
+            PPM_GET_TIME();
+            PPM_PACKET_TEST();
+
+            if( PPM_PACKET_ABORT_FLAG() )
+                return 0;
+        }
+#endif
+    } while(Session->client.request.pipeline_req || (hsd->decomp_state && hsd->decomp_state->stage == HTTP_DECOMP_MID));
 
     if ( iCallDetect == 0 )
     {
@@ -4534,8 +4587,8 @@ void FreeHttpSessionData(void *data)
         free(hsd->log_state);
     }
 
-    if(hsd->true_ip)
-        sfip_free(hsd->true_ip);
+    while(hsd->tList_start != NULL )
+        deleteNode_tList(hsd);
 
     file_api->free_mime_session(hsd->mime_ssn);
 
@@ -4550,25 +4603,25 @@ void FreeHttpSessionData(void *data)
 
 int GetHttpTrueIP(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
 {
-    sfip_t *true_ip = NULL;
+    sfaddr_t *true_ip;
 
     true_ip = GetTrueIPForSession(data);
     if(!true_ip)
         return 0;
 
-    if(true_ip->family == AF_INET6)
+    if(sfaddr_family(true_ip) == AF_INET6)
     {
         *type = EVENT_INFO_XFF_IPV6;
         *len = sizeof(struct in6_addr); /*ipv6 address size in bytes*/
-
+        *buf = (uint8_t*)sfaddr_get_ip6_ptr(true_ip);
     }
     else
     {
         *type = EVENT_INFO_XFF_IPV4;
         *len = sizeof(struct in_addr); /*ipv4 address size in bytes*/
+        *buf = (uint8_t*)sfaddr_get_ip4_ptr(true_ip);
     }
 
-    *buf = true_ip->ip8;
     return 1;
 }
 
@@ -4731,6 +4784,72 @@ int HI_SearchStrFound(void *id, void *unused, int index, void *data, void *unuse
 
     /* Returning non-zero stops search, which is okay since we only look for one at a time */
     return 1;
+}
+
+static int GetHttpInspectConf( void *ssn, uint32_t flags, HTTPINSPECT_CONF **serverConf, HTTPINSPECT_CONF **clientConf )
+{
+    int iRet = HI_SUCCESS;
+    tSfPolicyId policyId = getNapRuntimePolicy();
+    HTTPINSPECT_GLOBAL_CONF *pPolicyConfig = NULL;
+    HI_SI_INPUT SiInput;
+    int iInspectMode = 0;
+    SessionControlBlock *scb = (SessionControlBlock *)ssn;
+    sfPolicyUserPolicySet (hi_config, policyId);
+    pPolicyConfig = (HTTPINSPECT_GLOBAL_CONF *)sfPolicyUserDataGetCurrent(hi_config);
+    if( !scb )
+        return iRet;
+
+    SiInput.pdir = HI_SI_NO_MODE;
+
+    if(  flags & PKT_FROM_CLIENT )
+    {
+        SiInput.pdir = HI_SI_CLIENT_MODE;
+
+        IP_COPY_VALUE(SiInput.sip, &scb->client_ip);
+        IP_COPY_VALUE(SiInput.dip, &scb->server_ip);
+
+        SiInput.sport = ntohs(scb->client_port);
+        SiInput.dport = ntohs(scb->server_port);
+    }
+    else if (  flags & PKT_FROM_SERVER )
+    {
+        SiInput.pdir = HI_SI_SERVER_MODE;
+
+        IP_COPY_VALUE(SiInput.sip, &scb->server_ip);
+        IP_COPY_VALUE(SiInput.dip, &scb->client_ip);
+
+        SiInput.sport = ntohs(scb->server_port);
+        SiInput.dport = ntohs(scb->client_port);
+    }
+
+    iRet = GetHttpConf(pPolicyConfig, serverConf, clientConf, &SiInput, &iInspectMode, ssn);
+    return iRet;
+}
+
+int GetHttpFlowDepth(void *ssn, uint32_t flags)
+{
+    HTTPINSPECT_CONF *serverConf = 0;
+    HTTPINSPECT_CONF *clientConf = 0;
+    int flow_depth  = 0;
+
+    GetHttpInspectConf( ssn, flags, &serverConf, &clientConf );
+    if( !serverConf )
+        return flow_depth;
+
+    if( serverConf->file_policy )
+    {
+        flow_depth = 0;
+    }
+    else if(  flags & PKT_FROM_CLIENT )
+    {
+        //Only for POST
+        flow_depth =  serverConf->post_depth;
+    }
+    else if( flags & PKT_FROM_SERVER )
+    {
+        flow_depth = serverConf->server_flow_depth;
+    }
+    return flow_depth;
 }
 
 

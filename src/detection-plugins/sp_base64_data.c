@@ -81,7 +81,7 @@ void SetupBase64Data(void)
     /* map the keyword to an initialization/processing function */
     RegisterRuleOption("base64_data", Base64DataInit, NULL, OPT_TYPE_DETECTION, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("base64_data", &base64DataPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("base64_data", &base64DataPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
 
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN,"Plugin: base64_data Setup\n"););

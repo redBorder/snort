@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule flap_service_mod;
+extern tRNAServiceValidationModule flap_service_mod;
 
 #endif  /* __SERVICE_FLAP_H__ */
 

@@ -26,6 +26,9 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"     /* for WORDS_BIGENDIAN */
+#endif
 #include "client_app_api.h"
 
 typedef enum
@@ -54,22 +57,20 @@ typedef struct _CLIENT_RTP_DATA
 #pragma pack(1)
 typedef struct _CLIENT_RTP_MSG
 {
-#if __BYTE_ORDER == __BIG_ENDIAN
+#if defined(WORDS_BIGENDIAN)
     uint8_t vers:2,
              padding:1,
              extension:1,
              count:4;
     uint8_t marker:1,
              payloadtype:7;
-#elif __BYTE_ORDER == __LITTLE_ENDIAN
+#else
     uint8_t count:4,
              extension:1,
              padding:1,
              vers:2;
     uint8_t payloadtype:7,
              marker:1;
-#else
-#error "Please fix <endian.h>"
 #endif
     uint16_t seq;
     uint32_t timestamp;
@@ -87,9 +88,10 @@ static RTP_CLIENT_APP_CONFIG rtp_config;
 
 static CLIENT_APP_RETCODE rtp_init(const InitClientAppAPI * const init_api, SF_LIST *config);
 static CLIENT_APP_RETCODE rtp_validate(const uint8_t *data, uint16_t size, const int dir,
-                                        FLOW *flowp, const SFSnortPacket *pkt, struct _Detector *userData);
+                                        tAppIdData *flowp, SFSnortPacket *pkt, struct _Detector *userData,
+                                        const struct appIdConfig_ *pConfig);
 
-SO_PUBLIC RNAClientAppModule rtp_client_mod =
+SF_SO_PUBLIC tRNAClientAppModule rtp_client_mod =
 {
     .name = "RTP",
     .proto = IPPROTO_UDP,
@@ -249,7 +251,7 @@ static CLIENT_APP_RETCODE rtp_init(const InitClientAppAPI * const init_api, SF_L
         for (i=0; i < sizeof(patterns)/sizeof(*patterns); i++)
         {
             _dpd.debugMsg(DEBUG_LOG,"registering patterns: %s: %d\n",(const char *)patterns[i].pattern, patterns[i].index);
-            init_api->RegisterPattern(&rtp_validate, IPPROTO_UDP, patterns[i].pattern, patterns[i].length, patterns[i].index);
+            init_api->RegisterPattern(&rtp_validate, IPPROTO_UDP, patterns[i].pattern, patterns[i].length, patterns[i].index, init_api->pAppidConfig);
         }
     }
 
@@ -257,14 +259,15 @@ static CLIENT_APP_RETCODE rtp_init(const InitClientAppAPI * const init_api, SF_L
 	for (j=0; j < sizeof(appIdRegistry)/sizeof(*appIdRegistry); j++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[j].appId);
-		init_api->RegisterAppId(&rtp_validate, appIdRegistry[j].appId, appIdRegistry[j].additionalInfo, NULL);
+		init_api->RegisterAppId(&rtp_validate, appIdRegistry[j].appId, appIdRegistry[j].additionalInfo, init_api->pAppidConfig);
 	}
 
     return CLIENT_APP_SUCCESS;
 }
 
 static CLIENT_APP_RETCODE rtp_validate(const uint8_t *data, uint16_t size, const int dir,
-                                        FLOW *flowp, const SFSnortPacket *pkt, struct _Detector *userData)
+                                        tAppIdData *flowp, SFSnortPacket *pkt, struct _Detector *userData,
+                                        const struct appIdConfig_ *pConfig)
 {
     ClientRTPData *fd;
     ClientRTPMsg *hdr;
@@ -272,13 +275,13 @@ static CLIENT_APP_RETCODE rtp_validate(const uint8_t *data, uint16_t size, const
     if (!size)
         return CLIENT_APP_INPROCESS;
 
-    fd = rtp_client_mod.api->data_get(flowp);
+    fd = rtp_client_mod.api->data_get(flowp, rtp_client_mod.flow_data_index);
     if (!fd)
     {
         fd = calloc(1, sizeof(*fd));
         if (!fd)
             return CLIENT_APP_ENOMEM;
-        if (rtp_client_mod.api->data_add(flowp, fd, &free))
+        if (rtp_client_mod.api->data_add(flowp, fd, rtp_client_mod.flow_data_index, &free))
         {
             free(fd);
             return CLIENT_APP_ENOMEM;
@@ -346,7 +349,7 @@ static CLIENT_APP_RETCODE rtp_validate(const uint8_t *data, uint16_t size, const
     }
 
     rtp_client_mod.api->add_app(flowp, APP_ID_RTP, APP_ID_RTP, NULL);
-    flow_mark(flowp, FLOW_CLIENTAPPDETECTED);
+    setAppIdExtFlag(flowp, APPID_SESSION_CLIENT_DETECTED);
     return CLIENT_APP_SUCCESS;
 }
 

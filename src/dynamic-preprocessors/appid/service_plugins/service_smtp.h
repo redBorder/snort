@@ -24,7 +24,7 @@
 
 #include "service_api.h"
 
-extern RNAServiceValidationModule smtp_service_mod;
+extern tRNAServiceValidationModule smtp_service_mod;
 
 #endif  /* __SERVICE_SMTP_H__ */
 

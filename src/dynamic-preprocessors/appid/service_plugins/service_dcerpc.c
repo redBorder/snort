@@ -41,21 +41,23 @@ static int dcerpc_init(const InitServiceAPI * const init_api);
 MakeRNAServiceValidationPrototype(dcerpc_tcp_validate);
 MakeRNAServiceValidationPrototype(dcerpc_udp_validate);
 
-static RNAServiceElement tcp_svc_element =
+static tRNAServiceElement tcp_svc_element =
 {
     .next = NULL,
     .validate = &dcerpc_tcp_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "dcerpc",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
-static RNAServiceElement udp_svc_element =
+static tRNAServiceElement udp_svc_element =
 {
     .next = NULL,
     .validate = &dcerpc_udp_validate,
     .detectorType = DETECTOR_TYPE_DECODER,
     .name = "udp dcerpc",
     .ref_count = 1,
+    .current_ref_count = 1,
 };
 
 static RNAServiceValidationPort pp[] =
@@ -65,7 +67,7 @@ static RNAServiceValidationPort pp[] =
     {NULL, 0, 0}
 };
 
-RNAServiceValidationModule dcerpc_service_mod =
+tRNAServiceValidationModule dcerpc_service_mod =
 {
     "DCERPC",
     &dcerpc_init,
@@ -80,7 +82,7 @@ static int dcerpc_init(const InitServiceAPI * const init_api)
 	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
 	{
 		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&dcerpc_udp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, NULL);
+		init_api->RegisterAppId(&dcerpc_udp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
 	}
 
     return 0;
@@ -97,13 +99,13 @@ MakeRNAServiceValidationPrototype(dcerpc_tcp_validate)
     if (!size)
         goto inprocess;
 
-    dd = dcerpc_service_mod.api->data_get(flowp);
+    dd = dcerpc_service_mod.api->data_get(flowp, dcerpc_service_mod.flow_data_index);
     if (!dd)
     {
         dd = calloc(1, sizeof(*dd));
         if (!dd)
             return SERVICE_ENOMEM;
-        if (dcerpc_service_mod.api->data_add(flowp, dd, &free))
+        if (dcerpc_service_mod.api->data_add(flowp, dd, dcerpc_service_mod.flow_data_index, &free))
         {
             free(dd);
             return SERVICE_ENOMEM;
@@ -132,7 +134,7 @@ inprocess:
     return SERVICE_INPROCESS;
 
 fail:
-    dcerpc_service_mod.api->fail_service(flowp, pkt, dir, &tcp_svc_element);
+    dcerpc_service_mod.api->fail_service(flowp, pkt, dir, &tcp_svc_element, dcerpc_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 }
 
@@ -147,13 +149,13 @@ MakeRNAServiceValidationPrototype(dcerpc_udp_validate)
     if (!size)
         goto inprocess;
 
-    dd = dcerpc_service_mod.api->data_get(flowp);
+    dd = dcerpc_service_mod.api->data_get(flowp, dcerpc_service_mod.flow_data_index);
     if (!dd)
     {
         dd = calloc(1, sizeof(*dd));
         if (!dd)
             return SERVICE_ENOMEM;
-        if (dcerpc_service_mod.api->data_add(flowp, dd, &free))
+        if (dcerpc_service_mod.api->data_add(flowp, dd, dcerpc_service_mod.flow_data_index, &free))
         {
             free(dd);
             return SERVICE_ENOMEM;
@@ -182,7 +184,7 @@ inprocess:
     return SERVICE_INPROCESS;
 
 fail:
-    dcerpc_service_mod.api->fail_service(flowp, pkt, dir, &udp_svc_element);
+    dcerpc_service_mod.api->fail_service(flowp, pkt, dir, &udp_svc_element, dcerpc_service_mod.flow_data_index, pConfig);
     return SERVICE_NOMATCH;
 }
 

@@ -97,7 +97,7 @@ void SetupIpSameCheck(void)
     /* map the keyword to an initialization/processing function */
     RegisterRuleOption("sameip", IpSameCheckInit, NULL, OPT_TYPE_DETECTION, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("sameip", &ipSamePerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("sameip", &ipSamePerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN, "Plugin: IpSameCheck Initialized\n"););
 }

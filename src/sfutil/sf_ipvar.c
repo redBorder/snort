@@ -165,7 +165,7 @@ static inline void sfip_node_free ( sfip_node_t *node )
 
     if ( node->ip )
         sfip_free(node->ip);
-    
+
     free(node);
 }
 
@@ -259,7 +259,7 @@ SFIP_RET sfvar_add_node(sfip_var_t *var, sfip_node_t *node, int negated)
     /* "Anys" should always be inserted first */
     /* Otherwise, check if this IP is less than the head's IP */
     if((node->flags & SFIP_ANY) ||
-       (sfip_compare(node->ip, (*head)->ip) == SFIP_LESSER))
+       (sfip_compare(&node->ip->addr, &(*head)->ip->addr) == SFIP_LESSER))
     {
         node->next = *head;
         *head = node;
@@ -278,7 +278,7 @@ SFIP_RET sfvar_add_node(sfip_var_t *var, sfip_node_t *node, int negated)
     /* Insertion sort */
     for(p = *head; p->next; p=p->next)
     {
-        if(sfip_compare(node->ip, p->next->ip) == SFIP_LESSER)
+        if(sfip_compare(&node->ip->addr, &p->next->ip->addr) == SFIP_LESSER)
         {
             swp = p->next;
             p->next = node;
@@ -333,7 +333,7 @@ static SFIP_RET sfvar_list_compare(sfip_node_t *list1, sfip_node_t *list2)
 
         for (tmp2 = list2, i = 0; tmp2 != NULL; tmp2 = tmp2->next, i++)
         {
-            if ((sfip_compare(tmp->ip, tmp2->ip) == SFIP_EQUAL) && !usage[i])
+            if ((sfip_compare(&tmp->ip->addr, &tmp2->ip->addr) == SFIP_EQUAL) && !usage[i])
             {
                 match = 1;
                 usage[i] = 1;
@@ -609,7 +609,7 @@ SFIP_RET sfvar_validate(sfip_var_t *var)
             /* A smaller netmask means "less specific" */
             if((sfip_bits(neg_idx->ip) <= sfip_bits(idx->ip)) &&
                 /* Verify they overlap */
-                (sfip_contains(neg_idx->ip, idx->ip) == SFIP_CONTAINS))
+                (sfip_contains(neg_idx->ip, &idx->ip->addr) == SFIP_CONTAINS))
             {
                 return SFIP_CONFLICT;
             }
@@ -652,6 +652,7 @@ sfip_var_t *sfvar_alloc(vartable_t *table, char *variable, SFIP_RET *status)
     sfip_var_t *ret, *tmpvar;
     char *str, *end, *tmp;
     SFIP_RET stat;
+    bool invalidvar = true;
 
     if(!variable || !(*variable))
     {
@@ -680,9 +681,22 @@ sfip_var_t *sfvar_alloc(vartable_t *table, char *variable, SFIP_RET *status)
     }
 
     /* Find the end of the name */
-    for(end = str; *end && !isspace((int)*end) && *end != '\\'; end++) ;
+    for(end = str; *end && !isspace((int)*end) && *end != '\\'; end++)
+    {
+	if(isalpha((int)*end))
+		invalidvar = false;
+    }
 
-    if(!isalnum((int)*str) && *str != '$' && *str != '!')
+    if(invalidvar)
+    {
+	if(status)
+	  *status = SFIP_INVALID_VAR;
+
+	sfvar_free(ret);
+	return NULL;
+    }
+
+    if(!isalnum((int)*str) && *str != '$' && *str != '!' && *str != '_')
     {
         if(status)
             *status = SFIP_ARG_ERR;
@@ -785,7 +799,7 @@ static inline sfip_node_t *_sfvar_deep_copy_list(const sfip_node_t *idx)
             sfip_node_freelist(ret);
             return NULL;
         }
-        if( (temp->ip = (sfip_t*)calloc(1, sizeof(sfip_t))) == NULL )
+        if( (temp->ip = (sfcidr_t*)calloc(1, sizeof(sfcidr_t))) == NULL )
         {
             sfip_node_freelist(ret);
             free(temp);
@@ -797,7 +811,7 @@ static inline sfip_node_t *_sfvar_deep_copy_list(const sfip_node_t *idx)
 
         /* If it's an "any", there may be no IP object */
         if(idx->ip)
-            memcpy(temp->ip, idx->ip, sizeof(sfip_t));
+            memcpy(temp->ip, idx->ip, sizeof(sfcidr_t));
 
         if(prev)
             prev->next = temp;
@@ -825,7 +839,7 @@ sfip_var_t *sfvar_deep_copy(const sfip_var_t *var)
 
 
 /* Support function for sfvar_ip_in  */
-static inline int _sfvar_ip_in4(sfip_var_t *var, sfip_t *ip)
+static inline int _sfvar_ip_in4(sfip_var_t *var, sfaddr_t *ip)
 {
     int match;
     sfip_node_t *pos_idx, *neg_idx;
@@ -839,7 +853,7 @@ static inline int _sfvar_ip_in4(sfip_var_t *var, sfip_t *ip)
     {
         for( ; neg_idx; neg_idx = neg_idx->next)
         {
-            if(sfip_family(neg_idx->ip) != AF_INET)
+            if(sfaddr_family(&neg_idx->ip->addr) != AF_INET)
                 continue;
 
             if(sfip_fast_cont4(neg_idx->ip, ip))
@@ -855,7 +869,7 @@ static inline int _sfvar_ip_in4(sfip_var_t *var, sfip_t *ip)
     {
         if(neg_idx)
         {
-            if(sfip_family(neg_idx->ip) == AF_INET &&
+            if(sfaddr_family(&neg_idx->ip->addr) == AF_INET &&
                 sfip_fast_cont4(neg_idx->ip, ip))
             {
                 return 0;
@@ -873,7 +887,7 @@ static inline int _sfvar_ip_in4(sfip_var_t *var, sfip_t *ip)
         {
             if(sfip_is_set(pos_idx->ip))
             {
-                if(sfip_family(pos_idx->ip) == AF_INET &&
+                if(sfaddr_family(&pos_idx->ip->addr) == AF_INET &&
                    sfip_fast_cont4(pos_idx->ip, ip))
                 {
                     match = 1;
@@ -894,7 +908,7 @@ static inline int _sfvar_ip_in4(sfip_var_t *var, sfip_t *ip)
 }
 
 /* Support function for sfvar_ip_in  */
-static inline int _sfvar_ip_in6(sfip_var_t *var, sfip_t *ip)
+static inline int _sfvar_ip_in6(sfip_var_t *var, sfaddr_t *ip)
 {
     int match;
     sfip_node_t *pos_idx, *neg_idx;
@@ -908,7 +922,7 @@ static inline int _sfvar_ip_in6(sfip_var_t *var, sfip_t *ip)
     {
         for( ; neg_idx; neg_idx = neg_idx->next)
         {
-            if(sfip_family(neg_idx->ip) != AF_INET6)
+            if(sfaddr_family(&neg_idx->ip->addr) != AF_INET6)
                 continue;
 
             if(sfip_fast_cont6(neg_idx->ip, ip))
@@ -924,7 +938,7 @@ static inline int _sfvar_ip_in6(sfip_var_t *var, sfip_t *ip)
     {
         if(neg_idx)
         {
-            if(sfip_family(neg_idx->ip) == AF_INET6 &&
+            if(sfaddr_family(&neg_idx->ip->addr) == AF_INET6 &&
                 sfip_fast_cont6(neg_idx->ip, ip))
             {
                 return 0;
@@ -943,7 +957,7 @@ static inline int _sfvar_ip_in6(sfip_var_t *var, sfip_t *ip)
             if(sfip_is_set(pos_idx->ip))
             {
 
-                if(sfip_family(pos_idx->ip) == AF_INET6 &&
+                if(sfaddr_family(&pos_idx->ip->addr) == AF_INET6 &&
                    sfip_fast_cont6(pos_idx->ip, ip))
                 {
                      match = 1;
@@ -964,7 +978,7 @@ static inline int _sfvar_ip_in6(sfip_var_t *var, sfip_t *ip)
 }
 /* Returns SFIP_SUCCESS if ip is contained in 'var', SFIP_FAILURE otherwise */
 /* If either argument is NULL, SFIP_ARG_ERR is returned. */
-int sfvar_ip_in(sfip_var_t *var, sfip_t *ip)
+int sfvar_ip_in(sfip_var_t *var, sfaddr_t *ip)
 {
     if(!var || !ip)
         return 0;
@@ -981,7 +995,7 @@ int sfvar_ip_in(sfip_var_t *var, sfip_t *ip)
          * codepaths for IPv6 and IPv4 traffic, rather than the dual-stack
          * functions. */
 
-        if(sfip_family(ip) == AF_INET)
+        if(sfaddr_family(ip) == AF_INET)
         {
             return _sfvar_ip_in4(var, ip);
         }
@@ -1004,28 +1018,40 @@ void sfip_set_print(const char *prefix, sfip_node_t *p)
         if(!p->ip) continue;
         if(p->flags & SFIP_NEGATED)
         {
-            if (((p->ip->family == AF_INET6) && (p->ip->bits != 128)) ||
-                ((p->ip->family == AF_INET) && (p->ip->bits != 32)))
+            if (p->ip->bits != 128)
             {
-                ret = SnortSnprintfAppend(buffer, sizeof(buffer), "!%s/%d", sfip_to_str(p->ip), p->ip->bits);
+                if (sfaddr_family(&p->ip->addr) == AF_INET6)
+                {
+                    ret = SnortSnprintfAppend(buffer, sizeof(buffer), "!%s/%d", sfip_to_str(&p->ip->addr), p->ip->bits);
+                }
+                else
+                {
+                    ret = SnortSnprintfAppend(buffer, sizeof(buffer), "!%s/%d", sfip_to_str(&p->ip->addr), p->ip->bits < 96 ? -1 : p->ip->bits - 96);
+                }
             }
             else
             {
-                ret = SnortSnprintfAppend(buffer, sizeof(buffer), "!%s", sfip_to_str(p->ip));
+                ret = SnortSnprintfAppend(buffer, sizeof(buffer), "!%s", sfip_to_str(&p->ip->addr));
             }
             if (ret != SNORT_SNPRINTF_SUCCESS)
                 return;
         }
         else
         {
-            if (((p->ip->family == AF_INET6) && (p->ip->bits != 128)) ||
-                ((p->ip->family == AF_INET) && (p->ip->bits != 32)))
+            if (p->ip->bits != 128)
             {
-                ret = SnortSnprintfAppend(buffer, sizeof(buffer), "%s/%d", sfip_to_str(p->ip), p->ip->bits);
+                if (sfaddr_family(&p->ip->addr) == AF_INET6)
+                {
+                    ret = SnortSnprintfAppend(buffer, sizeof(buffer), "%s/%d", sfip_to_str(&p->ip->addr), p->ip->bits);
+                }
+                else
+                {
+                    ret = SnortSnprintfAppend(buffer, sizeof(buffer), "%s/%d", sfip_to_str(&p->ip->addr), p->ip->bits < 96 ? -1 : p->ip->bits - 96);
+                }
             }
             else
             {
-                ret = SnortSnprintfAppend(buffer, sizeof(buffer), "%s", sfip_to_str(p->ip));
+                ret = SnortSnprintfAppend(buffer, sizeof(buffer), "%s", sfip_to_str(&p->ip->addr));
             }
             if (ret != SNORT_SNPRINTF_SUCCESS)
                 return;
@@ -1070,9 +1096,9 @@ void sfip_set_print_to_file(FILE *f, sfip_node_t *p)
      {
          if(!p->ip) continue;
          if(p->flags & SFIP_NEGATED)
-             fprintf(f, "\t!%s\n", sfip_to_str(p->ip));
+             fprintf(f, "\t!%s\n", sfip_to_str(&p->ip->addr));
          else
-             fprintf(f, "\t %s\n", sfip_to_str(p->ip));
+             fprintf(f, "\t %s\n", sfip_to_str(&p->ip->addr));
      }
 }
 
@@ -1117,7 +1143,7 @@ int main()
 {
     sfip_vtable *table;
     sfip_var_t *var;
-    sfip_t *ip;
+    sfcidr_t *ip;
 
     /* Test parsing */
     /* Allowable arguments:

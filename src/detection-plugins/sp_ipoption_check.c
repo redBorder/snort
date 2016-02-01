@@ -108,7 +108,7 @@ void SetupIpOptionCheck(void)
     /* map the keyword to an initialization/processing function */
     RegisterRuleOption("ipopts", IpOptionInit, NULL, OPT_TYPE_DETECTION, NULL);
 #ifdef PERF_PROFILING
-    RegisterPreprocessorProfile("ipopts", &ipOptionPerfStats, 3, &ruleOTNEvalPerfStats);
+    RegisterPreprocessorProfile("ipopts", &ipOptionPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN,"Plugin: IpOptionCheck Initialized\n"););
 }
