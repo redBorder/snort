@@ -24,7 +24,11 @@
 #include "profiler.h"
 
 /*#define PI_PROCESSOR_UTILIZATION_SUPPORT*/
+
+#ifdef PERF_PROFILING
 #define PI_PACKET_LATENCY_SUPPORT
+#endif
+
 #define PI_PACKET_DROPS_SUPPORT
 
 /* Force the collection of packet latency profiler data */
@@ -73,8 +77,10 @@ struct _Perf_Indicator_Descriptor
 typedef struct _Perf_Indicator_Descriptor
         Perf_Indicator_Descriptor_t, *Perf_Indicator_Descriptor_p_t;
 
+#ifdef PERF_PROFILING
 int PerfIndicator_RegisterPreprocStat( PreprocStats *Stats,
                                        enum Perf_Indicator_Type Type );
+#endif
 
 int PerfIndicator_GetIndicators( Perf_Indicator_Descriptor_p_t PI_List );
 

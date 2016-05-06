@@ -95,7 +95,11 @@ void SessionResetHAStats(void);
 void SessionProcessHA(void *ssnptr, const DAQ_PktHdr_t *pkthdr);
 void SessionHANotifyDeletion(SessionControlBlock *scb);
 #ifdef HAVE_DAQ_QUERYFLOW
-int SessionHAQueryDAQState(const DAQ_PktHdr_t *pkthdr);
+#ifdef REG_TEST
+int SessionHAQueryDAQState( DAQ_PktHdr_t *pkthdr);
+#else
+int SessionHAQueryDAQState(const  DAQ_PktHdr_t *pkthdr);
+#endif
 #endif
 
 #endif /* ENABLE_HA */

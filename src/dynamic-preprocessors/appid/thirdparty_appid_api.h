@@ -37,6 +37,7 @@ struct ThirdPartyConfig
     unsigned chp_body_collection_max;
     unsigned ftp_userid_disabled:1;
     unsigned chp_body_collection_disabled:1;
+    unsigned tp_allow_probes:1;
     char     appid_tp_dir[TP_PATH_MAX];
 };
 

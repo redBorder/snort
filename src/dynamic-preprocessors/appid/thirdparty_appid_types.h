@@ -65,6 +65,8 @@ typedef struct
     char *httpResponseLocation;
     char *httpResponseBody;
     char *httpRequestBody;
+    char *httpResponseServer;
+    char *httpRequestXWorkingWith;
     char *tlsHost;
     char *tlsCname;
     char *tlsOrgUnit;

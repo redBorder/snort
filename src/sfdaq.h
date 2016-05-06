@@ -84,7 +84,11 @@ int DAQ_ModifyFlowHAState(const DAQ_PktHdr_t *hdr, const void *data, uint32_t le
 int DAQ_ModifyFlow(const DAQ_PktHdr_t *hdr, const DAQ_ModFlow_t* mod);
 #endif
 #ifdef HAVE_DAQ_QUERYFLOW
+#ifdef REG_TEST
+int DAQ_QueryFlow( DAQ_PktHdr_t *hdr, DAQ_QueryFlow_t* query);
+#else
 int DAQ_QueryFlow(const DAQ_PktHdr_t *hdr, DAQ_QueryFlow_t* query);
+#endif
 #endif
 #ifdef HAVE_DAQ_DP_ADD_DC
 void DAQ_Add_Dynamic_Protocol_Channel(const Packet *ctrlPkt, sfaddr_t* cliIP, uint16_t cliPort,
