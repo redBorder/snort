@@ -173,7 +173,7 @@ static sfaddr_t zeroed;
  * @param cliIP - client IP address. All preprocessors must have consistent view of client side of a session.
  * @param cliPort - client port number
  * @param srvIP - server IP address. All preprocessors must have consisten view of server side of a session.
- * @param srcPort - server port number
+ * @param srvPort - server port number
  * @param protocol - IPPROTO_TCP or IPPROTO_UDP.
  * @param direction - direction of session. Assumed that direction value for session being expected or expected will
  * remain same across different calls to this function.

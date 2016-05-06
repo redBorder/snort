@@ -100,7 +100,7 @@ nodist_libsf_dynamic_utils_la_SOURCES = include/sfprimetable.c include/sfxhash.c
 						  include/sfhashfcn.c include/sflsq.c include/md5.c
 
 nodist_preproc_HEADERS += include/appId.h include/appIdApi.h include/thirdparty_appid_types.h \
-						  include/thirdparty_appid_utils.h include/thirdparty_appid_api.h \
+						  include/thirdparty_appid_api.h \
 						  include/sfprimetable.h include/sfxhash.h include/sfmemcap.h \
 						  include/sfghash.h include/sfhashfcn.h include/sflsq.h include/md5.h \
 						  include/dns_defs.h
@@ -200,7 +200,7 @@ BUILT_SOURCES = \
 
 if FEAT_OPEN_APPID
 BUILT_SOURCES += include/appId.h  include/appIdApi.h include/thirdparty_appid_types.h \
-				 include/thirdparty_appid_utils.h  include/thirdparty_appid_api.h \
+				 include/thirdparty_appid_api.h \
 				 include/sfprimetable.h include/sfprimetable.c include/sfxhash.h \
 				 include/sfxhash.c include/sfmemcap.h include/sfmemcap.c \
 				 include/sfghash.c include/sfhashfcn.c include/sflsq.h include/sflsq.c \
@@ -584,9 +584,6 @@ include/appIdApi.h: $(srcdir)/../appIdApi.h
 include/thirdparty_appid_types.h: $(srcdir)/appid/thirdparty_appid_types.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
-include/thirdparty_appid_utils.h: $(srcdir)/appid/thirdparty_appid_utils.h
-	@src_header=$?; dst_header=$@; $(copy_headers)
-
 include/thirdparty_appid_api.h: $(srcdir)/appid/thirdparty_appid_api.h
 	@src_header=$?; dst_header=$@; $(copy_headers)
 
@@ -715,7 +712,7 @@ libs/sfparser.c
 
 if FEAT_OPEN_APPID
 exported_files += include/appId.h  include/appIdApi.h  include/thirdparty_appid_types.h \
-				  include/thirdparty_appid_utils.h  include/thirdparty_appid_api.h \
+				  include/thirdparty_appid_api.h \
 				  include/sfprimetable.h include/sfxhash.h include/sfmemcap.h include/sfhashfcn.h \
 				  include/md5.h \
 				  include/dns_defs.h 

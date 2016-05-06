@@ -111,7 +111,8 @@ static const uint8_t AUTHEOC4[] = "AUTH \x00a";
 static const uint8_t STLSEOC[] = "STLS\x00d\x00a";
 static const uint8_t STLSEOC2[] = "STLS\x00a";
 
-static enum Client_App_Pattern_Index {
+typedef enum
+{
     /* order MUST correspond to that in the array, patterns[], below */
     PATTERN_USER,
     PATTERN_PASS,
@@ -124,7 +125,7 @@ static enum Client_App_Pattern_Index {
     PATTERN_STLSEOC,
     PATTERN_STLSEOC2,
     PATTERN_POP3_OTHER // always last
-    };
+} Client_App_Pattern_Index;
 
 static Client_App_Pattern patterns[] =
 {

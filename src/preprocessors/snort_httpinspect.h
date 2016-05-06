@@ -117,6 +117,7 @@ typedef struct s_HTTP_RESP_STATE
     int data_extracted;
     uint32_t max_seq;
     bool flow_depth_excd;
+    bool eoh_found;
 }HTTP_RESP_STATE;
 
 typedef struct s_HTTP_LOG_STATE
