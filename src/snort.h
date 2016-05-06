@@ -299,6 +299,7 @@ typedef enum _GetOptLongIds
     ARG_HA_PEER,
     ARG_HA_OUT,
     ARG_HA_IN,
+    ARG_HA_PDTS_IN,
 
     SUPPRESS_CONFIG_LOG,
 
@@ -934,6 +935,7 @@ typedef struct _SnortConfig
     bool ha_peer;
     char *ha_out;
     char *ha_in;
+    char *ha_pdts_in;
     char *output_dir;
     void *file_config;
     int disable_all_policies;

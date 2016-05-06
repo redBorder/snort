@@ -1095,6 +1095,7 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
     IPHdr *tmp_iph;
     IP6Hdr *tmp_ip6h;
     IP4Hdr *tmp_ip4h;
+    IPH_API *tmp_api;
     char repeat = 0;
     FastPatternConfig *fp = snort_conf->fast_pattern_config;
     PROFILE_VARS;
@@ -1106,6 +1107,7 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
         tmp_ip4h = (void *)p->ip4h;
         tmp_payload = p->data;
         tmp_dsize = p->dsize;
+	 tmp_api = p->iph_api;
 
         /* Set the packet payload pointers to that of IP,
          ** since this is an IP rule. */
@@ -1117,6 +1119,7 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
             p->ip4h = &p->outer_ip4h;
             p->data = p->outer_ip_data;
             p->dsize = p->outer_ip_dsize;
+	     p->iph_api = p->outer_iph_api;
             p->packet_flags |= PKT_IP_RULE;
             repeat = 2;
         }
@@ -1378,6 +1381,7 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
             p->ip4h = &p->inner_ip4h;
             p->data = p->ip_data;
             p->dsize = p->ip_dsize;
+	     p->iph_api = tmp_api;
             p->packet_flags |= PKT_IP_RULE_2ND | PKT_IP_RULE;
             repeat--;
         }
@@ -1398,6 +1402,7 @@ fp_eval_header_sw_reset_ip:
         p->ip4h = tmp_ip4h;
         p->data = tmp_payload;
         p->dsize = tmp_dsize;
+	 p->iph_api = tmp_api;
         p->packet_flags &= ~(PKT_IP_RULE| PKT_IP_RULE_2ND);
     }
 

@@ -24,7 +24,10 @@
 
 #include "perf_indicators.h"
 
+#ifdef PI_PACKET_LATENCY_SUPPORT
 static PreprocStats *latencyStats = { NULL };
+#endif
+
 static double ticks_per_microsec = 0.0;
 
 static void getTicksPerMicrosec(void)
@@ -80,6 +83,7 @@ static double GetPacketDropPortion()
 }
 #endif
 
+#ifdef PERF_PROFILING
 int PerfIndicator_RegisterPreprocStat( PreprocStats *Stats,
                                        enum Perf_Indicator_Type Type )
 {
@@ -91,6 +95,7 @@ int PerfIndicator_RegisterPreprocStat( PreprocStats *Stats,
     else
         return( -1 );
 }
+#endif
 
 int PerfIndicator_GetIndicators( Perf_Indicator_Descriptor_p_t PI_List )
 {

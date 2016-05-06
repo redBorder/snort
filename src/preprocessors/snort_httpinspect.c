@@ -1819,7 +1819,7 @@ static int ProcessXFF_HeaderList(HTTPINSPECT_CONF *ServerConf,
     uint8_t *Field_Name;
     unsigned int Precedence;
     int i;
-
+     uint8_t addXffFieldName = 0;
 
     /* NOTE:  This procedure assumes that the ServerConf->xff_headers array
               contains all NULL's due to the structure allocation process. */
@@ -1884,6 +1884,8 @@ static int ProcessXFF_HeaderList(HTTPINSPECT_CONF *ServerConf,
                 {
                     SnortSnprintf(ErrorString, ErrStrLen,
                                  "illegal precendence value: %u", Precedence);
+                    if( Field_Name )
+                        free(Field_Name);
                     return( -1 );
                 }
 
@@ -1904,6 +1906,8 @@ static int ProcessXFF_HeaderList(HTTPINSPECT_CONF *ServerConf,
                 {
                     SnortSnprintf(ErrorString, ErrStrLen,
                                  "too many xff field names");
+                    if( Field_Name )
+                        free(Field_Name);
                     return( -1 );
                 }
 
@@ -1912,9 +1916,11 @@ static int ProcessXFF_HeaderList(HTTPINSPECT_CONF *ServerConf,
                 {
                     SnortSnprintf(ErrorString, ErrStrLen,
                                  "Error adding xff header: %s", Field_Name);
+                    if( Field_Name )
+                        free(Field_Name);
                     return( -1 );
                 }
-
+                addXffFieldName = 1;
                 Parse_State = XFF_STATE_CLOSE;
                 break;
             }
@@ -1925,6 +1931,8 @@ static int ProcessXFF_HeaderList(HTTPINSPECT_CONF *ServerConf,
                     SnortSnprintf(ErrorString, ErrStrLen,
                         "Must end an xff header entry with the '%s' token.",
                         END_XFF_HEADER_ENTRY);
+                    if( Field_Name )
+                        free(Field_Name);
                     return( -1 );
                 }
                 Parse_State = XFF_STATE_OPEN;
@@ -1934,11 +1942,19 @@ static int ProcessXFF_HeaderList(HTTPINSPECT_CONF *ServerConf,
             {
                 SnortSnprintf(ErrorString, ErrStrLen,
                              "xff header parsing error");
+                 if( Field_Name )
+                     free(Field_Name);
                 return( -1 );
             }
         }
     }
     while( Keep_Parsing && ((pcToken = strtok(NULL, CONF_SEPARATORS)) != NULL) );
+
+    if( Field_Name && !addXffFieldName )
+    {
+        free(Field_Name);
+        Field_Name = NULL;
+    }
 
     if( Parse_State != XFF_STATE_END )
     {
@@ -1956,6 +1972,8 @@ static int ProcessXFF_HeaderList(HTTPINSPECT_CONF *ServerConf,
         {
             SnortSnprintf(ErrorString, ErrStrLen,
                          "problem adding builtin xff field - too many fields?");
+            if( Field_Name )
+                free(Field_Name);
             return( -1 );
         }
     }
@@ -1968,6 +1986,8 @@ static int ProcessXFF_HeaderList(HTTPINSPECT_CONF *ServerConf,
         {
             SnortSnprintf(ErrorString, ErrStrLen,
                          "problem adding builtin xff field - too many fields?");
+            if( Field_Name )
+                free(Field_Name);
             return( -1 );
         }
     }
@@ -4410,12 +4430,20 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                      setFileDataPtr(Session->server.response.body, (uint16_t)detect_data_size);
                  }
 
-                 if( ScPafEnabled() && PacketHasPAFPayload( p )
-                     && file_api->file_process( p, (uint8_t *)Session->server.response.body_raw,
-                                                (uint16_t)Session->server.response.body_raw_size,
-                                                file_api->get_file_position( p ), false, false ) )
+		 if (ScPafEnabled() && PacketHasPAFPayload(p))
                  {
-                     setFileName(p);
+                     int file_data_position = file_api->get_file_position(p);
+
+                     if (file_data_position == SNORT_FILE_POSITION_UNKNOWN && hsd->resp_state.eoh_found)
+                     {
+                         file_data_position = SNORT_FILE_START;
+                     }
+                     if (file_api->file_process(p, (uint8_t *)Session->server.response.body_raw,
+                                                   (uint16_t)Session->server.response.body_raw_size,
+                                                   file_data_position, false, false))
+                     {
+                         setFileName(p);
+                     }
                  }
              }
 
@@ -4546,6 +4574,7 @@ HttpSessionData * SetNewHttpSessionData(Packet *p, void *data)
     session_api->set_application_data(p->ssnptr, PP_HTTPINSPECT, hsd, FreeHttpSessionData);
 
     hsd->fd_state = (fd_session_p_t)NULL;
+    hsd->resp_state.eoh_found = false;
 
     return hsd;
 }
