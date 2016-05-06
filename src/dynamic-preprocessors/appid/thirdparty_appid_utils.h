@@ -22,10 +22,11 @@
 #define _THIRDPARTY_APPID_UTILS_H_
 
 #include "thirdparty_appid_api.h"
+#include "appIdConfig.h"
 
 extern ThirdPartyAppIDModule* thirdparty_appid_module;    //NULL means no 3rd party AppID module
 
-void ThirdPartyAppIDInit(const char* thirdparty_appid_dir);
+void ThirdPartyAppIDInit(struct AppidStaticConfig *appidStaticConfig);
 void ThirdPartyAppIDFini(void);
 
 #endif

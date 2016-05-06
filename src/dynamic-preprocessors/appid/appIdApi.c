@@ -444,7 +444,10 @@ uint32_t consumeHAState(void *lwssn, const uint8_t *buf, uint8_t length, uint8_t
         }
 
         if (appHA->flags & APPID_HA_FLAGS_TP_DONE && thirdparty_appid_module)
+        {
                 thirdparty_appid_module->session_state_set(appIdData->tpsession, TP_STATE_TERMINATED);
+                setAppIdIntFlag(appIdData, APPID_SESSION_APP_NO_TPI);
+        }
         if (appHA->flags & APPID_HA_FLAGS_SVC_DONE)
             setAppIdExtFlag(appIdData, APPID_SESSION_SERVICE_DETECTED);
         if (appHA->flags & APPID_HA_FLAGS_HTTP)
@@ -458,6 +461,7 @@ uint32_t consumeHAState(void *lwssn, const uint8_t *buf, uint8_t length, uint8_t
         appIdData->tpPayloadAppId = appHA->appId[5];
         appIdData->clientAppId = appHA->appId[6];
         appIdData->miscAppId = appHA->appId[7];
+
     }
     return sizeof(*appHA);
 }

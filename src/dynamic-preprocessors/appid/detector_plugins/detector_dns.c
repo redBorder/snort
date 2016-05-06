@@ -200,12 +200,12 @@ int dns_host_detector_process_patterns(tServiceDnsConfig *pDnsConfig)
 
 static int dns_service_init(const InitServiceAPI * const init_api)
 {
-	unsigned i;
-	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
-	{
-		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&dns_udp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
-	}
+    unsigned i;
+    for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
+    {
+        _dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
+        init_api->RegisterAppId(&dns_udp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
+    }
 
     return 0;
 }
@@ -762,6 +762,7 @@ char *dns_parse_host(const uint8_t *host, uint8_t host_len)
     const uint8_t *src;
     char          *dst;
     uint8_t        len;
+    uint32_t       dstLen = 0;
 
     str = malloc(host_len + 1);    // plus '\0' at end
     if (str != NULL)
@@ -772,10 +773,18 @@ char *dns_parse_host(const uint8_t *host, uint8_t host_len)
         {
             len = *src;
             src++;
-            memcpy(dst, src, len);
+            if ((dstLen + len) <= host_len)
+                memcpy(dst, src, len);
+            else
+            {
+                // Malformed DNS host, return
+                free(str);
+                return NULL;
+            }
             src += len;
             dst += len;
             *dst = '.';
+            dstLen += len + 1;
             dst++;
         }
         str[host_len] = '\0';    // NULL term

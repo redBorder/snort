@@ -141,6 +141,9 @@ typedef struct _HADebugSessionConstraints
 static StreamHAFuncsNode *stream_ha_funcs[MAX_STREAM_HA_FUNCS];
 static int n_stream_ha_funcs = 0;
 static int runtime_output_fd = -1;
+#ifdef REG_TEST
+static int  runtime_input_fd = -1;
+#endif
 static uint8_t file_io_buffer[UINT16_MAX];
 static StreamHAStats s5ha_stats;
 
@@ -641,6 +644,12 @@ static void StreamParseHAArgs(SnortConfig *sc, SessionHAConfig *config, char *ar
             free(config->startup_input_file);
         config->startup_input_file = SnortStrdup(sc->ha_in);
     }
+   if(sc->ha_pdts_in)
+   {
+       if(config->runtime_input_file)
+           free(config->runtime_input_file);
+       config->runtime_input_file = SnortStrdup(sc->ha_pdts_in);
+   }
 #endif
 
 }
@@ -718,7 +727,11 @@ static void SessionHAMetaEval(int type, const uint8_t *data)
 #endif
 
 #ifdef HAVE_DAQ_QUERYFLOW
+#ifdef REG_TEST
+int SessionHAQueryDAQState( DAQ_PktHdr_t *pkthdr)
+#else
 int SessionHAQueryDAQState(const DAQ_PktHdr_t *pkthdr)
+#endif
 {
     DAQ_QueryFlow_t query;
     DAQ_HA_State_Data_t daqHAState;
@@ -727,6 +740,10 @@ int SessionHAQueryDAQState(const DAQ_PktHdr_t *pkthdr)
     query.type = DAQ_QUERYFLOW_TYPE_HA_STATE;
     query.length = sizeof(daqHAState);
     query.value = &daqHAState;
+
+#ifdef REG_TEST
+    pkthdr->priv_ptr = &runtime_input_fd;
+#endif
 
     if ((rval = DAQ_QueryFlow(pkthdr, &query)) == DAQ_SUCCESS)
     {
@@ -831,6 +848,10 @@ void SessionHAConfigFree( void *data )
 
     if (config->shutdown_output_file)
         free(config->shutdown_output_file);
+#ifdef REG_TEST
+    if (config->runtime_input_file)
+        free(config->runtime_input_file);
+#endif
 
     free(config);
 }
@@ -1099,7 +1120,7 @@ static int ConsumeHAMessage(const uint8_t *msg, uint32_t msglen)
                 }
                 if (debug_flag)
                 {
-                    LogMessage("SFHADbg Consuming %hhu byte preprocessor data record for %s with PPID=%hhu and SC=%hhu\n",
+                    LogMessage("S5HADbg Consuming %hhu byte preprocessor data record for %s with PPID=%hhu and SC=%hhu\n",
                                 rec_hdr->length, s5_ha_debug_session, psd_hdr->preproc_id, psd_hdr->subcode);
                 }
                 if (DeserializePreprocData(msg_hdr->event, scb, psd_hdr->preproc_id, psd_hdr->subcode,
@@ -1297,7 +1318,7 @@ static uint32_t WriteHASession(SessionControlBlock *scb, uint8_t *msg)
     return offset;
 }
 
-static uint32_t WritePreprocDataRecord(SessionControlBlock *scb, StreamHAFuncsNode *node, uint8_t *msg)
+static uint32_t WritePreprocDataRecord(SessionControlBlock *scb, StreamHAFuncsNode *node, uint8_t *msg, bool forced)
 {
     RecordHeader *rec_hdr;
     PreprocDataHeader *psd_hdr;
@@ -1313,6 +1334,11 @@ static uint32_t WritePreprocDataRecord(SessionControlBlock *scb, StreamHAFuncsNo
     psd_hdr->subcode = node->subcode;
 
     rec_hdr->length = node->produce(scb, msg + offset);
+    /* If this was a forced record generation (the preprocessor did not indicate pending HA state data), as in the case
+        of a full HA record generation for session pickling, return a 0 offset if there is no data so that space is not
+        wasted on the PSD header. */
+    if (rec_hdr->length == 0 && forced)
+        return 0;
     offset += rec_hdr->length;
     node->produced++;
 
@@ -1461,7 +1487,7 @@ void SessionHANotifyDeletion(SessionControlBlock *scb)
     PREPROC_PROFILE_END(sessionHAPerfStats);
 }
 
-static uint32_t GenerateHAUpdateMessage(uint8_t *msg, uint32_t msg_size, SessionControlBlock *scb)
+static uint32_t GenerateHAUpdateMessage(uint8_t *msg, SessionControlBlock *scb, bool full)
 {
     StreamHAFuncsNode *node;
     uint32_t offset;
@@ -1470,19 +1496,21 @@ static uint32_t GenerateHAUpdateMessage(uint8_t *msg, uint32_t msg_size, Session
 
     PREPROC_PROFILE_START(sessionHAProducePerfStats);
 
-    offset = WriteHAMessageHeader(HA_EVENT_UPDATE, msg_size, scb->key, msg);
+    /* Write HA message header with a length of 0.  It will be updated at the end. */
+    offset = WriteHAMessageHeader(HA_EVENT_UPDATE, 0, scb->key, msg);
     offset += WriteHASession(scb, msg + offset);
     for (idx = 0; idx < n_stream_ha_funcs; idx++)
     {
-        if (scb->ha_pending_mask & (1 << idx))
+        /* If this is the generation of a full message, try to generate state from all registered nodes. */
+        if ((scb->ha_pending_mask & (1 << idx)) || full)
         {
             node = stream_ha_funcs[idx];
             if (!node)
                 continue;
-            offset += WritePreprocDataRecord(scb, node, msg + offset);
+            offset += WritePreprocDataRecord(scb, node, msg + offset, (scb->ha_pending_mask & (1 << idx)) ? false : true);
         }
     }
-    /* Update the message header length since it might be shorter than originally anticipated. */
+    /* Update the message header's length field with the final message size. */
     UpdateHAMessageHeaderLength(msg, offset);
 
     PREPROC_PROFILE_END(sessionHAProducePerfStats);
@@ -1495,12 +1523,16 @@ static uint32_t GenerateHAUpdateMessage(uint8_t *msg, uint32_t msg_size, Session
 }
 
 #ifdef SIDE_CHANNEL
-static void SendSCUpdateMessage(SessionControlBlock *scb, uint32_t msg_size)
+static void SendSCUpdateMessage(SessionControlBlock *scb)
 {
     SCMsgHdr *schdr;
     void *msg_handle;
+    uint32_t msg_size;
     uint8_t *msg;
     int rval;
+
+    /* Calculate the maximum size of the update message for preallocation. */
+    msg_size = CalculateHAMessageSize(HA_EVENT_UPDATE, scb);
 
     /* Allocate space for the message. */
     if ((rval = SideChannelPreallocMessageTX(msg_size, &schdr, &msg, &msg_handle)) != 0)
@@ -1510,7 +1542,7 @@ static void SendSCUpdateMessage(SessionControlBlock *scb, uint32_t msg_size)
     }
 
     /* Gnerate the message. */
-    msg_size = GenerateHAUpdateMessage(msg, msg_size, scb);
+    msg_size = GenerateHAUpdateMessage(msg, scb, false);
 
     /* Send the message. */
     schdr->type = SC_MSG_TYPE_FLOW_STATE_TRACKING;
@@ -1572,16 +1604,16 @@ static inline uint8_t getHaStateDiff(SessionKey *key, const StreamHAState *old_s
 void SessionProcessHA(void *ssnptr, const DAQ_PktHdr_t *pkthdr)
 {
     struct timeval pkt_time;
-    SessionControlBlock *scb = ( SessionControlBlock * )ssnptr;
+    SessionControlBlock *scb = (SessionControlBlock *) ssnptr;
     uint32_t msg_size;
     bool debug_flag;
     PROFILE_VARS;
 
-    PREPROC_PROFILE_START( sessionHAPerfStats );
+    PREPROC_PROFILE_START(sessionHAPerfStats);
 
-    if( ( scb == NULL ) || !session_configuration->enable_ha )
+    if (!scb || !session_configuration->enable_ha)
     {
-        PREPROC_PROFILE_END( sessionHAPerfStats );
+        PREPROC_PROFILE_END(sessionHAPerfStats);
         return;
     }
 
@@ -1594,7 +1626,7 @@ void SessionProcessHA(void *ssnptr, const DAQ_PktHdr_t *pkthdr)
     }
     scb->new_session = false;
 
-    if( ( !scb->ha_pending_mask && !( scb->ha_flags & HA_FLAG_MODIFIED ) ) )
+    if (!scb->ha_pending_mask && !(scb->ha_flags & HA_FLAG_MODIFIED))
     {
         PREPROC_PROFILE_END( sessionHAPerfStats );
         return;
@@ -1605,22 +1637,22 @@ void SessionProcessHA(void *ssnptr, const DAQ_PktHdr_t *pkthdr)
         (a) major and critical changes or
         (b) preprocessor changes on already synchronized sessions.
     */
-    if( !( scb->ha_flags & (HA_FLAG_MAJOR_CHANGE | HA_FLAG_CRITICAL_CHANGE ) ) &&
-         ( !scb->ha_pending_mask || ( scb->ha_flags & HA_FLAG_NEW ) ) )
+    if (!(scb->ha_flags & (HA_FLAG_MAJOR_CHANGE | HA_FLAG_CRITICAL_CHANGE)) &&
+         (!scb->ha_pending_mask || (scb->ha_flags & HA_FLAG_NEW)))
     {
-        PREPROC_PROFILE_END( sessionHAPerfStats );
+        PREPROC_PROFILE_END(sessionHAPerfStats);
         return;
     }
 
     /* Ensure that a new flow has lived long enough for anyone to care about it
         and that we're not overrunning the synchronization threshold. */
     packet_gettimeofday(&pkt_time);
-    if( ( pkt_time.tv_sec < scb->ha_next_update.tv_sec ) ||
-        ( ( pkt_time.tv_sec == scb->ha_next_update.tv_sec ) &&
-          ( pkt_time.tv_usec < scb->ha_next_update.tv_usec ) ) )
+    if ((pkt_time.tv_sec < scb->ha_next_update.tv_sec) ||
+        ((pkt_time.tv_sec == scb->ha_next_update.tv_sec) &&
+          (pkt_time.tv_usec < scb->ha_next_update.tv_usec)))
     {
         /* Critical changes will be allowed to bypass the message timing restrictions. */
-        if ( !( scb->ha_flags & HA_FLAG_CRITICAL_CHANGE ) )
+        if (!(scb->ha_flags & HA_FLAG_CRITICAL_CHANGE))
         {
             PREPROC_PROFILE_END( sessionHAPerfStats );
             return;
@@ -1630,15 +1662,15 @@ void SessionProcessHA(void *ssnptr, const DAQ_PktHdr_t *pkthdr)
     else
         s5ha_stats.update_messages_sent_normally++;
 
-    debug_flag = StreamHADebugCheck( scb->key, s5_ha_debug_flag, &s5_ha_debug_info,
-                                      s5_ha_debug_session, sizeof( s5_ha_debug_session ) );
-    if( debug_flag )
+    debug_flag = StreamHADebugCheck(scb->key, s5_ha_debug_flag, &s5_ha_debug_info,
+                                      s5_ha_debug_session, sizeof(s5_ha_debug_session));
+    if (debug_flag)
 #ifdef TARGET_BASED
-        LogMessage( "S5HADbg Producing update message for %s - "
+        LogMessage("S5HADbg Producing update message for %s - "
                     "SF=0x%x IPP=0x%hx AP=0x%hx DIR=%hhu IDIR=%hhu HPM=0x%hhx HF=0x%hhx\n",
                     s5_ha_debug_session, scb->ha_state.session_flags, scb->ha_state.ipprotocol,
                     scb->ha_state.application_protocol, scb->ha_state.direction,
-                    scb->ha_state.ignore_direction, scb->ha_pending_mask, scb->ha_flags );
+                    scb->ha_state.ignore_direction, scb->ha_pending_mask, scb->ha_flags);
 #else
         LogMessage("S5HADbg Producing update message for %s - SF=0x%x DIR=%hhu IDIR=%hhu HPM=0x%hhx HF=0x%hhx\n",
                     s5_ha_debug_session, scb->ha_state.session_flags,
@@ -1646,41 +1678,37 @@ void SessionProcessHA(void *ssnptr, const DAQ_PktHdr_t *pkthdr)
                     scb->ha_pending_mask, scb->ha_flags);
 #endif
 
-    /* Calculate the size of the update message. */
-    msg_size = CalculateHAMessageSize( HA_EVENT_UPDATE, scb );
-
-    if (runtime_output_fd >= 0
-#ifdef HAVE_DAQ_EXT_MODFLOW
-            || (session_configuration->ha_config->use_daq && !Active_GetTunnelBypass())
-#endif
-        )
+    /* Write out to the runtime output file. */
+    if (runtime_output_fd >= 0)
     {
-        /* Gnerate the message. */
-        msg_size = GenerateHAUpdateMessage(file_io_buffer, msg_size, scb);
-
-        if (runtime_output_fd >= 0)
+        /* Generate the incremental update message. */
+        msg_size = GenerateHAUpdateMessage(file_io_buffer, scb, false);
+        if (Write(runtime_output_fd, file_io_buffer, msg_size) == -1)
         {
-            if (Write(runtime_output_fd, file_io_buffer, msg_size) == -1)
-            {
-                /* TODO: Error stuff here. */
-                WarningMessage("(%s)(%d) Error writing HA message not handled\n", __FILE__, __LINE__);
-            }
+            /* TODO: Error stuff here. */
+            WarningMessage("(%s)(%d) Error writing HA message not handled\n", __FILE__, __LINE__);
         }
-
-#ifdef HAVE_DAQ_EXT_MODFLOW
-        /* Assume that if we are not setting a binding DAQ verdict because of external encapsulation-induced
-            confusion that we also cannot safely set the HA state associated with this flow in the DAQ. */
-        if (session_configuration->ha_config->use_daq && !Active_GetTunnelBypass())
-        {
-            DAQ_ModifyFlowHAState(pkthdr, file_io_buffer, msg_size);
-        }
-#endif
     }
 
+#ifdef HAVE_DAQ_EXT_MODFLOW
+    /*
+        Store via DAQ module (requires full message generation).
+        Assume that if we are not setting binding DAQ verdicts because of external encapsulation-induced
+          confusion that we also cannot safely set the HA state associated with this flow in the DAQ.
+    */
+    if (session_configuration->ha_config->use_daq && !Active_GetTunnelBypass())
+    {
+        /* Generate the full message. */
+        msg_size = GenerateHAUpdateMessage(file_io_buffer, scb, true);
+        DAQ_ModifyFlowHAState(pkthdr, file_io_buffer, msg_size);
+    }
+#endif
+
 #ifdef SIDE_CHANNEL
+    /* Send an update message over the side channel. */
     if (session_configuration->ha_config->use_side_channel)
     {
-        SendSCUpdateMessage(scb, msg_size);
+        SendSCUpdateMessage(scb);
     }
 #endif
 
@@ -1694,10 +1722,10 @@ void SessionProcessHA(void *ssnptr, const DAQ_PktHdr_t *pkthdr)
     scb->ha_next_update.tv_sec += session_configuration->ha_config->min_session_lifetime.tv_sec;
 
     /* Clear the modified/new flags and pending preprocessor updates. */
-    scb->ha_flags &= ~( HA_FLAG_NEW | HA_FLAG_MODIFIED | HA_FLAG_MAJOR_CHANGE | HA_FLAG_CRITICAL_CHANGE );
+    scb->ha_flags &= ~(HA_FLAG_NEW | HA_FLAG_MODIFIED | HA_FLAG_MAJOR_CHANGE | HA_FLAG_CRITICAL_CHANGE);
     scb->ha_pending_mask = 0;
 
-    PREPROC_PROFILE_END( sessionHAPerfStats );
+    PREPROC_PROFILE_END(sessionHAPerfStats);
 }
 
 #ifdef SIDE_CHANNEL
@@ -1743,6 +1771,19 @@ void SessionHAPostConfigInit( struct _SnortConfig *sc, int unused, void *arg )
         }
     }
 
+#ifdef REG_TEST
+    if( session_configuration->ha_config->runtime_input_file )
+    {
+        runtime_input_fd = open( session_configuration->ha_config->runtime_input_file,
+                                  O_RDONLY, 0664 );
+        if( runtime_input_fd < 0 )
+        {
+            FatalError( "Could not open %s for writing HA messages to: %s (%d)\n",
+                        session_configuration->ha_config->runtime_input_file, strerror( errno ), errno );
+        }
+    }
+#endif
+
 #ifdef SIDE_CHANNEL
     if( session_configuration->ha_config->use_side_channel )
     {
@@ -1774,4 +1815,12 @@ void SessionCleanHA( void )
         close(runtime_output_fd);
         runtime_output_fd = -1;
     }
+#ifdef REG_TEST
+    if (runtime_input_fd >= 0)
+    {
+        close(runtime_input_fd);
+        runtime_input_fd = -1;
+    }
+#endif
+
 }

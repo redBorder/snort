@@ -25,6 +25,7 @@
 
 #include "parser.h"
 
+extern FileSession* get_file_session(void *ssnptr);
 
 static inline void file_segment_free(FileCache *fileCache, FileSegment* file_segment)
 {
@@ -114,7 +115,7 @@ static int  pruneFileCache(FileCache *fileCache, FileEntry *file)
     return pruned;
 }
 
-static FileEntry *file_cache_get(FileCache *fileCache, void* p, uint64_t file_id)
+FileEntry *file_cache_get(FileCache *fileCache, void* p, uint64_t file_id)
 {
     SFXHASH_NODE *hnode;
     FileKey fileKey;
@@ -459,6 +460,7 @@ int file_segment_process( FileCache *fileCache, void* p, uint64_t file_id,
 {
     FileEntry *fileEntry;
     int ret = 0;
+    FileSession *file_session;
     Packet *pkt = (Packet *)p;
     void *ssnptr = pkt->ssnptr;
 
@@ -503,6 +505,15 @@ int file_segment_process( FileCache *fileCache, void* p, uint64_t file_id,
             fileEntry->context->file_id = (uint32_t)file_id;
         }
     }
+
+    file_session = get_file_session (ssnptr);
+    if (file_session == NULL)
+        return 0;
+
+    if (!file_session->file_cache)
+        file_session->file_cache = fileCache;
+
+    file_session->file_id = file_id;
 
     /* Walk through the segments that can be flushed*/
     if (fileEntry->offset == offset)

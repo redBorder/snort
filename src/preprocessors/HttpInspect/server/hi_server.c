@@ -714,7 +714,7 @@ static inline const u_char *extractHttpRespHeaderFieldValues(HTTPINSPECT_CONF *S
             p = extract_http_cookie((p + HTTPRESP_HEADER_LENGTH__COOKIE), end, header_ptr, header_field_ptr);
         }
 #if defined(FEAT_OPEN_APPID)
-        else if (IsHeaderFieldName(p, end, HEADER_NAME__SERVER, HEADER_LENGTH__SERVER))
+        else if ((ServerConf->appid_enabled) && (IsHeaderFieldName(p, end, HEADER_NAME__SERVER, HEADER_LENGTH__SERVER)))
         {
             p = p + HEADER_LENGTH__SERVER;
             p = extract_http_server_header(Session, p, start, end, header_ptr, &header_ptr->server);
@@ -763,7 +763,7 @@ static inline const u_char *extractHttpRespHeaderFieldValues(HTTPINSPECT_CONF *S
 #if defined(FEAT_OPEN_APPID)
     else if(((p - offset) == 0) && ((*p == 'V') || (*p == 'v')))
     {
-        if(IsHeaderFieldName(p, end, HEADER_NAME__VIA, HEADER_LENGTH__VIA))
+        if((ServerConf->appid_enabled) && (IsHeaderFieldName(p, end, HEADER_NAME__VIA, HEADER_LENGTH__VIA)))
         {
             p = p + HEADER_LENGTH__VIA;
             p = extract_http_server_header(Session, p, start, end, header_ptr, &header_ptr->via);
@@ -771,7 +771,7 @@ static inline const u_char *extractHttpRespHeaderFieldValues(HTTPINSPECT_CONF *S
     }
     else if(((p - offset) == 0) && ((*p == 'X') || (*p == 'x')))
     {
-        if(IsHeaderFieldName(p, end, HEADER_NAME__X_WORKING_WITH, HEADER_LENGTH__X_WORKING_WITH))
+        if((ServerConf->appid_enabled) && (IsHeaderFieldName(p, end, HEADER_NAME__X_WORKING_WITH, HEADER_LENGTH__X_WORKING_WITH)))
         {
             p = p + HEADER_LENGTH__X_WORKING_WITH;
             p = extract_http_server_header(Session, p, start, end, header_ptr, &header_ptr->xWorkingWith);
@@ -829,6 +829,7 @@ static inline const u_char *hi_server_extract_header(
                     {
                         p++;
                         header_ptr->header.uri_end = p;
+			hsd->resp_state.eoh_found = true;
                         return p;
                     }
                 }
@@ -836,6 +837,7 @@ static inline const u_char *hi_server_extract_header(
                 {
                     p++;
                     header_ptr->header.uri_end = p;
+		    hsd->resp_state.eoh_found = true;
                     return p;
                 }
             }
@@ -1416,6 +1418,19 @@ int HttpResponseInspection(HI_SESSION *Session, Packet *p, const unsigned char *
     int alt_dsize;
     uint32_t seq_num = 0;
 
+    static uint32_t paf_bytes_total = 0;
+    static uint32_t paf_bytes_curr = 0;
+    uint32_t paf_bytes_processed = 0;
+
+    if (ScPafEnabled())
+    {
+	paf_bytes_processed = hi_paf_resp_bytes_processed(p->ssnptr);
+	paf_bytes_curr = paf_bytes_processed - paf_bytes_total;
+	paf_bytes_total = paf_bytes_processed;
+	if (paf_bytes_curr < 0)
+	    paf_bytes_curr = paf_bytes_processed;
+    }
+
     if (!Session || !p || !data || (dsize == 0))
         return HI_INVALID_ARG;
 
@@ -1639,13 +1654,10 @@ int HttpResponseInspection(HI_SESSION *Session, Packet *p, const unsigned char *
             if(expected_pkt)
             {
                 expected_pkt = 0;
-                if(sd != NULL)
-                {
-                    (void)File_Decomp_Reset(sd->fd_state);
-                    ResetGzipState(sd->decomp_state);
-                    ResetRespState(&(sd->resp_state));
-                    sd->resp_state.flow_depth_excd = false;
-                }
+                (void)File_Decomp_Reset(sd->fd_state);
+                ResetGzipState(sd->decomp_state);
+                ResetRespState(&(sd->resp_state));
+                sd->resp_state.flow_depth_excd = false;
             }
             while(hi_util_in_bounds(start, end, ptr))
             {
@@ -1666,6 +1678,18 @@ int HttpResponseInspection(HI_SESSION *Session, Packet *p, const unsigned char *
 
     if (expected_pkt)
     {
+	if (ScPafEnabled() && !sd->resp_state.eoh_found)
+	{
+	    // check for EOH in this packet
+            if (hi_paf_resp_eoh(p->ssnptr))
+	    {
+	        sd->resp_state.eoh_found = true;
+	        ptr += paf_bytes_curr; // jump to body offset
+	        if (ptr == end)
+	           return HI_SUCCESS;
+	    }
+        }
+
         if (hi_util_in_bounds(start, end, ptr))
         {
             iRet = hi_server_inspect_body(Session, sd, ptr, end, &body_ptr);
