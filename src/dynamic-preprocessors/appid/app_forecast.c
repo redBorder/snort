@@ -24,37 +24,24 @@ static AFActKey master_key;
 
 static inline void rekeyMasterAFActKey (SFSnortPacket *p, int dir, tAppId forecast)
 {
+    int i;
     sfaddr_t *src;
 
     src = dir ? GET_DST_IP(p) : GET_SRC_IP(p);
-    memcpy(master_key.ip, sfaddr_get_ip6_ptr(src), sizeof(master_key.ip));  
+    for (i = 0; i < 4; i++)
+        master_key.ip[i] = src->ia32[i];
     master_key.forecast = forecast;
 }
 
-static inline int expired (AFActVal *val)
+void checkSessionForAFIndicator(SFSnortPacket *p, int dir, const tAppIdConfig *pConfig, tAppId indicator)
 {
-    time_t age = GetPacketRealTime - val->last;
-
-    if (age < 0 || age > 300)
-        return 1;
-    else
-        return 0;    
-}
-
-void checkSessionForAFIndicator(tAppIdData *session, SFSnortPacket *p, int dir, const tAppIdConfig *pConfig)
-{
-    tAppId indicator;
-    if (!(indicator = pickPayloadId(session)))
-        return;
-
     AFElement *ind_element;
     if (!(ind_element = (AFElement*)sfxhash_find(pConfig->AF_indicators, &indicator)))
         return;
 
-    AFActVal *test_active_value;    
-
     rekeyMasterAFActKey(p, dir, ind_element->forecast);
 
+    AFActVal *test_active_value;
     if ((test_active_value = (AFActVal*)sfxhash_find(pConfig->AF_actives, &master_key)))
     {
         test_active_value->last = GetPacketRealTime;
@@ -69,32 +56,25 @@ void checkSessionForAFIndicator(tAppIdData *session, SFSnortPacket *p, int dir, 
     sfxhash_add(pConfig->AF_actives, &master_key, &new_active_value);
 }
 
-void checkSessionForAFForecast(tAppIdData *session, SFSnortPacket *p, int dir, const tAppIdConfig *pConfig)
+tAppId checkSessionForAFForecast(tAppIdData *session, SFSnortPacket *p, int dir, const tAppIdConfig *pConfig, tAppId forecast)
 {
-    tAppId forecast;
-
-    // get out if there is already a web app set
-    if (session->payloadAppId > 0)
-        return;
-
-    // get out if there is no service app id
-    if ((forecast = pickServiceAppId(session))<=0)
-        return;
-
     AFActVal *check_act_val;
 
     rekeyMasterAFActKey(p, dir, forecast);
-    
+
     //get out if there is no value
     if (!(check_act_val = (AFActVal*)sfxhash_find(pConfig->AF_actives, &master_key)))
-        return;
+        return APP_ID_UNKNOWN;
 
-    // if the value is older than 5 minutes, remove it and get out
-    if (expired(check_act_val))
+    //if the value is older than 5 minutes, remove it and get out
+    time_t age;
+    age = GetPacketRealTime - check_act_val->last;
+    if (age < 0 || age > 300)
     {
         sfxhash_remove(pConfig->AF_actives, &master_key);
-        return;
+        return APP_ID_UNKNOWN;
     }
-        
-    session->payloadAppId = check_act_val->target;    
+
+    session->payloadAppId = check_act_val->target;
+    return forecast;
 }

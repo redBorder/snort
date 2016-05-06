@@ -823,6 +823,9 @@ void DecodeEthTypes(Packet *p, const uint8_t *pkt, uint16_t ethtype, uint32_t ca
             return;
 
         case ETHERNET_TYPE_8021Q:
+        case ETHERNET_TYPE_8021AD:
+        case ETHERNET_TYPE_QINQ_NS1:
+        case ETHERNET_TYPE_QINQ_NS2:
             DecodeVlan(pkt + linklen,
                     cap_len - linklen, p);
             return;
@@ -1444,6 +1447,9 @@ void DecodeVlan(const uint8_t * pkt, const uint32_t len, Packet * p)
                     return;
 
                 case ETHERNET_TYPE_8021Q:
+                case ETHERNET_TYPE_8021AD:
+                case ETHERNET_TYPE_QINQ_NS1:
+                case ETHERNET_TYPE_QINQ_NS2:
                     pc.nested_vlan++;
                     DecodeVlan(p->pkt + LEN_VLAN_LLC_OTHER,
                                len - LEN_VLAN_LLC_OTHER, p);
@@ -1510,6 +1516,9 @@ void DecodeVlan(const uint8_t * pkt, const uint32_t len, Packet * p)
                 return;
 
             case ETHERNET_TYPE_8021Q:
+            case ETHERNET_TYPE_8021AD:
+            case ETHERNET_TYPE_QINQ_NS1:
+            case ETHERNET_TYPE_QINQ_NS2:
                 pc.nested_vlan++;
                 DecodeVlan(pkt + sizeof(VlanTagHdr),
                            len - sizeof(VlanTagHdr), p);

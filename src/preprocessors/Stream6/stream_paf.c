@@ -539,16 +539,18 @@ uint32_t s5_paf_check (
     // avoid scanning the same data twice. The first scan would analyze the
     // entire segment and the second scan would analyze this segments
     // unflushed data.
-    if ( total >= MAXIMUM_PAF_MAX && total > pc->mfp + fuzz )
+    if ( ps->mode == FLUSH_MODE_NORMAL &&
+            total >= MAXIMUM_PAF_MAX && total > pc->mfp + fuzz )
     {
         s5_len = MAXIMUM_PAF_MAX + fuzz;
-        len = len + s5_len - total;
+        len = (len > ( total - s5_len )) ? len + s5_len - total : 0;
+        if( !len )
+            return 0;
     }
     else
     {
         s5_len = total;
     }
-
 
     do {
         FlushType ft = FT_NOP;
