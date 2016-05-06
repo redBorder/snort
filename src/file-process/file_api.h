@@ -132,6 +132,17 @@ struct _SnortConfig;
 struct _FileContext;
 struct _FileCache;
 
+typedef struct _FileSession
+{
+    struct _FileContext *current_context;
+    struct _FileContext *main_context;
+    struct _FileContext *pending_context;
+    uint32_t  max_file_id;
+    struct _FileCache *file_cache;
+    uint64_t file_id;
+
+} FileSession;
+
 #define FILE_API_VERSION   4
 
 #define DEFAULT_FILE_ID    0

@@ -794,6 +794,31 @@ static int sip_parse_to(SIPMsg *msg, const char *start, const char *end)
 	return SIP_PARSE_SUCCESS;
 }
 
+static inline bool is_valid_ip(const char *start, const char *end)
+{
+    sfaddr_t ip;
+    char ipStr[INET6_ADDRSTRLEN];
+    int length = end - start;
+
+    /*Get the IP address*/
+    if(length > INET6_ADDRSTRLEN - 1)
+    {
+        length = INET6_ADDRSTRLEN - 1;
+    }
+    memcpy(ipStr, start, length);
+    ipStr[length] = '\0';
+
+    DEBUG_WRAP(DebugMessage(DEBUG_SIP, "IP data: %s\n", ipStr););
+
+    if( (sfaddr_pton(ipStr, &ip)) != SFIP_SUCCESS)
+    {
+       DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Not valid IP\n"););
+       return false;
+    }
+
+    return true;
+}
+
 /********************************************************************
  * Function: sip_parse_call_id()
  *
@@ -811,11 +836,19 @@ static int sip_parse_to(SIPMsg *msg, const char *start, const char *end)
 
 static int sip_parse_call_id(SIPMsg *msg, const char *start, const char *end)
 {
-	DEBUG_WRAP(int length = end -start;)
+    char* at;
+	int length = end -start;
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Call-Id value: %.*s\n", length, start););
 	msg->call_id = (char *) start;
+	/*ignore ip address in call id by adjusting length*/
+	at = memchr(start, '@', length);
+	if(at && (at < end) && is_valid_ip(at+1, end))
+	{
+	    length = at - start;
+	}
+
 	msg->callIdLen = end - start;
-	msg->dlgID.callIdHash =  strToHash(msg->call_id, msg->callIdLen);
+	msg->dlgID.callIdHash =  strToHash(msg->call_id, length);
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Call-Id length: %d, Hash: %u\n",
         msg->callIdLen, msg->dlgID.callIdHash););
 
@@ -1106,8 +1139,7 @@ static int sip_parse_sdp_c(SIPMsg *msg, const char *start, const char *end)
 {
 	int length;
 	sfaddr_t *ip;
-	char ipStr[INET6_ADDRSTRLEN + 5];     /* Enough for IPv4 plus netmask or
-		                                               full IPv6 plus prefix */
+	char ipStr[INET6_ADDRSTRLEN];
 	char *spaceIndex = NULL;
 
 	if (NULL == msg->mediaSession)
@@ -1124,12 +1156,11 @@ static int sip_parse_sdp_c(SIPMsg *msg, const char *start, const char *end)
 		return SIP_PARSE_ERROR;
 	length = end - spaceIndex;
 
-	memset(ipStr, 0, sizeof(ipStr));
-    if(length > INET6_ADDRSTRLEN)
+	if(length > INET6_ADDRSTRLEN - 1)
     {
-    	length = INET6_ADDRSTRLEN;
+    	length = INET6_ADDRSTRLEN - 1;
     }
-	strncpy(ipStr, spaceIndex, length);
+	memcpy(ipStr, spaceIndex, length);
 	ipStr[length] = '\0';
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "IP data: %s\n", ipStr););
 

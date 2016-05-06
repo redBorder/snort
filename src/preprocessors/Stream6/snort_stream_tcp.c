@@ -446,6 +446,7 @@ typedef struct _TcpSession
     int32_t ingress_group;  /* Index of the inbound group. */
     int32_t egress_group;   /* Index of the outbound group. */
     uint32_t daq_flags;     /* Flags for the packet (DAQ_PKT_FLAG_*) */
+    void *priv_ptr;         /* private data pointer. used in pinhole */
     uint16_t address_space_id;
 #ifdef HAVE_DAQ_FLOW_ID
     uint32_t daq_flow_id;
@@ -3404,6 +3405,7 @@ static inline void GetPacketHeaderFoo (
     pkth->flow_id = tcpssn->daq_flow_id;
 #endif
     pkth->flags = tcpssn->daq_flags;
+    pkth->priv_ptr = tcpssn->priv_ptr;
     pkth->address_space_id = tcpssn->address_space_id;
 
 #ifdef HAVE_DAQ_REAL_ADDRESSES
@@ -7401,7 +7403,8 @@ static int ProcessTcpData(Packet *p, StreamTracker *listener, TcpSession *tcpssn
             if(SEQ_GT(tdb->end_seq, listener->s_mgr.transition_seq - 1))
             {
                 uint32_t delta = tdb->end_seq - (listener->s_mgr.transition_seq - 1);
-                NormalTrimPayload(p, delta, tdb);
+                if (p->dsize > delta)
+                    NormalTrimPayload(p, delta, tdb);
             }
         }
 
@@ -7467,7 +7470,8 @@ static int ProcessTcpData(Packet *p, StreamTracker *listener, TcpSession *tcpssn
             if(SEQ_GT(tdb->end_seq, listener->s_mgr.transition_seq - 1))
             {
                 uint32_t delta = tdb->end_seq - (listener->s_mgr.transition_seq - 1);
-                NormalTrimPayload(p, delta, tdb);
+                if (p->dsize > delta)
+                    NormalTrimPayload(p, delta, tdb);
             }
 
         }
@@ -9113,6 +9117,9 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
         }
     }
 
+#ifdef HAVE_DAQ_ADDRESS_SPACE_ID
+            tcpssn->priv_ptr = p->pkth->priv_ptr;
+#endif
     /*
      * handle data in the segment
      */
@@ -9297,6 +9304,9 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
                         LogTcpEvents(talker->tcp_policy, eventcode);
                         NormalDropPacket(p);
                         PREPROC_PROFILE_END(s5TcpStatePerfStats);
+#ifdef HAVE_DAQ_ADDRESS_SPACE_ID
+                        tcpssn->priv_ptr = NULL;
+#endif
                         return retcode | ACTION_BAD_PKT;
                     }
                 }
@@ -9350,6 +9360,9 @@ static int ProcessTcp(SessionControlBlock *scb, Packet *p, TcpDataBlock *tdb,
                         LogTcpEvents(talker->tcp_policy, eventcode);
                         NormalDropPacket(p);
                         PREPROC_PROFILE_END(s5TcpStatePerfStats);
+#ifdef HAVE_DAQ_ADDRESS_SPACE_ID
+                        tcpssn->priv_ptr = NULL;
+#endif
                         return retcode | ACTION_BAD_PKT;
                     }
                 }
@@ -9402,6 +9415,9 @@ dupfin:
         STREAM_DEBUG_WRAP(DebugMessage(DEBUG_STREAM_STATE,
                     "Session terminating, flushing session buffers\n"););
 
+#ifdef HAVE_DAQ_ADDRESS_SPACE_ID
+        tcpssn->priv_ptr = NULL;
+#endif
         if(p->packet_flags & PKT_FROM_SERVER)
         {
             STREAM_DEBUG_WRAP(DebugMessage(DEBUG_STREAM_STATE,
@@ -9535,6 +9551,9 @@ dupfin:
 
     LogTcpEvents(listener->tcp_policy, eventcode);
     PREPROC_PROFILE_END(s5TcpStatePerfStats);
+#ifdef HAVE_DAQ_ADDRESS_SPACE_ID
+    tcpssn->priv_ptr = NULL;
+#endif
     return retcode;
 }
 
@@ -9745,6 +9764,40 @@ static inline int CheckFlushPolicyOnData( StreamTcpConfig *config, TcpSession *t
                 {
                     if( flags & PKT_IGNORE )
                     {
+                        StreamSegment *curseg = listener->seglist_next;
+                        uint32_t size_to_flush = 0;
+                        //set these ignored segments to FLUSHED
+                        //so that these gets purged on ack
+                        while ( curseg )
+                        {
+                            if( !curseg->buffered )
+                            {
+                                size_to_flush += curseg->size;
+                                if( size_to_flush == flush_amt )
+                                {
+                                    curseg->buffered = SL_BUF_FLUSHED;
+                                    break;
+                                }
+                                else if( size_to_flush > flush_amt )
+                                {
+                                    unsigned int  bytes_to_copy = curseg->size - (  size_to_flush - flush_amt);
+                                    StreamSegment *newseg = NULL;
+
+                                    if ( DupStreamNode(NULL, listener, curseg, &newseg) == STREAM_INSERT_OK )
+                                    {
+                                        curseg->size = bytes_to_copy;
+                                        newseg->seq += bytes_to_copy;
+                                        newseg->size -= bytes_to_copy;
+                                        newseg->payload += bytes_to_copy + (curseg->payload - curseg->data);
+                                        curseg->buffered = SL_BUF_FLUSHED;
+                                    }
+                                    break;
+                                }
+                                curseg->buffered = SL_BUF_FLUSHED;
+                            }
+                            curseg = curseg->next;
+                        }
+
                         this_flush = flush_amt;
                         flags &= ~PKT_IGNORE;
                     }
@@ -10303,12 +10356,13 @@ int GetTcpStreamSegments(Packet *p, SessionControlBlock *ssn, StreamSegmentItera
         if (SEQ_GEQ(ss->seq,start_seq) && SEQ_LT(ss->seq, end_seq))
         {
             DAQ_PktHdr_t pkth;
+            uint32_t ajust_seq = ss->seq - (uint32_t)(ss->payload - ss->data);
             pkth.ts.tv_sec = ss->tv.tv_sec;
             pkth.ts.tv_usec = ss->tv.tv_usec;
             pkth.caplen = ss->caplen;
             pkth.pktlen = ss->pktlen;
 
-            if (callback(&pkth, ss->pkt, ss->data, ss->seq, userdata) != 0)
+            if (callback(&pkth, ss->pkt, ss->data, ajust_seq, userdata) != 0)
                 return -1;
 
             packets++;

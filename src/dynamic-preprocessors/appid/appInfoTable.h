@@ -42,7 +42,8 @@ typedef enum
 
     APPINFO_FLAG_IGNORE =  (1<<8),
     APPINFO_FLAG_SSL_SQUELCH =  (1<<9),
-    APPINFO_FLAG_PERSISTENT =  (1<<10)
+    APPINFO_FLAG_PERSISTENT =  (1<<10),
+    APPINFO_FLAG_TP_CLIENT = (1<<11)
 } tAppInfoFlags;
 
 struct _AppInfoTableEntry

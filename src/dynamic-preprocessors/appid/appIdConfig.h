@@ -118,7 +118,8 @@ struct AppidStaticConfig
     unsigned chp_body_collection_disabled;
     unsigned chp_fflow_disabled;
     unsigned chp_body_collection_max;
-
+    unsigned max_tp_flow_depth;
+    unsigned tp_allow_probes;
 };
 typedef struct AppidStaticConfig tAppidStaticConfig;
 

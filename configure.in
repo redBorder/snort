@@ -5,7 +5,7 @@ AC_PREREQ(2.50)
 AM_CONFIG_HEADER(config.h)
 # When changing the snort version, please also update the VERSION
 # definition in "src/win32/WIN32-Includes/config.h"
-AM_INIT_AUTOMAKE(snort,2.9.8.0)
+AM_INIT_AUTOMAKE(snort,2.9.8.2)
 
 NO_OPTIMIZE="no"
 

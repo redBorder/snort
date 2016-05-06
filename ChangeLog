@@ -1,3 +1,91 @@
+2016-03-18 Gaurav Nagare <gnagare@cisco.com>
+Snort 2.9.8.2
+
+	* src/build.h: updating build number to 335
+
+	* src/dynamic-plugins/: sf_engine/examples/detection_lib_meta.h,
+	  sf_dynamic_meta.h:
+          Updated detection API version to 2.6 to use the latest snort SO rules.
+	
+        * src/: dynamic-preprocessors/sdf/spp_sdf.c,
+	  preprocessors/Stream6/snort_stream_tcp.c, obfuscation.c:
+          Fixed several issues with SDF and obfuscation.
+
+	* src/: profiler.h, preprocessors/perf_indicators.c,
+	  preprocessors/perf_indicators.h: 
+          Resolved snort build issue with "--disable-perfprofiling" configure 
+          option.
+
+	* src/: decode.c, decode.h: 
+          Added Double VLAN tagging support.
+
+	* src/file-process/file_mime_process.c:
+          Enhanced mime parsing by adding support for detecting files
+          after unknown headers and no headers.
+
+	* src/preprocessors/HttpInspect/server/hi_server.c:
+          Fixed memory leak.
+	  
+        * src/preprocessors/HttpInspect/utils/hi_paf.c:
+          Fixed issue with gzip decompression. If the server response specifies
+          Content-Encoding as GZIP, but no Content-Length field for HTTP version 1.0.
+
+	* doc/snort_manual.pdf, src/preprocessors/snort_httpinspect.c,
+	  src/preprocessors/spp_httpinspect.c:
+          Fixed Snort memory leak in parsing HTTP xff options.
+
+	* src/preprocessors/spp_httpinspect.c: 
+          Fixed Coverity issues.
+
+	* src/preprocessors/: snort_httpinspect.c, snort_httpinspect.h,
+	  HttpInspect/include/hi_paf.h, HttpInspect/server/hi_server.c,
+	  HttpInspect/utils/hi_paf.c: 
+          Improved End of Header(EOH) identification for response header spanning multiple
+	  reassembled packets.
+
+	* src/preprocessors/: HttpInspect/utils/hi_paf.c,
+	  Stream6/snort_stream_tcp.c, Stream6/stream_paf.c:
+	  Improved packet reassembly for HTTP, added code to purge segment correctly when 
+	  PAF decides to ignore packet upon reaching paf_max.
+
+        * src/fpdetect.c:
+          Fixed to use outer header callback functions when checking IP rule against outer IPs 
+	  and inner header callback when checking against inner IPs.
+
+        * src/preprocessors/spp_httpinspect.c:
+          Fixed an issue where http_inspect current and default config had 
+          different file depth.
+
+        * src/dynamic-preprocessors/appid/detector_plugins/detector_dns.c:
+          Handled malformed DNS host in AppId.
+
+        * src/file-process/: file_api.h, file_segment_process.c, file_service.c:
+          Prevented access to file contexts which are pruned when memcap is 
+          reached.
+
+        * src/dynamic-preprocessors/appid/: app_forecast.c, app_forecast.h,
+          flow.h, fw_appid.c, spp_appid.c, thirdparty_appid_types.h:
+          Performance improvements to AppID.
+
+        * src/dynamic-preprocessors/appid/luaDetectorApi.c:
+          Created a future-flow API for lua detector.
+          Exposed DNS API to lua detector.
+
+        * src/dynamic-preprocessors/ftptelnet/pp_ftp.c:
+          Fixed an issue where unexpected SSL negotiation starts for FTP
+          with explicit SSL.
+
+        * src/preprocessors/HttpInspect/utils/hi_paf.c:
+          Updated HTTP PAF to accept all tokens between method and version
+          string in request URI.
+
+	* src/preprocessors/HttpInspect/files/file_decomp_SWF.c:
+	  Fixed Flash LZMA decompression issue.
+
+	* src/preprocessors/spp_httpinspect.c:
+	  Fixed file_depth intialization issue during Snort reload. 
+
+
 2015-11-18 Carter Waxman <cwaxman@cisco.com>
 Snort 2.9.8.0
 
