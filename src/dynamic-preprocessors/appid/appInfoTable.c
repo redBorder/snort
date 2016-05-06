@@ -40,6 +40,8 @@
 
 #define MAX_TABLE_LINE_LEN      1024
 #define CONF_SEPARATORS         "\t\n\r"
+#define MIN_MAX_TP_FLOW_DEPTH   1
+#define MAX_MAX_TP_FLOW_DEPTH   1000000
 
 struct DynamicArray
 { 
@@ -435,6 +437,7 @@ void appInfoTableInit(const char *path, tAppIdConfig* pConfig)
     appidStaticConfig.rtmp_max_packets = 15;
     appidStaticConfig.mdns_user_reporting = 1;
     appidStaticConfig.dns_host_reporting = 1;
+    appidStaticConfig.max_tp_flow_depth = 5;
 
     snprintf(filepath, sizeof(filepath), "%s/odp/%s", path, APP_CONFIG_FILE);
     appIdConfLoad (filepath);
@@ -577,6 +580,7 @@ static void appIdConfLoad (const char *path)
     char *conf_val;
     unsigned line = 0;
     tAppIdConfig *pConfig = appIdNewConfigGet();
+    int max_tp_flow_depth;
 
     config_file = fopen(path, "r");
     if (config_file == NULL)
@@ -618,7 +622,33 @@ static void appIdConfLoad (const char *path)
         /* APPID configurations are for anything else - currently we only have ssl_reinspect */ 
         if (!(strcasecmp(conf_type, "appid")))
         {
-            if (!(strcasecmp(conf_key, "ssl_reinspect")))
+            if (!(strcasecmp(conf_key, "max_tp_flow_depth")))
+            {
+                max_tp_flow_depth = atoi(conf_val);
+                if (max_tp_flow_depth < MIN_MAX_TP_FLOW_DEPTH || max_tp_flow_depth > MAX_MAX_TP_FLOW_DEPTH)
+                {
+                    DEBUG_WRAP(DebugMessage(DEBUG_APPID, "AppId: invalid max_tp_flow_depth %d, must be between %d and %d\n.", max_tp_flow_depth, MIN_MAX_TP_FLOW_DEPTH, MAX_MAX_TP_FLOW_DEPTH););
+                }                    
+                else
+                {
+                    DEBUG_WRAP(DebugMessage(DEBUG_APPID, "AppId: setting max thirdparty inspection flow depth to %d packets.\n", max_tp_flow_depth););
+                    appidStaticConfig.max_tp_flow_depth = max_tp_flow_depth;
+                }
+            }
+            else if (!(strcasecmp(conf_key, "tp_allow_probes")))
+            {
+                if (!(strcasecmp(conf_val, "enabled")))
+                {
+                    DEBUG_WRAP(DebugMessage(DEBUG_APPID, "AppId: TCP probes will be analyzed by NAVL.\n"););
+                    appidStaticConfig.tp_allow_probes = 1;
+                }
+            }
+            else if (!(strcasecmp(conf_key, "tp_client_app")))
+            {
+                DEBUG_WRAP(DebugMessage(DEBUG_APPID, "AppId: if thirdparty reports app %d, we will use it as a client.\n", atoi(conf_val)););
+                appInfoEntryFlagSet(atoi(conf_val), APPINFO_FLAG_TP_CLIENT, pConfig);
+            }
+            else if (!(strcasecmp(conf_key, "ssl_reinspect")))
             {
                 DEBUG_WRAP(DebugMessage(DEBUG_APPID, "AppId: adding app %d to list of SSL apps that get more granular inspection.\n", atoi(conf_val)););
                 appInfoEntryFlagSet(atoi(conf_val), APPINFO_FLAG_SSL_INSPECT, pConfig);

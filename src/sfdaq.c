@@ -63,8 +63,44 @@ static int loaded = 0;
 static int s_error = DAQ_SUCCESS;
 static DAQ_Stats_t daq_stats, tot_stats;
 
+char file_io_buffer1[UINT16_MAX];
+
 static void DAQ_Accumulate(void);
 
+typedef struct _MsgHeader_test
+{
+           uint8_t event;
+           uint8_t version;
+           uint16_t total_length;
+           uint8_t key_type;
+           uint8_t key_size;
+} MsgHeader_test;
+
+static inline ssize_t Read_test(int fd, void *buf, size_t count)
+{
+       ssize_t n;
+       errno = 0;
+
+       while ((n = read(fd, buf, count)) <= (ssize_t) count)
+       {
+               if (n == (ssize_t) count)
+                       return 0;
+
+               if (n > 0)
+               {
+                       buf = (uint8_t *) buf + n;
+                       count -= n;
+               }
+               else if (n == 0)
+                       break;
+               else if (errno != EINTR)
+               {
+                       ErrorMessage("Error reading from Stream HA message file: %s (%d)\n", strerror(errno), errno);
+                       break;
+               }
+       }
+       return -1;
+}
 //--------------------------------------------------------------------
 
 void DAQ_Load (const SnortConfig* sc)
@@ -700,8 +736,11 @@ int DAQ_ModifyFlowHAState(const DAQ_PktHdr_t *hdr, const void *data, uint32_t le
     mod.type = DAQ_MODFLOW_TYPE_HA_STATE;
     mod.length = length;
     mod.value = data;
-
-    return daq_modify_flow(daq_mod, daq_hand, hdr, &mod);
+    #ifdef REG_TEST
+	return 0;
+    #else
+        return daq_modify_flow(daq_mod, daq_hand, hdr, &mod);
+    #endif
 }
 
 int DAQ_ModifyFlow(const DAQ_PktHdr_t *hdr, const DAQ_ModFlow_t* mod)
@@ -723,10 +762,58 @@ int DAQ_ModifyFlowOpaque(const DAQ_PktHdr_t *hdr, uint32_t opaque)
 #endif
 
 #ifdef HAVE_DAQ_QUERYFLOW
+#ifndef REG_TEST
 int DAQ_QueryFlow(const DAQ_PktHdr_t *hdr, DAQ_QueryFlow_t* query)
 {
     return daq_query_flow(daq_mod, daq_hand, hdr, query);
 }
+#else
+int DAQ_QueryFlow(DAQ_PktHdr_t *hdr, DAQ_QueryFlow_t* query)
+{
+    int rval,fd;
+    MsgHeader_test *msg_header;
+    uint8_t *msg;
+
+    fd = * ((int * )hdr->priv_ptr);
+    if (fd < 0)
+    {
+       return -1;
+    }
+
+    msg = file_io_buffer1;
+    while ((rval = Read_test(fd, msg, sizeof(*msg_header))) == 0)
+    {
+        msg_header = (MsgHeader_test *) msg;
+        if (msg_header->total_length < sizeof(*msg_header))
+        {
+            ErrorMessage("Stream HA Message total length (%hu) is way too short!\n", msg_header->total_length);
+            close(fd);
+            return -1;
+        }
+        else if (msg_header->total_length > (UINT16_MAX - sizeof(*msg_header)))
+        {
+            ErrorMessage("Stream HA Message total length (%hu) is too long!\n", msg_header->total_length);
+            close(fd);
+            return -1;
+        }
+        else if (msg_header->total_length > sizeof(*msg_header) && (query->type == DAQ_QUERYFLOW_TYPE_HA_STATE))
+        {
+           if ((rval = Read_test(fd, msg + sizeof(*msg_header), msg_header->total_length - sizeof(*msg_header))) != 0)
+            {
+                ErrorMessage("Error reading the remaining %zu bytes of an HA message from file: %s (%d)\n",
+                    msg_header->total_length - sizeof(*msg_header), strerror(errno), errno);
+                close(fd);
+                return rval;
+            }
+            DAQ_HA_State_Data_t *haState;
+   	    haState = (DAQ_HA_State_Data_t *)query->value;
+            haState->length = msg_header->total_length;
+            haState->data = msg_header;
+            return 0;
+        }
+    }
+}
+#endif
 #endif
 #ifdef HAVE_DAQ_DP_ADD_DC
 /*

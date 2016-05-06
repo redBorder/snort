@@ -270,6 +270,8 @@ int Encode_Format (EncodeFlags f, const Packet* p, Packet* c, PseudoPacketType t
     pkth->flags = phdr->flags & (~DAQ_PKT_FLAG_HW_TCP_CS_GOOD);
     pkth->address_space_id = phdr->address_space_id;
     pkth->opaque = opaque;
+    if( type == PSEUDO_PKT_TCP || type == PSEUDO_PKT_IP )
+        pkth->priv_ptr = phdr->priv_ptr;
 #ifdef HAVE_DAQ_FLOW_ID
     pkth->flow_id = phdr->flow_id;
 #endif
