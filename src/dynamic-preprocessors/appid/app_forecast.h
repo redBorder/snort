@@ -57,7 +57,7 @@ typedef struct _AF_ACT_VALUE
     time_t   last;
 } AFActVal;
 
-void checkSessionForAFIndicator(tAppIdData *, SFSnortPacket *, int, const tAppIdConfig *);
-void checkSessionForAFForecast(tAppIdData *, SFSnortPacket *, int, const tAppIdConfig *);
+void checkSessionForAFIndicator(SFSnortPacket *, int, const tAppIdConfig *, tAppId);
+tAppId checkSessionForAFForecast(tAppIdData *, SFSnortPacket *, int, const tAppIdConfig *, tAppId);
 
 #endif

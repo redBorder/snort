@@ -33,6 +33,7 @@
 #include "sf_snort_packet.h"
 #include "sf_dynamic_preprocessor.h"
 #include "common_util.h"
+#include "sf_preproc_info.h"
 
 #include "spp_appid.h"
 #include "fw_appid.h"
@@ -356,7 +357,7 @@ static int ThirdPartyReload(uint16_t type, void *new_context, void **old_context
         thirdparty_appid_module->print_stats();
     }
     ThirdPartyAppIDFini();
-    ThirdPartyAppIDInit(appidStaticConfig.appid_thirdparty_dir);
+    ThirdPartyAppIDInit(&appidStaticConfig);
     return 0;
 }
 
@@ -374,7 +375,6 @@ static void AppIdInit(struct _SnortConfig *sc, char *args)
         _dpd.addPreprocProfileFunc("fwLibAppTP", &tpLibPerfStats, 2, &tpPerfStats, NULL);
         _dpd.addPreprocProfileFunc("fwHTTP", &httpPerfStats, 2, &tpPerfStats, NULL);
         _dpd.addPreprocProfileFunc("fwClientPat", &clientMatchPerfStats, 1, &appMatchPerfStats, NULL);
-        _dpd.addPreprocProfileFunc("fwHTTP", &httpPerfStats, 2, &clientMatchPerfStats, NULL);
         _dpd.addPreprocProfileFunc("fwServicePat", &serviceMatchPerfStats, 1, &appMatchPerfStats, NULL);
         _dpd.addPreprocProfileFunc("luaDetectors", &luaDetectorsPerfStats, 1, &appMatchPerfStats, NULL);
         _dpd.addPreprocProfileFunc("cisco", &luaCiscoPerfStats, 2, &luaDetectorsPerfStats, NULL);
@@ -384,7 +384,7 @@ static void AppIdInit(struct _SnortConfig *sc, char *args)
         appIdConfigParse(args);
 
         AppIdCommonInit(&appidStaticConfig);
-        ThirdPartyAppIDInit(appidStaticConfig.appid_thirdparty_dir);
+        ThirdPartyAppIDInit(&appidStaticConfig);
         if (appidStaticConfig.app_id_dump_ports)
         {
             dumpPorts(stdout, pAppidActiveConfig);

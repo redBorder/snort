@@ -72,6 +72,9 @@ struct _SnortConfig;
 #define ETHERNET_TYPE_PPPoE_DISC      0x8863 /* discovery stage */
 #define ETHERNET_TYPE_PPPoE_SESS      0x8864 /* session stage */
 #define ETHERNET_TYPE_8021Q           0x8100
+#define ETHERNET_TYPE_8021AD          0x88a8
+#define ETHERNET_TYPE_QINQ_NS1        0x9100 /* Q-in-Q non standard */
+#define ETHERNET_TYPE_QINQ_NS2        0x9200 /* Q-in-Q non standard */
 #define ETHERNET_TYPE_LOOP            0x9000
 #define ETHERNET_TYPE_MPLS_UNICAST    0x8847
 #define ETHERNET_TYPE_MPLS_MULTICAST  0x8848

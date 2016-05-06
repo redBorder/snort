@@ -83,8 +83,9 @@ static int LoadCallback(const char * const path, int indent)
     return 0;
 }
 
-void ThirdPartyAppIDInit(const char* thirdparty_appid_dir)
+void ThirdPartyAppIDInit(struct AppidStaticConfig *appidStaticConfig)
 {
+    const char* thirdparty_appid_dir = appidStaticConfig->appid_thirdparty_dir;
     int ret;
     const char* dir = NULL;
     struct ThirdPartyConfig thirdpartyConfig;
@@ -112,9 +113,10 @@ void ThirdPartyAppIDInit(const char* thirdparty_appid_dir)
     }
 
     memset(&thirdpartyConfig, 0, sizeof(thirdpartyConfig));
-    thirdpartyConfig.chp_body_collection_max = 10;
-    thirdpartyConfig.ftp_userid_disabled = 1;
-    thirdpartyConfig.chp_body_collection_disabled = 1;
+    thirdpartyConfig.chp_body_collection_max = appidStaticConfig->chp_body_collection_max;
+    thirdpartyConfig.ftp_userid_disabled = appidStaticConfig->ftp_userid_disabled;
+    thirdpartyConfig.chp_body_collection_disabled = appidStaticConfig->chp_body_collection_disabled;
+    thirdpartyConfig.tp_allow_probes = appidStaticConfig->tp_allow_probes;
     thirdpartyConfig.appid_tp_dir[0] = '\0';    // use default path
 
     thirdpartyUtils.logMsg           = _dpd.logMsg;

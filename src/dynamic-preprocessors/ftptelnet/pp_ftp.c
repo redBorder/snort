@@ -1064,6 +1064,18 @@ int initialize_ftp(FTP_SESSION *Session, SFSnortPacket *p, int iMode)
     return FTPP_SUCCESS;
 }
 
+static inline void prepareForEncryption(FTP_SESSION *Session, FTPTELNET_GLOBAL_CONF *global_conf, int new_encr_state)
+{
+    Session->encr_state = new_encr_state;
+    Session->encr_state_chello = true;
+    if (global_conf->encrypted.alert)
+    {
+        /* Alert on encrypted channel */
+        ftp_eo_event_log(Session, FTP_EO_ENCRYPTED,
+            NULL, NULL);
+    }
+}
+
 /*
  * Function: do_stateful_checks(FTP_SESSION *Session, Packet *p,
  *                            FTP_CLIENT_REQ *req, int rsp_code)
@@ -1320,59 +1332,34 @@ static int do_stateful_checks(FTP_SESSION *Session, SFSnortPacket *p,
         }
     } /* if (Session->server_conf->data_chan) */
 
-    if (global_conf->encrypted.on)
+    if (global_conf->encrypted.on && rsp_code == 234)
     {
+        /* any of these states is now anticipatory of the client hello */
         switch(Session->encr_state)
         {
         case AUTH_TLS_CMD_ISSUED:
-            if (rsp_code == 234)
-            {
-                /* Could check that response msg includes "TLS" */
-                Session->encr_state = AUTH_TLS_ENCRYPTED;
-                Session->encr_state_chello = true;
-                if (global_conf->encrypted.alert)
-                {
-                    /* Alert on encrypted channel */
-                    ftp_eo_event_log(Session, FTP_EO_ENCRYPTED,
-                        NULL, NULL);
-                }
-                DEBUG_WRAP(DebugMessage(DEBUG_FTPTELNET,
-                    "FTP stream is now TLS encrypted\n"););
-            }
+            prepareForEncryption(Session, global_conf, AUTH_TLS_ENCRYPTED);
+            DEBUG_WRAP(DebugMessage(DEBUG_FTPTELNET,
+                "FTP stream is now TLS encrypted\n"););
             break;
         case AUTH_SSL_CMD_ISSUED:
-            if (rsp_code == 234)
-            {
-                /* Could check that response msg includes "SSL" */
-                Session->encr_state = AUTH_SSL_ENCRYPTED;
-                Session->encr_state_chello = true;
-                if (global_conf->encrypted.alert)
-                {
-                    /* Alert on encrypted channel */
-                    ftp_eo_event_log(Session, FTP_EO_ENCRYPTED,
-                        NULL, NULL);
-                }
-                DEBUG_WRAP(DebugMessage(DEBUG_FTPTELNET,
-                    "FTP stream is now SSL encrypted\n"););
-            }
+            prepareForEncryption(Session, global_conf, AUTH_SSL_ENCRYPTED);
+            DEBUG_WRAP(DebugMessage(DEBUG_FTPTELNET,
+                "FTP stream is now SSL encrypted\n"););
             break;
         case AUTH_UNKNOWN_CMD_ISSUED:
-            if (rsp_code == 234)
-            {
-                Session->encr_state = AUTH_UNKNOWN_ENCRYPTED;
-                Session->encr_state_chello = true;
-                if (global_conf->encrypted.alert)
-                {
-                    /* Alert on encrypted channel */
-                    ftp_eo_event_log(Session, FTP_EO_ENCRYPTED,
-                        NULL, NULL);
-                }
-                DEBUG_WRAP(DebugMessage(DEBUG_FTPTELNET,
-                    "FTP stream is now encrypted\n"););
-            }
+        default: // encr_state got confused, but we do have a 234
+            prepareForEncryption(Session, global_conf, AUTH_UNKNOWN_ENCRYPTED);
+            DEBUG_WRAP(DebugMessage(DEBUG_FTPTELNET,
+                "FTP stream is now encrypted\n"););
+            break;
+        case AUTH_TLS_ENCRYPTED:
+        case AUTH_SSL_ENCRYPTED:
+        case AUTH_UNKNOWN_ENCRYPTED:
+            // already been through here
             break;
         }
-    } /* if (global_conf->encrypted.on) */
+    } /* if (global_conf->encrypted.on && rsp_code == 234) */
 
     return iRet;
 }

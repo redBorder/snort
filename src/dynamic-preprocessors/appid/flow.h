@@ -56,6 +56,7 @@ typedef enum {
     APPID_SESSION_CHP_INSPECTING        = (1 << 3),
     APPID_SESSION_STICKY_SERVICE        = (1 << 4),
     APPID_SESSION_APP_REINSPECT_SSL     = (1 << 5),
+    APPID_SESSION_APP_NO_TPI            = (1 << 6),
 } tFlowFlags;
 
 
@@ -118,6 +119,9 @@ typedef struct _tTmpAppIdData
 #define SCAN_HTTP_HOST_URL_FLAG     (1<<2)
 #define SCAN_SSL_HOST_FLAG          (1<<4)
 #define SCAN_HOST_PORT_FLAG         (1<<5)
+#define SCAN_HTTP_VENDOR_FLAG       (1<<6)
+#define SCAN_HTTP_XWORKINGWITH_FLAG (1<<7)
+#define SCAN_HTTP_CONTENT_TYPE_FLAG (1<<8)
 
 typedef struct _fflow_info
 {
@@ -144,7 +148,8 @@ typedef struct _httpSession
     char *location;
     char *body;
     char *req_body;
-
+    char *server;
+    char *x_working_with;
     char *new_url;
     char *new_cookie;
 
@@ -281,6 +286,7 @@ typedef struct AppIdData
     void *tpsession;
     uint16_t init_tpPackets;
     uint16_t resp_tpPackets;
+    uint8_t tpReinspectByInitiator;
     char *payloadVersion;
 
     uint16_t session_packet_count;
@@ -320,6 +326,8 @@ typedef struct AppIdData
     char *dns_resp_page ;
     */
     void * firewallEarlyData;
+    tAppId pastIndicator;
+    tAppId pastForecast;
 } tAppIdData;
 /**
  * Mark a flow with a particular flag

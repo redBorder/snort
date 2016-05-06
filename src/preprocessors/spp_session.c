@@ -1303,8 +1303,12 @@ static inline SessionControlBlock *findPacketSessionControlBlock(SessionCache *s
     scb = getSessionControlBlock(sessionCache, p, key);
 #if defined(ENABLE_HA) && defined(HAVE_DAQ_QUERYFLOW)
     if (!scb && session_configuration->enable_ha && session_configuration->ha_config->use_daq &&
-            (p->pkth->flags & DAQ_PKT_FLAG_HA_STATE_AVAIL) && SessionHAQueryDAQState(p->pkth) == 0)
+#ifndef REG_TEST
+            (p->pkth->flags & DAQ_PKT_FLAG_HA_STATE_AVAIL) &&
+#endif
+             SessionHAQueryDAQState(p->pkth) == 0)
     {
+
         scb = getSessionControlBlock(sessionCache, p, key);
     }
 #endif

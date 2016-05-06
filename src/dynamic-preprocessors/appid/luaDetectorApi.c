@@ -3461,6 +3461,125 @@ static int Detector_addSipServer(lua_State *L)
     return 0;
 }
 
+static inline int ConvertStringToAddress(const char * string, sfaddr_t * address)
+{
+    int af;
+    struct in6_addr buf;
+
+    if (strchr(string, ':'))
+        af = AF_INET6;
+    else if (strchr(string, '.'))
+        af = AF_INET;
+    else
+        return 0;
+
+    if (inet_pton(af, string, &buf))
+    {
+        if (sfip_set_raw(address, &buf, af) != SFIP_SUCCESS)
+            return 0;
+    }
+    else
+        return 0;
+
+    return 1;    // success
+}
+
+/**Creates a future flow based on the current flow.  When the future flow is
+ * seen, the app ID will simply be declared with the info given here.
+ *
+ * @param Lua_State* - Lua state variable.
+ * @param detector/stack - detector object.
+ * @param client_addr/stack - client address of the future flow
+ * @param client_port/stack - client port of the the future flow (can use 0 for wildcard here)
+ * @param server_addr/stack - server address of the future flow
+ * @param server_port/stack - server port of the future flow
+ * @param proto/stack - protocol type (see define IPPROTO_xxxx in /usr/include/netinet/in.h)
+ * @param service_app_id/stack - service app ID to declare for future flow (can be 0 for none)
+ * @param client_app_id/stack - client app ID to declare for future flow (can be 0 for none)
+ * @param payload_app_id/stack - payload app ID to declare for future flow (can be 0 for none)
+ * @param app_id_to_snort/stack - AppID's app ID entry to convert to Snort app ID (see note below)
+ * @return int - number of elements on stack, which is 1 if successful, 0 otherwise.
+ *
+ * Notes: For app_id_to_snort, use the app ID that AppID knows about (it'll
+ * probably be a repeat of one of the other 3 app IDs given here).  For
+ * example, for "FTP Data", use 166.  Internally, this'll be converted to the
+ * app ID that Snort recognizes ("ftp-data").  For this to really mean
+ * anything, the app IDs entry in appMapping.data should have a Snort app ID
+ * defined.
+ *
+ * Example: createFutureFlow("192.168.0.200", 0, "192.168.0.100", 20, 6, 166, 0, 0, 166)
+ */
+static int createFutureFlow (lua_State *L)
+{
+    sfaddr_t client_addr;
+    sfaddr_t server_addr;
+    uint8_t proto;
+    uint16_t client_port, server_port;
+    DetectorUserData *detectorUserData = NULL;
+    char *pattern;
+    tAppId service_app_id, client_app_id, payload_app_id, app_id_to_snort;
+    int16_t snort_app_id;
+    tAppIdData *fp;
+
+    detectorUserData = checkDetectorUserData(L, 1);
+
+    /*check inputs and whether this function is called in context of a packet */
+    if (!detectorUserData || !detectorUserData->pDetector->validateParams.pkt)
+    {
+        return 0;
+    }
+
+    pattern = (char *)lua_tostring(L, 2);
+    if (!ConvertStringToAddress(pattern, &client_addr))
+        return 0;
+
+    client_port = lua_tonumber(L, 3);
+
+    pattern = (char *)lua_tostring(L, 4);
+    if (!ConvertStringToAddress(pattern, &server_addr))
+        return 0;
+
+    server_port = lua_tonumber(L, 5);
+
+    proto = lua_tonumber(L, 6);
+
+    service_app_id = lua_tointeger(L, 7);
+    client_app_id  = lua_tointeger(L, 8);
+    payload_app_id = lua_tointeger(L, 9);
+
+    app_id_to_snort = lua_tointeger(L, 10);
+    if (app_id_to_snort > APP_ID_NONE)
+    {
+        AppInfoTableEntry* entry = appInfoEntryGet(app_id_to_snort, appIdActiveConfigGet());
+        if (NULL == entry)
+            return 0;
+        snort_app_id = entry->snortId;
+    }
+    else
+    {
+        snort_app_id = 0;
+    }
+
+    fp = AppIdEarlySessionCreate(detectorUserData->pDetector->validateParams.flowp,
+                                 detectorUserData->pDetector->validateParams.pkt,
+                                 &client_addr, client_port, &server_addr, server_port, proto,
+                                 snort_app_id,
+                                 APPID_EARLY_SESSION_FLAG_FW_RULE);
+    if (fp)
+    {
+        fp->serviceAppId = service_app_id;
+        fp->clientAppId  = client_app_id;
+        fp->payloadAppId = payload_app_id;
+        setAppIdExtFlag(fp, APPID_SESSION_SERVICE_DETECTED | APPID_SESSION_NOT_A_SERVICE | APPID_SESSION_PORT_SERVICE_DONE);
+        fp->rnaServiceState = RNA_STATE_FINISHED;
+        fp->rnaClientState  = RNA_STATE_FINISHED;
+
+        return 1;
+    }
+    else
+        return 0;
+}
+
 static const luaL_reg Detector_methods[] = {
   /* Obsolete API names.  No longer use these!  They are here for backward
    * compatibility and will eventually be removed. */
@@ -3500,6 +3619,7 @@ static const luaL_reg Detector_methods[] = {
   {"addSipServer",             Detector_addSipServer},
   {"addSSLCnamePattern",       Detector_addSSLCnamePattern},
   {"addHostPortApp",           Detector_addHostPortApp},
+  {"addDNSHostPattern",        Detector_addDNSHostPattern},
 
   /*Obsolete - new detectors should not use this API */
   {"init",                     service_init},
@@ -3570,6 +3690,8 @@ static const luaL_reg Detector_methods[] = {
 
   {"addPortPatternClient",     addPortPatternClient},
   {"addPortPatternService",    addPortPatternService},
+
+  {"createFutureFlow",         createFutureFlow},
 
   {0, 0}
 };
