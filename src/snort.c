@@ -478,6 +478,7 @@ static struct option long_options[] =
    {"ha-peer", LONGOPT_ARG_NONE, NULL, ARG_HA_PEER},
    {"ha-out", LONGOPT_ARG_REQUIRED, NULL, ARG_HA_OUT},
    {"ha-in", LONGOPT_ARG_REQUIRED, NULL, ARG_HA_IN},
+   {"ha-pdts-in", LONGOPT_ARG_REQUIRED, NULL, ARG_HA_PDTS_IN},
 
    {"suppress-config-log", LONGOPT_ARG_NONE, NULL, SUPPRESS_CONFIG_LOG},
 
@@ -2932,6 +2933,9 @@ static void ParseCmdLine(int argc, char **argv)
             case ARG_HA_IN:
                 sc->ha_in = SnortStrdup(optarg);
                 break;
+            case ARG_HA_PDTS_IN:
+                sc->ha_pdts_in = SnortStrdup(optarg);
+                break;
 #endif
 
             case SUPPRESS_CONFIG_LOG:
@@ -4353,6 +4357,10 @@ void SnortConfFree(SnortConfig *sc)
 
     if(sc->ha_in)
         free(sc->ha_in);
+
+    if(sc->ha_pdts_in)
+        free(sc->ha_pdts_in);
+
 #endif
 
     free_file_config(sc->file_config);
@@ -4846,6 +4854,13 @@ static SnortConfig * MergeSnortConfs(SnortConfig *cmd_line, SnortConfig *config_
             free(config_file->ha_in);
         config_file->ha_in = strdup(cmd_line->ha_in);
     }
+    if ( cmd_line->ha_pdts_in )
+    {
+        if(config_file->ha_pdts_in != NULL)
+            free(config_file->ha_pdts_in);
+        config_file->ha_pdts_in = strdup(cmd_line->ha_pdts_in);
+    }
+
 #endif
 
     return config_file;

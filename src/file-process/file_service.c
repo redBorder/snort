@@ -50,15 +50,6 @@
 #include "file_service.h"
 #include "file_segment_process.h"
 
-typedef struct _FileSession
-{
-    FileContext *current_context;
-    FileContext *main_context;
-    FileContext *pending_context;
-    uint32_t  max_file_id;
-
-} FileSession;
-
 static bool file_type_id_enabled = false;
 static bool file_signature_enabled = false;
 static bool file_capture_enabled = false;
@@ -119,6 +110,7 @@ static FilePosition get_file_position(void *pkt);
 static bool check_paf_abort(void* ssn);
 static int64_t get_max_file_capture_size(void *ssn);
 static void file_session_free(void *session_data);
+extern FileEntry *file_cache_get(FileCache *fileCache, void* p, uint64_t file_id);
 
 FileAPI fileAPI;
 FileAPI* file_api = NULL;
@@ -241,7 +233,7 @@ void close_fileAPI(void)
     file_caputure_close();
 }
 
-static inline FileSession* get_file_session(void *ssnptr)
+FileSession* get_file_session(void *ssnptr)
 {
     return ((FileSession*)session_api->get_application_data(ssnptr, PP_FILE));
 }
@@ -686,15 +678,36 @@ static void file_signature_callback(Packet* p)
     Packet *pkt = (Packet *)p;
     void *ssnptr = pkt->ssnptr;
     FileSession *file_session;
+    FileEntry *fileEntry;
 
     if (!ssnptr)
         return;
     file_session = get_file_session (ssnptr);
     if (!file_session)
         return;
-    if (file_session->pending_context)
-        file_session->current_context = file_session->pending_context;
-    file_signature_lookup(p, 1);
+
+    if(file_session->file_cache)
+    {
+        fileEntry = file_cache_get(file_session->file_cache, p, file_session->file_id);
+        if (!fileEntry)
+            return;
+        if (fileEntry->context)
+        {
+            if(fileEntry->context->verdict == FILE_VERDICT_PENDING)
+            {
+                file_session->current_context = fileEntry->context;
+            }
+            file_signature_lookup(p, 1);
+        }
+    }
+    else
+    {
+        if(file_session->pending_context)
+        {
+            file_session->current_context = file_session->pending_context;
+        }
+        file_signature_lookup(p, 1);
+    }
 }
 
 static bool is_file_service_enabled()

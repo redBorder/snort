@@ -32,3 +32,4 @@ libsf_appid_preproc_la_SOURCES = $(APPID_SOURCES)
 
 all-local: $(LTLIBRARIES)
 	$(MAKE) DESTDIR=`pwd`/../build install-dynamicpreprocessorLTLIBRARIES
+

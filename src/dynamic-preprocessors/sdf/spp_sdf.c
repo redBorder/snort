@@ -264,9 +264,18 @@ static SDFSessionData * NewSDFSession(SDFConfig *config, SFSnortPacket *packet)
     return session;
 }
 
+static inline bool isBufferInPayload(char *begin, char *end, SFSnortPacket *packet)
+{
+    if ((end <= (char *) packet->payload + packet->payload_size)
+        && (begin >= (char *) packet->payload))
+        return true;
+    else
+        return false;
+}
+
 static void SDFSearchRecursively(SDFConfig *config, SFSnortPacket *packet,
                       SDFSessionData *session, sdf_tree_node *matched_node, 
-                      char **position, uint16_t *buflen, uint16_t match_length)
+                      char **position, uint16_t *buflen, uint16_t match_length, bool *ob_failed)
 {
     /* Iterate through the SDFOptionData that matches this pattern. */
     uint16_t i;
@@ -322,14 +331,14 @@ static void SDFSearchRecursively(SDFConfig *config, SFSnortPacket *packet,
                 session->counters[found_pattern->counter_index]++;
 
                 /* Obfuscate the data.
-                   We do this even if it's not time to alert, to obfuscate each match. */
-                if (config->mask_output)
+                   We do this even if it's not time to alert, to obfuscate each match.
+                   Only obfuscate built-in patterns */
+                if (config->mask_output && found_pattern->validate_func)
                 {
-
-                    /* Only obfuscate built-in patterns */
-                    if (found_pattern->validate_func)
+                    if (isBufferInPayload(*position, *position + match_length, packet))
                     {
                         uint16_t offset, ob_length = 0;
+
                         offset = (uint16_t) ((*position) - (char *)packet->payload);
 
                         if (match_length > SDF_OBFUSCATION_DIGITS_SHOWN)
@@ -351,6 +360,10 @@ static void SDFSearchRecursively(SDFConfig *config, SFSnortPacket *packet,
 
                         _dpd.obApi->addObfuscationEntry(packet, offset, ob_length,
                                                         SDF_OBFUSCATION_CHAR);
+                    }
+                    else
+                    {
+                        *ob_failed = true;
                     }
                 }
 
@@ -395,7 +408,7 @@ static void SDFSearchRecursively(SDFConfig *config, SFSnortPacket *packet,
 */
 static void SDFSearch(SDFConfig *config, SFSnortPacket *packet,
                       SDFSessionData *session, char *position, char *end,
-                      uint16_t buflen)
+                      uint16_t buflen, bool *ob_failed)
 {
     uint16_t match_length = 0;
     sdf_tree_node *matched_node = NULL;
@@ -424,7 +437,7 @@ static void SDFSearch(SDFConfig *config, SFSnortPacket *packet,
 
             /* only when matched update the position ptr. FindPiiRecursively only checks one node unlike FindPii */
             if (matched_node)
-                SDFSearchRecursively(config, packet, session, matched_node, &position, &buflen, match_length);
+                SDFSearchRecursively(config, packet, session, matched_node, &position, &buflen, match_length, ob_failed);
             else if (*partial_index)
             {
                 position += match_length;
@@ -447,7 +460,7 @@ static void SDFSearch(SDFConfig *config, SFSnortPacket *packet,
                                buflen, config, session);
 
         if (matched_node)
-            SDFSearchRecursively(config, packet, session, matched_node, &position, &buflen, match_length);
+            SDFSearchRecursively(config, packet, session, matched_node, &position, &buflen, match_length, ob_failed);
         else if (*partial_index)
         {
             position += match_length;
@@ -480,6 +493,9 @@ static void ProcessSDF(void *p, void *context)
     SDFSessionData *session;
     char *begin, *end;
     uint16_t buflen;
+    bool payload_checked = false;
+    bool ob_failed = false;
+
     PROFILE_VARS;
 
     // preconditions - what we registered for
@@ -499,6 +515,7 @@ static void ProcessSDF(void *p, void *context)
     session = _dpd.sessionAPI->get_application_data(packet->stream_session, PP_SDF);
     if (session == NULL)
     {
+        char pseudo_start = 0;
         /* Do port checks */
         if (SDFCheckPorts(config, packet) == 0)
         {
@@ -517,6 +534,13 @@ static void ProcessSDF(void *p, void *context)
         }
         else
             session = NewSDFSession(config, packet);
+
+        /* Add one byte to support sensitive data starts with first byte */
+        begin = &pseudo_start;
+        buflen = 1;
+        end = begin + buflen;
+        SDFSearch(config, packet, session, begin, end, buflen, &ob_failed);
+
     }
     else if( session->config_num != config->config_num )
     {
@@ -536,7 +560,7 @@ static void ProcessSDF(void *p, void *context)
         buflen = _dpd.fileDataBuf->len;
         end = begin + buflen;
 
-        SDFSearch(config, packet, session, begin, end, buflen);
+        SDFSearch(config, packet, session, begin, end, buflen, &ob_failed);
     }
     else if ( PacketHasPAFPayload(packet) )
     {
@@ -547,7 +571,8 @@ static void ProcessSDF(void *p, void *context)
         buflen = packet->payload_size;
         end = begin + buflen;
 
-        SDFSearch(config, packet, session, begin, end, buflen);
+        SDFSearch(config, packet, session, begin, end, buflen, &ob_failed);
+        payload_checked = true;
     }
 
     /* If this packet is HTTP, inspect the URI and Client Body while ignoring
@@ -561,7 +586,8 @@ static void ProcessSDF(void *p, void *context)
         {
             buflen = (uint16_t)len;
             end = begin + buflen;
-            SDFSearch(config, packet, session, begin, end, buflen);
+            if (!payload_checked || !isBufferInPayload(begin, end, packet))
+                SDFSearch(config, packet, session, begin, end, buflen, &ob_failed);
         }
         begin = (char*)_dpd.getHttpBuffer(HTTP_BUFFER_CLIENT_BODY, &len);
 
@@ -569,9 +595,22 @@ static void ProcessSDF(void *p, void *context)
         {
             buflen = (uint16_t)len;
             end = begin + buflen;
-            SDFSearch(config, packet, session, begin, end, buflen);
+            if (!payload_checked || !isBufferInPayload(begin, end, packet))
+                SDFSearch(config, packet, session, begin, end, buflen, &ob_failed);
         }
     }
+
+    /* Found match but not in payload, recheck to mask the rebuilt packet */
+    if ( !payload_checked && ob_failed && PacketHasPAFPayload(packet) )
+    {
+        begin = (char *)packet->payload;
+        buflen = packet->payload_size;
+        end = begin + buflen;
+
+        SDFSearch(config, packet, session, begin, end, buflen, &ob_failed);
+        payload_checked = true;
+    }
+
     /* End. */
     PREPROC_PROFILE_END(sdfPerfStats);
     return;
