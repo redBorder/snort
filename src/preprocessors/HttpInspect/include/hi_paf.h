@@ -41,6 +41,8 @@ int hi_paf_register_port(struct _SnortConfig *sc, uint16_t port, bool client, bo
 int hi_paf_register_service(struct _SnortConfig *, uint16_t service, bool client, bool server, tSfPolicyId pid, bool auto_on);
 
 bool hi_paf_simple_request(void* ssn);
+bool hi_paf_resp_eoh(void* ssn);
+uint32_t hi_paf_resp_bytes_processed(void* ssn);
 
 #endif
 

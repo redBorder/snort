@@ -77,6 +77,9 @@ typedef struct _SessionHAConfig
     char *startup_input_file;
     char *runtime_output_file;
     char *shutdown_output_file;
+#ifdef REG_TEST
+    char *runtime_input_file;
+# endif
 # ifdef SIDE_CHANNEL
     uint8_t use_side_channel;
 # endif

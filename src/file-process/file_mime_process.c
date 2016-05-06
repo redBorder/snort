@@ -612,11 +612,13 @@ static const uint8_t * process_mime_header(Packet *p, const uint8_t *ptr,
 
             mime_ssn->data_state = STATE_DATA_BODY;
 
-            /* if no headers, treat as data */
+            /* no header seen */
             if (ptr == start_hdr)
-                return eolm;
-            else
-                return eol;
+            {
+                setup_decode((const char *)ptr, eolm  - (const uint8_t *)NULL, false, mime_ssn);
+            }
+
+	    return eol;
         }
 
         /* if we're not folding, see if we should interpret line as a data line
@@ -793,11 +795,25 @@ static const uint8_t * process_mime_header(Packet *p, const uint8_t *ptr,
             }
             else
             {
-                mime_ssn->state_flags &= ~MIME_FLAG_IN_CONT_DISP;
+		if ((mime_ssn->data_state == STATE_MIME_HEADER) && !(mime_ssn->state_flags & MIME_FLAG_EMAIL_ATTACH))
+		{
+		    // setting up decode assuming possible file data after content-disposition header
+	            setup_decode(NULL, eolm - (const uint8_t *)NULL, false, mime_ssn);
+                }
+		mime_ssn->state_flags &= ~MIME_FLAG_IN_CONT_DISP;
                 mime_ssn->state_flags &= ~MIME_FLAG_IN_CONT_DISP_CONT;
             }
 
             cont_disp = NULL;
+        }
+        else
+        {
+	    // unknown header
+            if ((mime_ssn->data_state == STATE_MIME_HEADER) && !(mime_ssn->state_flags & MIME_FLAG_EMAIL_ATTACH))
+            {
+                // setting up decode assuming possible file data after unknown header
+                setup_decode(NULL, eolm - (const uint8_t *)NULL, false, mime_ssn);
+            }
         }
 
         /* if state was unknown, at this point assume we know */

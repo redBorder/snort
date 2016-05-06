@@ -125,14 +125,15 @@ static const uint8_t UID[] = "UID ";
 static const uint8_t STARTTLS[] = "STARTTLS\x00d\x00a";
 static const uint8_t STARTTLS2[] = "STARTTLS\x00a";
 
-static enum Client_App_Pattern_Index {
+typedef enum
+{
     /* order MUST correspond to that in the array, patterns[], below */
     PATTERN_LOGIN,
     PATTERN_AUTHENTICATE,
     PATTERN_STARTTLS,
     PATTERN_STARTTLS2,
     PATTERN_IMAP_OTHER // always last
-    };
+} Client_App_Pattern_Index;
 
 static Client_App_Pattern patterns[] =
 {
