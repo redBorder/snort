@@ -399,8 +399,11 @@ static void SDFSearchRecursively(SDFConfig *config, SFSnortPacket *packet,
     }
 
     /* Update position */
-    (*position) += match_length;
-    (*buflen) -= match_length;
+    if (match_length > 1)
+    {
+        (*position) += match_length - 1;
+        (*buflen) -= match_length - 1;
+    }
 }
 
 /* Search a buffer for PII. Generates alerts when enough PII is found.
