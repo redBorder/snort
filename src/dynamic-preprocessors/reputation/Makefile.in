@@ -127,19 +127,25 @@ am__libsf_reputation_preproc_la_SOURCES_DIST = spp_reputation.c \
 	./shmem/shmem_config.c ./shmem/shmem_datamgmt.h \
 	./shmem/shmem_datamgmt.c ./shmem/shmem_lib.h \
 	./shmem/shmem_lib.c ./shmem/shmem_mgmt.h ./shmem/shmem_mgmt.c
-@HAVE_SHARED_REP_FALSE@am_libsf_reputation_preproc_la_OBJECTS =  \
-@HAVE_SHARED_REP_FALSE@	spp_reputation.lo reputation_config.lo \
-@HAVE_SHARED_REP_FALSE@	reputation_utils.lo
-@HAVE_SHARED_REP_TRUE@am_libsf_reputation_preproc_la_OBJECTS =  \
-@HAVE_SHARED_REP_TRUE@	spp_reputation.lo reputation_config.lo \
-@HAVE_SHARED_REP_TRUE@	reputation_utils.lo sflinux_helpers.lo \
-@HAVE_SHARED_REP_TRUE@	shmem_config.lo shmem_datamgmt.lo \
-@HAVE_SHARED_REP_TRUE@	shmem_lib.lo shmem_mgmt.lo
-@SO_WITH_STATIC_LIB_FALSE@nodist_libsf_reputation_preproc_la_OBJECTS =  \
-@SO_WITH_STATIC_LIB_FALSE@	sf_dynamic_preproc_lib.lo sf_ip.lo \
-@SO_WITH_STATIC_LIB_FALSE@	sfrt.lo sfrt_dir.lo sfrt_flat.lo \
-@SO_WITH_STATIC_LIB_FALSE@	sfrt_flat_dir.lo segment_mem.lo \
-@SO_WITH_STATIC_LIB_FALSE@	sfPolicyUserData.lo
+@HAVE_SHARED_REP_FALSE@am_libsf_reputation_preproc_la_OBJECTS = libsf_reputation_preproc_la-spp_reputation.lo \
+@HAVE_SHARED_REP_FALSE@	libsf_reputation_preproc_la-reputation_config.lo \
+@HAVE_SHARED_REP_FALSE@	libsf_reputation_preproc_la-reputation_utils.lo
+@HAVE_SHARED_REP_TRUE@am_libsf_reputation_preproc_la_OBJECTS = libsf_reputation_preproc_la-spp_reputation.lo \
+@HAVE_SHARED_REP_TRUE@	libsf_reputation_preproc_la-reputation_config.lo \
+@HAVE_SHARED_REP_TRUE@	libsf_reputation_preproc_la-reputation_utils.lo \
+@HAVE_SHARED_REP_TRUE@	libsf_reputation_preproc_la-sflinux_helpers.lo \
+@HAVE_SHARED_REP_TRUE@	libsf_reputation_preproc_la-shmem_config.lo \
+@HAVE_SHARED_REP_TRUE@	libsf_reputation_preproc_la-shmem_datamgmt.lo \
+@HAVE_SHARED_REP_TRUE@	libsf_reputation_preproc_la-shmem_lib.lo \
+@HAVE_SHARED_REP_TRUE@	libsf_reputation_preproc_la-shmem_mgmt.lo
+@SO_WITH_STATIC_LIB_FALSE@nodist_libsf_reputation_preproc_la_OBJECTS = libsf_reputation_preproc_la-sf_dynamic_preproc_lib.lo \
+@SO_WITH_STATIC_LIB_FALSE@	libsf_reputation_preproc_la-sf_ip.lo \
+@SO_WITH_STATIC_LIB_FALSE@	libsf_reputation_preproc_la-sfrt.lo \
+@SO_WITH_STATIC_LIB_FALSE@	libsf_reputation_preproc_la-sfrt_dir.lo \
+@SO_WITH_STATIC_LIB_FALSE@	libsf_reputation_preproc_la-sfrt_flat.lo \
+@SO_WITH_STATIC_LIB_FALSE@	libsf_reputation_preproc_la-sfrt_flat_dir.lo \
+@SO_WITH_STATIC_LIB_FALSE@	libsf_reputation_preproc_la-segment_mem.lo \
+@SO_WITH_STATIC_LIB_FALSE@	libsf_reputation_preproc_la-sfPolicyUserData.lo
 libsf_reputation_preproc_la_OBJECTS =  \
 	$(am_libsf_reputation_preproc_la_OBJECTS) \
 	$(nodist_libsf_reputation_preproc_la_OBJECTS)
@@ -348,7 +354,13 @@ top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign no-dependencies
 dynamicpreprocessordir = ${libdir}/snort_dynamicpreprocessor
 dynamicpreprocessor_LTLIBRARIES = libsf_reputation_preproc.la
-libsf_reputation_preproc_la_LDFLAGS = -export-dynamic -module @XCCFLAGS@
+@HAVE_REPUTATIONGEOIP_FALSE@LGEOIP = 
+@HAVE_REPUTATIONGEOIP_TRUE@LGEOIP = "-lGeoIP"
+@HAVE_REPUTATIONGEOIP_FALSE@CPPGEOIP = 
+@HAVE_REPUTATIONGEOIP_TRUE@CPPGEOIP = -DREPUTATION_GEOIP
+libsf_reputation_preproc_la_LFLAGS = $(LGEOIP)
+libsf_reputation_preproc_la_LDFLAGS = -export-dynamic -module $(LGEOIP) @XCCFLAGS@
+libsf_reputation_preproc_la_CPPFLAGS = $(CPPGEOIP) $(AM_CPPFLAGS)
 @SO_WITH_STATIC_LIB_TRUE@libsf_reputation_preproc_la_LIBADD = ../libsf_dynamic_preproc.la
 @SO_WITH_STATIC_LIB_FALSE@nodist_libsf_reputation_preproc_la_SOURCES = \
 @SO_WITH_STATIC_LIB_FALSE@../include/sf_dynamic_preproc_lib.c \
@@ -480,44 +492,53 @@ distclean-compile:
 .c.lo:
 	$(AM_V_CC)$(LTCOMPILE) -c -o $@ $<
 
-sflinux_helpers.lo: ./shmem/sflinux_helpers.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o sflinux_helpers.lo `test -f './shmem/sflinux_helpers.c' || echo '$(srcdir)/'`./shmem/sflinux_helpers.c
+libsf_reputation_preproc_la-spp_reputation.lo: spp_reputation.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-spp_reputation.lo `test -f 'spp_reputation.c' || echo '$(srcdir)/'`spp_reputation.c
 
-shmem_config.lo: ./shmem/shmem_config.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o shmem_config.lo `test -f './shmem/shmem_config.c' || echo '$(srcdir)/'`./shmem/shmem_config.c
+libsf_reputation_preproc_la-reputation_config.lo: reputation_config.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-reputation_config.lo `test -f 'reputation_config.c' || echo '$(srcdir)/'`reputation_config.c
 
-shmem_datamgmt.lo: ./shmem/shmem_datamgmt.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o shmem_datamgmt.lo `test -f './shmem/shmem_datamgmt.c' || echo '$(srcdir)/'`./shmem/shmem_datamgmt.c
+libsf_reputation_preproc_la-reputation_utils.lo: reputation_utils.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-reputation_utils.lo `test -f 'reputation_utils.c' || echo '$(srcdir)/'`reputation_utils.c
 
-shmem_lib.lo: ./shmem/shmem_lib.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o shmem_lib.lo `test -f './shmem/shmem_lib.c' || echo '$(srcdir)/'`./shmem/shmem_lib.c
+libsf_reputation_preproc_la-sflinux_helpers.lo: ./shmem/sflinux_helpers.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-sflinux_helpers.lo `test -f './shmem/sflinux_helpers.c' || echo '$(srcdir)/'`./shmem/sflinux_helpers.c
 
-shmem_mgmt.lo: ./shmem/shmem_mgmt.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o shmem_mgmt.lo `test -f './shmem/shmem_mgmt.c' || echo '$(srcdir)/'`./shmem/shmem_mgmt.c
+libsf_reputation_preproc_la-shmem_config.lo: ./shmem/shmem_config.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-shmem_config.lo `test -f './shmem/shmem_config.c' || echo '$(srcdir)/'`./shmem/shmem_config.c
 
-sf_dynamic_preproc_lib.lo: ../include/sf_dynamic_preproc_lib.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o sf_dynamic_preproc_lib.lo `test -f '../include/sf_dynamic_preproc_lib.c' || echo '$(srcdir)/'`../include/sf_dynamic_preproc_lib.c
+libsf_reputation_preproc_la-shmem_datamgmt.lo: ./shmem/shmem_datamgmt.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-shmem_datamgmt.lo `test -f './shmem/shmem_datamgmt.c' || echo '$(srcdir)/'`./shmem/shmem_datamgmt.c
 
-sf_ip.lo: ../include/sf_ip.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o sf_ip.lo `test -f '../include/sf_ip.c' || echo '$(srcdir)/'`../include/sf_ip.c
+libsf_reputation_preproc_la-shmem_lib.lo: ./shmem/shmem_lib.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-shmem_lib.lo `test -f './shmem/shmem_lib.c' || echo '$(srcdir)/'`./shmem/shmem_lib.c
 
-sfrt.lo: ../include/sfrt.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o sfrt.lo `test -f '../include/sfrt.c' || echo '$(srcdir)/'`../include/sfrt.c
+libsf_reputation_preproc_la-shmem_mgmt.lo: ./shmem/shmem_mgmt.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-shmem_mgmt.lo `test -f './shmem/shmem_mgmt.c' || echo '$(srcdir)/'`./shmem/shmem_mgmt.c
 
-sfrt_dir.lo: ../include/sfrt_dir.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o sfrt_dir.lo `test -f '../include/sfrt_dir.c' || echo '$(srcdir)/'`../include/sfrt_dir.c
+libsf_reputation_preproc_la-sf_dynamic_preproc_lib.lo: ../include/sf_dynamic_preproc_lib.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-sf_dynamic_preproc_lib.lo `test -f '../include/sf_dynamic_preproc_lib.c' || echo '$(srcdir)/'`../include/sf_dynamic_preproc_lib.c
 
-sfrt_flat.lo: ../include/sfrt_flat.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o sfrt_flat.lo `test -f '../include/sfrt_flat.c' || echo '$(srcdir)/'`../include/sfrt_flat.c
+libsf_reputation_preproc_la-sf_ip.lo: ../include/sf_ip.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-sf_ip.lo `test -f '../include/sf_ip.c' || echo '$(srcdir)/'`../include/sf_ip.c
 
-sfrt_flat_dir.lo: ../include/sfrt_flat_dir.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o sfrt_flat_dir.lo `test -f '../include/sfrt_flat_dir.c' || echo '$(srcdir)/'`../include/sfrt_flat_dir.c
+libsf_reputation_preproc_la-sfrt.lo: ../include/sfrt.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-sfrt.lo `test -f '../include/sfrt.c' || echo '$(srcdir)/'`../include/sfrt.c
 
-segment_mem.lo: ../include/segment_mem.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o segment_mem.lo `test -f '../include/segment_mem.c' || echo '$(srcdir)/'`../include/segment_mem.c
+libsf_reputation_preproc_la-sfrt_dir.lo: ../include/sfrt_dir.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-sfrt_dir.lo `test -f '../include/sfrt_dir.c' || echo '$(srcdir)/'`../include/sfrt_dir.c
 
-sfPolicyUserData.lo: ../include/sfPolicyUserData.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o sfPolicyUserData.lo `test -f '../include/sfPolicyUserData.c' || echo '$(srcdir)/'`../include/sfPolicyUserData.c
+libsf_reputation_preproc_la-sfrt_flat.lo: ../include/sfrt_flat.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-sfrt_flat.lo `test -f '../include/sfrt_flat.c' || echo '$(srcdir)/'`../include/sfrt_flat.c
+
+libsf_reputation_preproc_la-sfrt_flat_dir.lo: ../include/sfrt_flat_dir.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-sfrt_flat_dir.lo `test -f '../include/sfrt_flat_dir.c' || echo '$(srcdir)/'`../include/sfrt_flat_dir.c
+
+libsf_reputation_preproc_la-segment_mem.lo: ../include/segment_mem.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-segment_mem.lo `test -f '../include/segment_mem.c' || echo '$(srcdir)/'`../include/segment_mem.c
+
+libsf_reputation_preproc_la-sfPolicyUserData.lo: ../include/sfPolicyUserData.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libsf_reputation_preproc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libsf_reputation_preproc_la-sfPolicyUserData.lo `test -f '../include/sfPolicyUserData.c' || echo '$(srcdir)/'`../include/sfPolicyUserData.c
 
 mostlyclean-libtool:
 	-rm -f *.lo

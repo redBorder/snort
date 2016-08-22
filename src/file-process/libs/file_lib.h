@@ -71,8 +71,27 @@ typedef struct _FileContext
     bool file_signature_enabled;
     uint8_t    *file_name;
     uint32_t   file_name_size;
+#ifdef HAVE_EXTRADATA_FILE
+    uint8_t    *hostname;
+    uint32_t   hostname_size;
+    uint8_t    *file_mailfrom;
+    uint32_t   file_mailfrom_size;
+    uint8_t    *file_rcptto;
+    uint32_t   file_rcptto_size;
+    uint8_t    *file_headers;
+    uint32_t   file_headers_size;
+    uint8_t    *file_ftp_user;
+    uint32_t   file_ftp_user_size;
+    uint8_t    *file_smb_user_id;
+    uint32_t   file_smb_user_id_size;
+    uint8_t    file_smb_is_upload;
+    uint8_t    file_smb_is_upload_valid;
+#endif
     bool       file_name_saved;
     uint64_t   file_size;
+#ifdef HAVE_EXTRADATA_FILE
+    char       file_size_str[32];
+#endif
     bool       upload;
     uint64_t   processed_bytes;
     uint32_t   file_type_id;
@@ -91,6 +110,18 @@ typedef struct _FileContext
     FileState file_state;
     uint32_t file_id;
     uint32_t file_config_version;
+#ifdef HAVE_EXTRADATA_FILE
+    uint32_t xtra_file_sha256_id;
+    uint32_t xtra_file_size_id;
+    uint32_t xtra_file_name_id;
+    uint32_t xtra_file_hostname_id;
+    uint32_t xtra_file_mailfrom_id;
+    uint32_t xtra_file_rcptto_id;
+    uint32_t xtra_file_headers_id;
+    uint32_t xtra_file_ftp_user_id;
+    uint32_t xtra_file_smb_user_id_id;
+    uint32_t xtra_file_smb_is_upload_id;
+#endif
 } FileContext;
 
 /*Main File Processing functions */
@@ -104,6 +135,22 @@ void file_context_free(void *context);
 /*File properties*/
 void file_name_set (FileContext *context, uint8_t *file_name, uint32_t name_size, bool save_in_context);
 int file_name_get (FileContext *context, uint8_t **file_name, uint32_t *name_size);
+#ifdef HAVE_EXTRADATA_FILE
+void file_hostname_set (FileContext *context, uint8_t *file_hostname, uint32_t hostname_size);
+int file_hostname_get (FileContext *context, uint8_t **file_hostname, uint32_t *hostname_size);
+void file_mailfrom_set (FileContext *context, uint8_t *file_mailfrom, uint32_t file_mailfrom_size);
+int file_mailfrom_get (FileContext *context, uint8_t **file_mailfrom, uint32_t *file_mailfrom_size);
+void file_rcptto_set (FileContext *context, uint8_t *file_rcptto, uint32_t file_rcptto_size);
+int file_rcptto_get (FileContext *context, uint8_t **file_rcptto, uint32_t *file_rcptto_size);
+void file_headers_set (FileContext *context, uint8_t *file_headers, uint32_t file_headers_size);
+int file_headers_get (FileContext *context, uint8_t **file_headers, uint32_t *file_headers_size);
+void file_ftp_user_set (FileContext *context, uint8_t *file_headers, uint32_t file_headers_size);
+int file_ftp_user_get (FileContext *context, uint8_t **file_headers, uint32_t *file_headers_size);
+void file_smb_user_id_set (FileContext *context, uint8_t *smb_user_id, uint32_t smb_user_id_size);
+int file_smb_user_id_get (FileContext *context, uint8_t **file_smb_user_id, uint32_t *file_smb_user_id_size);
+void file_smb_is_upload_set (FileContext *context, uint8_t is_upload);
+int file_smb_is_upload_get (FileContext *context, uint8_t *is_upload);
+#endif
 void file_size_set (FileContext *context, uint64_t file_size);
 uint64_t file_size_get (FileContext *context);
 void file_direction_set (FileContext *context, bool upload);

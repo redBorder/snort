@@ -217,6 +217,7 @@
 
 #define THRESHOLD_TRACK__BY_DST    "by_dst"
 #define THRESHOLD_TRACK__BY_SRC    "by_src"
+#define THRESHOLD_TRACK__BY_SRCDST "by_src_dst"
 
 #define RULE_STATE_OPT__DISABLED   "disabled"
 #define RULE_STATE_OPT__ENABLED    "enabled"
@@ -9934,6 +9935,10 @@ static void ParseThreshFilter(
             {
                 thdx.tracking = THD_TRK_DST;
             }
+            else if (strcasecmp(pairs[1], THRESHOLD_TRACK__BY_SRCDST) == 0)
+            {
+                thdx.tracking = THD_TRK_SRCDST;
+            }
             else
             {
                 ParseError(ERR_BAD_VALUE);
@@ -10068,6 +10073,11 @@ static void ParseSuppress(SnortConfig *sc, SnortPolicy *p, char *args)
             {
                 thdx.tracking = THD_TRK_DST;
             }
+            else if (strcasecmp(pairs[1], THRESHOLD_TRACK__BY_SRCDST) == 0)
+            {
+                thdx.tracking = THD_TRK_SRCDST;
+            }
+            
             else
             {
                 ParseError(ERR_BAD_VALUE);
@@ -10093,12 +10103,32 @@ static void ParseSuppress(SnortConfig *sc, SnortPolicy *p, char *args)
         }
         else if (strcasecmp(pairs[0], THRESHOLD_OPT__IP) == 0)
         {
-            if ( ip_flag++ )
+            if( THD_TRK_SRCDST!=thdx.tracking)
             {
-                ParseError(ERR_EXTRA_OPTION);
-            }
+                if ( ip_flag++ )
+                {
+                    ParseError(ERR_EXTRA_OPTION);
+                }
 
-            thdx.ip_address = IpAddrSetParse(sc, pairs[1]);
+                thdx.ip_address = IpAddrSetParse(sc, pairs[1]);
+            }
+            else
+            {
+                if( ip_flag++ )
+                {
+                    ParseError(ERR_EXTRA_OPTION);
+                }
+                char ** ips;
+                int num_ips;
+                ips = mSplit(pairs[1],">",2,&num_ips,0);
+                if(num_ips!=2)
+                {
+                    ParseError(ERR_BAD_OPTION);
+                }
+                thdx.ip_address     = IpAddrSetParse(sc,ips[0]); /* sip */
+                thdx.dst_ip_address = IpAddrSetParse(sc,ips[1]); /* dip */
+                mSplitFree(&ips,num_ips);
+            }
         }
         else
         {

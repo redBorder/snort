@@ -190,6 +190,12 @@ static inline void cleanDynamicContext (FileContext *context)
         file_capture_stop(context);
     if(context->file_name && context->file_name_saved)
         free(context->file_name);
+#ifdef HAVE_EXTRADATA_FILE
+    if (context->file_ftp_user)
+        free(context->file_ftp_user);
+    if (context->file_smb_user_id)
+        free(context->file_smb_user_id);
+#endif
 }
 
 void file_context_reset(FileContext *context)
@@ -246,6 +252,206 @@ int file_name_get (FileContext *context, uint8_t **file_name, uint32_t *name_siz
         return 0;
     return 1;
 }
+
+#ifdef HAVE_EXTRADATA_FILE
+void file_hostname_set (FileContext *context, uint8_t *file_hostname, uint32_t hostname_size)
+{
+    if (!context)
+        return;
+    context->hostname = file_hostname;
+    context->hostname_size = hostname_size;
+}
+
+int file_hostname_get (FileContext *context, uint8_t **file_hostname, uint32_t *hostname_size)
+{
+    if (!context)
+        return 0;
+    if (file_hostname)
+        *file_hostname = context->hostname;
+    else
+        return 0;
+    if (hostname_size)
+        *hostname_size = context->hostname_size;
+    else
+        return 0;
+    return 1;
+}
+
+void file_mailfrom_set (FileContext *context, uint8_t *file_mailfrom, uint32_t file_mailfrom_size)
+{
+    if (!context)
+        return;
+    context->file_mailfrom = file_mailfrom;
+    context->file_mailfrom_size = file_mailfrom_size;
+}
+
+int file_mailfrom_get (FileContext *context, uint8_t **file_mailfrom, uint32_t *file_mailfrom_size)
+{
+    if (!context)
+        return 0;
+    if (file_mailfrom)
+        *file_mailfrom = context->file_mailfrom;
+    else
+        return 0;
+    if (file_mailfrom_size)
+        *file_mailfrom_size = context->file_mailfrom_size;
+    else
+        return 0;
+    return 1;
+}
+
+void file_rcptto_set (FileContext *context, uint8_t *file_rcptto, uint32_t file_rcptto_size)
+{
+    if (!context)
+        return;
+    context->file_rcptto = file_rcptto;
+    context->file_rcptto_size = file_rcptto_size;
+}
+
+int file_rcptto_get (FileContext *context, uint8_t **file_rcptto, uint32_t *file_rcptto_size)
+{
+    if (!context)
+        return 0;
+    if (file_rcptto)
+        *file_rcptto = context->file_rcptto;
+    else
+        return 0;
+    if (file_rcptto_size)
+        *file_rcptto_size = context->file_rcptto_size;
+    else
+        return 0;
+    return 1;
+}
+
+void file_headers_set (FileContext *context, uint8_t *file_headers, uint32_t file_headers_size)
+{
+    if (!context)
+        return;
+    context->file_headers = file_headers;
+    context->file_headers_size = file_headers_size;
+}
+
+int file_headers_get (FileContext *context, uint8_t **file_headers, uint32_t *file_headers_size)
+{
+    if (!context)
+        return 0;
+    if (file_headers)
+        *file_headers = context->file_headers;
+    else
+        return 0;
+    if (file_headers_size)
+        *file_headers_size = context->file_headers_size;
+    else
+        return 0;
+    return 1;
+}
+
+void file_ftp_user_set (FileContext *context, uint8_t *ftp_user, uint32_t ftp_user_size)
+{
+    if (!context)
+        return;
+    if (context->file_ftp_user)
+        free(context->file_ftp_user);
+
+    context->file_ftp_user = (uint8_t *)SnortStrdup((const char *)ftp_user);
+
+    if (context->file_ftp_user)
+        context->file_ftp_user_size = ftp_user_size;
+}
+
+int file_ftp_user_get (FileContext *context, uint8_t **file_ftp_user, uint32_t *file_ftp_user_size)
+{
+    if (!context)
+    {
+        return 0;
+    }
+
+    if (file_ftp_user)
+    {
+        *file_ftp_user = context->file_ftp_user;
+    }
+    else
+    {
+        return 0;
+    }
+
+    if (file_ftp_user_size)
+    {
+        *file_ftp_user_size = context->file_ftp_user_size;
+    }
+    else
+    {
+        return 0;
+    }
+
+    return 1;
+}
+
+void file_smb_user_id_set (FileContext *context, uint8_t *smb_user_id, uint32_t smb_user_id_size)
+{
+    if (!context)
+        return;
+    if (context->file_smb_user_id)
+        free(context->file_smb_user_id);
+
+    context->file_smb_user_id = SnortAlloc(smb_user_id_size);
+
+    if (context->file_smb_user_id)
+    {
+        memcpy(context->file_smb_user_id,smb_user_id,smb_user_id_size);
+        context->file_smb_user_id_size = smb_user_id_size;
+    }
+}
+
+int file_smb_user_id_get (FileContext *context, uint8_t **file_smb_user_id, uint32_t *file_smb_user_id_size)
+{
+    if (!context)
+    {
+        return 0;
+    }
+
+    if (file_smb_user_id)
+    {
+        *file_smb_user_id = context->file_smb_user_id;
+    }
+    else
+    {
+        return 0;
+    }
+
+    if (file_smb_user_id_size)
+    {
+        *file_smb_user_id_size = context->file_smb_user_id_size;
+    }
+    else
+    {
+        return 0;
+    }
+
+    return 1;
+}
+
+void file_smb_is_upload_set (FileContext *context, uint8_t is_upload)
+{
+    if (!context)
+        return;
+
+    context->file_smb_is_upload_valid = 1;
+    context->file_smb_is_upload = is_upload;
+}
+
+int file_smb_is_upload_get (FileContext *context, uint8_t *is_upload)
+{
+    if (!context)
+        return 0;
+
+    if (!context->file_smb_is_upload_valid)
+        return 0;
+
+    *is_upload = context->file_smb_is_upload;
+    return 1;
+}
+#endif
 
 void file_size_set (FileContext *context, uint64_t file_size)
 {

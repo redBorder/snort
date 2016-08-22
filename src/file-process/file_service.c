@@ -50,11 +50,18 @@
 #include "file_service.h"
 #include "file_segment_process.h"
 
+#ifdef HAVE_EXTRADATA_FILE
+#include "Unified2_common.h"
+#endif
+
 static bool file_type_id_enabled = false;
 static bool file_signature_enabled = false;
 static bool file_capture_enabled = false;
 static bool file_processing_initiated = false;
 static bool file_type_force = false;
+#ifdef HAVE_EXTRADATA_FILE
+static bool file_extradata_enabled = false;
+#endif
 
 static uint32_t file_config_version = 0;
 static File_policy_callback_func file_policy_cb = NULL;
@@ -68,6 +75,17 @@ static int file_process(void* ssnptr, uint8_t* file_data, int data_size,
 
 /*File properties*/
 static int get_file_name(void* ssnptr, uint8_t **fname, uint32_t *name_size);
+#ifdef HAVE_EXTRADATA_FILE
+static int get_file_hostname(void* ssnptr, uint8_t **fname, uint32_t *name_size);
+static int get_file_mailfrom(void* ssnptr, uint8_t **fname, uint32_t *name_size);
+static int get_file_rcptto(void* ssnptr, uint8_t **fname, uint32_t *name_size);
+static int get_file_headers(void* ssnptr, uint8_t **fname, uint32_t *name_size);
+
+static int get_file_ftp_user(void* ssnptr, uint8_t **fuser, uint32_t *user_size);
+
+static int get_file_smb_user_id(void* ssnptr, uint8_t **fuser, uint32_t *user_size);
+#endif
+
 static uint64_t get_file_size(void* ssnptr);
 static uint64_t get_file_processed_size(void* ssnptr);
 static bool get_file_direction(void* ssnptr);
@@ -75,12 +93,38 @@ static uint8_t *get_file_sig_sha256(void* ssnptr);
 
 static void set_file_name(void* ssnptr, uint8_t * fname, uint32_t name_size,
         bool save_in_context);
+#ifdef HAVE_EXTRADATA_FILE
+static void set_file_hostname(void* ssnptr, uint8_t * fname, uint32_t name_size);
+static void set_file_mailfrom(void* ssnptr, uint8_t * fname, uint32_t name_size);
+static void set_file_rcptto(void* ssnptr, uint8_t * fname, uint32_t name_size);
+static void set_file_headers(void* ssnptr, uint8_t * fname, uint32_t name_size);
+static void set_file_ftp_user(void* ssnptr, uint8_t * fuser, uint32_t user_size);
+
+static void set_file_smb_user_id(void* ssnptr, uint8_t *fuser, uint32_t user_size);
+static void set_file_smb_is_upload(void* ssnptr, uint8_t is_upload);
+#endif
+
 static void set_file_direction(void* ssnptr, bool upload);
 
 static void set_file_policy_callback(File_policy_callback_func);
 static void enable_file_type(File_type_callback_func );
 static void enable_file_signature (File_signature_callback_func);
 static void enable_file_capture(File_signature_callback_func );
+#ifdef HAVE_EXTRADATA_FILE
+static void FileRegisterXtraDataFuncs(FileConfig *pFileConfig);
+static void enable_file_extradata();
+static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileSize(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileName(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileHostname(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileMailFrom(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileRcptTo(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileHeaders(void *data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileFtpUser(void* data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileSmbUserId(void* data, uint8_t **buf, uint32_t *len, uint32_t *type);
+static int GetFileSmbIsUpload(void* data, uint8_t **buf, uint32_t *len, uint32_t *type);
+#endif
+
 static void set_file_action_log_callback(Log_file_action_func);
 
 static int64_t get_max_file_depth(void);
@@ -123,16 +167,35 @@ void init_fileAPI(void)
     fileAPI.is_file_service_enabled = &is_file_service_enabled;
     fileAPI.file_process = &file_process;
     fileAPI.get_file_name = &get_file_name;
+#ifdef HAVE_EXTRADATA_FILE
+    fileAPI.get_file_hostname = &get_file_hostname;
+    fileAPI.get_file_mailfrom = &get_file_mailfrom;
+    fileAPI.get_file_rcptto = &get_file_rcptto;
+    fileAPI.get_file_headers = &get_file_headers;
+    fileAPI.get_file_ftp_user = &get_file_ftp_user;
+#endif
     fileAPI.get_file_size = &get_file_size;
     fileAPI.get_file_processed_size = &get_file_processed_size;
     fileAPI.get_file_direction = &get_file_direction;
     fileAPI.get_sig_sha256 = &get_file_sig_sha256;
     fileAPI.set_file_name = &set_file_name;
+#ifdef HAVE_EXTRADATA_FILE
+    fileAPI.set_file_hostname = &set_file_hostname;
+    fileAPI.set_file_mailfrom = &set_file_mailfrom;
+    fileAPI.set_file_rcptto = &set_file_rcptto;
+    fileAPI.set_file_headers = &set_file_headers;
+    fileAPI.set_file_ftp_user = &set_file_ftp_user;
+    fileAPI.set_file_smb_user_id = &set_file_smb_user_id;
+    fileAPI.set_file_smb_is_upload = &set_file_smb_is_upload;
+#endif
     fileAPI.set_file_direction = &set_file_direction;
     fileAPI.set_file_policy_callback = &set_file_policy_callback;
     fileAPI.enable_file_type = &enable_file_type;
     fileAPI.enable_file_signature = &enable_file_signature;
     fileAPI.enable_file_capture = &enable_file_capture;
+#ifdef HAVE_EXTRADATA_FILE
+    fileAPI.enable_file_extradata = &enable_file_extradata;
+#endif
     fileAPI.set_file_action_log_callback = &set_file_action_log_callback;
     fileAPI.get_max_file_depth = &get_max_file_depth;
     fileAPI.set_log_buffers = &set_log_buffers;
@@ -195,6 +258,11 @@ void FileAPIPostInit (void)
         }
     }
 
+#ifdef HAVE_EXTRADATA_FILE
+    if (file_extradata_enabled)
+        FileRegisterXtraDataFuncs(file_config);
+#endif
+
     if ( file_capture_enabled)
         file_capture_init_mempool(file_config->file_capture_memcap,
                 file_config->file_capture_block_size);
@@ -207,6 +275,242 @@ void FileAPIPostInit (void)
 #endif
 
 }
+
+#ifdef HAVE_EXTRADATA_FILE
+static void FileRegisterXtraDataFuncs(FileConfig *file_config)
+{
+    if ((stream_api == NULL) || !file_config)
+        return;
+    file_config->xtra_file_sha256_id = stream_api->reg_xtra_data_cb(GetFileSHA256);
+    file_config->xtra_file_size_id = stream_api->reg_xtra_data_cb(GetFileSize);
+    file_config->xtra_file_name_id = stream_api->reg_xtra_data_cb(GetFileName);
+    file_config->xtra_file_hostname_id = stream_api->reg_xtra_data_cb(GetFileHostname);
+    file_config->xtra_file_mailfrom_id = stream_api->reg_xtra_data_cb(GetFileMailFrom);
+    file_config->xtra_file_rcptto_id = stream_api->reg_xtra_data_cb(GetFileRcptTo);
+    file_config->xtra_file_headers_id = stream_api->reg_xtra_data_cb(GetFileHeaders);
+    file_config->xtra_file_ftp_user_id = stream_api->reg_xtra_data_cb(GetFileFtpUser);
+    file_config->xtra_file_smb_user_id_id = stream_api->reg_xtra_data_cb(GetFileSmbUserId);
+    file_config->xtra_file_smb_is_upload_id = stream_api->reg_xtra_data_cb(GetFileSmbIsUpload);
+}
+
+static int GetFileSHA256(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    if (data == NULL)
+        return 0;
+
+    *buf = get_file_sig_sha256(data);
+    *len = SHA256_HASH_SIZE;
+    *type = EVENT_INFO_FILE_SHA256;
+    return 1;
+}
+
+static int GetFileSize(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->file_size > 0)
+    {
+        *buf = (uint8_t *) (context->file_size_str);
+        *len = snprintf(context->file_size_str, sizeof(context->file_size_str), "%lu", context->file_size);
+        *type = EVENT_INFO_FILE_SIZE;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int GetFileName(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->file_name_size > 0)
+    {
+        *buf = context->file_name;
+        *len = context->file_name_size;
+        *type = EVENT_INFO_FILE_NAME;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int GetFileHostname(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->hostname_size > 0)
+    {
+        *buf = context->hostname;
+        *len = context->hostname_size;
+        *type = EVENT_INFO_FILE_HOSTNAME;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int GetFileMailFrom(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->file_mailfrom_size > 0)
+    {
+        *buf = context->file_mailfrom;
+        *len = context->file_mailfrom_size;
+        *type = EVENT_INFO_FILE_MAILFROM;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int GetFileRcptTo(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->file_rcptto_size > 0)
+    {
+        *buf = context->file_rcptto;
+        *len = context->file_rcptto_size;
+        *type = EVENT_INFO_FILE_RCPTTO;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int GetFileHeaders(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->file_headers_size > 0)
+    {
+        *buf = context->file_headers;
+        *len = context->file_headers_size;
+        *type = EVENT_INFO_FILE_EMAIL_HDRS;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int GetFileFtpUser(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->file_ftp_user_size > 0)
+    {
+        *buf = context->file_ftp_user;
+        *len = context->file_ftp_user_size;
+        *type = EVENT_INFO_FILE_FTP_USER;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int GetFileSmbUserId(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->file_smb_user_id_size > 0)
+    {
+        *buf = context->file_smb_user_id;
+        *len = context->file_smb_user_id_size;
+        *type = EVENT_INFO_FILE_SMB_USER_ID;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int GetFileSmbIsUpload(void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    FileContext * context = NULL;
+
+    if (data == NULL)
+        return 0;
+
+    context = get_current_file_context(data);
+
+    if(context == NULL)
+        return 0;
+
+    if (context->file_smb_is_upload_valid > 0)
+    {
+        *buf = &context->file_smb_is_upload;
+        *len = sizeof(context->file_smb_is_upload);
+        *type = EVENT_INFO_FILE_SMB_IS_UPLOAD;
+        return 1;
+    }
+
+    return 0;
+}
+#endif
 
 static void start_file_processing(void)
 {
@@ -366,6 +670,22 @@ FileContext* create_file_context(void *ssnptr)
     /* Create file session if not yet*/
     get_create_file_session (ssnptr);
 
+#ifdef HAVE_EXTRADATA_FILE
+    if (snort_conf != NULL && snort_conf->file_config != NULL)
+    {
+        context->xtra_file_sha256_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_sha256_id;
+        context->xtra_file_size_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_size_id;
+        context->xtra_file_name_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_name_id;
+        context->xtra_file_hostname_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_hostname_id;
+        context->xtra_file_mailfrom_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_mailfrom_id;
+        context->xtra_file_rcptto_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_rcptto_id;
+        context->xtra_file_headers_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_headers_id;
+        context->xtra_file_ftp_user_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_ftp_user_id;
+        context->xtra_file_smb_user_id_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_smb_user_id_id;
+        context->xtra_file_smb_is_upload_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_smb_is_upload_id;
+    }
+#endif
+
     return context;
 }
 
@@ -398,6 +718,23 @@ static inline FileContext* find_main_file_context(void* p, FilePosition position
         {
             /* Reuse the same context */
             file_context_reset(context);
+
+#ifdef HAVE_EXTRADATA_FILE
+            if (snort_conf != NULL && snort_conf->file_config != NULL)
+            {
+                context->xtra_file_sha256_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_sha256_id;
+                context->xtra_file_size_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_size_id;
+                context->xtra_file_name_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_name_id;
+                context->xtra_file_hostname_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_hostname_id;
+                context->xtra_file_mailfrom_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_mailfrom_id;
+                context->xtra_file_rcptto_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_rcptto_id;
+                context->xtra_file_headers_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_headers_id;
+                context->xtra_file_ftp_user_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_ftp_user_id;
+                context->xtra_file_smb_user_id_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_smb_user_id_id;
+                context->xtra_file_smb_is_upload_id = ((FileConfig *)(snort_conf->file_config))->xtra_file_smb_is_upload_id;
+            }
+#endif
+
             init_file_context(ssnptr, upload, context);
             context->file_id = file_session->max_file_id++;
             return context;
@@ -732,6 +1069,29 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
     set_current_file_context(ssnptr, context);
     file_stats.file_data_total += data_size;
 
+#ifdef HAVE_EXTRADATA_FILE
+    pkt->xtradata_mask |= BIT(context->xtra_file_sha256_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_size_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_name_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_hostname_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_mailfrom_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_rcptto_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_headers_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_ftp_user_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_smb_user_id_id);
+    pkt->xtradata_mask |= BIT(context->xtra_file_smb_is_upload_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_sha256_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_size_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_name_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_hostname_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_mailfrom_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_rcptto_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_headers_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_ftp_user_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_smb_user_id_id);
+    //stream_api->set_extra_data(pkt->ssnptr, pkt, context->xtra_file_smb_is_upload_id);
+#endif
+
     if ((!context->file_type_enabled) && (!context->file_signature_enabled))
     {
         updateFileSize(context, data_size, position);
@@ -858,6 +1218,18 @@ static int process_file_context(FileContext *context, void *p, uint8_t *file_dat
         {
             FILE_REG_DEBUG_WRAP(if (context->sha256) file_sha256_print(context->sha256);)
             _file_signature_lookup(context, p, false, suspend_block_verdict);
+#ifdef HAVE_EXTRADATA_FILE
+            /* Add the event with the File Type after signature process finishes. */
+            if (!(pkt->packet_flags & PKT_FILE_EVENT_SET) &&
+                context->file_type_id != SNORT_FILE_TYPE_CONTINUE &&
+                context->file_type_id != SNORT_FILE_TYPE_UNKNOWN)
+            {
+                file_eventq_add(GENERATOR_FILE_TYPE, context->file_type_id,
+                        file_type_name(context->file_config, context->file_type_id),
+                        RULE_TYPE__ALERT);
+                pkt->packet_flags |= PKT_FILE_EVENT_SET;
+            }
+#endif
         }
 
     }
@@ -907,6 +1279,87 @@ static int get_file_name (void* ssnptr, uint8_t **fname, uint32_t *name_size)
 {
     return file_name_get(get_current_file_context(ssnptr), fname, name_size);
 }
+
+#ifdef HAVE_EXTRADATA_FILE
+static void set_file_hostname (void* ssnptr, uint8_t* fhostname, uint32_t hostname_size)
+{
+    FileContext* context = get_current_file_context(ssnptr);
+    file_hostname_set(context, fhostname, hostname_size);
+    FILE_REG_DEBUG_WRAP(printFileContext(context);)
+}
+
+static int get_file_hostname (void* ssnptr, uint8_t **fhostname, uint32_t *hostname_size)
+{
+    return file_hostname_get(get_current_file_context(ssnptr), fhostname, hostname_size);
+}
+
+static void set_file_mailfrom (void* ssnptr, uint8_t* fmailfrom, uint32_t mailfrom_size)
+{
+    FileContext* context = get_current_file_context(ssnptr);
+    file_mailfrom_set(context, fmailfrom, mailfrom_size);
+    FILE_REG_DEBUG_WRAP(printFileContext(context);)
+}
+
+static int get_file_mailfrom (void* ssnptr, uint8_t **fmailfrom, uint32_t *mailfrom_size)
+{
+    return file_mailfrom_get(get_current_file_context(ssnptr), fmailfrom, mailfrom_size);
+}
+
+static void set_file_rcptto (void* ssnptr, uint8_t* frcptto, uint32_t rcptto_size)
+{
+    FileContext* context = get_current_file_context(ssnptr);
+    file_rcptto_set(context, frcptto, rcptto_size);
+    FILE_REG_DEBUG_WRAP(printFileContext(context);)
+}
+
+static int get_file_rcptto (void* ssnptr, uint8_t **frcptto, uint32_t *rcptto_size)
+{
+    return file_rcptto_get(get_current_file_context(ssnptr), frcptto, rcptto_size);
+}
+
+static void set_file_headers (void* ssnptr, uint8_t* fheaders, uint32_t headers_size)
+{
+    FileContext* context = get_current_file_context(ssnptr);
+    file_headers_set(context, fheaders, headers_size);
+    FILE_REG_DEBUG_WRAP(printFileContext(context);)
+}
+
+static int get_file_headers (void* ssnptr, uint8_t **fheaders, uint32_t *headers_size)
+{
+    return file_headers_get(get_current_file_context(ssnptr), fheaders, headers_size);
+}
+
+static void set_file_ftp_user(void* ssnptr, uint8_t *fuser, uint32_t user_size)
+{
+    FileContext* context = get_current_file_context(ssnptr);
+    file_ftp_user_set(context, fuser, user_size);
+    FILE_REG_DEBUG_WRAP(printFileContext(context);)
+}
+
+static int get_file_ftp_user(void* ssnptr, uint8_t **fuser, uint32_t *user_size)
+{
+    return file_ftp_user_get(get_current_file_context(ssnptr), fuser, user_size);
+}
+
+static void set_file_smb_user_id(void* ssnptr, uint8_t *user_id, uint32_t user_id_size)
+{
+    FileContext* context = get_current_file_context(ssnptr);
+    file_smb_user_id_set(context, user_id, user_id_size);
+    FILE_REG_DEBUG_WRAP(printFileContext(context);)
+}
+
+static int get_file_smb_user_id(void* ssnptr, uint8_t **user_id, uint32_t *user_id_size)
+{
+    return file_smb_user_id_get(get_current_file_context(ssnptr), user_id, user_id_size);
+}
+
+static void set_file_smb_is_upload(void* ssnptr, uint8_t is_upload)
+{
+    FileContext* context = get_current_file_context(ssnptr);
+    file_smb_is_upload_set(context, is_upload);
+    FILE_REG_DEBUG_WRAP(printFileContext(context);)
+}
+#endif
 
 static uint64_t  get_file_size(void* ssnptr)
 {
@@ -1019,6 +1472,20 @@ static void enable_file_capture(File_signature_callback_func callback)
     }
 }
 
+#ifdef HAVE_EXTRADATA_FILE
+static void enable_file_extradata()
+{
+    if (!file_extradata_enabled)
+    {
+        file_extradata_enabled = true;
+#ifdef SNORT_RELOAD
+        file_sevice_reconfig_set(true);
+#endif
+        LogMessage("File service: file extradata enabled.\n");
+    }
+}
+#endif
+
 static void set_file_action_log_callback(Log_file_action_func log_func)
 {
     log_file_action = log_func;
@@ -1114,7 +1581,7 @@ static bool check_paf_abort(void* ssn)
 static int64_t get_max_file_capture_size(void *ssn)
 {
     FileConfig * file_config;
-    FileContext * file_context = get_current_file_context(ssn); 
+    FileContext * file_context = get_current_file_context(ssn);
 
     if (!file_context)
         return 0;

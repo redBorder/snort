@@ -86,7 +86,12 @@ host_triplet = @host@
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@						  include/sfghash.h include/sfhashfcn.h include/sflsq.h include/md5.h \
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@						  include/dns_defs.h
 
-@FEAT_OPEN_APPID_TRUE@am__append_3 = include/appId.h  include/appIdApi.h include/thirdparty_appid_types.h \
+# FEAT_OPEN_APPID includes all needed header, but we do not have it enabled at this point
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@@SO_WITH_STATIC_LIB_TRUE@am__append_3 = libsf_dynamic_utils.la
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@@SO_WITH_STATIC_LIB_TRUE@am__append_4 = include/sfghash.h include/sfmemcap.h include/sfprimetable.h \
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@@SO_WITH_STATIC_LIB_TRUE@						  include/sfhashfcn.h
+
+@FEAT_OPEN_APPID_TRUE@am__append_5 = include/appId.h  include/appIdApi.h include/thirdparty_appid_types.h \
 @FEAT_OPEN_APPID_TRUE@				 include/thirdparty_appid_api.h \
 @FEAT_OPEN_APPID_TRUE@				 include/sfprimetable.h include/sfprimetable.c include/sfxhash.h \
 @FEAT_OPEN_APPID_TRUE@				 include/sfxhash.c include/sfmemcap.h include/sfmemcap.c \
@@ -94,13 +99,17 @@ host_triplet = @host@
 @FEAT_OPEN_APPID_TRUE@				 include/md5.h include/md5.c \
 @FEAT_OPEN_APPID_TRUE@				 include/dns_defs.h
 
-@FEAT_OPEN_APPID_TRUE@am__append_4 = appid
-@FEAT_OPEN_APPID_TRUE@am__append_5 = include/appId.h  include/appIdApi.h  include/thirdparty_appid_types.h \
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@am__append_6 = include/sfxhash.h include/sfxhash.c include/sfmemcap.h include/sfmemcap.c \
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@				 include/sfprimetable.h include/sfprimetable.c include/sfhashfcn.c
+
+@FEAT_OPEN_APPID_TRUE@am__append_7 = appid
+@FEAT_OPEN_APPID_TRUE@am__append_8 = include/appId.h  include/appIdApi.h  include/thirdparty_appid_types.h \
 @FEAT_OPEN_APPID_TRUE@				  include/thirdparty_appid_api.h \
 @FEAT_OPEN_APPID_TRUE@				  include/sfprimetable.h include/sfxhash.h include/sfmemcap.h include/sfhashfcn.h \
 @FEAT_OPEN_APPID_TRUE@				  include/md5.h \
 @FEAT_OPEN_APPID_TRUE@				  include/dns_defs.h 
 
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@am__append_9 = include/sfxhash.h include/sfmemcap.h include/sfprimetable.h
 subdir = src/dynamic-preprocessors
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(am__preproc_HEADERS_DIST)
@@ -179,6 +188,10 @@ libsf_dynamic_preproc_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 @SO_WITH_STATIC_LIB_TRUE@am_libsf_dynamic_preproc_la_rpath = -rpath \
 @SO_WITH_STATIC_LIB_TRUE@	$(preproclibdir)
 libsf_dynamic_utils_la_LIBADD =
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@@SO_WITH_STATIC_LIB_TRUE@nodist_libsf_dynamic_utils_la_OBJECTS = libsf_dynamic_utils_la-sfxhash.lo \
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@@SO_WITH_STATIC_LIB_TRUE@	libsf_dynamic_utils_la-sfmemcap.lo \
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@@SO_WITH_STATIC_LIB_TRUE@	libsf_dynamic_utils_la-sfprimetable.lo \
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@@SO_WITH_STATIC_LIB_TRUE@	libsf_dynamic_utils_la-sfhashfcn.lo
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@nodist_libsf_dynamic_utils_la_OBJECTS = libsf_dynamic_utils_la-sfprimetable.lo \
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@	libsf_dynamic_utils_la-sfxhash.lo \
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@	libsf_dynamic_utils_la-sfmemcap.lo \
@@ -192,6 +205,8 @@ libsf_dynamic_utils_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
 	$(libsf_dynamic_utils_la_CFLAGS) $(CFLAGS) \
 	$(libsf_dynamic_utils_la_LDFLAGS) $(LDFLAGS) -o $@
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@@SO_WITH_STATIC_LIB_TRUE@am_libsf_dynamic_utils_la_rpath = -rpath \
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@@SO_WITH_STATIC_LIB_TRUE@	$(preproclibdir)
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@am_libsf_dynamic_utils_la_rpath =  \
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@	-rpath \
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@	$(preproclibdir)
@@ -441,7 +456,7 @@ AUTOMAKE_OPTIONS = foreign no-dependencies
 @SO_WITH_STATIC_LIB_TRUE@preproclibdir = $(pkglibdir)/dynamic_preproc
 @SO_WITH_STATIC_LIB_TRUE@preproclib_LTLIBRARIES =  \
 @SO_WITH_STATIC_LIB_TRUE@	libsf_dynamic_preproc.la \
-@SO_WITH_STATIC_LIB_TRUE@	$(am__append_1)
+@SO_WITH_STATIC_LIB_TRUE@	$(am__append_1) $(am__append_3)
 @SO_WITH_STATIC_LIB_TRUE@libsf_dynamic_preproc_la_CFLAGS = -fPIC -DPIC -DDYNAMIC_PREPROC_CONTEXT
 @SO_WITH_STATIC_LIB_TRUE@libsf_dynamic_preproc_la_LDFLAGS = -static
 @SO_WITH_STATIC_LIB_TRUE@libsf_dynamic_preproc_la_SOURCES = \
@@ -515,9 +530,15 @@ AUTOMAKE_OPTIONS = foreign no-dependencies
 @SO_WITH_STATIC_LIB_TRUE@	include/file_mail_common.h \
 @SO_WITH_STATIC_LIB_TRUE@	include/mpse_methods.h \
 @SO_WITH_STATIC_LIB_TRUE@	include/sfdebug.h \
-@SO_WITH_STATIC_LIB_TRUE@	include/sip_common.h $(am__append_2)
+@SO_WITH_STATIC_LIB_TRUE@	include/sip_common.h $(am__append_2) \
+@SO_WITH_STATIC_LIB_TRUE@	$(am__append_4)
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@@SO_WITH_STATIC_LIB_TRUE@libsf_dynamic_utils_la_CFLAGS = -fPIC -DPIC -DDYNAMIC_PREPROC_CONTEXT
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@libsf_dynamic_utils_la_CFLAGS = -fPIC -DPIC -DDYNAMIC_PREPROC_CONTEXT
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@@SO_WITH_STATIC_LIB_TRUE@libsf_dynamic_utils_la_LDFLAGS = -static
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@libsf_dynamic_utils_la_LDFLAGS = -static
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@@SO_WITH_STATIC_LIB_TRUE@nodist_libsf_dynamic_utils_la_SOURCES = include/sfxhash.c include/sfmemcap.c include/sfprimetable.c \
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@@SO_WITH_STATIC_LIB_TRUE@						  include/sfhashfcn.c
+
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@nodist_libsf_dynamic_utils_la_SOURCES = include/sfprimetable.c include/sfxhash.c include/sfmemcap.c include/sfghash.c \
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@						  include/sfhashfcn.c include/sflsq.c include/md5.c
 
@@ -561,7 +582,7 @@ BUILT_SOURCES = include/snort_bounds.h include/snort_debug.h \
 	ssl_common/ssl_session.h ssl_common/ssl_inspect.h \
 	ssl_common/ssl_inspect.c ssl_common/ssl_ha.h \
 	ssl_common/ssl_ha.c libs/sfparser.c libs/sfcommon.h \
-	$(am__append_3)
+	$(am__append_5) $(am__append_6)
 sed_ipv6_headers = \
 	sed -e "s/->iph->ip_src/->ip4_header->source/" \
 	    -e "s/->iph->ip_dst/->ip4_header->destination/" \
@@ -699,7 +720,7 @@ copy_treenode_header = \
 
 @FEAT_FILE_INSPECT_TRUE@FILE_INSPECT_DIR = file
 SUBDIRS = . libs ftptelnet pop imap smtp ssh dns ssl dcerpc2 sdf sip \
-	reputation gtp modbus dnp3 $(FILE_INSPECT_DIR) $(am__append_4)
+	reputation gtp modbus dnp3 $(FILE_INSPECT_DIR) $(am__append_7)
 EXTRA_DIST = \
 dynamic_preprocessors.dsp \
 sf_dynamic_initialize/sf_dynamic_initialize.dsp \
@@ -735,7 +756,8 @@ exported_files = include/sf_dynamic_common.h \
 	ssl_common/ssl_config.h ssl_common/ssl_config.c \
 	ssl_common/ssl_session.h ssl_common/ssl_inspect.h \
 	ssl_common/ssl_inspect.c ssl_common/ssl_ha.h \
-	ssl_common/ssl_ha.c libs/sfparser.c $(am__append_5)
+	ssl_common/ssl_ha.c libs/sfparser.c $(am__append_8) \
+	$(am__append_9)
 all: $(BUILT_SOURCES)
 	$(MAKE) $(AM_MAKEFLAGS) all-recursive
 
@@ -882,20 +904,20 @@ libsf_dynamic_preproc_la-sf_email_attach_decode.lo: include/sf_email_attach_deco
 libsf_dynamic_preproc_la-sfparser.lo: libs/sfparser.c
 	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsf_dynamic_preproc_la_CFLAGS) $(CFLAGS) -c -o libsf_dynamic_preproc_la-sfparser.lo `test -f 'libs/sfparser.c' || echo '$(srcdir)/'`libs/sfparser.c
 
-libsf_dynamic_utils_la-sfprimetable.lo: include/sfprimetable.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsf_dynamic_utils_la_CFLAGS) $(CFLAGS) -c -o libsf_dynamic_utils_la-sfprimetable.lo `test -f 'include/sfprimetable.c' || echo '$(srcdir)/'`include/sfprimetable.c
-
 libsf_dynamic_utils_la-sfxhash.lo: include/sfxhash.c
 	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsf_dynamic_utils_la_CFLAGS) $(CFLAGS) -c -o libsf_dynamic_utils_la-sfxhash.lo `test -f 'include/sfxhash.c' || echo '$(srcdir)/'`include/sfxhash.c
 
 libsf_dynamic_utils_la-sfmemcap.lo: include/sfmemcap.c
 	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsf_dynamic_utils_la_CFLAGS) $(CFLAGS) -c -o libsf_dynamic_utils_la-sfmemcap.lo `test -f 'include/sfmemcap.c' || echo '$(srcdir)/'`include/sfmemcap.c
 
-libsf_dynamic_utils_la-sfghash.lo: include/sfghash.c
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsf_dynamic_utils_la_CFLAGS) $(CFLAGS) -c -o libsf_dynamic_utils_la-sfghash.lo `test -f 'include/sfghash.c' || echo '$(srcdir)/'`include/sfghash.c
+libsf_dynamic_utils_la-sfprimetable.lo: include/sfprimetable.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsf_dynamic_utils_la_CFLAGS) $(CFLAGS) -c -o libsf_dynamic_utils_la-sfprimetable.lo `test -f 'include/sfprimetable.c' || echo '$(srcdir)/'`include/sfprimetable.c
 
 libsf_dynamic_utils_la-sfhashfcn.lo: include/sfhashfcn.c
 	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsf_dynamic_utils_la_CFLAGS) $(CFLAGS) -c -o libsf_dynamic_utils_la-sfhashfcn.lo `test -f 'include/sfhashfcn.c' || echo '$(srcdir)/'`include/sfhashfcn.c
+
+libsf_dynamic_utils_la-sfghash.lo: include/sfghash.c
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsf_dynamic_utils_la_CFLAGS) $(CFLAGS) -c -o libsf_dynamic_utils_la-sfghash.lo `test -f 'include/sfghash.c' || echo '$(srcdir)/'`include/sfghash.c
 
 libsf_dynamic_utils_la-sflsq.lo: include/sflsq.c
 	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsf_dynamic_utils_la_CFLAGS) $(CFLAGS) -c -o libsf_dynamic_utils_la-sflsq.lo `test -f 'include/sflsq.c' || echo '$(srcdir)/'`include/sflsq.c
@@ -1240,6 +1262,7 @@ uninstall-am: uninstall-local uninstall-nodist_preprocHEADERS \
 	uninstall-nodist_preprocHEADERS uninstall-preprocHEADERS \
 	uninstall-preproclibLTLIBRARIES
 
+
 @SO_WITH_STATIC_LIB_TRUE@all-local: $(LTLIBRARIES)
 @SO_WITH_STATIC_LIB_TRUE@	$(MAKE) DESTDIR=`pwd`/build install-preproclibLTLIBRARIES
 
@@ -1523,6 +1546,27 @@ include/appId.h: $(srcdir)/appid/appId.h
 
 @FEAT_OPEN_APPID_TRUE@include/sflsq.c: $(srcdir)/../sfutil/sflsq.c
 @FEAT_OPEN_APPID_TRUE@	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@include/sfxhash.h: $(srcdir)/../sfutil/sfxhash.h
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@include/sfxhash.c: $(srcdir)/../sfutil/sfxhash.c
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@include/sfmemcap.h: $(srcdir)/../sfutil/sfmemcap.h
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@	@src_header=$?; dst_header=$@; $(copy_headers);  $(copy_error_message); $(replace_policy_globals)
+
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@include/sfmemcap.c: $(srcdir)/../sfutil/sfmemcap.c
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@include/sfprimetable.h: $(srcdir)/../sfutil/sfprimetable.h
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@include/sfprimetable.c: $(srcdir)/../sfutil/sfprimetable.c
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@include/sfhashfcn.c: $(srcdir)/../sfutil/sfhashfcn.c
+@FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
 
 clean-local:
 	rm -rf include build

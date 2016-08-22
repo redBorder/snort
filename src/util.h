@@ -170,7 +170,7 @@ void SignalWaitingParent(void);
 void CheckLogDir(void);
 char *read_infile(char *);
 void CleanupProtoNames(void);
-void CreatePidFile(const char *, pid_t);
+void CreatePidFile(const char *, pid_t, pid_t);
 void ClosePidFile(void);
 void SetUidGid(int, int);
 void InitGroups(int, int);

@@ -7,14 +7,26 @@ dynamicpreprocessordir = ${libdir}/snort_dynamicpreprocessor
 
 dynamicpreprocessor_LTLIBRARIES = libsf_file_preproc.la
 
-libsf_file_preproc_la_LDFLAGS = -export-dynamic -module @XCCFLAGS@
+if HAVE_S3FILE
+LS3="-ls3"
+LXML2="-lxml2"
+HAVE_S3FILE="-DHAVE_S3FILE"
+else
+LS3=
+LXML2=
+HAVE_S3FILE=
+endif
+
+libsf_file_preproc_la_LDFLAGS = -export-dynamic -module $(LS3) $(LXML2)  @XCCFLAGS@
 if SO_WITH_STATIC_LIB
-libsf_file_preproc_la_LIBADD = ../libsf_dynamic_preproc.la
+libsf_file_preproc_la_LIBADD = ../libsf_dynamic_preproc.la ../libsf_dynamic_utils.la
 else
 nodist_libsf_file_preproc_la_SOURCES = \
 ../include/sf_dynamic_preproc_lib.c \
 ../include/sfPolicyUserData.c
 endif
+
+libsf_file_preproc_la_CPPFLAGS = $(HAVE_S3FILE) $(AM_CPPFLAGS)
 
 libsf_file_preproc_la_SOURCES = \
 spp_file.c \

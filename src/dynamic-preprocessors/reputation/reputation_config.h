@@ -32,6 +32,12 @@
 #include "reputation_debug.h"
 #include "sf_ip.h"
 #include "sfrt_flat.h"
+
+#ifdef REPUTATION_GEOIP
+//GeoIP library from http://www.maxmind.com/
+#include <GeoIP.h>
+#endif
+
 #ifdef SHARED_REP
 #include "./shmem/shmem_mgmt.h"
 #endif
@@ -56,6 +62,14 @@ typedef struct _SharedMem
     uint32_t updateInterval;
     uint16_t maxInstances;
 }SharedMem;
+
+#ifdef REPUTATION_GEOIP
+typedef struct _GeoFileList
+{
+    char*    filename;
+    int      filetype;
+} DataGeoFileList;
+#endif
 
 
 typedef enum _IPdecision
@@ -112,6 +126,16 @@ typedef struct _reputationConfig
     int ref_count;
     char *statusBuf;
     int  statusBuf_len;
+    IPdecision defaultAction;    //redBorder -> default action. If the ip is not in any list default action will be taken
+    uint8_t  ordered;            //redBorder -> if ordered, it will keep list ordered action occurrence (analice source ip first) 
+#ifdef REPUTATION_GEOIP
+    GeoIP * geoip;               //redBorder -> Added GeoIP support
+    char * geoip_db;             //redBorder -> GeoIP database location
+    char * geoip_path;           //redBorder -> GeoIP files location
+    IPdecision * geoip_actions;  //redBorder -> Actions for each country. DECISION_NULL (no decission) should be the default action for each country
+    int geoip_enabled;           //redBorder -> Enable GeoIP flag. If 1, geoip is enabled. To have it enabled it must have valid countries 
+#endif
+
 
 } ReputationConfig;
 
@@ -132,4 +156,10 @@ void  ParseReputationArgs(ReputationConfig *, u_char*);
 void initShareMemory(struct _SnortConfig *sc, void *config);
 void ReputationRepInfo(IPrepInfo *, uint8_t *, char *, int);
 DEBUG_WRAP(void ReputationPrintRepInfo(IPrepInfo * repInfo, uint8_t *base);)
+
+#ifdef REPUTATION_GEOIP
+void initGeoFilesWithManifiest(struct _SnortConfig *,void *config);
+#endif
+
+
 #endif

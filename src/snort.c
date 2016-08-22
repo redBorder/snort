@@ -501,7 +501,7 @@ static const char* GetPacketSource(char**);
 
 static void CleanExit(int);
 static void SnortInit(int, char **);
-static void InitPidChrootAndPrivs(pid_t);
+static void InitPidChrootAndPrivs(pid_t,pid_t);
 static void ParseCmdLine(int, char **);
 static int ShowUsage(char *);
 static void PrintVersion(void);
@@ -1372,7 +1372,7 @@ static const char* GetPacketSource (char** sptr)
     return intf;
 }
 
-static void InitPidChrootAndPrivs(pid_t pid)
+static void InitPidChrootAndPrivs(pid_t pid,pid_t ppid)
 {
 
 #ifndef WIN32
@@ -1387,7 +1387,7 @@ static void InitPidChrootAndPrivs(pid_t pid)
     if ( !ScReadMode() &&
        (ScDaemonMode() || *snort_conf->pidfile_suffix || ScCreatePidFile()))
     {
-       CreatePidFile(DAQ_GetInterfaceSpec(), pid);
+       CreatePidFile(DAQ_GetInterfaceSpec(), pid, ppid);
     }
 }
 
@@ -5363,7 +5363,7 @@ static void SnortUnprivilegedInit(void)
     Active_Init(snort_conf);
 #endif
 
-    InitPidChrootAndPrivs(snort_main_thread_pid);
+    InitPidChrootAndPrivs(snort_main_thread_pid,snort_conf->parent_pid);
 
 #if defined(HAVE_LINUXTHREADS) && !defined(WIN32)
     // this must be done after dropping privs for linux threads

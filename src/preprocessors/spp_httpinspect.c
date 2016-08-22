@@ -726,6 +726,9 @@ static void updateConfigFromFileProcessing (HTTPINSPECT_GLOBAL_CONF *pPolicyConf
         ServerConf->inspect_response = 1;
         ServerConf->extract_gzip = 1;
         ServerConf->log_uri = 1;
+#ifdef HAVE_EXTRADATA_FILE
+        ServerConf->log_hostname = 1;
+#endif
         ServerConf->unlimited_decompress = 1;
         pPolicyConfig->mime_conf.log_filename = 1;
         ServerConf->file_policy = 1;

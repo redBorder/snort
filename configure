@@ -664,6 +664,10 @@ HAVE_TARGET_BASED_FALSE
 HAVE_TARGET_BASED_TRUE
 HAVE_LZMA_FALSE
 HAVE_LZMA_TRUE
+HAVE_S3FILE_FALSE
+HAVE_S3FILE_TRUE
+HAVE_REPUTATIONGEOIP_FALSE
+HAVE_REPUTATIONGEOIP_TRUE
 BUILD_DYNAMIC_EXAMPLES_FALSE
 BUILD_DYNAMIC_EXAMPLES_TRUE
 BUILD_SIDE_CHANNEL_FALSE
@@ -829,6 +833,13 @@ with_dnet_libraries
 enable_static_daq
 enable_build_dynamic_examples
 enable_dlclose
+enable_reputationgeoip
+with_geoip_includes
+with_geoip_libraries
+enable_remote_file_s3
+with_libs3_includes
+with_libs3_libraries
+enable_extradata_file
 enable_lzma
 with_lzma_includes
 with_lzma_libraries
@@ -1516,6 +1527,9 @@ Optional Features:
   --disable-static-daq     Link static DAQ modules.
   --enable-build-dynamic-examples   Enable building of example dynamically loaded preprocessor and rule (off by default)
   --disable-dlclose        Only use if you are developing dynamic preprocessors or shared object rules.  Disable (--disable-dlclose) for testing valgrind leaks in dynamic libraries so a usable backtrace is reported.  Enabled by default.
+  --enable-reputationgeoip Enable Reputation GeoIP Support (adds GeoIP support implicitly)
+  --enable-remote-file-s3  Enable S3 file saving (implies s3 libs)
+  --enable-extradata-file       Enable ExtraData File collection.
   --disable-lzma           Disable LZMA Decompression
   --disable-gre            Disable GRE and IP in IP encapsulation support
   --disable-mpls           Disable MPLS support
@@ -1568,6 +1582,10 @@ Optional Packages:
   --with-openssl-libraries=DIR   openssl library directory
   --with-dnet-includes=DIR       libdnet include directory
   --with-dnet-libraries=DIR      libdnet library directory
+  --with-geoip-includes=DIR      libgeoip include directory
+  --with-geoip-libraries=DIR     libgeoip library directory
+  --with-libs3-includes=DIR      libs3 include directory
+  --with-libs3-libraries=DIR     libs3 library directory
   --with-lzma-includes=DIR       liblzma include directory
   --with-lzma-libraries=DIR      liblzma library directory
   --with-intel-soft-cpm-includes=DIR      Intel Soft CPM include directory
@@ -11945,14 +11963,10 @@ fi
   # before this can be enabled.
   hardcode_into_libs=yes
 
-  # Add ABI-specific directories to the system library path.
-  sys_lib_dlsearch_path_spec="/lib64 /usr/lib64 /lib /usr/lib"
-
   # Append ld.so.conf contents to the search path
   if test -f /etc/ld.so.conf; then
     lt_ld_extra=`awk '/^include / { system(sprintf("cd /etc; cat %s 2>/dev/null", \$2)); skip = 1; } { if (!skip) print \$0; skip = 0; }' < /etc/ld.so.conf | $SED -e 's/#.*//;/^[	 ]*hwcap[	 ]/d;s/[:,	]/ /g;s/=[^=]*$//;s/=[^= ]* / /g;s/"//g;/^$/d' | tr '\n' ' '`
-    sys_lib_dlsearch_path_spec="$sys_lib_dlsearch_path_spec $lt_ld_extra"
-
+    sys_lib_dlsearch_path_spec="/lib /usr/lib $lt_ld_extra"
   fi
 
   # We used to test for /lib/ld.so.1 and disable shared libraries on
@@ -16323,6 +16337,247 @@ if test "x$Z_LIB" = "xno"; then
  fi
 LIBS="$LIBS -lz"
 
+# Check whether --enable-reputationgeoip was given.
+if test "${enable_reputationgeoip+set}" = set; then :
+  enableval=$enable_reputationgeoip; enable_reputationgeoip="$enableval"
+else
+  enable_reputationgeoip="no"
+fi
+
+
+
+# Check whether --with-geoip_includes was given.
+if test "${with_geoip_includes+set}" = set; then :
+  withval=$with_geoip_includes; with_geoip_includes="$withval"
+else
+  with_geoip_includes="no"
+fi
+
+
+
+# Check whether --with-geoip_libraries was given.
+if test "${with_geoip_libraries+set}" = set; then :
+  withval=$with_geoip_libraries; with_geoip_libraries="$withval"
+else
+  with_geoip_libraries="no"
+fi
+
+
+ if test "x$enable_reputationgeoip" = "xyes"; then
+  HAVE_REPUTATIONGEOIP_TRUE=
+  HAVE_REPUTATIONGEOIP_FALSE='#'
+else
+  HAVE_REPUTATIONGEOIP_TRUE='#'
+  HAVE_REPUTATIONGEOIP_FALSE=
+fi
+
+if test "x$enable_reputationgeoip" = "xyes"; then
+    if test "x$with_geoip_includes" != "xno"; then
+        CPPFLAGS="${CPPFLAGS} -I${with_geoip_includes}"
+        GEOIP_HEADERS="yes"
+    else
+        for ac_header in GeoIP.h
+do :
+  ac_fn_c_check_header_mongrel "$LINENO" "GeoIP.h" "ac_cv_header_GeoIP_h" "$ac_includes_default"
+if test "x$ac_cv_header_GeoIP_h" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_GEOIP_H 1
+_ACEOF
+ GEOIP_HEADERS="yes"
+else
+  GEOIP_HEADERS="no"
+fi
+
+done
+
+    fi
+
+    if test "x$with_geoip_libraries" != "xno"; then
+        LDFLAGS="${LDFLAGS} -L${with_geoip_libraries}"
+        GEOIP_LIB="yes"
+    else
+        LIBBAK="$LIBS"
+        { $as_echo "$as_me:${as_lineno-$LINENO}: checking for GeoIP_open in -lGeoIP" >&5
+$as_echo_n "checking for GeoIP_open in -lGeoIP... " >&6; }
+if ${ac_cv_lib_GeoIP_GeoIP_open+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lGeoIP  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char GeoIP_open ();
+int
+main ()
+{
+return GeoIP_open ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_GeoIP_GeoIP_open=yes
+else
+  ac_cv_lib_GeoIP_GeoIP_open=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_GeoIP_GeoIP_open" >&5
+$as_echo "$ac_cv_lib_GeoIP_GeoIP_open" >&6; }
+if test "x$ac_cv_lib_GeoIP_GeoIP_open" = xyes; then :
+  GEOIP_LIB="yes"
+else
+  GEOIP_LIB="no"
+fi
+
+        LIBS="$LIBBAK"
+    fi
+fi
+
+# Check whether --enable-remote-file-s3 was given.
+if test "${enable_remote_file_s3+set}" = set; then :
+  enableval=$enable_remote_file_s3; enable_file_s3="$enableval"
+else
+  enable_file_s3="no"
+fi
+
+
+
+# Check whether --with-libs3-includes was given.
+if test "${with_libs3_includes+set}" = set; then :
+  withval=$with_libs3_includes; with_libs3_includes="$withval"
+else
+  with_libs3_includes="no"
+fi
+
+
+
+# Check whether --with-libs3-libraries was given.
+if test "${with_libs3_libraries+set}" = set; then :
+  withval=$with_libs3_libraries; with_libs3_libraries="$withval"
+else
+  with_libs3_libraries="no"
+fi
+
+
+ if test "x$enable_file_s3" = "xyes"; then
+  HAVE_S3FILE_TRUE=
+  HAVE_S3FILE_FALSE='#'
+else
+  HAVE_S3FILE_TRUE='#'
+  HAVE_S3FILE_FALSE=
+fi
+
+if test "x$enable_file_s3" = "xyes"; then
+    if test "x$with_libs3_includes" != "xno"; then
+        CPPFLAGS="${CPPFLAGS} -I${with_libs3_includes}"
+        LIBS3_HEADERS="yes"
+    else
+        for ac_header in libs3.h
+do :
+  ac_fn_c_check_header_mongrel "$LINENO" "libs3.h" "ac_cv_header_libs3_h" "$ac_includes_default"
+if test "x$ac_cv_header_libs3_h" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_LIBS3_H 1
+_ACEOF
+ LIBS3_HEADERS="yes"
+else
+  LIBS3_HEADERS="no"
+fi
+
+done
+
+    fi
+
+    if test "x$with_libs3_libraries" != "xno"; then
+        LDFLAGS="${LDFLAGS} -L${with_libs3_libraries}"
+        LIBS3_LIB="yes"
+    else
+        LIBS_BAK=$LIBS
+        LIBS="$LIBS -lxml2"
+        { $as_echo "$as_me:${as_lineno-$LINENO}: checking for S3_initialize in -ls3" >&5
+$as_echo_n "checking for S3_initialize in -ls3... " >&6; }
+if ${ac_cv_lib_s3_S3_initialize+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-ls3  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char S3_initialize ();
+int
+main ()
+{
+return S3_initialize ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_s3_S3_initialize=yes
+else
+  ac_cv_lib_s3_S3_initialize=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_s3_S3_initialize" >&5
+$as_echo "$ac_cv_lib_s3_S3_initialize" >&6; }
+if test "x$ac_cv_lib_s3_S3_initialize" = xyes; then :
+  LIBS3_LIB="yes"
+else
+  LIBS3_LIB="no"
+fi
+
+        LIBS="$LIBS_BAK"
+    fi
+
+    if test "x$LIBS3_LIB" == "xno" -o "x$LIBS3_HEADERS" == "xno"; then
+      echo
+      echo "   ERROR!  libs3 not found."
+      echo
+      exit 1
+    fi
+fi
+
+# Check whether --enable-extradata-file was given.
+if test "${enable_extradata_file+set}" = set; then :
+  enableval=$enable_extradata_file; enable_extradata_file="$enableval"
+else
+  enable_extradata_file="no"
+fi
+
+
+if test "x$enable_extradata_file" = "xyes"; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+
+cat >>confdefs.h <<_ACEOF
+#define HAVE_EXTRADATA_FILE /**/
+_ACEOF
+
+else
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+fi
+
 # Check whether --enable-lzma was given.
 if test "${enable_lzma+set}" = set; then :
   enableval=$enable_lzma; enable_lzma="$enableval"
@@ -16963,7 +17218,6 @@ $as_echo "#define FEAT_OPEN_APPID 1" >>confdefs.h
 
 
 
-
 if test "x$ac_cv_env_PKG_CONFIG_set" != "xset"; then
 	if test -n "$ac_tool_prefix"; then
   # Extract the first word of "${ac_tool_prefix}pkg-config", so it can be a program name with args.
@@ -17092,7 +17346,6 @@ if test -n "$luajit_CFLAGS"; then
   $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
   test $ac_status = 0; }; then
   pkg_cv_luajit_CFLAGS=`$PKG_CONFIG --cflags "luajit" 2>/dev/null`
-		      test "x$?" != "x0" && pkg_failed=yes
 else
   pkg_failed=yes
 fi
@@ -17109,7 +17362,6 @@ if test -n "$luajit_LIBS"; then
   $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
   test $ac_status = 0; }; then
   pkg_cv_luajit_LIBS=`$PKG_CONFIG --libs "luajit" 2>/dev/null`
-		      test "x$?" != "x0" && pkg_failed=yes
 else
   pkg_failed=yes
 fi
@@ -17129,9 +17381,9 @@ else
         _pkg_short_errors_supported=no
 fi
         if test $_pkg_short_errors_supported = yes; then
-	        luajit_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "luajit" 2>&1`
+	        luajit_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors "luajit" 2>&1`
         else
-	        luajit_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "luajit" 2>&1`
+	        luajit_PKG_ERRORS=`$PKG_CONFIG --print-errors "luajit" 2>&1`
         fi
 	# Put the nasty error message in config.log where it belongs
 	echo "$luajit_PKG_ERRORS" >&5
@@ -17506,6 +17758,14 @@ Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${BUILD_DYNAMIC_EXAMPLES_TRUE}" && test -z "${BUILD_DYNAMIC_EXAMPLES_FALSE}"; then
   as_fn_error $? "conditional \"BUILD_DYNAMIC_EXAMPLES\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${HAVE_REPUTATIONGEOIP_TRUE}" && test -z "${HAVE_REPUTATIONGEOIP_FALSE}"; then
+  as_fn_error $? "conditional \"HAVE_REPUTATIONGEOIP\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${HAVE_S3FILE_TRUE}" && test -z "${HAVE_S3FILE_FALSE}"; then
+  as_fn_error $? "conditional \"HAVE_S3FILE\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${HAVE_LZMA_TRUE}" && test -z "${HAVE_LZMA_FALSE}"; then
@@ -18015,7 +18275,7 @@ config.status
 configured by $0, generated by GNU Autoconf 2.69,
   with options \\"\$ac_cs_config\\"
 
-Copyright (C) 2012 Free Software Foundation, Inc.
+Copyright (C)  Free Software Foundation, Inc.
 This config.status script is free software; the Free Software Foundation
 gives unlimited permission to copy, distribute and modify it."
 

@@ -104,6 +104,21 @@ nodist_preproc_HEADERS += include/appId.h include/appIdApi.h include/thirdparty_
 						  include/sfprimetable.h include/sfxhash.h include/sfmemcap.h \
 						  include/sfghash.h include/sfhashfcn.h include/sflsq.h include/md5.h \
 						  include/dns_defs.h
+else
+if FEAT_FILE_INSPECT
+# FEAT_OPEN_APPID includes all needed header, but we do not have it enabled at this point
+preproclib_LTLIBRARIES += libsf_dynamic_utils.la
+
+libsf_dynamic_utils_la_CFLAGS = -fPIC -DPIC -DDYNAMIC_PREPROC_CONTEXT
+libsf_dynamic_utils_la_LDFLAGS = -static
+
+nodist_libsf_dynamic_utils_la_SOURCES = include/sfxhash.c include/sfmemcap.c include/sfprimetable.c \
+						  include/sfhashfcn.c
+
+nodist_preproc_HEADERS += include/sfghash.h include/sfmemcap.h include/sfprimetable.h \
+						  include/sfhashfcn.h
+
+endif
 endif
 all-local: $(LTLIBRARIES)
 	$(MAKE) DESTDIR=`pwd`/build install-preproclibLTLIBRARIES
@@ -206,7 +221,13 @@ BUILT_SOURCES += include/appId.h  include/appIdApi.h include/thirdparty_appid_ty
 				 include/sfghash.c include/sfhashfcn.c include/sflsq.h include/sflsq.c \
 				 include/md5.h include/md5.c \
 				 include/dns_defs.h
+else
+if FEAT_FILE_INSPECT
+BUILT_SOURCES += include/sfxhash.h include/sfxhash.c include/sfmemcap.h include/sfmemcap.c \
+				 include/sfprimetable.h include/sfprimetable.c include/sfhashfcn.c
 endif
+endif
+
 sed_ipv6_headers = \
 	sed -e "s/->iph->ip_src/->ip4_header->source/" \
 	    -e "s/->iph->ip_dst/->ip4_header->destination/" \
@@ -626,6 +647,29 @@ include/sflsq.h: $(srcdir)/../sfutil/sflsq.h
 include/sflsq.c: $(srcdir)/../sfutil/sflsq.c
 	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
 
+else
+if FEAT_FILE_INSPECT
+include/sfxhash.h: $(srcdir)/../sfutil/sfxhash.h
+	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+include/sfxhash.c: $(srcdir)/../sfutil/sfxhash.c
+	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+include/sfmemcap.h: $(srcdir)/../sfutil/sfmemcap.h
+	@src_header=$?; dst_header=$@; $(copy_headers);  $(copy_error_message); $(replace_policy_globals)
+
+include/sfmemcap.c: $(srcdir)/../sfutil/sfmemcap.c
+	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+include/sfprimetable.h: $(srcdir)/../sfutil/sfprimetable.h
+	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+include/sfprimetable.c: $(srcdir)/../sfutil/sfprimetable.c
+	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+
+include/sfhashfcn.c: $(srcdir)/../sfutil/sfhashfcn.c
+	@src_header=$?; dst_header=$@; $(copy_headers); $(copy_error_message); $(replace_policy_globals)
+endif
 endif
 
 if FEAT_FILE_INSPECT
@@ -716,6 +760,10 @@ exported_files += include/appId.h  include/appIdApi.h  include/thirdparty_appid_
 				  include/sfprimetable.h include/sfxhash.h include/sfmemcap.h include/sfhashfcn.h \
 				  include/md5.h \
 				  include/dns_defs.h 
+else
+if FEAT_FILE_INSPECT
+exported_files += include/sfxhash.h include/sfmemcap.h include/sfprimetable.h
+endif
 endif
 
 install-data-local:

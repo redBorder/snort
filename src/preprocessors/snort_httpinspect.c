@@ -3770,6 +3770,17 @@ static inline void setFileName(Packet *p)
     file_api->set_file_name (p->ssnptr, buf, len, false);
 }
 
+#ifdef HAVE_EXTRADATA_FILE
+static inline void setFileHostname(Packet *p)
+{
+    uint8_t *buf = NULL;
+    uint32_t len = 0;
+    uint32_t type = 0;
+    GetHttpHostnameData(p->ssnptr, &buf, &len, &type);
+    file_api->set_file_hostname (p->ssnptr, buf, len);
+}
+#endif
+
 static inline int processPostFileData(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p, HI_SESSION *Session, HttpSessionData *hsd)
 {
     uint8_t *start = (uint8_t *)(Session->client.request.content_type);
@@ -3815,10 +3826,14 @@ static inline int processPostFileData(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packe
                     file_api->get_file_position(p), true, false))
         {
             setFileName(p);
+#ifdef HAVE_EXTRADATA_FILE
+            setFileHostname(p);
+#endif
         }
     }
     return 0;
 }
+
 static inline void processFileData(Packet *p, HttpSessionData *hsd, bool *fileProcessed)
 {
     if (*fileProcessed || !PacketHasPAFPayload(p))
@@ -4482,6 +4497,9 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                                                    file_data_position, false, false))
                      {
                          setFileName(p);
+#ifdef HAVE_EXTRADATA_FILE
+                         setFileHostname(p);
+#endif
                      }
                  }
                  is_first = false;

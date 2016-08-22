@@ -193,7 +193,19 @@ typedef enum _EventInfoEnum
     EVENT_INFO_HTTP_HOSTNAME,
     EVENT_INFO_IPV6_SRC,
     EVENT_INFO_IPV6_DST,
-    EVENT_INFO_JSNORM_DATA
+    EVENT_INFO_JSNORM_DATA,
+#ifdef HAVE_EXTRADATA_FILE
+    EVENT_INFO_FILE_SHA256,     /* 14 */
+    EVENT_INFO_FILE_SIZE,       /* 15 */
+    EVENT_INFO_FILE_NAME,       /* 16 */
+    EVENT_INFO_FILE_HOSTNAME,   /* 17 */
+    EVENT_INFO_FILE_MAILFROM,   /* 18 */
+    EVENT_INFO_FILE_RCPTTO,     /* 19 */
+    EVENT_INFO_FILE_EMAIL_HDRS, /* 20 */
+    EVENT_INFO_FILE_FTP_USER,   /* 21 */
+    EVENT_INFO_FILE_SMB_USER_ID, /* 22 */
+    EVENT_INFO_FILE_SMB_IS_UPLOAD, /* 23 */
+#endif
 }EventInfoEnum;
 
 typedef enum _EventDataType
