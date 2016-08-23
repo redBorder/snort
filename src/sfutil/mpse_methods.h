@@ -44,6 +44,10 @@
 #define MPSE_INTEL_CPM 14
 #endif /* INTEL_SOFT_CPM */
 
+#ifdef INTEL_HYPERSCAN
+#define MPSE_HYPERSCAN 20
+#endif /* INTEL_HYPERSCAN */
+
 typedef enum {
     MPSE_PATTERN_CASE,
     MPSE_PATTERN_NOCASE

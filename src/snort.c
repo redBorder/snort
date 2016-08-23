@@ -158,6 +158,10 @@
 #include "sfutil/intel-soft-cpm.h"
 #endif
 
+#ifdef INTEL_HYPERSCAN
+#include "sfutil/hyperscan.h"
+#endif
+
 #include "session_api.h"
 
 #include "stream_common.h"
@@ -4189,6 +4193,10 @@ SnortConfig * SnortConfNew(void)
 
     sc->paf_max = DEFAULT_PAF_MAX;
 
+#ifdef INTEL_HYPERSCAN
+    sc->hyperscan_ctx = HyperscanNewContext();
+#endif
+
     /* Default secure hash pattern type */
     sc->Default_Protected_Content_Hash_Type = SECHASH_NONE;
 
@@ -4372,6 +4380,10 @@ void SnortConfFree(SnortConfig *sc)
 
 #ifdef INTEL_SOFT_CPM
     IntelPmRelease(sc->ipm_handles);
+#endif
+
+#ifdef INTEL_HYPERSCAN
+    HyperscanFreeContext(sc->hyperscan_ctx);
 #endif
 
 #ifdef SNORT_RELOAD

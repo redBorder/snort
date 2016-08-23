@@ -49,6 +49,10 @@
 
 void SetupPcre(void);
 
+#ifdef INTEL_HYPERSCAN
+struct hs_database;
+#endif
+
 #include <pcre.h>
 typedef struct _PcreData
 {
@@ -57,6 +61,11 @@ typedef struct _PcreData
     int options;        /* sp_pcre specfic options (relative & inverse) */
     char *expression;
     uint32_t search_offset;
+#ifdef INTEL_HYPERSCAN
+    struct hs_database *hs_db; /* hyperscan database, if used */
+    int hs_flags;              /* hyperscan flags used for compile */
+    int hs_noconfirm;          /* hyperscan matches don't need confirm */
+#endif // INTEL_HYPERSCAN
 } PcreData;
 
 void PcreCapture(struct _SnortConfig *sc, const void *code, const void *extra);

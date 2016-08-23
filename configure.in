@@ -1244,6 +1244,34 @@ if test "x$enable_intel_soft_cpm" = "xyes"; then
     CPPFLAGS="${CPPFLAGS} -DINTEL_SOFT_CPM"
 fi
 
+AC_ARG_ENABLE(intel_hyperscan,
+[  --enable-intel-hyperscan  Enable Intel Hyperscan support],
+       enable_intel_hyperscan="$enableval", enable_intel_hyperscan="no")
+
+AC_ARG_WITH(intel_hyperscan_includes,
+	[  --with-intel-hyperscan-includes=DIR      Intel Hyperscan include directory],
+	[with_intel_hyperscan_includes="$withval"],[with_intel_hyperscan_includes="no"])
+
+AC_ARG_WITH(intel_hyperscan_libraries,
+	[  --with-intel-hyperscan-libraries=DIR     Intel Hyperscan library directory],
+	[with_intel_hyperscan_libraries="$withval"],[with_intel_hyperscan_libraries="no"])
+
+if test "x$with_intel_hyperscan_includes" != "xno"; then
+    enable_intel_hyperscan="yes"
+    CPPFLAGS="${CPPFLAGS} -I${with_intel_hyperscan_includes}"
+fi
+
+if test "x$with_intel_hyperscan_libraries" != "xno"; then
+    enable_intel_hyperscan="yes"
+    LDFLAGS="${LDFLAGS} -L${with_intel_hyperscan_libraries}"
+    LIBS="${LIBS} -lhs"
+fi
+
+AM_CONDITIONAL(HAVE_INTEL_HYPERSCAN, test "x$enable_intel_hyperscan" = "xyes")
+if test "x$enable_intel_hyperscan" = "xyes"; then
+    CPPFLAGS="${CPPFLAGS} -DINTEL_HYPERSCAN"
+fi
+
 AC_ARG_ENABLE(shared_rep,
     [  --enable-shared-rep      Enable use of Shared Memory for Reputation (Linux only)],
        enable_shared_rep="$enableval", enable_shared_rep="no")

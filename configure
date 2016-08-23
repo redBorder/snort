@@ -650,6 +650,8 @@ FEAT_FILE_INSPECT_FALSE
 FEAT_FILE_INSPECT_TRUE
 HAVE_SHARED_REP_FALSE
 HAVE_SHARED_REP_TRUE
+HAVE_INTEL_HYPERSCAN_FALSE
+HAVE_INTEL_HYPERSCAN_TRUE
 HAVE_INTEL_SOFT_CPM_FALSE
 HAVE_INTEL_SOFT_CPM_TRUE
 BUILD_RESPOND3_FALSE
@@ -859,6 +861,9 @@ enable_flexresp3
 enable_intel_soft_cpm
 with_intel_soft_cpm_includes
 with_intel_soft_cpm_libraries
+enable_intel_hyperscan
+with_intel_hyperscan_includes
+with_intel_hyperscan_libraries
 enable_shared_rep
 enable_large_pcap
 enable_file_inspect
@@ -1542,6 +1547,7 @@ Optional Features:
   --disable-react          Disable interception and termination of offending HTTP accesses
   --disable-flexresp3      Disable flexible responses (v3) on hostile connection attempts
   --enable-intel-soft-cpm  Enable Intel Soft CPM support
+  --enable-intel-hyperscan  Enable Intel Hyperscan support
   --enable-shared-rep      Enable use of Shared Memory for Reputation (Linux only)
   --enable-large-pcap      Enable support for pcaps larger than 2 GB
   --enable-file-inspect   Build with extended file inspection features.
@@ -1572,6 +1578,8 @@ Optional Packages:
   --with-lzma-libraries=DIR      liblzma library directory
   --with-intel-soft-cpm-includes=DIR      Intel Soft CPM include directory
   --with-intel-soft-cpm-libraries=DIR     Intel Soft CPM library directory
+  --with-intel-hyperscan-includes=DIR      Intel Hyperscan include directory
+  --with-intel-hyperscan-libraries=DIR     Intel Hyperscan library directory
 
 Some influential environment variables:
   CC          C compiler command
@@ -7756,7 +7764,7 @@ ia64-*-hpux*)
   rm -rf conftest*
   ;;
 
-x86_64-*kfreebsd*-gnu|x86_64-*linux*|powerpc*-*linux*| \
+x86_64-*kfreebsd*-gnu|x86_64-*linux*|ppc*-*linux*|powerpc*-*linux*| \
 s390*-*linux*|s390*-*tpf*|sparc*-*linux*)
   # Find out which ABI we are using.
   echo 'int i;' > conftest.$ac_ext
@@ -7774,10 +7782,7 @@ s390*-*linux*|s390*-*tpf*|sparc*-*linux*)
 	  x86_64-*linux*)
 	    LD="${LD-ld} -m elf_i386"
 	    ;;
-	  powerpc64le-*linux*)
-	    LD="${LD-ld} -m elf32lppclinux"
-	    ;;
-	  powerpc64-*linux*)
+	  ppc64-*linux*|powerpc64-*linux*)
 	    LD="${LD-ld} -m elf32ppclinux"
 	    ;;
 	  s390x-*linux*)
@@ -7796,10 +7801,7 @@ s390*-*linux*|s390*-*tpf*|sparc*-*linux*)
 	  x86_64-*linux*)
 	    LD="${LD-ld} -m elf_x86_64"
 	    ;;
-	  powerpcle-*linux*)
-	    LD="${LD-ld} -m elf64lppc"
-	    ;;
-	  powerpc-*linux*)
+	  ppc*-*linux*|powerpc*-*linux*)
 	    LD="${LD-ld} -m elf64ppc"
 	    ;;
 	  s390*-*linux*|s390*-*tpf*)
@@ -11945,14 +11947,10 @@ fi
   # before this can be enabled.
   hardcode_into_libs=yes
 
-  # Add ABI-specific directories to the system library path.
-  sys_lib_dlsearch_path_spec="/lib64 /usr/lib64 /lib /usr/lib"
-
   # Append ld.so.conf contents to the search path
   if test -f /etc/ld.so.conf; then
     lt_ld_extra=`awk '/^include / { system(sprintf("cd /etc; cat %s 2>/dev/null", \$2)); skip = 1; } { if (!skip) print \$0; skip = 0; }' < /etc/ld.so.conf | $SED -e 's/#.*//;/^[	 ]*hwcap[	 ]/d;s/[:,	]/ /g;s/=[^=]*$//;s/=[^= ]* / /g;s/"//g;/^$/d' | tr '\n' ' '`
-    sys_lib_dlsearch_path_spec="$sys_lib_dlsearch_path_spec $lt_ld_extra"
-
+    sys_lib_dlsearch_path_spec="/lib /usr/lib $lt_ld_extra"
   fi
 
   # We used to test for /lib/ld.so.1 and disable shared libraries on
@@ -16860,6 +16858,55 @@ if test "x$enable_intel_soft_cpm" = "xyes"; then
     CPPFLAGS="${CPPFLAGS} -DINTEL_SOFT_CPM"
 fi
 
+# Check whether --enable-intel_hyperscan was given.
+if test "${enable_intel_hyperscan+set}" = set; then :
+  enableval=$enable_intel_hyperscan; enable_intel_hyperscan="$enableval"
+else
+  enable_intel_hyperscan="no"
+fi
+
+
+
+# Check whether --with-intel_hyperscan_includes was given.
+if test "${with_intel_hyperscan_includes+set}" = set; then :
+  withval=$with_intel_hyperscan_includes; with_intel_hyperscan_includes="$withval"
+else
+  with_intel_hyperscan_includes="no"
+fi
+
+
+
+# Check whether --with-intel_hyperscan_libraries was given.
+if test "${with_intel_hyperscan_libraries+set}" = set; then :
+  withval=$with_intel_hyperscan_libraries; with_intel_hyperscan_libraries="$withval"
+else
+  with_intel_hyperscan_libraries="no"
+fi
+
+
+if test "x$with_intel_hyperscan_includes" != "xno"; then
+    enable_intel_hyperscan="yes"
+    CPPFLAGS="${CPPFLAGS} -I${with_intel_hyperscan_includes}"
+fi
+
+if test "x$with_intel_hyperscan_libraries" != "xno"; then
+    enable_intel_hyperscan="yes"
+    LDFLAGS="${LDFLAGS} -L${with_intel_hyperscan_libraries}"
+    LIBS="${LIBS} -lhs"
+fi
+
+ if test "x$enable_intel_hyperscan" = "xyes"; then
+  HAVE_INTEL_HYPERSCAN_TRUE=
+  HAVE_INTEL_HYPERSCAN_FALSE='#'
+else
+  HAVE_INTEL_HYPERSCAN_TRUE='#'
+  HAVE_INTEL_HYPERSCAN_FALSE=
+fi
+
+if test "x$enable_intel_hyperscan" = "xyes"; then
+    CPPFLAGS="${CPPFLAGS} -DINTEL_HYPERSCAN"
+fi
+
 # Check whether --enable-shared_rep was given.
 if test "${enable_shared_rep+set}" = set; then :
   enableval=$enable_shared_rep; enable_shared_rep="$enableval"
@@ -16956,7 +17003,6 @@ if test "x$enable_open_appid" = "xyes"; then
 $as_echo "#define FEAT_OPEN_APPID 1" >>confdefs.h
 
     CONFIGFLAGS="$CONFIGFLAGS -DFEAT_OPEN_APPID"
-
 
 
 
@@ -17092,7 +17138,6 @@ if test -n "$luajit_CFLAGS"; then
   $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
   test $ac_status = 0; }; then
   pkg_cv_luajit_CFLAGS=`$PKG_CONFIG --cflags "luajit" 2>/dev/null`
-		      test "x$?" != "x0" && pkg_failed=yes
 else
   pkg_failed=yes
 fi
@@ -17109,7 +17154,6 @@ if test -n "$luajit_LIBS"; then
   $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
   test $ac_status = 0; }; then
   pkg_cv_luajit_LIBS=`$PKG_CONFIG --libs "luajit" 2>/dev/null`
-		      test "x$?" != "x0" && pkg_failed=yes
 else
   pkg_failed=yes
 fi
@@ -17129,9 +17173,9 @@ else
         _pkg_short_errors_supported=no
 fi
         if test $_pkg_short_errors_supported = yes; then
-	        luajit_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "luajit" 2>&1`
+	        luajit_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors "luajit" 2>&1`
         else
-	        luajit_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "luajit" 2>&1`
+	        luajit_PKG_ERRORS=`$PKG_CONFIG --print-errors "luajit" 2>&1`
         fi
 	# Put the nasty error message in config.log where it belongs
 	echo "$luajit_PKG_ERRORS" >&5
@@ -17534,6 +17578,10 @@ Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${HAVE_INTEL_SOFT_CPM_TRUE}" && test -z "${HAVE_INTEL_SOFT_CPM_FALSE}"; then
   as_fn_error $? "conditional \"HAVE_INTEL_SOFT_CPM\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${HAVE_INTEL_HYPERSCAN_TRUE}" && test -z "${HAVE_INTEL_HYPERSCAN_FALSE}"; then
+  as_fn_error $? "conditional \"HAVE_INTEL_HYPERSCAN\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${HAVE_SHARED_REP_TRUE}" && test -z "${HAVE_SHARED_REP_FALSE}"; then
@@ -18015,7 +18063,7 @@ config.status
 configured by $0, generated by GNU Autoconf 2.69,
   with options \\"\$ac_cs_config\\"
 
-Copyright (C) 2012 Free Software Foundation, Inc.
+Copyright (C)  Free Software Foundation, Inc.
 This config.status script is free software; the Free Software Foundation
 gives unlimited permission to copy, distribute and modify it."
 

@@ -117,10 +117,12 @@ am__libsfutil_a_SOURCES_DIST = sfghash.c sfghash.h sfhashfcn.c \
 	strvec.h sf_email_attach_decode.c sf_email_attach_decode.h \
 	sf_base64decode.c sf_base64decode.h Unified2_common.h \
 	sf_seqnums.h mpse_methods.h sfdebug.h intel-soft-cpm.c \
-	intel-soft-cpm.h md5.c md5.h sha2.c sha2.h
+	intel-soft-cpm.h hyperscan.c hyperscan.h md5.c md5.h sha2.c \
+	sha2.h
 @HAVE_INTEL_SOFT_CPM_TRUE@am__objects_1 = intel-soft-cpm.$(OBJEXT)
-@BUILD_OPENSSL_MD5_TRUE@am__objects_2 = md5.$(OBJEXT)
-@BUILD_OPENSSL_SHA_TRUE@am__objects_3 = sha2.$(OBJEXT)
+@HAVE_INTEL_HYPERSCAN_TRUE@am__objects_2 = hyperscan.$(OBJEXT)
+@BUILD_OPENSSL_MD5_TRUE@am__objects_3 = md5.$(OBJEXT)
+@BUILD_OPENSSL_SHA_TRUE@am__objects_4 = sha2.$(OBJEXT)
 am_libsfutil_a_OBJECTS = sfghash.$(OBJEXT) sfhashfcn.$(OBJEXT) \
 	sflsq.$(OBJEXT) sfmemcap.$(OBJEXT) sfthd.$(OBJEXT) \
 	sfxhash.$(OBJEXT) ipobj.$(OBJEXT) getopt_long.$(OBJEXT) \
@@ -137,7 +139,8 @@ am_libsfutil_a_OBJECTS = sfghash.$(OBJEXT) sfhashfcn.$(OBJEXT) \
 	sfPolicyUserData.$(OBJEXT) sfActionQueue.$(OBJEXT) \
 	sfrf.$(OBJEXT) strvec.$(OBJEXT) \
 	sf_email_attach_decode.$(OBJEXT) sf_base64decode.$(OBJEXT) \
-	$(am__objects_1) $(am__objects_2) $(am__objects_3)
+	$(am__objects_1) $(am__objects_2) $(am__objects_3) \
+	$(am__objects_4)
 libsfutil_a_OBJECTS = $(am_libsfutil_a_OBJECTS)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -339,6 +342,7 @@ top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign no-dependencies
 noinst_LIBRARIES = libsfutil.a
 @HAVE_INTEL_SOFT_CPM_TRUE@INTEL_SOFT_CPM_SOURCES = intel-soft-cpm.c intel-soft-cpm.h
+@HAVE_INTEL_HYPERSCAN_TRUE@INTEL_HYPERSCAN_SOURCES = hyperscan.c hyperscan.h
 @BUILD_OPENSSL_MD5_TRUE@OPENSSL_MD5 = \
 @BUILD_OPENSSL_MD5_TRUE@    md5.c md5.h 
 
@@ -394,6 +398,7 @@ libsfutil_a_SOURCES = \
 	mpse_methods.h \
 	sfdebug.h \
     $(INTEL_SOFT_CPM_SOURCES) \
+    $(INTEL_HYPERSCAN_SOURCES) \
     $(OPENSSL_MD5) \
     $(OPENSSL_SHA)
 

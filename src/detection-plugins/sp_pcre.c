@@ -48,6 +48,10 @@
 
 #include <pcre.h>
 
+#ifdef INTEL_HYPERSCAN
+#include <hs.h>
+#endif
+
 #include "snort.h"
 #include "profiler.h"
 #ifdef PERF_PROFILING
@@ -67,6 +71,17 @@ extern PreprocStats ruleOTNEvalPerfStats;
  */
 static int s_pcre_init = 1;
 
+#ifdef INTEL_HYPERSCAN
+static hs_scratch_t *pcreScratch = NULL;
+static size_t total_pcre_count = 0;
+static size_t total_pcre_size = 0;
+static size_t total_hyperscan_size = 0;
+
+/* Switch on for correctness testing by always running pcre_exec. */
+#define INTEL_HYPERSCAN_CORRECTNESS_TEST 0
+
+#endif
+
 void SnortPcreInit(struct _SnortConfig *, char *, OptTreeNode *, int);
 void SnortPcreParse(struct _SnortConfig *, char *, PcreData *, OptTreeNode *);
 void SnortPcreDump(PcreData *);
@@ -76,11 +91,32 @@ void PcreFree(void *d)
 {
     PcreData *data = (PcreData *)d;
 
+#ifdef INTEL_HYPERSCAN
+    hs_free_database(data->hs_db);
+#endif
+
     free(data->expression);
     free(data->re);
     free(data->pe);
     free(data);
 }
+
+#ifdef INTEL_HYPERSCAN
+static void HyperscanCleanup(int unused, void *data) {
+    hs_free_scratch(pcreScratch);
+    pcreScratch = NULL;
+}
+
+static void HyperscanStats(struct _SnortConfig *sc, int unused, void *data)
+{
+    LogMessage("+--[HyperScan PCRE acceleration]------------------------------\n");
+    LogMessage("| Hyperscan version    : %s\n", hs_version());
+    LogMessage("| Number of PCREs      : %zu\n", total_pcre_count);
+    LogMessage("| Total PCRE size      : %zu bytes\n", total_pcre_size);
+    LogMessage("| Total Hyperscan size : %zu bytes\n", total_hyperscan_size);
+    LogMessage("+-------------------------------------------------------------\n");
+}
+#endif // INTEL_HYPERSCAN
 
 uint32_t PcreHash(void *d)
 {
@@ -163,6 +199,12 @@ void PcreDuplicatePcreData(void *src, PcreData *pcre_dup)
     pcre_dup->search_offset = 0;
     pcre_dup->pe = pcre_src->pe;
     pcre_dup->re = pcre_src->re;
+
+#ifdef INTEL_HYPERSCAN
+    pcre_dup->hs_db = pcre_src->hs_db;
+    pcre_dup->hs_flags = pcre_src->hs_flags;
+    pcre_dup->hs_noconfirm = pcre_src->hs_noconfirm;
+#endif
 }
 
 int PcreAdjustRelativeOffsets(PcreData *pcre, uint32_t search_offset)
@@ -188,6 +230,10 @@ void SetupPcre(void)
     RegisterRuleOption("pcre", SnortPcreInit, NULL, OPT_TYPE_DETECTION, NULL);
 #ifdef PERF_PROFILING
     RegisterPreprocessorProfile("pcre", &pcrePerfStats, 3, &ruleOTNEvalPerfStats, NULL);
+#endif
+#ifdef INTEL_HYPERSCAN
+    // Clean up Hyperscan resources at the end.
+    AddFuncToCleanExitList(HyperscanCleanup, NULL);
 #endif
 }
 
@@ -234,10 +280,46 @@ void PcreCapture(struct _SnortConfig *sc, const void *code, const void *extra)
 #if SNORT_RELOAD
         AddFuncToReloadList(Ovector_Reload, NULL);
 #endif
+#ifdef INTEL_HYPERSCAN
+        AddFuncToPostConfigList(sc, HyperscanStats, NULL);
+#endif
         s_pcre_init = 0;
     }
 
 }
+
+#ifdef INTEL_HYPERSCAN
+static void CalcPcreSize(const PcreData *pcre_data) {
+    int rc;
+    hs_error_t err;
+
+    size_t pcre_size = 0, pcre_studysize = 0, hs_size = 0;
+    rc =
+        pcre_fullinfo(pcre_data->re, pcre_data->pe, PCRE_INFO_SIZE, &pcre_size);
+    if (rc) {
+        FatalError("pcre_fullinfo returned error %d\n", rc);
+        return;
+    }
+    rc = pcre_fullinfo(pcre_data->re, pcre_data->pe, PCRE_INFO_STUDYSIZE,
+                       &pcre_studysize);
+    if (rc) {
+        FatalError("pcre_fullinfo returned error %d\n", rc);
+        return;
+    }
+
+    if (pcre_data->hs_db != NULL) {
+        err = hs_database_size(pcre_data->hs_db, &hs_size);
+        if (err != HS_SUCCESS) {
+            FatalError("hs_database_size returned error %d\n", err);
+            return;
+        }
+    }
+
+    total_pcre_count++;
+    total_pcre_size += pcre_size + pcre_studysize;
+    total_hyperscan_size += hs_size;
+}
+#endif // INTEL_HYPERSCAN
 
 void SnortPcreInit(struct _SnortConfig *sc, char *data, OptTreeNode *otn, int protocol)
 {
@@ -272,10 +354,18 @@ void SnortPcreInit(struct _SnortConfig *sc, char *data, OptTreeNode *otn, int pr
             free(pcre_data->pe);
         if (pcre_data->re)
             free(pcre_data->re);
+#ifdef INTEL_HYPERSCAN
+        if (pcre_data->hs_db)
+            hs_free_database(pcre_data->hs_db);
+#endif
 
         free(pcre_data);
         pcre_data = pcre_dup;
     }
+
+#ifdef INTEL_HYPERSCAN
+    CalcPcreSize(pcre_data);
+#endif
 
     /*
      * attach it to the context node so that we can call each instance
@@ -302,6 +392,105 @@ static inline void ValidatePcreHttpContentModifiers(PcreData *pcre_data)
         FatalError("%s(%d): PCRE unsupported configuration : both rawbytes & uri options specified\n",
                 file_name, file_line);
 }
+
+#ifdef INTEL_HYPERSCAN
+
+static int hyperscan_fixed_width(const char *re, unsigned int hs_flags) {
+    hs_expr_info_t *info = NULL;
+    hs_compile_error_t *compile_error = NULL;
+
+    hs_error_t err = hs_expression_info(re, hs_flags, &info, &compile_error);
+    if (err != HS_SUCCESS) {
+        hs_free_compile_error(compile_error);
+        return 0;
+    }
+
+    if (!info) {
+        return 0;
+    }
+
+    int fixed_width = (info->min_width == info->max_width &&
+            info->max_width != 0xffffffff);
+    free(info);
+    return fixed_width;
+}
+
+static void HyperscanBuild(PcreData *pcre_data, const char *re,
+                           int pcre_compile_flags) {
+    if (pcre_data == NULL || pcre_data->re == NULL || pcre_data->pe == NULL ||
+        re == NULL) {
+        return;
+    }
+
+    /* Note that we also allow PCRE_UNGREEDY even though there is no Hyperscan
+     * flag for it. Greedy/ungreedy semantics make no difference for the
+     * prefilter use case, where the match offset reported by Hyperscan is not
+     * used. */
+
+    const int supported_pcre_flags =
+        PCRE_CASELESS | PCRE_DOTALL | PCRE_MULTILINE | PCRE_UNGREEDY;
+    if (pcre_compile_flags & ~supported_pcre_flags) {
+        DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
+                                "fail, pcre '%s' unsupported flags=%d\n",
+                                pcre_data->expression,
+                                pcre_compile_flags & ~supported_pcre_flags));
+        return;
+    }
+
+    int hs_flags = HS_FLAG_ALLOWEMPTY;
+    if (pcre_compile_flags & PCRE_CASELESS)
+        hs_flags |= HS_FLAG_CASELESS;
+    if (pcre_compile_flags & PCRE_DOTALL)
+        hs_flags |= HS_FLAG_DOTALL;
+    if (pcre_compile_flags & PCRE_MULTILINE)
+        hs_flags |= HS_FLAG_MULTILINE;
+
+    hs_error_t err;
+    hs_compile_error_t *compile_error = NULL;
+
+    /* First, we attempt to compile the pattern with full Hyperscan support. */
+    err = hs_compile(re, hs_flags, HS_MODE_BLOCK, NULL, &pcre_data->hs_db,
+                     &compile_error);
+    if (err != HS_SUCCESS) {
+        pcre_data->hs_db = NULL; // safety
+        if (compile_error) {
+            hs_free_compile_error(compile_error);
+        }
+    }
+
+    /* If the first attempt failed, we use Hyperscan's prefiltering support to
+     * attempt to build a simplified version of the pattern. */
+    if (!pcre_data->hs_db) {
+        hs_flags |= HS_FLAG_PREFILTER;
+        err = hs_compile(re, hs_flags, HS_MODE_BLOCK, NULL, &pcre_data->hs_db,
+                         &compile_error);
+        if (err != HS_SUCCESS) {
+            pcre_data->hs_db = NULL; // safety
+            if (compile_error) {
+                hs_free_compile_error(compile_error);
+            }
+        }
+    }
+
+    if (!pcre_data->hs_db) {
+        LogMessage("Hyperscan could not prefilter PCRE: %s\n", pcre_data->expression);
+        return;
+    }
+
+    pcre_data->hs_flags = hs_flags;
+
+    // Ensure that the scratch region can handle this database.
+    err = hs_alloc_scratch(pcre_data->hs_db, &pcreScratch);
+    if (err != HS_SUCCESS) {
+        FatalError("hs_alloc_scratch() failed: returned error %d\n", err);
+    }
+
+    if (!(hs_flags & HS_FLAG_PREFILTER) && hyperscan_fixed_width(re, hs_flags)) {
+        pcre_data->hs_noconfirm = 1;
+    }
+}
+
+#endif // INTEL_HYPERSCAN
 
 void SnortPcreParse(struct _SnortConfig *sc, char *data, PcreData *pcre_data, OptTreeNode *otn)
 {
@@ -498,6 +687,10 @@ void SnortPcreParse(struct _SnortConfig *sc, char *data, PcreData *pcre_data, Op
 
     PcreCheckAnchored(pcre_data);
 
+#ifdef INTEL_HYPERSCAN
+    HyperscanBuild(pcre_data, re, compile_flags);
+#endif
+
     free(free_me);
 
     return;
@@ -560,6 +753,68 @@ void PcreCheckAnchored(PcreData *pcre_data)
     }
 }
 
+#ifdef INTEL_HYPERSCAN
+
+struct hs_context {
+    int matched;
+    int *found_offset;
+};
+
+static int hyperscan_callback(unsigned int id, unsigned long long from,
+                              unsigned long long to, unsigned int flags,
+                              void *ctx) {
+    struct hs_context *hsctx = ctx;
+
+    hsctx->matched = 1;
+    *(hsctx->found_offset) = (int)to; // safe, as buffer has int len
+
+    return 1; // halt matching
+}
+
+// Return 1 when we find the pattern, 0 when we don't.
+static int hyperscan_search(const PcreData *pcre_data, const char *buf, int len,
+                            int start_offset, int *found_offset) {
+    struct hs_context hsctx;
+    hsctx.matched = 0;
+    hsctx.found_offset = found_offset;
+
+    // XXX: we currently ignore start_offset, which might be used to reduce the
+    // size of the buffer being scanned. Need to be careful with anchors,
+    // assertions etc.
+
+    hs_error_t err = hs_scan(pcre_data->hs_db, buf, len, 0, pcreScratch,
+                             hyperscan_callback, &hsctx);
+    if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED) {
+        // An error occurred, fall through to pcre
+        LogMessage("hs_scan returned error %d\n", err);
+        return 0;
+    }
+
+    if (hsctx.matched == 0) {
+        // No matches, no need to run pcre.
+
+#if INTEL_HYPERSCAN_CORRECTNESS_TEST
+        // For correctness testing, run PCRE as well and ensure that it
+        // produces the same result.
+        int result =
+            pcre_exec(pcre_data->re, pcre_data->pe, buf, len, start_offset, 0,
+                      snort_conf->pcre_ovector, snort_conf->pcre_ovector_size);
+        if (result >= 0) {
+            LogMessage("err=%d, result=%d\n", err, result);
+            FatalError("Hyperscan said pattern wouldn't match, pcre says "
+                       "otherwise. Pattern is %s and options are %x\n",
+                       pcre_data->expression, pcre_data->options);
+        }
+#endif
+
+        return 0;
+    }
+
+    return 1;
+}
+
+#endif // INTEL_HYPERSCAN
+
 /**
  * Perform a search of the PCRE data.
  *
@@ -567,6 +822,7 @@ void PcreCheckAnchored(PcreData *pcre_data)
  * @param buf buffer to search
  * @param len size of buffer
  * @param start_offset initial offset into the buffer
+ * @param no_offset_required if a match is found, the caller doesn't need its offset
  * @param found_offset pointer to an integer so that we know where the search ended
  *
  * *found_offset will be set to -1 when the find is unsucessful OR the routine is inverted
@@ -577,6 +833,7 @@ static int pcre_search(const PcreData *pcre_data,
                        const char *buf,
                        int len,
                        int start_offset,
+                       int no_offset_required,
                        int *found_offset)
 {
     int matched;
@@ -595,6 +852,49 @@ static int pcre_search(const PcreData *pcre_data,
     }
 
     *found_offset = -1;
+
+#ifdef INTEL_HYPERSCAN
+    // Prefilter with Hyperscan if available; if Hyperscan says the buffer
+    // cannot match this PCRE, we can fall out here.
+    if (pcre_data->hs_db) {
+        int hs_match = hyperscan_search(pcre_data, buf, len, start_offset, found_offset);
+        int is_prefiltering = pcre_data->hs_flags & HS_FLAG_PREFILTER;
+
+        // If the pattern is inverted and we're not prefiltering AND
+        // start_offset was zero, we don't have to do confirm in PCRE.
+        if (pcre_data->options & SNORT_PCRE_INVERT) {
+            if (start_offset == 0 && !is_prefiltering) {
+                return !hs_match;
+            } else if (!hs_match) {
+                // Hyperscan didn't match, so pcre_exec will not match, so
+                // return that the INVERTED pcre did match.
+                return 1;
+            } else {
+                // Hyperscan did match, we need to confirm with pcre as we're
+                // prefiltering.
+                goto pcre_confirm;
+            }
+        }
+
+        // Note: we must do confirm in PCRE if a start_offset was specified.
+        if (start_offset == 0) {
+            if (pcre_data->hs_noconfirm || (!is_prefiltering && no_offset_required)) {
+                return hs_match; // No confirm necessary.
+            }
+        }
+
+        if (!hs_match) {
+            // No match in Hyperscan, so no PCRE match can occur.
+            return 0;
+        }
+
+        // Otherwise, Hyperscan claims there might be a match. Fall through to
+        // post-confirm with PCRE.
+    }
+
+pcre_confirm:
+
+#endif // INTEL_HYPERSCAN
 
     result = pcre_exec(pcre_data->re,  /* result of pcre_compile() */
                        pcre_data->pe,  /* result of pcre_study()   */
@@ -674,7 +974,7 @@ int SnortPcre(void *option_data, Packet *p)
         if ( hb )
         {
             matched = pcre_search(
-                pcre_data, (const char*)hb->buf, hb->length, 0, &found_offset);
+                pcre_data, (const char*)hb->buf, hb->length, 0, 1, &found_offset);
 
             if ( matched )
             {
@@ -756,7 +1056,7 @@ int SnortPcre(void *option_data, Packet *p)
                free(hexbuf);
                );
 
-    matched = pcre_search(pcre_data, (const char *)base_ptr, length, pcre_data->search_offset, &found_offset);
+    matched = pcre_search(pcre_data, (const char *)base_ptr, length, pcre_data->search_offset, 0, &found_offset);
 
     /* set the doe_ptr if we have a valid offset */
     if(found_offset > 0)

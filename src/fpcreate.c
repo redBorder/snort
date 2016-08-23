@@ -1008,6 +1008,13 @@ int fpSetDetectSearchMethod(FastPatternConfig *fp, char *method)
        LogMessage("   Search-Method = Intel CPM\n");
     }
 #endif
+#ifdef INTEL_HYPERSCAN
+    else if( !strcasecmp(method,"hyperscan") )
+    {
+       fp->search_method = MPSE_HYPERSCAN;
+       LogMessage("   Search-Method = Hyperscan\n");
+    }
+#endif
     else
     {
        return -1;
@@ -1533,12 +1540,24 @@ static int fpFinishPortGroupRule(SnortConfig *sc, PORT_GROUP *pg, PmType pm_type
         if (fpDetectGetDebugPrintFastPatterns(fp))
             PrintFastPatternInfo(otn, pmd, pattern, pattern_length, pm_type);
 
+#ifdef INTEL_HYPERSCAN
+        // If a pattern is marked with "fast_pattern: only;" it is assumed
+        // to be caseless (since all the AC matchers etc. run caselessly). We
+        // enforce this here so that the Intel PM integration can take
+        // advantage of its ability to run casefully as well. See the ternary
+        // nocase branch below.
+#endif
+
         mpseAddPatternWithSnortConfig(
                 sc,
                 pg->pgPms[pm_type],
                 pattern,
                 pattern_length,
+#ifdef INTEL_HYPERSCAN
+                pmd->fp_only ? 1 : pmd->nocase, // Force nocase if fp_only
+#else
                 pmd->nocase,
+#endif // INTEL_HYPERSCAN
                 pmd->offset,
                 pmd->depth,
                 (unsigned)pmd->exception_flag,

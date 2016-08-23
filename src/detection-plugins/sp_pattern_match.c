@@ -62,6 +62,10 @@
 #include "detection_util.h"
 #include "sf_sechash.h"
 
+#ifdef INTEL_HYPERSCAN
+#include <hs.h>
+#endif
+
 /********************************************************************
  * Macros
  ********************************************************************/
@@ -80,6 +84,10 @@ int lastType = PLUGIN_PATTERN_MATCH;
 #if 0
 /* For OR patterns - not currently used */
 int list_file_line;     /* current line being processed in the list file */
+#endif
+
+#ifdef INTEL_HYPERSCAN
+static hs_scratch_t *contentScratch = NULL;
 #endif
 
 /********************************************************************
@@ -145,6 +153,14 @@ static void PrintDupDOTPmds(PatternMatchData *pmd,
 /********************************************************************
  * Setup and parsing functions
  ********************************************************************/
+
+#ifdef INTEL_HYPERSCAN
+static void HyperscanCleanup(int unused, void *data) {
+    hs_free_scratch(contentScratch);
+    contentScratch = NULL;
+}
+#endif
+
 void SetupPatternMatch(void)
 {
     /* initial pmd setup options */
@@ -190,6 +206,12 @@ void SetupPatternMatch(void)
     RegisterPreprocessorProfile("content", &contentPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
     RegisterPreprocessorProfile("uricontent", &uricontentPerfStats, 3, &ruleOTNEvalPerfStats, NULL);
 #endif
+
+#ifdef INTEL_HYPERSCAN
+    // Clean up Hyperscan resources at the end.
+    AddFuncToCleanExitList(HyperscanCleanup, NULL);
+#endif
+
     DEBUG_WRAP(DebugMessage(DEBUG_PATTERN_MATCH,
                 "Plugin: PatternMatch Initialized!\n"););
 }
@@ -932,6 +954,11 @@ void PatternMatchFree(void *d)
     if(pmd->shift_stride)
         free(pmd->shift_stride);
 
+#ifdef INTEL_HYPERSCAN
+    if (pmd->hs_db)
+        hs_free_database(pmd->hs_db);
+#endif
+
     free(pmd);
 }
 
@@ -1452,6 +1479,58 @@ void ValidateFastPattern(OptTreeNode *otn)
     }
 }
 
+#ifdef INTEL_HYPERSCAN
+
+static void make_hyperscan(PatternMatchData *idx) {
+    if (idx->hs_db) {
+        hs_free_database(idx->hs_db);
+        idx->hs_db = NULL;
+    }
+
+    unsigned flags = 0;
+    if (idx->nocase) {
+        flags |= HS_FLAG_CASELESS;
+    }
+
+    size_t hexlen = idx->pattern_size * 4;
+    char *hexbuf = SnortAlloc(hexlen + 1);
+    unsigned i;
+    char *buf;
+    for (i = 0, buf = hexbuf; i < idx->pattern_size; i++, buf += 4) {
+        snprintf(buf, 5, "\\x%02x", (unsigned char)idx->pattern_buf[i]);
+    }
+    hexbuf[hexlen] = '\0';
+
+    hs_compile_error_t *error = NULL;
+    hs_error_t rv = hs_compile(hexbuf, flags, HS_MODE_BLOCK, NULL, &idx->hs_db,
+                               &error);
+    free(hexbuf);
+
+    if (rv != HS_SUCCESS) {
+        if (error) {
+            FatalError("hs_compile() failed: %s\n", error->message);
+            hs_free_compile_error(error);
+            return;
+        } else {
+            FatalError("hs_compile() failed: returned error %d\n", rv);
+            return;
+        }
+    }
+
+    if (!idx->hs_db) {
+        FatalError("hs_compile() produced null database?\n");
+        return;
+    }
+
+    rv = hs_alloc_scratch(idx->hs_db, &contentScratch);
+    if (rv != HS_SUCCESS) {
+        FatalError("hs_alloc_scratch() failed: returned error %d\n", rv);
+        return;
+    }
+}
+
+#endif // INTEL_HYPERSCAN
+
 void make_precomp(PatternMatchData * idx)
 {
     if(idx->skip_stride)
@@ -1462,6 +1541,10 @@ void make_precomp(PatternMatchData * idx)
     idx->skip_stride = make_skip(idx->pattern_buf, idx->pattern_size);
 
     idx->shift_stride = make_shift(idx->pattern_buf, idx->pattern_size);
+
+#ifdef INTEL_HYPERSCAN
+    make_hyperscan(idx);
+#endif
 }
 
 static char *PayloadExtractParameter(char *data, int *result_len)
@@ -2213,6 +2296,35 @@ int uniSearchCI(const char *data, int dlen, PatternMatchData *pmd)
     return uniSearchReal(data, dlen, pmd, 1);
 }
 
+#ifdef INTEL_HYPERSCAN
+
+static int hyperscanCallback(unsigned int id, unsigned long long from,
+                             unsigned long long to, unsigned int flags,
+                             void *ctx) {
+    *(unsigned long long *)ctx = to;
+    return 1; // cease scanning
+}
+
+static int hyperscanSearch(const char *data, int dlen, const hs_database_t *db) {
+    unsigned long long match = 0;
+
+    hs_error_t err = hs_scan(db, data, dlen, 0, contentScratch,
+                             hyperscanCallback, &match);
+    if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED) {
+        FatalError("hs_scan() failed: error %d\n", err);
+        return 1;
+    }
+
+    if (match == 0) { // No matches found.
+        return 0;
+    }
+
+    UpdateDoePtr((const uint8_t *)data + match, 0);
+    return 1;
+}
+
+#endif // INTEL_HYPERSCAN
+
 /*
  * single search function.
  *
@@ -2389,6 +2501,9 @@ static int uniSearchReal(const char *data, int dlen, PatternMatchData *pmd, int 
     }
 #endif /* DEBUG_MSGS */
 
+#ifdef INTEL_HYPERSCAN
+    success = hyperscanSearch(base_ptr, depth, pmd->hs_db);
+#else
     if(nocase)
     {
         success = mSearchCI(base_ptr, depth,
@@ -2405,6 +2520,7 @@ static int uniSearchReal(const char *data, int dlen, PatternMatchData *pmd, int 
                           pmd->skip_stride,
                           pmd->shift_stride);
     }
+#endif // INTEL_HYPERSCAN
 
 
 #ifdef DEBUG_MSGS
@@ -2761,6 +2877,9 @@ void PatternMatchDuplicatePmd(void *src, PatternMatchData *pmd_dup)
     pmd_dup->search = pmd_src->search;
     pmd_dup->skip_stride = pmd_src->skip_stride;
     pmd_dup->shift_stride = pmd_src->shift_stride;
+#ifdef INTEL_HYPERSCAN
+    pmd_dup->hs_db = pmd_src->hs_db;
+#endif
     pmd_dup->pattern_max_jump_size = pmd_src->pattern_max_jump_size;
     pmd_dup->fp = pmd_src->fp;
     pmd_dup->fp_only = pmd_src->fp_only;

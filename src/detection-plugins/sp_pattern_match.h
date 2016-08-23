@@ -42,6 +42,11 @@
 /********************************************************************
  * Data structures
  ********************************************************************/
+
+#ifdef INTEL_HYPERSCAN
+struct hs_database;
+#endif
+
 typedef struct _PatternMatchData
 {
     int offset;             /* pattern search start offset */
@@ -71,6 +76,9 @@ typedef struct _PatternMatchData
     int (*search)(const char *, int, struct _PatternMatchData *);  /* search function */
     int *skip_stride; /* B-M skip array */
     int *shift_stride; /* B-M shift array */
+#ifdef INTEL_HYPERSCAN
+    struct hs_database *hs_db; /* Hyperscan database */
+#endif
     u_int pattern_max_jump_size; /* Maximum distance we can jump to search for
                                   * this pattern again. */
     OptFpList *fpl;         /* Pointer to the OTN FPList for this pattern */

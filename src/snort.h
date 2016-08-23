@@ -670,6 +670,11 @@ typedef struct _SnortPolicy
 struct _IntelPmHandles;
 #endif
 struct _MandatoryEarlySessionCreator;
+
+#ifdef INTEL_HYPERSCAN
+struct _HyperscanContext;
+#endif
+
 typedef struct _SnortConfig
 {
     RunMode run_mode;
@@ -951,6 +956,9 @@ typedef struct _SnortConfig
     tSfPolicyId parserPolicyId;
 #ifdef INTEL_SOFT_CPM
     struct _IntelPmHandles *ipm_handles;
+#endif
+#ifdef INTEL_HYPERSCAN
+    struct _HyperscanContext *hyperscan_ctx;
 #endif
 
 /* Used when a user defines a new rule type (ruletype keyword)
