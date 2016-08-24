@@ -736,6 +736,9 @@ static ObRet TraverseObfuscationList(ObfuscationCallbackData *data,
             return OB_RET_ERROR;
         }
         payload_offset += length;
+
+        /* Only the first payload call sends the pcap_pkthdr */
+        pkth_tmp = NULL;
     }
 
     /* Start from current saved obfuscation entry index */
@@ -744,10 +747,16 @@ static ObRet TraverseObfuscationList(ObfuscationCallbackData *data,
         /* Get the entry from the sorted array */
         const ObfuscationEntry *entry = ob_struct.sort_entries[i];
         int32_t ob_offset = get_length_from_seq (seq_num, entry->seq);
+        int32_t ob_end = get_length_from_seq (seq_num, entry->seq + entry->length);
         ob_size_t ob_length = entry->length;
 
-        if (ob_offset < 0 )
+        if (ob_end <= 0 )
             continue;
+        else if (ob_offset < 0)
+        {
+            ob_length = ob_end;
+            ob_offset = 0;
+        }
 
         /* Make sure it's for the right packet */
         if (entry->p != data->packet)
@@ -812,7 +821,10 @@ static ObRet TraverseObfuscationList(ObfuscationCallbackData *data,
         {
             /* If the entries offset is less than the current total offset,
              * decrease the length. */
-            ob_length -= (payload_offset - ob_offset);
+            if(ob_length > (payload_offset - ob_offset))
+                ob_length -= (payload_offset - ob_offset);
+            else
+                continue;
         }
 
         /* Adjust the amount of data to obfuscate if it exceeds the amount of

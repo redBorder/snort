@@ -7403,7 +7403,7 @@ static int ProcessTcpData(Packet *p, StreamTracker *listener, TcpSession *tcpssn
             if(SEQ_GT(tdb->end_seq, listener->s_mgr.transition_seq - 1))
             {
                 uint32_t delta = tdb->end_seq - (listener->s_mgr.transition_seq - 1);
-                if (p->dsize > delta)
+                if (delta > p->dsize)
                     NormalTrimPayload(p, delta, tdb);
             }
         }
@@ -7470,7 +7470,7 @@ static int ProcessTcpData(Packet *p, StreamTracker *listener, TcpSession *tcpssn
             if(SEQ_GT(tdb->end_seq, listener->s_mgr.transition_seq - 1))
             {
                 uint32_t delta = tdb->end_seq - (listener->s_mgr.transition_seq - 1);
-                if (p->dsize > delta)
+                if (delta > p->dsize)
                     NormalTrimPayload(p, delta, tdb);
             }
 
