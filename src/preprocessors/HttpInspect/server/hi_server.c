@@ -465,6 +465,9 @@ static inline const u_char *extract_http_content_encoding(HTTPINSPECT_CONF *Serv
     else
     {
         header_field_ptr->content_encoding = &header_ptr->content_encoding;
+        header_field_ptr->content_encoding->cont_encoding_start =
+            header_field_ptr->content_encoding->cont_encoding_end = NULL;
+        header_field_ptr->content_encoding->compress_fmt = 0;
         p = p + HTTPRESP_HEADER_LENGTH__CONTENT_ENCODING;
     }
     SkipBlankSpace(start,end,&p);
@@ -504,26 +507,16 @@ static inline const u_char *extract_http_content_encoding(HTTPINSPECT_CONF *Serv
                                     SkipWhiteSpace(start,end,&p);
                                 }
                                 else
-                                {
-                                    header_field_ptr->content_encoding->cont_encoding_start=
-                                        header_field_ptr->content_encoding->cont_encoding_end = NULL;
-                                    header_field_ptr->content_encoding->compress_fmt = 0;
                                     return p;
-                                }
                             }
                             else
-                            {
-                                header_field_ptr->content_encoding->cont_encoding_start=
-                                    header_field_ptr->content_encoding->cont_encoding_end = NULL;
-                                header_field_ptr->content_encoding->compress_fmt = 0;
                                 return p;
-                            }
                         }
                         else
                             break;
                     }
                 }
-                else if(isalpha((int)*p))
+                if(isalpha((int)*p))
                 {
                     header_field_ptr->content_encoding->cont_encoding_start = p;
                     while(hi_util_in_bounds(start, end, p) && *p!='\n' )
@@ -557,12 +550,7 @@ static inline const u_char *extract_http_content_encoding(HTTPINSPECT_CONF *Serv
                     }*/
                 }
                 else
-                {
-                    header_field_ptr->content_encoding->cont_encoding_start=
-                        header_field_ptr->content_encoding->cont_encoding_end = NULL;
-                    header_field_ptr->content_encoding->compress_fmt = 0;
                     return p;
-                }
             }
         }
     }
@@ -1140,8 +1128,8 @@ static inline int hi_server_decompress(HI_SESSION *Session, HttpSessionData *sd,
     int compr_bytes_read, decompr_bytes_read;
     int compr_avail, decompr_avail;
     int total_bytes_read = 0;
-    uint32_t updated_chunk_remainder = 0;
-    uint32_t chunk_read = 0;
+    static uint32_t updated_chunk_remainder = 0;
+    static uint32_t chunk_read = 0;
     uint32_t saved_chunk_size = 0;
 
     compr_depth = sd->decomp_state->compr_depth;
@@ -1201,15 +1189,24 @@ static inline int hi_server_decompress(HI_SESSION *Session, HttpSessionData *sd,
 
     if(!(sd->resp_state.last_pkt_contlen))
     {
-        if(sd->resp_state.last_pkt_chunked
-           && CheckChunkEncoding(Session, start, end, NULL, dechunk_buffer, compr_avail,
-                                 sd->resp_state.chunk_remainder, &updated_chunk_remainder, &chunk_read,
-                                 sd, HI_SI_SERVER_MODE ) == 1)
+        if(sd->resp_state.last_pkt_chunked)
         {
-            sd->resp_state.chunk_remainder = updated_chunk_remainder;
-            compr_avail = chunk_read;
-            zRet = uncompress_gzip(decompression_buffer, decompr_avail, dechunk_buffer,
-                    compr_avail, sd, &total_bytes_read, sd->decomp_state->compress_fmt);
+            int cRet = 1;
+            if(!(sd->decomp_state && sd->decomp_state->stage == HTTP_DECOMP_MID))
+            {
+                chunk_read = 0;
+                updated_chunk_remainder = 0;
+                cRet = CheckChunkEncoding(Session, start, end, NULL, dechunk_buffer, compr_avail,
+                           sd->resp_state.chunk_remainder, &updated_chunk_remainder, &chunk_read,
+                           sd, HI_SI_SERVER_MODE);
+            }
+            if(cRet == 1)
+            {
+                sd->resp_state.chunk_remainder = updated_chunk_remainder;
+                compr_avail = chunk_read;
+                zRet = uncompress_gzip(decompression_buffer, decompr_avail, dechunk_buffer,
+                           compr_avail, sd, &total_bytes_read, sd->decomp_state->compress_fmt);
+            }
         }
         else
         {
