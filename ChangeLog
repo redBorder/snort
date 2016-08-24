@@ -1,3 +1,25 @@
+2016-04-26 Rahul Burman <rahburma@cisco.com>
+Snort 2.9.8.3
+
+        * src/build.h: updating build number to 383
+
+        * configure.in, src/preprocessors/HttpInspect/server/hi_server.c:
+          Modified Http header parsing of multiline content-encoding header.
+
+        * src/preprocessors/: snort_httpinspect.c,
+          HttpInspect/server/hi_server.c:
+          Fixed an issue where file position pointer was incorrectly set for HTTP response
+          containing chunked and gzip data.
+
+        * src/preprocessors/Stream6/: snort_stream_tcp.c
+          Added sanity check to TCP trimming in out-of-order FIN case.
+
+        * src/parser.c:
+          Disabled port groups that are not useful unless adapative profiling is enabled.
+
+        * src/: dynamic-preprocessors/sdf/spp_sdf.c, obfuscation.c:
+          Fixed an issue of incorrect masking of sensitive data.
+
 2016-03-18 Gaurav Nagare <gnagare@cisco.com>
 Snort 2.9.8.2
 
