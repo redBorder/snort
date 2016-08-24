@@ -1288,9 +1288,11 @@ static int FinishPortListRule(rule_port_tables_t *port_tables, RuleTreeNode *rtn
     ServiceOverride service_override = otn->sigInfo.service_override;
     int num_services = otn->sigInfo.num_services;
 
-    if ((service_override == ServiceOverride_Nil) && num_services)
+    if ( !IsAdaptiveConfigured() )
         otn->sigInfo.service_override = ServiceOverride_ElsePorts;
-    else if ((service_override == ServiceOverride_Nil) && !num_services)
+    else if ( service_override == ServiceOverride_Nil && num_services )
+        otn->sigInfo.service_override = ServiceOverride_ElsePorts;
+    else if ( service_override == ServiceOverride_Nil && !num_services )
         otn->sigInfo.service_override = ServiceOverride_OrPorts;
 #endif
     /* Select the Target PortTable for this rule, based on protocol, src/dst
@@ -1512,7 +1514,8 @@ static int FinishPortListRule(rule_port_tables_t *port_tables, RuleTreeNode *rtn
         }
 #ifdef TARGET_BASED
         // Add to the NOSERVICE group
-        if (otn->sigInfo.num_services == 0 || otn->sigInfo.service_override == ServiceOverride_OrPorts)
+        if (IsAdaptiveConfigured()
+          && (otn->sigInfo.num_services == 0 || otn->sigInfo.service_override == ServiceOverride_OrPorts))
         {
 
             if ( otn->sigInfo.service_override == ServiceOverride_AndPorts )
@@ -1576,9 +1579,9 @@ static int FinishPortListRule(rule_port_tables_t *port_tables, RuleTreeNode *rtn
 
 #ifdef TARGET_BASED
         // Add to the NOSERVICE group
-        if (otn->sigInfo.num_services == 0 || otn->sigInfo.service_override == ServiceOverride_OrPorts)
+       if (IsAdaptiveConfigured()
+        && (otn->sigInfo.num_services == 0 || otn->sigInfo.service_override == ServiceOverride_OrPorts))
         {
-
             if ( otn->sigInfo.service_override == ServiceOverride_AndPorts )
                 ParseError("Service override \"and-ports\" specified on a port only rule.");
 
