@@ -3287,7 +3287,7 @@ END
   fi
 fi
 
-NO_OPTIMIZE="yes"
+NO_OPTIMIZE="no"
 
 DEPDIR="${am__leading_dot}deps"
 

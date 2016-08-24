@@ -7,7 +7,7 @@ AM_CONFIG_HEADER(config.h)
 # definition in "src/win32/WIN32-Includes/config.h"
 AM_INIT_AUTOMAKE(snort,2.9.8.3)
 
-NO_OPTIMIZE="yes"
+NO_OPTIMIZE="no"
 
 AC_PROG_CC_STDC
 AC_PROG_CC
