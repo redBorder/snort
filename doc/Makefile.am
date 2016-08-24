@@ -51,7 +51,6 @@ README.ppm \
 README.reload \
 README.reputation \
 README.sensitive_data \
-README.session \
 README.sfportscan \
 README.SMTP \
 README.ssh \

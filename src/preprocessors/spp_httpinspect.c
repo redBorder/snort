@@ -1642,22 +1642,7 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
             return -1;
         }
     }
-    else if (mime_decode_mempool != NULL)
-    {
-        if (defaultSwapConfig == NULL)
-        {
-            WarningMessage("http_inspect:  Changing HTTP decode requires a restart.\n");
-            return -1;
-        }
-        if (sfPolicyUserDataIterate (sc, hi_swap_config, CheckFilePolicyConfig))
-            return -1;
-        if(file_api->is_decoding_conf_changed(&(defaultSwapConfig->decode_conf),
-                &(defaultConfig->decode_conf), "HTTP"))
-        {
-            return -1;
-        }
-    }
-    else
+    else 
     {
         if (sfPolicyUserDataIterate(sc, hi_swap_config, HttpInspectExtractUriHost) != 0)
         {
@@ -1680,6 +1665,25 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
                 FatalError("http_inspect:  Could not allocate HTTP mempool.\n");
             }
         }
+
+    }
+    if (mime_decode_mempool != NULL)
+    {
+        if (defaultSwapConfig == NULL)
+        {
+            WarningMessage("http_inspect:  Changing HTTP decode requires a restart.\n");
+            return -1;
+        }
+        if (sfPolicyUserDataIterate (sc, hi_swap_config, CheckFilePolicyConfig))
+            return -1;
+        if(file_api->is_decoding_conf_changed(&(defaultSwapConfig->decode_conf),
+                &(defaultConfig->decode_conf), "HTTP"))
+        {
+            return -1;
+        }
+    }
+    else
+    {
         if (sfPolicyUserDataIterate(sc, hi_swap_config, HttpEnableDecoding) != 0)
         {
             if (defaultSwapConfig == NULL)
@@ -1692,6 +1696,24 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
             mime_decode_mempool = (MemPool *)file_api->init_mime_mempool(defaultSwapConfig->decode_conf.max_mime_mem,
                     defaultSwapConfig->decode_conf.max_depth, mime_decode_mempool, PROTOCOL_NAME);
         }
+    }
+    if (mime_log_mempool != NULL)
+    {
+            if (defaultSwapConfig == NULL)
+            {
+                WarningMessage("http_inspect:  Changing MIME conf memcap requires restart.\n");
+                return -1;
+            }
+
+            if (defaultSwapConfig->mime_conf.memcap != defaultConfig->mime_conf.memcap)
+            {
+                WarningMessage("http_inspect:  Changing MIME conf memcap requires a restart.\n");
+                return -1;
+            }
+
+    }
+    else
+    {
         if (sfPolicyUserDataIterate(sc, hi_swap_config, HttpEnableMimeLog) != 0)
         {
             if (defaultSwapConfig == NULL)
@@ -1705,7 +1727,6 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
                     defaultSwapConfig->mime_conf.memcap, mime_log_mempool, PROTOCOL_NAME);
         }
     }
-
 
     return 0;
 }

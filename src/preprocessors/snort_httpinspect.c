@@ -3852,6 +3852,43 @@ static inline void processFileData(Packet *p, HttpSessionData *hsd, bool *filePr
     }
 }
 
+static inline int get_file_current_position(Packet *p,bool decomp_more,bool is_first)
+{
+    int file_data_position = SNORT_FILE_POSITION_UNKNOWN;
+    uint64_t processed_size = file_api->get_file_processed_size(p->ssnptr);
+
+    if(decomp_more)
+    {
+        if(is_first)
+        {
+            if(PacketHasStartOfPDU(p))
+                file_data_position = SNORT_FILE_START;
+            else if(processed_size)
+                file_data_position = SNORT_FILE_MIDDLE;
+        }
+        else
+        {
+            if(processed_size)
+                file_data_position = SNORT_FILE_MIDDLE;
+        }
+    }
+    else
+    {
+        if(is_first)
+        {
+            file_data_position = file_api->get_file_position(p);
+        }
+        else
+        {
+            if(p->packet_flags & PKT_PDU_TAIL)
+                file_data_position = SNORT_FILE_END;
+            else if(processed_size)
+                file_data_position = SNORT_FILE_MIDDLE;
+        }
+    }
+    return file_data_position;
+}
+
 /*
 **  NAME
 **    SnortHttpInspect::
@@ -3893,6 +3930,7 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
     int iCallDetect = 1;
     HttpSessionData *hsd = NULL;
     bool fileProcessed = false;
+    bool is_first = true;
 
     PROFILE_VARS;
 
@@ -4445,9 +4483,10 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
                      setFileDataPtr(Session->server.response.body, (uint16_t)detect_data_size);
                  }
 
-		 if (ScPafEnabled() && PacketHasPAFPayload(p))
+                 if (ScPafEnabled() && PacketHasPAFPayload(p))
                  {
-                     int file_data_position = file_api->get_file_position(p);
+                     bool decomp_more = (hsd->decomp_state && hsd->decomp_state->stage == HTTP_DECOMP_MID)?true:false;
+                     int file_data_position = get_file_current_position(p,decomp_more,is_first);
 
                      if (file_data_position == SNORT_FILE_POSITION_UNKNOWN && hsd->resp_state.eoh_found)
                      {
@@ -4463,6 +4502,7 @@ int SnortHttpInspect(HTTPINSPECT_GLOBAL_CONF *GlobalConf, Packet *p)
 #endif
                      }
                  }
+                 is_first = false;
              }
 
              if( IsLimitedDetect(p) &&
