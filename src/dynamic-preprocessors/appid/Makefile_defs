@@ -6,7 +6,7 @@ INCLUDES = -I${top_builddir}/src/dynamic-preprocessors/include \
 	-I$(APPID_SRC_DIR)/service_plugins \
 	-I$(APPID_SRC_DIR)/client_plugins  \
 	-I$(APPID_SRC_DIR)/detector_plugins \
-	-I${srcdir}/../libs
+        -I${srcdir}/../libs 
 
 APPID_SOURCES =  \
 	$(APPID_SRC_DIR)/commonAppMatcher.c  \
