@@ -1,161 +1,818 @@
-#!/bin/sh
+#!/bin/bash
 # $Id$
 #
 # snortd         Start/Stop the snort IDS daemon.
 #
-# chkconfig: 2345 40 60
+# chkconfig: 2345 56 60
 # description:  snort is a lightweight network intrusion detection tool that \
 #                currently detects more than 1100 host and network \
 #                vulnerabilities, portscans, backdoors, and more.
 #
-
+# Created by Juan Jesus Prieto (jjprieto@redborder.net)
+#            Pablo Nebrera      (pablonebrera@eneotecnologia.com)
+#
 # Source function library.
+SYSTEMCTL_SKIP_REDIRECT=true
+
+lockfile="/var/lock/snort.lck"
+locked=0
+subsysfile="/var/lock/subsys/snortd"
+
+if [ -f $lockfile ]; then
+    if [ "x$1" == "xstatus" ]; then
+        locked=1
+    else
+        PIDLOCK=$(<$lockfile)
+        if [ "x$PIDLOCK" != "x" ]; then
+            if [ ! -f /proc/$PIDLOCK/cmdline ]; then
+                echo "The process snortd looks locked but the 'lock proccess' is not running. Unblocking it!!"
+                PIDLOCK=""
+            else
+                strings /proc/$PIDLOCK/cmdline | grep -q "snortd"
+                if [ $? -ne 0 ]; then
+                    echo "The process snortd looks locked but the 'lock proccess' is not running. Unblocking it!!"
+                    PIDLOCK=""
+                fi
+            fi
+        fi
+ 
+        if [ "x$PIDLOCK" != "x" ]; then
+            if [ "x$WAIT" == "x1" ]; then
+                echo "Snort init script is locked ($lockfile). Waiting until it finish ..."
+                counter=1
+                max_counter=1200
+                while [ $counter -lt $max_counter ]; do
+                    if [ -f $lockfile ]; then
+                        counter=$(( $counter +1 ))
+                        sleep 1
+                    else
+                        counter=$max_counter
+                    fi
+                done
+            fi
+            if [ -f $lockfile ]; then
+                echo "The lock file $lockfile exist (PID: $PIDLOCK). Exiting!"
+                exit 0
+            fi
+        fi
+    fi
+fi
+
+if [ "x$1" != "xstatus" ]; then
+    trap "rm -f $lockfile" 0 2 5 15
+    echo $$ > $lockfile
+fi
+
 . /etc/rc.d/init.d/functions
 
-# Source the local configuration file
-. /etc/sysconfig/snort
+#RBDIR=""
+PATH="$PATH:$RBDIR/bin"
+DEFOPTIONS="--pid-path /var/run"
+NUMCPUS=$(ls -d /sys/devices/system/cpu/cpu[0-9]*|wc -l)
+[ $NUMCPUS -lt 1 ] && NUMCPUS=1
+NUMCPUS_1=$(($NUMCPUS-1))
+prog="snort"
+RETVAL=0
+SNAPLEN=1536
+FASTTX=0
+RELOAD_TIMEOUT_MS=300000
+RESTART=0
 
-# Convert the /etc/sysconfig/snort settings to something snort can
-# use on the startup line.
-if [ "$ALERTMODE"X = "X" ]; then
-   ALERTMODE=""
-else
-   ALERTMODE="-A $ALERTMODE"
-fi
+declare -a affinity
+for n in $(seq 0 ${NUMCPUS_1}); do
+    affinity[$n]=$(echo "ibase=10;obase=16;2^$n"|bc)
+done
 
-if [ "$USER"X = "X" ]; then
-   USER="snort"
-fi
+#source /etc/profile
+source /usr/lib/redborder/bin/rb_initscripts.sh
 
-if [ "$GROUP"X = "X" ]; then
-   GROUP="snort"
-fi
+f_restart_group_old() {
+#Reastart instances in two groups
 
-if [ "$BINARY_LOG"X = "1X" ]; then
-   BINARY_LOG="-b"
-else
-   BINARY_LOG=""
-fi
+    local -A instances_pid
+    local instances_group_name=$1
+    local pid instance instances_group pid_file mid_instances_pid n part flag_stop_it snort_mode
 
-if [ "$CONF"X = "X" ]; then
-   CONF="-c /etc/snort/snort.conf"
-else
-   CONF="-c $CONF"
-fi
-
-if [ "$INTERFACE"X = "X" ]; then
-   INTERFACE="-i eth0"
-else 
-   INTERFACE="-i $INTERFACE"
-fi
-
-if [ "$DUMP_APP"X = "1X" ]; then
-   DUMP_APP="-d"
-else
-   DUMP_APP=""
-fi 
-
-if [ "$NO_PACKET_LOG"X = "1X" ]; then
-   NO_PACKET_LOG="-N"
-else
-   NO_PACKET_LOG=""
-fi        
-
-if [ "$PRINT_INTERFACE"X = "1X" ]; then
-   PRINT_INTERFACE="-I"
-else
-   PRINT_INTERFACE=""
-fi
-
-if [ "$PASS_FIRST"X = "1X" ]; then
-   PASS_FIRST="-o"
-else
-   PASS_FIRST=""
-fi
-
-if [ "$LOGDIR"X = "X" ]; then
-   LOGDIR=/var/log/snort
-fi
-
-# These are used by the 'stats' option
-if [ "$SYSLOG"X = "X" ]; then
-   SYSLOG=/var/log/messages
-fi
-
-if [ "$SECS"X = "X" ]; then
-   SECS=5
-fi
-
-if [ ! "$BPFFILE"X = "X" ]; then
-   BPFFILE="-F $BPFFILE"
-fi
-
-######################################
-# Now to the real heart of the matter:
-
-# See how we were called.
-case "$1" in
-  start)
-        echo -n "Starting snort: "
-        cd $LOGDIR
-        if [ "$INTERFACE" = "-i ALL" ]; then
-           for i in `cat /proc/net/dev|grep eth|awk -F ":" '{ print $1; }'`
-           do
-                mkdir -p "$LOGDIR/$i"
-                chown -R $USER:$GROUP $LOGDIR
-                daemon /usr/sbin/snort $ALERTMODE $BINARY_LOG $NO_PACKET_LOG $DUMP_APP -D $PRINT_INTERFACE -i $i -u $USER -g $GROUP $CONF -l $LOGDIR/$i $PASS_FIRST $BPFFILE $BPF
-           done
-        else
-           # check if more than one interface is given
-           if [ `echo $INTERFACE|wc -w` -gt 2 ]; then
-              for i in `echo $INTERFACE | sed s/"-i "//`
-                do
-                  mkdir -p "$LOGDIR/$i"
-                  chown -R $USER:$GROUP $LOGDIR
-                  daemon /usr/sbin/snort $ALERTMODE $BINARY_LOG $NO_PACKET_LOG $DUMP_APP -D $PRINT_INTERFACE -i $i -u $USER -g $GROUP $CONF -l $LOGDIR/$i $PASS_FIRST $BPFFILE $BPF
-             done
-           else
-              # Run with a single interface (default)
-              daemon /usr/sbin/snort $ALERTMODE $BINARY_LOG $NO_PACKET_LOG $DUMP_APP -D $PRINT_INTERFACE $INTERFACE -u $USER -g $GROUP $CONF -l $LOGDIR $PASS_FIRST $BPFFILE $BPF
-           fi
+    for pid in $(pidof ${prog}); do
+        strings /proc/$pid/environ |grep -q CPU_LIST
+        if [ $? -eq 0 ]; then
+            if [ "x$(f_get_pid_value ${pid} 'INSTANCES_GROUP_NAME')" == "x${instances_group_name}" ]; then
+                instance=$(f_get_pid_value ${pid} 'INSTANCE')
+                instances_pid[${instance}]="${pid}"
+                instances_group=$(f_get_pid_value ${pid} 'INSTANCES_GROUP')
+            fi
         fi
-        touch /var/lock/subsys/snort
+    done
+
+    mid_instances_pid=$((${#instances_pid[@]}/2))
+
+    # ordered shutdown of half instance_group and start again
+    for part in 'first_half' 'second_half'; do
+        n=0
+        for instance in ${!instances_pid[*]}; do
+            flag_stop_it=0
+            if [ "x${part}" == "xfirst_half" ]; then
+                # first half
+                if [ $n -lt ${mid_instances_pid} ]; then
+                    flag_stop_it=1
+                else
+                    flag_stop_it=0
+                fi
+            else
+                # second half
+                if [ $n -ge ${mid_instances_pid} ]; then
+                    flag_stop_it=1
+                else
+                    flag_stop_it=0
+                fi
+            fi
+            if [ ${flag_stop_it} -eq 1 ]; then
+                ret=0
+                pid=${instances_pid[${instance}]}
+                snort_mode=$(f_get_pid_value ${pid} 'SNORT_MODE')
+                pid_file=$(ls /var/run/${prog}_*.pid | grep "_${instances_group}-${instance}.pid$")
+                set_color orange
+                echo -n "Stopping ${prog}-${snort_mode} (${instances_group_name}-${instance}): "
+                set_color norm
+                kill ${pid} &>/dev/null
+                f_wait_pid ${pid}
+                if [ $? -ne 0 ]; then
+                    # force kill process
+                    kill -9 ${pid}
+                fi
+                print_result $?
+            fi
+            n=$(($n+1))
+        done
+
+        f_start_group ${instances_group_name}
+    
+    done
+
+}
+
+f_restart_group() {
+  
+  local -A instances_pid
+  local instances_group_name=$1
+  local pid instance instances_group curr_instance num_instances pid_file snort_mode
+  local -A instances_ordered_pid
+
+  for pid in $(pidof ${prog}); do
+    strings /proc/$pid/environ |grep -q CPU_LIST
+    if [ $? -eq 0 ]; then
+      if [ "x$(f_get_pid_value ${pid} 'INSTANCES_GROUP_NAME')" == "x${instances_group_name}" ]; then
+        instance=$(f_get_pid_value ${pid} 'INSTANCE')
+        instances_pid[${instance}]="${pid}"
+        instances_group=$(f_get_pid_value ${pid} 'INSTANCES_GROUP')
+      fi
+    fi
+  done
+
+  #Stop instances 
+  curr_instance=0
+  num_instances=$((${#instances_pid[@]}))
+  
+  while [ $curr_instance -lt $num_instances ]; do
+    pid=${instances_pid[${curr_instance}]}
+    snort_mode=$(f_get_pid_value ${pid} 'SNORT_MODE')
+    pid_file=$(ls /var/run/${prog}_*.pid | grep "_${instances_group}-${curr_instance}.pid")
+    set_color orange
+    echo -n "Stopping ${prog}-${snort_mode} (${instances_group_name}-${curr_instance}):"
+    set_color norm
+    kill ${pid} &>/dev/null
+    f_wait_pid ${pid}
+    if [ $? -ne 0 ]; then 
+      #Force to kill process
+      kill -9 ${pid}
+    fi
+    print_result $?
+
+    #Start instance
+    f_start ${instances_group_name}
+    curr_instance=$(($curr_instance+1))
+  done
+}
+
+f_restart() {
+
+    local instances_group_name=$1
+    local -A instances_group_list
+    local config_group_file i instances_group
+
+    if [ "x${instances_group_name}" == "x" ]; then
+        # restart all instances groups
+        for i in $(ls /etc/sysconfig/${prog}-* 2>/dev/null | grep "${prog}-[0-9][0-9]*$"); do
+            instances_group=$(f_get_config_value "${i}" 'INSTANCES_GROUP')
+            instances_group_name=$(f_get_config_value "${i}" 'INSTANCES_GROUP_NAME')
+            instances_group_list[${instances_group}]=${instances_group_name}
+        done
+    else
+        # need to look for correct instance_group id related to that name        
+        ls /etc/sysconfig/${prog}-* 2>/dev/null | grep -q "${prog}-[0-9][0-9]*$"
+        if [ $? -ne 0 ]; then
+            # There is no config group file ... need to only stop
+            return 1
+        else
+            for config_group_file in $(ls /etc/sysconfig/${prog}-* | grep "${prog}-[0-9][0-9]*$" | sort); do
+                if [ "x${instances_group_name}" == "x$(f_get_config_value ${config_group_file} 'INSTANCES_GROUP_NAME')" ]; then
+                    # found!
+                    instances_group=$(f_get_config_value ${config_group_file} 'INSTANCES_GROUP')
+                    break
+                fi
+            done
+        fi
+        if [ "x${instances_group}" == "x" ]; then
+            # this group does not exist
+            return 1
+        else
+            instances_group_list[${instances_group}]=${instances_group_name}
+        fi
+    fi
+
+    for instances_group in ${!instances_group_list[@]}; do
+        config_group_file=/etc/sysconfig/${prog}-${instances_group}
+        if [ -f ${config_group_file} ]; then
+            snort_daq=$(f_get_config_value "${config_group_file}" 'INSTANCES_GROUP')
+            if [ "x${snort_daq}" == "xDNA" ]; then
+                f_stop ${instances_group_list[${instances_group}]}
+                f_start ${instances_group_list[${instances_group}]}
+            else
+                f_restart_group ${instances_group_list[${instances_group}]}
+            fi
+        else
+            f_stop ${instances_group_list[${instances_group}]}
+        fi
+
+    done
+
+}
+
+f_start_instance() {
+
+    if [ "x${INTERFACES}" == "x" ]; then
+        echo "INFO: There are no interfaces to listen to"
+        return 0
+    fi
+    
+    for instance in $@; do
+        f_check_instance ${INSTANCES_GROUP} ${instance}
+        if [ $? -ne 0 ]; then
+            # instance is not running
+            RET=0
+            mkdir -p "$LOGDIR/instance-${instance}"
+            mkdir -p "$LOGDIR/instance-${instance}/stats"
+            chown -R $USER:$GROUP $LOGDIR/instance-${instance}
+            chown -R $USER:$GROUP $LOGDIR/instance-${instance}/stats
+            
+            echo -n "Starting snort"
+
+            if [ "x${SNORT_DAQ}" == "xDNA" ]; then
+                LISTENIFACES=$(f_get_listenifaces_dna ${instance})
+                CLUSTERID=0
+            else
+                # DAQ PF_RING
+                LISTENIFACES=$(f_get_listenifaces_pfring ${instance} 'listenifaces')
+                if [ "x${CLUSTERID}" == "x" ]; then
+                    CLUSTERID=$(f_get_clusterid ${LISTENIFACES} ${INSTANCES_GROUP})
+                fi
+            fi
+
+            if [ "x${SNORT_MODE}" == "xIDS_SPAN" ]; then
+                # IDS SPAN mode
+                echo -n "-IDS_SPAN "
+                SNORT_OPT="--daq-mode passive"
+            elif [ "x${SNORT_MODE}" == "xIDS_FWD" ]; then
+                # IDS Forwarding mode
+                echo -n "-IDS_FWD "
+                if [ "x${SNORT_DAQ}" == "xDNA" ]; then
+                    SNORT_OPT="--daq-mode passive --daq-var idsbridge=${IDSBRIDGE_MODE}"
+                else
+                    if [ "x${PFRING_BESTEFFORT}" == "x" ]; then
+                        LOWLEVELBRIDGE=$(f_get_listenifaces_pfring ${instance} 'lowlevelbridge')
+                        SNORT_OPT="--daq-mode passive --daq-var lowlevelbridge=${LOWLEVELBRIDGE}"
+                    else
+                        # LOWLEVELBRIDGE in best-effort not apply because the forwarding work at daq level, not at driver level.
+                        SNORT_OPT="--daq-mode passive --daq-var besteffort=${PFRING_BESTEFFORT} --daq-var besteffort_minnumslots=${PFRING_BESTEFFORT_MINNUMSLOTS}"
+                        SNORT_OPT="${SNORT_OPT} --daq-var besteffort_logfile=${LOGDIR}/instance-${instance}/snort_besteffort.stats"
+                        #Initialize log file
+                        echo -n > ${LOGDIR}/instance-${instance}/snort_besteffort.stats
+                    fi
+                fi
+            elif [ "x${SNORT_MODE}" == "xIPS_TEST" ]; then
+                # IPS Test
+                echo -n "-IPS_TEST "
+                if [ "x${SNORT_DAQ}" == "xDNA" ]; then
+                    SNORT_OPT="--daq-mode inline --enable-inline-test"
+                else
+                    if [ "x${FASTTX}" == "x0" ]; then
+                        SNORT_OPT="--daq-mode inline --enable-inline-test"
+                    else
+                        SNORT_OPT="--daq-mode inline --daq-var fast-tx=1 --enable-inline-test"
+                    fi
+                    if [ "x${PFRING_SBYPASS}" == "x1" ]; then
+                        SNORT_OPT="${SNORT_OPT} --daq-var sbypassupperthreshold=${PFRING_SBYPASS_UPPERTHRESHOLD}"
+                        SNORT_OPT="${SNORT_OPT} --daq-var sbypasslowerthreshold=${PFRING_SBYPASS_LOWERTHRESHOLD}"
+                        SNORT_OPT="${SNORT_OPT} --daq-var sbypasssamplingrate=${PFRING_SBYPASS_SAMPLINGRATE}"
+                        SNORT_OPT="${SNORT_OPT} --daq-var sbypasslogfile=${LOGDIR}/instance-${instance}/snort_sbypass.stats"
+                        echo -n > ${LOGDIR}/instance-${instance}/snort_sbypass.stats
+                    fi
+                    if [ "x${SEND_ENOBUF_USECS}" != "x" ]; then
+                        SNORT_OPT="${SNORT_OPT} --daq-var send_enobuf_usecs=${SEND_ENOBUF_USECS}"
+                    fi
+                    if [ "x${SEND_ENOBUF_ATTEMPTS}" != "x" ]; then
+                        SNORT_OPT="${SNORT_OPT} --daq-var send_enobuf_attempts=${SEND_ENOBUF_ATTEMPTS}"
+                    fi
+                    SNORT_OPT="${SNORT_OPT} --daq-var send_enobuf_log_file=${LOGDIR}/instance-${instance}/snort_send_retry.stats"
+                fi
+            else
+                # Default to pure IPS
+                echo -n "-IPS "
+                SNORT_MODE="IPS"
+                if [ "x${SNORT_DAQ}" == "xDNA" ]; then
+                    SNORT_OPT="--daq-mode inline -Q"
+                else
+                    if [ "x${FASTTX}" == "x0" ]; then
+                        SNORT_OPT="--daq-mode inline -Q"
+                    else
+                        SNORT_OPT="--daq-mode inline --daq-var fast-tx=1 -Q"
+                    fi
+                    if [ "x${PFRING_SBYPASS}" == "x1" ]; then
+                        SNORT_OPT="${SNORT_OPT} --daq-var sbypassupperthreshold=${PFRING_SBYPASS_UPPERTHRESHOLD}"
+                        SNORT_OPT="${SNORT_OPT} --daq-var sbypasslowerthreshold=${PFRING_SBYPASS_LOWERTHRESHOLD}"
+                        SNORT_OPT="${SNORT_OPT} --daq-var sbypasssamplingrate=${PFRING_SBYPASS_SAMPLINGRATE}"
+                        SNORT_OPT="${SNORT_OPT} --daq-var sbypasslogfile=${LOGDIR}/instance-${instance}/snort_sbypass.stats"
+                        echo -n > ${LOGDIR}/instance-${instance}/snort_sbypass.stats
+                    fi
+                fi
+                if [ "x${SEND_ENOBUF_USECS}" != "x" ]; then
+                    SNORT_OPT="${SNORT_OPT} --daq-var send_enobuf_usecs=${SEND_ENOBUF_USECS}"
+                fi
+                if [ "x${SEND_ENOBUF_ATTEMPTS}" != "x" ]; then
+                    SNORT_OPT="${SNORT_OPT} --daq-var send_enobuf_attempts=${SEND_ENOBUF_ATTEMPTS}"
+                fi
+                SNORT_OPT="${SNORT_OPT} --daq-var send_enobuf_log_file=${LOGDIR}/instance-${instance}/snort_send_retry.stats"
+            fi
+
+            echo -n "(${INSTANCES_GROUP_NAME}-${instance}): "
+
+            #[ -f ${LOGDIR}/instance-${instance}/stats/snort.stats ] && rm -f ${LOGDIR}/instance-${instance}/stats/snort.stats
+
+            if [ "x${LISTENIFACES}" == "x" ]; then
+                RET=1
+            else
+                SHMID=$(echo ${instance}| sed 's/^0*//')
+                [ "x$SHMID" == "x" ] && SHMID="0"
+                SNORT_OPT="${SNORT_OPT} -G ${SHMID}"
+
+                mkdir -p /etc/snort/${INSTANCES_GROUP}/cs/instance-${instance}
+                chown -R $USER:$GROUP /etc/snort/${INSTANCES_GROUP}/cs/instance-${instance}
+                if [ "x${SNORT_DAQ}" == "xDNA" ]; then
+                    SNORT_OPT="--daq-dir /usr/local/lib/daq/ --daq pfring_dna --daq-var bindcpu=${v_cpu[${instance}]} ${SNORT_OPT}"
+                else
+                    # DAQ PF_RING
+                    SNORT_OPT="--daq-dir /usr/local/lib/daq/ --daq pfring --daq-var bindcpu=${v_cpu[${instance}]} ${SNORT_OPT} \
+                               --daq-var watermark=${PFRING_WATERMARK} --daq-var timeout=${PFRING_TIMEOUT} --daq-var clusterid=${CLUSTERID}"
+                fi
+                if [ "x${PFRING_CLUSTERMODE}" != "x" ]; then
+                    SNORT_OPT="${SNORT_OPT} --daq-var clustermode=${PFRING_CLUSTERMODE}"
+                fi
+
+                daemon env SNORT_MODE=\"${SNORT_MODE}\" INSTANCE=\"${instance}\" INSTANCES_GROUP=\"${INSTANCES_GROUP}\" CLUSTERID=\"${CLUSTERID}\" \
+                    SNORT_DAQ=\"${SNORT_DAQ}\" INSTANCES_GROUP_NAME=\"${INSTANCES_GROUP_NAME}\" INTERFACES=\"${INTERFACES}\" CPU_LIST=\"${CPU_LIST}\" \
+                    BIND_CPU=\"${v_cpu[${instance}]}\" PFRING_WATERMARK=\"${PFRING_WATERMARK}\" PFRING_TIMEOUT=\"${PFRING_TIMEOUT}\" \
+                    PFRING_CLUSTERMODE=\"${PFRING_CLUSTERMODE}\" PFRING_BESTEFFORT=\"${PFRING_BESTEFFORT}\" \
+                    snort -P ${SNAPLEN} -D -e ${DEFOPTIONS} ${ALERTMODE} ${BINARY_LOG} ${NO_PACKET_LOG} ${DUMP_APP} ${PRINT_INTERFACE} -i "${LISTENIFACES}" \
+                    ${CONF} -l ${LOGDIR}/instance-${instance} --perfmon-file ${LOGDIR}/instance-${instance}/stats/snort.stats -G ${instance} \
+                    ${SNORT_OPT} --cs-dir /etc/snort/${INSTANCES_GROUP}/cs/instance-${instance} -R _${INSTANCES_GROUP}-${instance} \
+                    ${BPFFILE} ${FORCE_ALERT} ${BPF} &>/dev/null
+                RET=$?
+            fi
+            [ $RET -ne 0 ] && RETVAL=$RET
+            print_result $RET
+        fi
+    done
+    
+    return $RET
+}
+
+f_start_group() {
+
+    local INSTANCES_GROUP=$1
+    local config_group_file=/etc/sysconfig/${prog}-${INSTANCES_GROUP}
+    local v_cpu
+    local INSTANCES_GROUP_NAME CPU_LIST ALERTMODE USER GROUP LOGDIR SYSLOG SECS BPFFILE CONF \
+        INLINE_TEST IDS_SPAN PFRING_WATERMARK PFRING_TIMEOUT AUTOBYPASS TRANSPARENT_MODE \
+        IDSBRIDGE_MODE BINARY_LOG DUMP_APP NO_PACKET_LOG PRINT_INTERFACE INLINE INLINE_TEST IDS_SPAN \
+        FORCE_ALERT LIBZERO IDSBRIDGE_MODE BINDCPU_MODE NUMCPUS SNORT_MODE CLUSTERID
+
+    source ${config_group_file}
+
+    if [ -f ${config_group_file}_local ]; then
+        source ${config_group_file}_local
+    fi
+
+    [ "x${ENABLED}" != "x0" ] && ENABLED=1 || return 0
+    [ "x${INSTANCES_GROUP_NAME}" == "x" ] && INSTANCES_GROUP_NAME="group_${INSTANCES_GROUP}"
+    [ "x${ALERTMODE}" != "x" ] && ALERTMODE="-A ${ALERTMODE}"
+    [ "x${USER}" == "x" ] && USER="snort"
+    [ "x${GROUP}" == "x" ] && GROUP="snort"
+    [ "x${LOGDIR}" == "x" ] && LOGDIR=/var/log/snort/${INSTANCES_GROUP}
+    [ "x${SYSLOG}" == "x" ] && SYSLOG=/var/log/messages
+    [ "x${SECS}" == "x" ] && SECS=5
+    [ "x${BPFFILE}" != "x" ] && BPFFILE="-F ${BPFFILE}"
+    [ "x${CONF}" == "x" ] && CONF="/etc/snort/${INSTANCES_GROUP}/snort.conf"
+    [ "x${INLINE_TEST}" == "x" ] && INLINE_TEST=0
+    [ "x${IDS_SPAN}" == "x" ] && IDS_SPAN=0
+    [ "x${PFRING_WATERMARK}" == "x" ] && PFRING_WATERMARK=64
+    [ "x${PFRING_TIMEOUT}" == "x" ] && PFRING_TIMEOUT=1
+    [ "x${AUTOBYPASS}" == "x" ] && AUTOBYPASS=0
+    [ "x${TRANSPARENT_MODE}" == "x" ] && TRANSPARENT_MODE=2
+    [ "x${IDSBRIDGE_MODE}" == "x" ] && IDSBRIDGE_MODE=2
+    [ "x${BINARY_LOG}" == "x1" ] && BINARY_LOG="-b" || BINARY_LOG=""
+    [ "x${DUMP_APP}" == "x1" ] && DUMP_APP="-d" || DUMP_APP=""
+    [ "x${NO_PACKET_LOG}" == "x1" ] && NO_PACKET_LOG="-N" || NO_PACKET_LOG=""       
+    [ "x${PRINT_INTERFACE}" == "x1" ] && PRINT_INTERFACE="-I" || PRINT_INTERFACE=""
+    [ "x${INLINE}" != "x1" ] && INLINE=0
+    [ "x${INLINE_TEST}" != "x1" ] && INLINE_TEST=0
+    [ "x${IDS_SPAN}" != "x1" ] && IDS_SPAN=0
+    [ "x${FORCE_ALERT}" == "x1" ] && FORCE_ALERT="--treat-drop-as-alert" || FORCE_ALERT=""
+    [ "x${IDSBRIDGE_MODE}" != "x1" ] && IDSBRIDGE_MODE=2
+    [ "x${BINDCPU_MODE}" == "x" ] && BINDCPU_MODE=2
+    [ "x${SNORT_DAQ}" == "x" ] && SNORT_DAQ="PF_RING"
+    [ "x${PFRING_CLUSTERMODE}" == "x" ] && PFRING_CLUSTERMODE=""
+    [ "x${PFRING_BESTEFFORT}" == "x" ] && PFRING_BESTEFFORT=""
+    [ "x${PFRING_BESTEFFORT_MINNUMSLOTS}" == "x" ] && PFRING_BESTEFFORT_MINNUMSLOTS="2048"
+    [ "x${PFRING_SBYPASS}" == "x" ] && PFRING_SBYPASS=""
+    [ "x${INTERFACES}" == "xALL" ] && \
+        INTERFACES="$(ls -d /sys/class/net/br* /sys/class/net/bpbr* 2>/dev/null | sed 's%/sys/class/net/%%' | tr '\n' ',' | sed 's/,$//')"
+
+    [ ! -f /etc/snort/${INSTANCES_GROUP}/snort.conf -a -f /etc/snort/snort.conf.default ] && \
+        cp /etc/snort/snort.conf.default /etc/snort/${INSTANCES_GROUP}/snort.conf
+    [ ! -f /etc/snort/${INSTANCES_GROUP}/classification.config -a -f /etc/snort/classification.config.default ] && \
+        cp /etc/snort/classification.config.default /etc/snort/${INSTANCES_GROUP}/classification.config
+    [ ! -f /etc/snort/${INSTANCES_GROUP}/reference.config -a -f /etc/snort/reference.config ] && \
+        cp /etc/snort/reference.config /etc/snort/${INSTANCES_GROUP}/reference.config
+    [ ! -f /etc/snort/${INSTANCES_GROUP}/threshold.conf -a -f /etc/snort/threshold.conf ] && \
+        cp /etc/snort/threshold.conf /etc/snort/${INSTANCES_GROUP}/threshold.conf
+    [ ! -f /etc/snort/${INSTANCES_GROUP}/unicode.map -a -f /etc/snort/unicode.map ] && \
+        cp /etc/snort/unicode.map /etc/snort/${INSTANCES_GROUP}/unicode.map
+
+    CONF="-c ${CONF}"
+    LIBZERO=0
+   
+    if [ -f /etc/rb_sysconf.conf ]; then
+        if [ "x$(cat /etc/rb_sysconf.conf | grep net_flag_dna_support | sed 's/^.*=//' | sed 's/"//g')" == "x1" ]; then
+            SNORT_DAQ="DNA"
+        fi
+    fi
+
+    # Calculate Ring slot number
+    PFRING_SLOTS=$(cat /proc/net/pf_ring/info 2>/dev/null | grep "^Ring slots" | awk '{print $4}')
+    if [ "x${PFRING_SLOTS}" == "x" ]; then
+        # not usual, need to set standar value
+        echo "Warnig: PFRING_SLOTS value empty! ... setting to 16384"
+        PFRING_SLOTS=16384
+    fi
+
+    if [ "x${SNORT_MODE}" == "x" ]; then
+        #####################################################################################
+        #
+        # 2 main modes: IDS/IPS
+        #
+        # in IDS (pure IDS is IDS SPAN or mirror ports), snort check a list of single devices
+        # in IPS, 2 main modes: IDS Forwarding/pure IPS
+        # 
+        #                  INLINE | INLINE_TEST | IDS_SPAN
+        #                  -------+-------------+---------
+        # IDS SPAN            0   |      0      |    1
+        # IDS Forwarding      0   |      0      |    0
+        # IPS Test            1   |      1      |    0
+        # IPS                 1   |      0      |    0
+        #
+        #####################################################################################
+        
+        if [ "x${INLINE}" == "x0" -a "x${INLINE_TEST}" == "x0" -a "x${IDS_SPAN}" == "x1" ]; then
+            # IDS SPAN mode
+            SNORT_MODE="IDS_SPAN"
+        elif [ "x${INLINE}" == "x0" -a "x${INLINE_TEST}" == "x0" -a "x${IDS_SPAN}" == "x0" ]; then
+            # IDS Forwarding mode
+            SNORT_MODE="IDS_FWD"
+        elif [ "x${INLINE}" == "x1" -a "x${INLINE_TEST}" == "x1" -a "x${IDS_SPAN}" == "x0" ]; then
+            # IPS Test
+            SNORT_MODE="IPS_TEST"
+        elif [ "x${INLINE}" == "x1" -a "x${INLINE_TEST}" == "x0" -a "x${IDS_SPAN}" == "x0" ]; then
+            # pure IPS (without rules, with alert rules or with all rules)
+            SNORT_MODE="IPS"
+        else
+            # IPS by default
+            SNORT_MODE="IPS"
+        fi
+    fi
+    
+    if [ "x${PFRING_CLUSTERMODE}" != "x" ]; then
+        # check clustermode values: 2, 4, 5 or 6 tuple flow
+        echo "${PFRING_CLUSTERMODE}" | grep -q "^[2|4|5|6]$"
+        if [ $? -ne 0 ]; then
+            PFRING_CLUSTERMODE=""
+        fi
+    fi
+
+    if [ "x${PFRING_BESTEFFORT}" != "x" ]; then
+        if [ "x${SNORT_MODE}" == "xIDS_FWD" ]; then
+            echo "${PFRING_BESTEFFORT}" | grep -q "^[0|1]$"
+            if [ $? -ne 0 ]; then
+                # mode not supported
+                PFRING_BESTEFFORT=""
+            else
+                if [ ${PFRING_BESTEFFORT} -eq 0 ]; then
+                    # protect daq-var (besteffort=0 must be the same as disabling besteffort)
+                    PFRING_BESTEFFORT=""
+                fi
+                # now, normalize PFRING_BESTEFFORT_MINNUMSLOTS
+                echo "${PFRING_BESTEFFORT_MINNUMSLOTS}" | grep -q "^[0-9][0-9]*$"
+                if [ $? -ne 0 ]; then
+                    # PFRING_BESTEFFORT_MINNUMSLOTS is not a number, set default
+                    PFRING_BESTEFFORT_MINNUMSLOTS="2048"
+                fi
+            fi
+        else
+            # forcing to disable besteffort due to no IDS_FWD mode
+            PFRING_BESTEFFORT=""
+        fi
+    fi
+
+    if [ "x${PFRING_SBYPASS}" != "x" ]; then
+        if [ "x${SNORT_MODE}" == "xIPS" -o "x${SNORT_MODE}" == "xIPS_TEST" ]; then
+            echo "${PFRING_SBYPASS}" | grep -q "^[0|1]$"
+            if [ $? -ne 0 ]; then
+                # mode not supported
+                PFRING_SBYPASS=""
+            else
+                # now, normalize PFRING_SBYPASS_UPPERTHRESHOLD
+                echo "${PFRING_SBYPASS_UPPERTHRESHOLD}" | grep -q "^[0-9][0-9]*$"
+                if [ $? -ne 0 ]; then
+                    # PFRING_SBYPASS_UPPERTHRESHOLD is not a number, set default: 90% PFRING_SLOTS
+                    PFRING_SBYPASS_UPPERTHRESHOLD=90
+                else
+                    # check if between 0 and 100
+                    if [ ${PFRING_SBYPASS_UPPERTHRESHOLD} -gt 100 ]; then
+                        PFRING_SBYPASS_UPPERTHRESHOLD=90 # defaults to 90%
+                    fi
+                fi
+
+                # now, normalize PFRING_SBYPASS_LOWERTHRESHOLD
+                echo "${PFRING_SBYPASS_LOWERTHRESHOLD}" | grep -q "^[0-9][0-9]*$"
+                if [ $? -ne 0 ]; then
+                    # PFRING_SBYPASS_LOWERTHRESHOLD is not a number, set default: 10% PFRING_SLOTS
+                    PFRING_SBYPASS_LOWERTHRESHOLD=10
+                else
+                    # check if between 0 and 100
+                    if [ ${PFRING_SBYPASS_UPPERTHRESHOLD} -gt 100 ]; then
+                        PFRING_SBYPASS_LOWERTHRESHOLD=10 # defaults to 10%
+                    fi
+                fi
+
+                # check consistency
+                if [ ${PFRING_SBYPASS_UPPERTHRESHOLD} -le ${PFRING_SBYPASS_LOWERTHRESHOLD} ]; then
+                    # inconsistecy, setting to defaults
+                    PFRING_SBYPASS_UPPERTHRESHOLD=90
+                    PFRING_SBYPASS_LOWERTHRESHOLD=10
+                fi
+
+                # pass to number of slots
+                PFRING_SBYPASS_UPPERTHRESHOLD=$(echo $((${PFRING_SLOTS}*${PFRING_SBYPASS_UPPERTHRESHOLD}/100)))
+                PFRING_SBYPASS_LOWERTHRESHOLD=$(echo $((${PFRING_SLOTS}*${PFRING_SBYPASS_LOWERTHRESHOLD}/100)))
+
+                # now, normalize PFRING_SBYPASS_SAMPLINGRATE
+                echo "${PFRING_SBYPASS_SAMPLINGRATE}" | grep -q "^[0-9][0-9]*$"
+                if [ $? -ne 0 ]; then
+                    # PFRING_SBYPASS_SAMPLINGRATE is not a number, set default: 1000
+                    PFRING_SBYPASS_SAMPLINGRATE=1000
+                fi
+            fi
+        else
+            # forcing to disable softbypass due to no IPS mode
+            PFRING_SBYPASS=""
+        fi
+    fi
+
+    mkdir -p $LOGDIR
+    chown $USER:$GROUP $LOGDIR
+    
+    [ "x${CPU_LIST}" == "x" ] && CPU_LIST=$(seq 0 ${NUMCPUS_1} | tr '\n' ',' | sed 's/,$//')
+    v_cpu=( $(echo ${CPU_LIST} | tr ',' ' ') )
+
+    if [ "x${INTERFACES}" == "xlo" ]; then
+        RETVAL=0
+    elif [ "x${INTERFACES}" == "x" ]; then
+        echo "INFO: There are no interfaces to listen to"
+        RETVAL=0
+    else
+        CLUSTERID=""
+        f_prepare_interfaces ${INTERFACES}
+        f_start_instance ${!v_cpu[*]}
+    fi
+    if [ $RETVAL -eq 0 -a $RESTART -eq 0 ]; then
+        if [ "x${SNORT_MODE}" != "xIDS_SPAN" ]; then
+            for segment in $(echo ${INTERFACES} | tr ',' ' '); do
+                echo "${segment}" | egrep -q "^br[0-9]+$|^bpbr[0-9]+$"
+                if [ $? -eq 0 ]; then
+                    #this is a bridge interface
+                    f_set_updown_br_or_bp ips start ${segment}
+                fi
+            done
+        else
+            for segment in $(echo ${INTERFACES} | tr ',' ' '); do
+                echo "${segment}" | egrep -q "^br[0-9]+$"
+                if [ $? -eq 0 ]; then
+                    ip l set down ${segment} &>/dev/null
+                else
+                    echo "${segment}" | egrep -q "^bpbr[0-9]+$"
+                    if [ $? -eq 0 ]; then
+                        ip l set down ${segment}
+                        rb_bypass.sh -b ${segment} -s off &>/dev/null
+                    fi
+                fi
+            done
+        fi
+    fi
+}
+
+f_status() {
+
+    declare -A instances_group_list
+    declare -A instances_list
+    local ret=0
+    local core pid config_group_file INSTANCE SNORT_MODE
+    for pid in $(pidof ${prog}); do
+        strings /proc/$pid/environ |grep -q CPU_LIST
+        if [ $? -eq 0 ]; then
+            INSTANCES_GROUP=$(f_get_pid_value ${pid} 'INSTANCES_GROUP')
+            instances_group_list[${INSTANCES_GROUP}]="${instances_group_list[${INSTANCES_GROUP}]} ${pid}"
+        fi
+    done
+    for config_group_file in $(ls /etc/sysconfig/${prog}-* 2>/dev/null | grep "${prog}-[0-9][0-9]*$" | sort); do
+        INSTANCES_GROUP=$(f_get_config_value "${config_group_file}" 'INSTANCES_GROUP')
+        [ "x${INSTANCES_GROUP}" == "x" ] && INSTANCES_GROUP="$(echo ${config_group_file} | sed 's/.*-\([0-9]*\)$/\1/')"
+        if [ "x${instances_group_list[${INSTANCES_GROUP}]}" == "x" ]; then
+            instances_group_list[${INSTANCES_GROUP}]="n/a"
+        fi
+    done
+   
+    INSTANCES_GROUP=""
+
+    for INSTANCES_GROUP in ${!instances_group_list[*]}; do
+        INSTANCES_GROUP_NAME=""
+        CPU_LIST=""
+        INTERFACES=""
+        unset instances_list
+        declare -A instances_list
+        for pid in ${instances_group_list[${INSTANCES_GROUP}]}; do
+            # getting instance number for this pid
+            if [ "x${pid}" != "xn/a" ]; then
+                INSTANCE=$(f_get_pid_value ${pid} 'INSTANCE')
+                instances_list[${INSTANCE}]=${pid}
+                CPU_LIST=$(f_get_pid_value ${pid} 'CPU_LIST')
+                INTERFACES=$(f_get_pid_value ${pid} 'INTERFACES')
+                INSTANCES_GROUP_NAME=$(f_get_pid_value ${pid} 'INSTANCES_GROUP_NAME')
+            fi
+        done
+        # checking every instance have a pid
+        if [ "x${CPU_LIST}" == "x" ]; then
+            CPU_LIST=$(f_get_config_value "/etc/sysconfig/${prog}-${INSTANCES_GROUP}" 'CPU_LIST')
+        fi
+        [ "x${CPU_LIST}" == "x" ] && CPU_LIST=$(seq 0 ${NUMCPUS_1} | tr '\n' ',' | sed 's/,$//')
+        CPU_TOTAL=$(echo ${CPU_LIST} | tr ',' '\n' | wc -l)
+        INSTANCE_MAX=$((${CPU_TOTAL}-1))
+        for INSTANCE in $(seq 0 ${INSTANCE_MAX}); do
+            if [ "x${instances_list[${INSTANCE}]}" == "x" ]; then
+                instances_list[${INSTANCE}]="n/a"
+                ret=1
+            fi
+        done
+
+        if [ -f /etc/sysconfig/${prog}-${INSTANCES_GROUP} ]; then
+            INTERFACES=$(f_get_config_value "/etc/sysconfig/${prog}-${INSTANCES_GROUP}" 'INTERFACES')
+            [ "x${INTERFACES}" == "xALL" ] && \
+                INTERFACES="$(ls -d /sys/class/net/br* /sys/class/net/bpbr* 2>/dev/null | sed 's%/sys/class/net/%%' | tr '\n' ' ' | sed 's/ $//')"
+            INSTANCES_GROUP_NAME=$(f_get_config_value "/etc/sysconfig/${prog}-${INSTANCES_GROUP}" 'INSTANCES_GROUP_NAME')
+            INLINE=$(f_get_config_value "/etc/sysconfig/${prog}-${INSTANCES_GROUP}" 'INLINE')
+            INLINE_TEST=$(f_get_config_value "/etc/sysconfig/${prog}-${INSTANCES_GROUP}" 'INLINE_TEST')
+            IDS_SPAN=$(f_get_config_value "/etc/sysconfig/${prog}-${INSTANCES_GROUP}" 'IDS_SPAN')
+        fi
+        [ "x${INSTANCES_GROUP_NAME}" == "x" ] && INSTANCES_GROUP_NAME="group_${INSTANCES_GROUP}"
+
+        echo "-------------------------------------------------------------------------------"
+        echo -n " Group Name (${INSTANCES_GROUP}): "
+        set_color blue
+        echo -n "${INSTANCES_GROUP_NAME}"
+        set_color norm
+
+        if [ "x${INTERFACES}" != "x" ]; then
+            INTERFACES=$(echo ${INTERFACES} | sed 's/^ //' | sed 's/ $//')
+            NUMSEGMENTS=$(echo ${INTERFACES}|tr ',' '\n' | wc -l |awk '{printf("%s", $1)}')
+            if [ $NUMSEGMENTS -eq 1 ]; then
+                echo -n " - $INTERFACES ($NUMSEGMENTS segment)"
+            else
+                echo -n " - $INTERFACES ($NUMSEGMENTS segments)"
+            fi
+        fi
+
+        iplistcount=$(cat /etc/snort/${INSTANCES_GROUP}/iplists/redBorder-file-* 2>/dev/null |wc -l)
+        geolistcount=$(cat /etc/snort/${INSTANCES_GROUP}/geoips/redBorder-file-* 2>/dev/null |wc -l)
+        ipcount=$(( $iplistcount + $geolistcount ))
+        if [ $ipcount -gt 0 ]; then
+            if [ $ipcount -eq 1 ]; then
+                echo -n " ($ipcount reputation rule)" 
+            else
+                echo -n " ($ipcount reputation rules)" 
+            fi
+        fi
         echo
-        ;;
-  stop)
-        echo -n "Stopping snort: "
-        killproc snort
-        rm -f /var/lock/subsys/snort
-        echo 
-        ;;
-  reload)
-        echo "Sorry, not implemented yet"
-        ;;
-  restart)
-        $0 stop
-        $0 start
-        ;;
-  condrestart)
-        [ -e /var/lock/subsys/snort ] && $0 restart
-        ;;
-  status)
-        status snort
-        ;;
-  stats)
+
+        echo "-------------------------------------------------------------------------------"
+        printf " %-10s %-15s %-15s %-15s %-15s\n" "Instance" "PID" "CPU" "Mode" "Status"
+        echo "-------------------------------------------------------------------------------"
+
+        for INSTANCE in $(echo ${!instances_list[*]} | tr ' ' '\n' | sort -n); do
+            pid=${instances_list[${INSTANCE}]}
+            if [ "x${pid}" != "xn/a" ]; then
+                SNORT_MODE=$(f_get_pid_value ${pid} 'SNORT_MODE')
+                #INLINE=$(f_get_pid_value ${pid} 'INLINE')
+                #INLINE_TEST=$(f_get_pid_value ${pid} 'INLINE_TEST')
+                #IDS_SPAN=$(f_get_pid_value ${pid} 'IDS_SPAN')
+                coremask=$(taskset -p $pid | sed 's/^.*: \([0-9]*\)$/\1/')
+                for core in ${!affinity[*]}; do
+                    if [ "x${affinity[${core}]}" == "x${coremask}" ]; then
+                        # found core thread number
+                        break
+                    fi
+                done
+                if [ $core -ge 10 ]; then
+                    core_string="${core}"
+                else
+                    core_string="${core} "
+                fi
+            else
+                core_string="n/a"
+            fi
+            printf " %-10s %-15s %-15s" "${INSTANCE}" "${pid}" "${core_string}"
+            if [ "x${SNORT_MODE}" == "x" ]; then
+                instances_group_mode="Unknown"
+            else
+                instances_group_mode="${SNORT_MODE}"
+            fi
+            printf " %-15s" "${instances_group_mode}"
+            if [ "x${pid}" != "xn/a" ]; then
+                print_result 0
+            else
+                print_result 1
+            fi
+        done
+
+        echo "-------------------------------------------------------------------------------"
+
+        for n in $(ls -d /etc/snort/${INSTANCES_GROUP}/snort-binding-* 2>/dev/null); do 
+            RCOUNT1=0
+            RCOUNT2=0
+            BNAME="none"
+            [ -f ${n}/snort.rules ] && RCOUNT1=$(wc -l ${n}/snort.rules 2>/dev/null|awk '{print $1}')
+            [ -f ${n}/preprocessor.rules ] && RCOUNT2=$(wc -l ${n}/preprocessor.rules 2>/dev/null |awk '{print $1}')
+            [ "x$RCOUNT1" == "x" ] && RCOUNT1=0
+            [ "x$RCOUNT2" == "x" ] && RCOUNT2=0
+            RCOUNT3=$(( $RCOUNT1 + $RCOUNT2 ))
+            [ -f ${n}/snort-bindings.conf ] && BNAME=$(f_get_config_value ${n}/snort-bindings.conf 'BINDING_NAME')
+            printf  " binding - %-10s: %5s rules(s)" "${BNAME}" "${RCOUNT3}"
+            RCOUNT1=$(grep "^event_filter " ${n}/threshold.conf | wc -l)
+            RCOUNT2=$(grep "^suppress " ${n}/threshold.conf | wc -l)
+            printf  "; %3s filter rule(s); %3s suppress rule(s)\n" "$RCOUNT1" "$RCOUNT2" 
+        done
+        echo
+    done
+ 
+    return $ret
+}
+
+f_stats() {
+
+        local stats_opt=$1
         TC=125                          # Trailing context to grep
         SNORTNAME='snort'               # Process name to look for
+        [ "x${SECS}" == "x" ] && SECS=5
+        [ "x${SYSLOG}" == "x" ] && SYSLOG="/var/log/messages"
 
         if [ ! -x "/sbin/pidof" ]; then
-           echo "/sbin/pidof not present, sorry, I cannot go on like this!"
-           exit 1
+            echo "/sbin/pidof not present, sorry, I cannot go on like this!"
+            exit 1
         fi
 
         #Grab Snort's PID
-        PID=`pidof -o $$ -o $PPID -o %PPID -x ${SNORTNAME}`
+        PID=$(pidof -o $$ -o $PPID -o %PPID -x ${SNORTNAME})
 
         if [ ! -n "$PID" ]; then        # if we got no PID then:
-           echo "No PID found: ${SNORTNAME} must not running."
-           exit 2
+            echo "No PID found: ${SNORTNAME} must not running."
+            exit 2
         fi
 
         echo ""
@@ -165,35 +822,174 @@ case "$1" in
         echo ""
         echo "You can also run: $0 stats [long | opt]"
         echo ""
-        echo "Dumping ${SNORTNAME}'s ($PID) statistics"
-        echo "please wait..."
-
         # Get the date and tell Snort to dump stats as close together in
         # time as possible--not 100%, but it seems to work.
-        startdate=`date '+%b %e %H:%M:%S'`
+        #startdate=$(date '+%b %e %H:%M:%S' | sed 's/^\([a-z]\)\(.*\)/\u\1\2/')
 
         # This causes the stats to be dumped to syslog
-        kill -USR1 $PID
+        for SPID in $PID; do
+            INSTANCES_GROUP_NAME=$(f_get_pid_value ${SPID} 'INSTANCES_GROUP_NAME')
+            INSTANCE=$(f_get_pid_value ${SPID} 'INSTANCE')
+            echo "Dumping ${SNORTNAME}'s (${INSTANCES_GROUP_NAME}-${INSTANCE}) statistics"
+            echo "please wait..."
+            startdate=$(LANG=C date '+%b %e %H:%M:%S')
+            kill -USR1 $SPID
+            sleep $SECS
 
-        # Sleep for $SECS secs to give syslog a chance to catch up
-        # May need to be adjusted for slow/busy systems
-        sleep $SECS
+            # Sleep for $SECS secs to give syslog a chance to catch up
+            # May need to be adjusted for slow/busy systems
+            sleep $SECS
 
-        if [ "$2" = "long" ]; then              # Long format
-            egrep -B 3 -A $TC "^$startdate .* snort.*: ={79}" $SYSLOG | \
+            if [ "${stats_opt}" = "long" ]; then              # Long format
+                egrep -i -B 3 -A $TC "^$startdate .* snort.*: ={79}" $SYSLOG | \
                 grep snort.*:
-        elif [ "$2" = "opt" ]; then             # OPTimize format
-           # Just show stuff useful for optimizing Snort
-            egrep -B 3 -A $TC "^$startdate .* snort.*: ={79}" $SYSLOG | \
+            elif [ "${stats_opt}" = "opt" ]; then             # OPTimize format
+                # Just show stuff useful for optimizing Snort
+                egrep -i -B 3 -A $TC "^$startdate .* snort.*: ={79}" $SYSLOG | \
                 egrep "snort.*: Snort analyzed |snort.*: dropping|emory .aults:"
-        else                                    # Default format
-            egrep -B 3 -A $TC "^$startdate .* snort.*: ={79}" $SYSLOG | \
+            else                                    # Default format
+                egrep -i -B 3 -A $TC "^$startdate .* snort.*: ={79}" $SYSLOG | \
                 grep snort.*: | cut -d: -f4-
+            fi
+            echo
+        done
+ }
+
+function cs_reload() {
+
+    # snort_control_reload /opt/rb/etc/snort/$ign/instance-$i/cs timeout_ms
+    
+    local ign=$1
+    local igid groupid cs_instance_dir instance group ret
+
+    if [ "x$ign" == "x" ]; then
+        igid="*"
+    else
+        igid="$(f_get_groupid_bygroupname $ign)"
+    fi
+
+    for group in $(ls -d /etc/snort/${igid} 2>/dev/null); do
+        groupid=$(basename $group)
+        group_name=$(f_get_groupname_bygroupid ${groupid})
+        echo -n "Reloading group ${group_name}: "
+        for cs_instance_dir in $group/cs/instance-*; do
+            if [ -e ${cs_instance_dir}/SNORT.sock ]; then
+                instance=$(echo ${cs_instance_dir} | sed 's/^.*instance-\([0-9][0-9]*\)$/\1/')
+                echo -n "$(f_get_pid_bygroupandinstance ${groupid} ${instance}) "
+                snort_control_reload ${cs_instance_dir} ${RELOAD_TIMEOUT_MS} &>/dev/null
+                ret=$?
+                if [ $ret -ne 0 ]; then
+                    logger -t snortd "snort_control_reload error: get exit code $ret in ${cs_instance_dir}/SNORT.sock ... need to restart group ${group_name}"
+                    echo "-- WARNING: exit code $ret, restarting group ${group_name}"
+                    echo
+                    f_restart ${group_name}
+                    break
+                fi
+            fi
+        done
+        echo
+    done
+}
+
+function soft_reload() {
+
+    local -a v_snortd
+    local n mid_v_snortd
+    local ign=$1
+ 
+    v_snortd=""
+    for pid in $(pidof snort); do
+        strings /proc/$pid/environ |grep -q CPU_LIST
+        if [ $? -eq 0 ]; then
+            INSTANCES_GROUP_NAME=$(f_get_pid_value ${pid} 'INSTANCES_GROUP_NAME')
+            if [ "x$INSTANCES_GROUP_NAME" == "x$ign" -o "x$ign" == "x" ]; then
+                v_snortd=( ${v_snortd[@]} ${pid} )
+            fi
+        fi
+    done
+    mid_v_snortd=$((${#v_snortd[@]}/2))
+    echo -n "Reloading snort processes: "
+    for n in $(seq 0 $((${#v_snortd[@]}-1))); do
+        [ $n -eq ${mid_v_snortd} ] && sleep 30
+        echo -n "${v_snortd[$n]} "
+        kill -s HUP ${v_snortd[$n]}
+        sleep 10
+    done
+    echo
+}
+
+action=$1
+shift
+
+case "${action}" in
+    start)
+        lsmod |grep -q "^pf_ring"
+        if [ $? -ne 0 ]; then
+            # Error, pf_ring must be loaded before starting prog
+            echo "Error: pf_ring module is not loaded ... exiting"
+            exit 1
+        fi
+        f_start $1
+        touch $subsysfile
+        ;;
+    stop)
+        f_stop $1
+        ;;
+    softreload)
+        cs_reload $1
+        ;;
+    reload)
+        f_reload $1
+        ;;
+    csreload)
+        cs_reload $1
+        ;;
+    restart)
+        RESTART=1
+        if [ "x$1" == "x" ]; then
+            f_clean
+            f_restart
+            if [ "x$(pidof snort)" != "x" ]; then
+                touch $subsysfile
+            fi
+        else
+            f_restart $1
         fi
         ;;
-  *)
-        echo "Usage: $0 {start|stop|reload|restart|condrestart|status|stats (long|opt)}"
-        exit 2
+    condrestart)
+        if [ -e $subsysfile ]; then
+            $0 restart $1
+        fi
+        ;;
+    clean)
+        f_clean
+        if [ "x$(pidof snort)" != "x" ]; then
+            touch $subsysfile
+        fi 
+        ;;
+    cleanstop)
+        f_clean stop
+        ;;
+    status)
+        INLINE="null"
+        INLINE_TEST="null"
+        IDS_SPAN="null"
+        if [ "x$(pidof snort)" != "x" ]; then
+            f_status
+        else
+            status snortd
+        fi
+        RETVAL=$?
+        ;;
+    stats)
+        f_stats $1
+        ;;
+   *)
+        echo "Usage: $0 {start|stop|reload|restart|condrestart|clean|cleanstop|status|stats (long|opt)}"
+        RETVAL=2
 esac
 
-exit 0
+[ $locked -eq 1 ] && RETVAL=0
+exit $RETVAL
+
+## vim:ts=4:sw=4:expandtab:ai:nowrap:formatoptions=croqln:
