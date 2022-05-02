@@ -149,7 +149,6 @@ InstallSnort() {
 	%__rm -rf $RPM_BUILD_ROOT
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_sbindir}
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_bindir}
-	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{SnortRulesDir}
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_sysconfdir}/snort
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_sysconfdir}/sysconfig
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d
@@ -179,10 +178,6 @@ InstallSnort() {
 	%__install -p -m 0755 rpm/snortd $RPM_BUILD_ROOT%{_initrddir}
 	%__install -p -m 0644 rpm/snort.sysconfig $RPM_BUILD_ROOT%{_sysconfdir}/sysconfig/%{realname}
 	%__install -p -m 0644 rpm/snort.logrotate $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d/snort
-	%__install -p -m 0644 etc/reference.config etc/classification.config \
-		etc/unicode.map etc/gen-msg.map \
-		etc/threshold.conf etc/snort.conf \
-		$RPM_BUILD_ROOT%{_sysconfdir}/snort
 	find doc -maxdepth 1 -type f -not -name 'Makefile*' -exec %__install -p -m 0644 {} $RPM_BUILD_ROOT%{_docdir}/%{realname}-%{version} \;
 
 	%__rm -f $RPM_BUILD_ROOT%{_docdir}/%{realname}-%{version}/Makefile.*
@@ -285,13 +280,7 @@ fi
 %attr(0755,root,root) %{_bindir}/u2spewfoo
 %attr(0755,root,root) %{_bindir}/u2boat
 %attr(0644,root,root) %{_mandir}/man8/snort.8.*
-%attr(0755,root,root) %dir %{SnortRulesDir}
-%attr(0644,root,root) %config(noreplace) %{_sysconfdir}/snort/classification.config
-%attr(0644,root,root) %config(noreplace) %{_sysconfdir}/snort/reference.config
-%attr(0644,root,root) %config(noreplace) %{_sysconfdir}/snort/threshold.conf
-%attr(0644,root,root) %config(noreplace) %{_sysconfdir}/snort/*.map
 %attr(0644,root,root) %config(noreplace) %{_sysconfdir}/logrotate.d/snort
-%attr(0644,root,root) %config(noreplace) %{_sysconfdir}/snort/snort.conf
 %attr(0644,root,root) %config(noreplace) %{_sysconfdir}/sysconfig/snort
 %attr(0755,root,root) %config(noreplace) %{_initrddir}/snortd
 %attr(0755,snort,snort) %dir %{_var}/log/snort
