@@ -293,6 +293,7 @@ systemctl daemon-reload
 %attr(0755,root,root) %{_libdir}/%{realname}-%{version}_dynamicengine/libsf_engine.*
 %attr(0755,root,root) %dir %{_libdir}/%{realname}-%{version}_dynamicpreprocessor
 %attr(0755,root,root) %{_libdir}/%{realname}-%{version}_dynamicpreprocessor/libsf_*_preproc.*
+%attr(0644,root,root) /usr/lib/systemd/system/snortd.service
 
 %dir %{_docdir}/%{realname}-%{version}
 %docdir %{_docdir}/%{realname}-%{version}
