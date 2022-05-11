@@ -156,6 +156,7 @@ InstallSnort() {
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_initrddir}
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_mandir}/man8
 	%__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_docdir}/%{realname}-%{version}
+	%__mkdir_p -p $RPM_BUILD_ROOT/usr/lib/systemd/system/
 	%__install -p -m 0755 %{realname}-"$1" $RPM_BUILD_ROOT%{_sbindir}/%{realname}-"$1"
 	%__install -p -m 0755 "$1"/tools/control/snort_control $RPM_BUILD_ROOT%{_bindir}/snort_control
 	%__install -p -m 0755 "$1"/tools/u2spewfoo/u2spewfoo $RPM_BUILD_ROOT%{_bindir}/u2spewfoo
@@ -178,7 +179,7 @@ InstallSnort() {
 	%__install -p -m 0755 rpm/snortd $RPM_BUILD_ROOT%{_initrddir}
 	%__install -p -m 0644 rpm/snort.sysconfig $RPM_BUILD_ROOT%{_sysconfdir}/sysconfig/%{realname}
 	%__install -p -m 0644 rpm/snort.logrotate $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d/snort
-	%__install -p -m 0644 rpm/snortd.service $RPM_BUILD_ROOT%/usr/lib/systemd/system/snortd.service
+	%__install -p -m 0644 rpm/snortd.service $RPM_BUILD_ROOT/usr/lib/systemd/system/snortd.service
 	find doc -maxdepth 1 -type f -not -name 'Makefile*' -exec %__install -p -m 0644 {} $RPM_BUILD_ROOT%{_docdir}/%{realname}-%{version} \;
 
 	%__rm -f $RPM_BUILD_ROOT%{_docdir}/%{realname}-%{version}/Makefile.*
