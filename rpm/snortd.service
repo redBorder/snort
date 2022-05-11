@@ -1,0 +1,16 @@
+[Unit]
+SourcePath=/etc/rc.d/init.d/snortd
+Description=SYSV: snort is a lightweight network intrusion detection tool that currently detects more than 1100 host and network vulnerabilities, portscans, backdoors, and more.
+
+[Service]
+Type=forking
+Restart=no
+TimeoutSec=5min
+IgnoreSIGPIPE=no
+KillMode=process
+GuessMainPID=no
+RemainAfterExit=yes
+ExecStart=/etc/rc.d/init.d/snortd start
+ExecStop=/etc/rc.d/init.d/snortd stop
+ExecReload=/etc/rc.d/init.d/snortd reload
+

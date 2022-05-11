@@ -178,6 +178,7 @@ InstallSnort() {
 	%__install -p -m 0755 rpm/snortd $RPM_BUILD_ROOT%{_initrddir}
 	%__install -p -m 0644 rpm/snort.sysconfig $RPM_BUILD_ROOT%{_sysconfdir}/sysconfig/%{realname}
 	%__install -p -m 0644 rpm/snort.logrotate $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d/snort
+	%__install -p -m 0644 rpm/snortd.service $RPM_BUILD_ROOT%/usr/lib/systemd/system/snortd.service
 	find doc -maxdepth 1 -type f -not -name 'Makefile*' -exec %__install -p -m 0644 {} $RPM_BUILD_ROOT%{_docdir}/%{realname}-%{version} \;
 
 	%__rm -f $RPM_BUILD_ROOT%{_docdir}/%{realname}-%{version}/Makefile.*
@@ -266,6 +267,7 @@ if [ $1 = 0 ] ; then
 
 	/usr/sbin/userdel snort 2>/dev/null
 fi
+systemctl daemon-reload
 
 %files
 %defattr(-,root,root)
