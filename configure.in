@@ -1004,6 +1004,16 @@ if test "x$enable_file_s3" = "xyes"; then
     fi
 fi
 
+AC_ARG_ENABLE(mime-drop,
+[  --enable-mime-drop  Enable DROP via MIME type and FILE size],
+       enable_mime_drop="$enableval", enable_mime_drop="no")
+
+AM_CONDITIONAL(ENABLE_MIME_DROP, test "x$enable_mime_drop" = "yex")
+
+if test "x$enable_mime_drop" = "xyes"; then
+  CPPFLAGS="${CPPFLAGS} -DHAVE_MIME_DROP"
+fi
+
 AC_ARG_ENABLE(extradata-file,
 [  --enable-extradata-file       Enable ExtraData File collection.],
        enable_extradata_file="$enableval", enable_extradata_file="no")
