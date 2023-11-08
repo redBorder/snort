@@ -78,6 +78,7 @@ static int FileCheckConfig(struct _SnortConfig *);
 static void FileCleanExit(int, void *);
 static void FileUpdateConfig(FileInspectConf *, tSfPolicyUserContextId);
 
+
 /** File configuration per Policy
  */
 tSfPolicyUserContextId file_config = NULL;

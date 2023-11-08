@@ -70,6 +70,16 @@ uint64_t capture_disk_avaiable; /* bytes available */
 static pthread_cond_t file_available_cond  = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t file_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+#ifdef HAVE_MIME_DROP
+typedef struct {
+    int* data;
+    int capacity;
+    int size;
+} MimeBlacklist;
+
+MimeBlacklist mime_blacklist;
+#endif
+
 typedef struct _FILE_MESSAGE_HEADER
 {
     /* All values must be in network byte order */
@@ -98,9 +108,19 @@ static FileInfo *file_agent_finish_file(void);
 static File_Verdict file_agent_type_callback(void*, void*, uint32_t, bool,uint32_t);
 static File_Verdict file_agent_signature_callback(void*, void*, uint8_t*,
         uint64_t, FileState *, bool, uint32_t);
+#ifdef HAVE_MIME_DROP
+static int file_agent_should_drop_file_mime(uint32_t type_id);
+static void parseMimeBlacklist(const char* str, MimeBlacklist* arr);
+static void freeMimeArray(MimeBlacklist* arr);
+static void addToMimeBlacklistArray(MimeBlacklist* arr, int value);
+static void initMimeBlacklist(MimeBlacklist* arr);
+#endif
 static int file_agent_queue_file(void*, void *);
 static int file_agent_init_socket(char *hostname, int portno);
 
+#ifdef HAVE_MIME_DROP
+bool should_drop = false;
+#endif
 /* Initialize sockets for file transfer to other host
  *
  * Args:
@@ -311,6 +331,11 @@ void file_agent_init(void *config)
         _dpd.fileAPI->enable_file_capture(file_agent_signature_callback);
         file_capture_enabled = true;
     }
+#ifdef HAVE_MIME_DROP
+    if(conf->mime.file_capture_enable_drop){
+        should_drop = true;
+    }
+#endif
 
 #ifdef HAVE_EXTRADATA_FILE
     if (conf->file_extradata_enabled)
@@ -321,6 +346,12 @@ void file_agent_init(void *config)
     {
         file_agent_init_socket(conf->hostname, conf->portno);
     }
+#ifdef HAVE_MIME_DROP
+    _dpd.logMsg("File inspect: Parsing mime list\n");
+    initMimeBlacklist(&mime_blacklist);
+    parseMimeBlacklist(conf->mime.file_capture_mime_blacklist, &mime_blacklist);
+#endif
+
 }
 
 /* Add another thread for file capture to disk or network
@@ -842,7 +873,9 @@ void file_agent_close(void)
     int rval;
 
     stop_file_capturing = true;
-
+#ifdef HAVE_MIME_DROP
+    freeMimeArray(&mime_blacklist);
+#endif
     pthread_mutex_lock(&file_list_mutex);
     pthread_cond_signal(&file_available_cond);
     pthread_mutex_unlock(&file_list_mutex);
@@ -863,26 +896,10 @@ void file_agent_close(void)
         close(sockfd);
         sockfd = 0;
     }
-
 #ifdef HAVE_S3FILE
     if ( using_s3 )
         S3_deinitialize();
 #endif
-}
-
-/*
- * File type callback when file type is identified
- *
- * For file capture or file signature, FILE_VERDICT_PENDING must be returned
- */
-static File_Verdict file_agent_type_callback(void* p, void* ssnptr,
-        uint32_t file_type_id, bool upload, uint32_t file_id)
-{
-    file_inspect_stats.file_types_total++;
-    if (file_signature_enabled || file_capture_enabled)
-        return FILE_VERDICT_UNKNOWN;
-    else
-        return FILE_VERDICT_LOG;
 }
 
 static inline int file_agent_capture_error(FileCaptureState capture_state)
@@ -912,26 +929,135 @@ static inline int file_agent_capture_error(FileCaptureState capture_state)
 }
 
 /*
+ * File type callback when file type is identified
+ *
+ * For file capture or file signature, FILE_VERDICT_PENDING must be returned
+ */
+static File_Verdict file_agent_type_callback(void* p, void* ssnptr,
+        uint32_t file_type_id, bool upload, uint32_t file_id)
+{
+    file_inspect_stats.file_types_total++;
+    #ifdef HAVE_MIME_DROP
+        _dpd.logMsg("File inspect: file type identified %d\n", file_type_id);
+        if(file_agent_should_drop_file_mime(file_type_id)){
+            _dpd.logMsg("File inspect: File Type Mime -> blacklist -> identified -> %d -> drop\n", file_type_id);
+            return FILE_VERDICT_BLOCK;
+        } else    
+    #endif
+        if (file_signature_enabled || file_capture_enabled){
+            _dpd.logMsg("File inspect: verdict -> pending...\n");
+            return FILE_VERDICT_PENDING;
+        } else {
+            return FILE_VERDICT_LOG;
+        }
+}
+
+#ifdef HAVE_MIME_DROP
+/*
+    Init mime blacklist array
+*/
+static void initMimeBlacklist(MimeBlacklist* arr) {
+    arr->data = NULL;
+    arr->capacity = 0;
+    arr->size = 0;
+}
+
+/*
+    Add type_id ids to the mimeblacklist array
+*/
+static void addToMimeBlacklistArray(MimeBlacklist* arr, int value) {
+    if (arr->size >= arr->capacity) {
+        arr->capacity = (arr->capacity == 0) ? 1 : arr->capacity * 2;
+        _dpd.logMsg("File inspect, re-allocating memory for new data.\n");
+        int* new_data = realloc(arr->data, arr->capacity * sizeof(int));
+        if (new_data == NULL) {
+            _dpd.logMsg("File inspect error: Failed to allocate memory for MimeBlacklist array\n");
+            exit(EXIT_FAILURE);
+        }
+        arr->data = new_data;
+    }
+    _dpd.logMsg("File inspect: MIME id loaded into mem.\n");
+    arr->data[arr->size++] = value;
+}
+
+/*
+    Free memory of the mimeblacklist array
+*/
+static void freeMimeArray(MimeBlacklist* arr) {
+    free(arr->data);
+    arr->data = NULL;
+    arr->capacity = 0;
+    arr->size = 0;
+}
+
+/*
+    Parse data of mimeblacklist array
+*/
+static void parseMimeBlacklist(const char* str, MimeBlacklist* arr) {
+    char* copy = strdup(str);
+    if (copy == NULL) {
+        // Handle strdup failure, e.g., return an error code or exit the program.
+        // In this example, we exit the program.
+        _dpd.logMsg("File inspect error: Failed to duplicate string\n");
+        exit(EXIT_FAILURE);
+    }
+
+    char* token = strtok(copy, "[|]");
+    while (token != NULL) {
+        int value = atoi(token);
+        _dpd.logMsg("File inspect: loaded blacklisted type id: %d\n", value);
+        addToMimeBlacklistArray(arr, value);
+        token = strtok(NULL, "[|]");
+    }
+
+    free(copy);
+}
+
+/*
+    Check on the config for drop the file
+*/
+static int file_agent_should_drop_file_mime(uint32_t type_id) {
+    if (should_drop) {
+        _dpd.logMsg("File inspect: Checking blacklist of MIME types to drop the file\n");
+
+        int i;
+        for (i = 0; i < mime_blacklist.size; i++) {
+            if (type_id == mime_blacklist.data[i]) {
+                _dpd.logMsg("File inspect: Droping file...\n");
+                return 1;
+            }
+        }
+    }
+    _dpd.logMsg("File inspect: This MIME isnt blacklisted, FILE_VERDICT will be determinated later...\n");
+    return 0;
+}
+
+#endif
+/*
  * File signature callback when file transfer is completed
  * or capture/singature is aborted
  */
 static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
         uint8_t* file_sig, uint64_t file_size, FileState *state, bool upload, uint32_t file_id)
 {
+    _dpd.logMsg("File inspect: Proccessing file...\n");
     FileCaptureInfo *file_mem = NULL;
     FileCaptureState capture_state;
     File_Verdict verdict = FILE_VERDICT_UNKNOWN;
     FileInspectConf *conf = sfPolicyUserDataGetDefault(file_config);
     uint64_t capture_file_size;
-
+    uint32_t type_id;
     SFSnortPacket *pkt = (SFSnortPacket*)p;
+
 
     file_inspect_stats.file_signatures_total++;
 
+    //Drop file if it has been found in the sha blacklist config file
     if (conf && file_sig)
     {
         FileSigInfo *file_verdict;
         file_verdict = (FileSigInfo *)sha_table_find(conf->sig_table, file_sig);
+
         if (file_verdict)
         {
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
@@ -968,6 +1094,7 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
     /*Check whether there is any error for the last piece of file*/
     if (file_agent_capture_error(capture_state))
     {
+        _dpd.logMsg("File inspect: error in file.");
         return verdict;
     }
 
@@ -978,7 +1105,29 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
         _dpd.logMsg("File inspect: file size error %d != %d\n",
                 file_size, capture_file_size);
     }
+#ifdef HAVE_MIME_DROP
+    /*
+        Drop file if it is bigger than our file size in the config file (in bytes, unsigned integer of 32 bits is the max bytes)
+        Drop file on transfer complete if it is in our snort config, the transfer is complete, so the alert would trigger this
+    */
+    if(conf->mime.file_capture_max_file_size < capture_file_size && conf->mime.file_capture_max_file_size > 0){ //For testing on the SDK
+        _dpd.logMsg("File inspect -> Dropping file due to max size reached\n");
+        verdict = FILE_VERDICT_BLOCK;
+        return verdict;
+    }
 
+    /*
+        void *ssnptr: session pointer
+        get_file_type_id retrieves uint32_t with type id of the file what we want to get
+    */
+
+    type_id = _dpd.fileAPI->get_file_type_id(ssnptr);
+    _dpd.logMsg("File inspect: got file type id %d\n", type_id);
+    if(file_agent_should_drop_file_mime(type_id)){
+        _dpd.logMsg("File inspect: got blacklisted MIME, blocking...");
+        return FILE_VERDICT_BLOCK;
+    }
+#endif
     if(NULL != conf->sha256_cache)
     {
         /* See if we have sha256 cache configured, and if it already contains
@@ -1000,7 +1149,6 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
             return verdict;
         }
     }
-
     /*Save the file to our file queue*/
     if (file_agent_queue_file(pkt->stream_session, file_mem) < 0)
     {
@@ -1008,7 +1156,5 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
         _dpd.logMsg("File inspect: can't queue file!\n");
         return verdict;
     }
-
     return verdict;
 }
-

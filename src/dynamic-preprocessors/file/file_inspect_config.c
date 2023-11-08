@@ -55,6 +55,12 @@
 #define FILE_INSPECT_SHA_CACHE_MIN_ROWS  "sha_cache_min_rows"
 #define FILE_INSPECT_SHA_CACHE_MAX_SIZE_M "sha_cache_max_size_m"
 
+#ifdef HAVE_MIME_DROP
+#define FILE_INSPECT_MAX_FILE_SIZE       "max_file_size"
+#define FILE_INSPECT_ENABLE_DROP         "enable_drop_on_byte_match"
+#define FILE_INSPECT_MIME_BLACKLIST      "file_capture_mime_blacklist"
+#endif
+
 #ifdef HAVE_S3FILE
 #define FILE_INSPECT_S3_BUCKET           "s3_bucket"
 #define FILE_INSPECT_S3_CLUSTER          "s3_cluster"
@@ -265,7 +271,6 @@ int file_config_signature(char *filename, FileSigInfo *sig_info,
             sha_table_add(config->sig_table, sha256, sig_info);
         }
     }
-
     return 0;
 }
 
@@ -427,7 +432,12 @@ static void DisplayFileConfig(FileInspectConf *config)
     _dpd.logMsg("    file extradata: %s\n",
             config->file_extradata_enabled ? "ENABLED":"DISABLED (Default)");
 #endif
-    _dpd.logMsg("\n");
+#ifdef HAVE_S3FILE
+    _dpd.logMsg("    file -> S3: ENABLED\n");
+#endif
+#ifdef HAVE_MIME_DROP
+    _dpd.logMsg("    file MIME drop and max size drop: ENABLED\n");
+#endif
 }
 
 /* Creates a new hash table, memory limited, to store SHA signatures
@@ -500,8 +510,6 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
     char* next_sectionp = NULL;
     char* argcpyp = NULL;
     char* seenList = NULL;
-
-
     if (config == NULL)
         return;
 
@@ -690,6 +698,35 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
                     0, UINT32_MAX, &value);
             config->file_capture_queue_size = (uint32_t) value;
         }
+#ifdef HAVE_MIME_DROP
+        else if(!strcasecmp(cur_tokenp, FILE_INSPECT_MAX_FILE_SIZE))
+        {
+            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
+            _dpd.checkValueInRange(cur_tokenp, FILE_INSPECT_MAX_FILE_SIZE,
+                    0, UINT32_MAX, &value);
+            _dpd.logMsg("File inspect: File-Max-Size set\n");
+            config->mime.file_capture_max_file_size = (uint32_t) value;
+
+        }
+        else if(!strcasecmp(cur_tokenp, FILE_INSPECT_ENABLE_DROP))
+        {
+            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
+            _dpd.logMsg("File inspect: File-Drop enabled\n");
+            config->mime.file_capture_enable_drop = true;
+        }
+        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_MIME_BLACKLIST))
+        {
+            _dpd.logMsg("File inspect: loading mime blacklist into mem\n");
+            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
+            if(cur_tokenp == NULL)
+            {
+                FILE_FATAL_ERROR("%s(%d) => Please specify mime blacklist array!\n",
+                        *(_dpd.config_file), *(_dpd.config_line));
+            }
+            config->mime.file_capture_mime_blacklist = strdup(cur_tokenp);
+            _dpd.logMsg("File inspect: loaded mime blacklist into mem %s\n", config->mime.file_capture_mime_blacklist);
+        }
+#endif
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_SHA_CACHE_MIN_ROWS))
         {
             cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
@@ -838,6 +875,7 @@ int file_config_compare(FileInspectConf* conf1 , FileInspectConf* conf2)
 
 void file_config_free(FileInspectConf* config)
 {
+
     if (config->capture_dir)
     {
         free(config->capture_dir);
@@ -861,6 +899,12 @@ void file_config_free(FileInspectConf* config)
         sfxhash_delete(config->sha256_cache);
         config->sha256_cache = NULL;
     }
+#ifdef HAVE_MIME_DROP
+    if(config->mime.file_capture_mime_blacklist){
+        free(config->mime.file_capture_mime_blacklist);
+        config->mime.file_capture_mime_blacklist = NULL;
+    }
+#endif
 
 #if HAVE_S3FILE
     if(config->s3.bucket)
@@ -904,6 +948,7 @@ void file_config_free(FileInspectConf* config)
         free(config->seenlist_path);
         config->seenlist_path = NULL;
     }
+
 #endif /* CONTROL_SOCKET */
 }
 

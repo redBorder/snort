@@ -95,6 +95,7 @@ static inline void updateFileNode(FileNode *node, File_Verdict verdict,
         memcpy(node->sha256, signature, SHA256_HASH_SIZE);
     }
 }
+
 /** *
  * @param sip - source IP address
  * @param dip - destination IP address
@@ -111,7 +112,7 @@ int file_resume_block_add_file(void *pkt, uint32_t file_sig, uint32_t timeout,
     FileNode new_node;
     sfaddr_t* srcIP;
     sfaddr_t* dstIP;
-    Packet *p = (Packet *)pkt;
+    Packet *p = (Packet*)pkt;
     time_t now = p->pkth->ts.tv_sec;
 
     srcIP = GET_SRC_IP(p);
@@ -119,6 +120,13 @@ int file_resume_block_add_file(void *pkt, uint32_t file_sig, uint32_t timeout,
     sfaddr_copy_to_raw(&hashKey.dip, dstIP);
     sfaddr_copy_to_raw(&hashKey.sip, srcIP);
     hashKey.file_sig = file_sig;
+
+#ifdef HAVE_DAQ_DP_ADD_DC
+    if (p->packet_flags & PKT_FROM_CLIENT)
+        DAQ_Add_Dynamic_Protocol_Channel(p, srcIP, 0, dstIP, p->dp, GET_IPH_PROTO(p));
+    else if (p->packet_flags & PKT_FROM_SERVER)
+        DAQ_Add_Dynamic_Protocol_Channel(p, dstIP, 0, srcIP, p->sp, GET_IPH_PROTO(p));
+#endif
 
     hash_node = sfxhash_find_node(fileHash, &hashKey);
     if (hash_node)
@@ -250,14 +258,15 @@ File_Verdict file_resume_block_check(void *pkt, uint32_t file_sig)
     SFXHASH_NODE *hash_node;
     FileHashKey hashKey;
     FileNode *node;
-    Packet *p = (Packet *)pkt;
+    Packet *p = (Packet*)pkt;
 
     /* No hash table, or its empty?  Get out of dodge.  */
-    if ((!fileHash) || (!sfxhash_count(fileHash)))
+    if (!fileHash || !sfxhash_count(fileHash))
     {
         DEBUG_WRAP(DebugMessage(DEBUG_FILE, "No expected sessions\n"););
         return verdict;
     }
+
     srcIP = GET_SRC_IP(p);
     dstIP = GET_DST_IP(p);
     sfaddr_copy_to_raw(&hashKey.dip, dstIP);

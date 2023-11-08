@@ -1278,6 +1278,23 @@ static int ProcessGzipAndFDMemPools( struct _SnortConfig *sc,
     return( 0 );
  }
 
+static int CheckFilePolicyConfig(
+        struct _SnortConfig *sc,
+        tSfPolicyUserContextId config,
+        tSfPolicyId policyId,
+        void* pData
+        )
+{
+    HTTPINSPECT_GLOBAL_CONF *context = (HTTPINSPECT_GLOBAL_CONF*)pData;
+
+    context->decode_conf.file_depth = file_api->get_max_file_depth();
+    if (context->decode_conf.file_depth > -1)
+        context->mime_conf.log_filename = 1;
+    updateMaxDepth(context->decode_conf.file_depth, &context->decode_conf.max_depth);
+
+    return 0;
+}
+
 /*
 **  NAME
 **    HttpInspectCheckConfig::
@@ -1295,6 +1312,9 @@ static int HttpInspectCheckConfig(struct _SnortConfig *sc)
         return 0;
 
     if (sfPolicyUserDataIterate (sc, hi_config, HttpInspectVerifyPolicy))
+        return -1;
+
+    if (sfPolicyUserDataIterate (sc, hi_config, CheckFilePolicyConfig))
         return -1;
 
     defaultConfig = (HTTPINSPECT_GLOBAL_CONF *)sfPolicyUserDataGetDefault(hi_config);
@@ -1322,15 +1342,6 @@ static int HttpInspectCheckConfig(struct _SnortConfig *sc)
         }
     }
 
-    if (defaultConfig)
-    {
-        defaultConfig->decode_conf.file_depth = file_api->get_max_file_depth();
-        if (defaultConfig->decode_conf.file_depth > -1)
-        {
-            defaultConfig->mime_conf.log_filename = 1;
-        }
-    }
-
     if (sfPolicyUserDataIterate(sc, hi_config, HttpEnableDecoding) != 0)
     {
         if (defaultConfig == NULL)
@@ -1340,7 +1351,6 @@ static int HttpInspectCheckConfig(struct _SnortConfig *sc)
                     "server configuration.\n");
             return -1;
         }
-        updateMaxDepth(defaultConfig->decode_conf.file_depth, &defaultConfig->decode_conf.max_depth);
         mime_decode_mempool = (MemPool *)file_api->init_mime_mempool(defaultConfig->decode_conf.max_mime_mem,
                 defaultConfig->decode_conf.max_depth, mime_decode_mempool, PROTOCOL_NAME);
     }
@@ -1390,6 +1400,14 @@ static void HttpInspectFreeConfig(HTTPINSPECT_GLOBAL_CONF *config)
 
     if (config->global_server != NULL)
     {
+        int i;
+        for( i=0; i<HI_UI_CONFIG_MAX_XFF_FIELD_NAMES; i++ )
+             if( config->global_server->xff_headers[i] != NULL )
+             {
+                  free(  config->global_server->xff_headers[i] );
+                  config->global_server->xff_headers[i] = NULL;
+             }
+
         http_cmd_lookup_cleanup(&(config->global_server->cmd_lookup));
         free(config->global_server);
     }
@@ -1624,25 +1642,7 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
             return -1;
         }
     }
-    else if (mime_decode_mempool != NULL)
-    {
-        if (defaultSwapConfig == NULL)
-        {
-            WarningMessage("http_inspect:  Changing HTTP decode requires a restart.\n");
-            return -1;
-        }
-        defaultSwapConfig->decode_conf.file_depth = file_api->get_max_file_depth();
-        if (defaultSwapConfig->decode_conf.file_depth > -1)
-        {
-            defaultSwapConfig->mime_conf.log_filename = 1;
-        }
-        if(file_api->is_decoding_conf_changed(&(defaultSwapConfig->decode_conf),
-                &(defaultConfig->decode_conf), "HTTP"))
-        {
-            return -1;
-        }
-    }
-    else
+    else 
     {
         if (sfPolicyUserDataIterate(sc, hi_swap_config, HttpInspectExtractUriHost) != 0)
         {
@@ -1665,6 +1665,25 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
                 FatalError("http_inspect:  Could not allocate HTTP mempool.\n");
             }
         }
+
+    }
+    if (mime_decode_mempool != NULL)
+    {
+        if (defaultSwapConfig == NULL)
+        {
+            WarningMessage("http_inspect:  Changing HTTP decode requires a restart.\n");
+            return -1;
+        }
+        if (sfPolicyUserDataIterate (sc, hi_swap_config, CheckFilePolicyConfig))
+            return -1;
+        if(file_api->is_decoding_conf_changed(&(defaultSwapConfig->decode_conf),
+                &(defaultConfig->decode_conf), "HTTP"))
+        {
+            return -1;
+        }
+    }
+    else
+    {
         if (sfPolicyUserDataIterate(sc, hi_swap_config, HttpEnableDecoding) != 0)
         {
             if (defaultSwapConfig == NULL)
@@ -1674,10 +1693,27 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
                         "server configuration.\n");
                 return -1;
             }
-            updateMaxDepth(defaultSwapConfig->decode_conf.file_depth, &defaultSwapConfig->decode_conf.max_depth);
             mime_decode_mempool = (MemPool *)file_api->init_mime_mempool(defaultSwapConfig->decode_conf.max_mime_mem,
                     defaultSwapConfig->decode_conf.max_depth, mime_decode_mempool, PROTOCOL_NAME);
         }
+    }
+    if (mime_log_mempool != NULL)
+    {
+            if (defaultSwapConfig == NULL)
+            {
+                WarningMessage("http_inspect:  Changing MIME conf memcap requires restart.\n");
+                return -1;
+            }
+
+            if (defaultSwapConfig->mime_conf.memcap != defaultConfig->mime_conf.memcap)
+            {
+                WarningMessage("http_inspect:  Changing MIME conf memcap requires a restart.\n");
+                return -1;
+            }
+
+    }
+    else
+    {
         if (sfPolicyUserDataIterate(sc, hi_swap_config, HttpEnableMimeLog) != 0)
         {
             if (defaultSwapConfig == NULL)
@@ -1691,7 +1727,6 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
                     defaultSwapConfig->mime_conf.memcap, mime_log_mempool, PROTOCOL_NAME);
         }
     }
-
 
     return 0;
 }

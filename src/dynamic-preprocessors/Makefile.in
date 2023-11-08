@@ -91,7 +91,7 @@ build_triplet = @build@
 host_triplet = @host@
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@am__append_1 = libsf_dynamic_utils.la
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@am__append_2 = include/appId.h include/appIdApi.h include/thirdparty_appid_types.h \
-@FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@						  include/thirdparty_appid_utils.h include/thirdparty_appid_api.h \
+@FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@						  include/thirdparty_appid_api.h \
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@						  include/sfprimetable.h include/sfxhash.h include/sfmemcap.h \
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@						  include/sfghash.h include/sfhashfcn.h include/sflsq.h include/md5.h \
 @FEAT_OPEN_APPID_TRUE@@SO_WITH_STATIC_LIB_TRUE@						  include/dns_defs.h
@@ -102,7 +102,7 @@ host_triplet = @host@
 @FEAT_FILE_INSPECT_TRUE@@FEAT_OPEN_APPID_FALSE@@SO_WITH_STATIC_LIB_TRUE@						  include/sfhashfcn.h
 
 @FEAT_OPEN_APPID_TRUE@am__append_5 = include/appId.h  include/appIdApi.h include/thirdparty_appid_types.h \
-@FEAT_OPEN_APPID_TRUE@				 include/thirdparty_appid_utils.h  include/thirdparty_appid_api.h \
+@FEAT_OPEN_APPID_TRUE@				 include/thirdparty_appid_api.h \
 @FEAT_OPEN_APPID_TRUE@				 include/sfprimetable.h include/sfprimetable.c include/sfxhash.h \
 @FEAT_OPEN_APPID_TRUE@				 include/sfxhash.c include/sfmemcap.h include/sfmemcap.c \
 @FEAT_OPEN_APPID_TRUE@				 include/sfghash.c include/sfhashfcn.c include/sflsq.h include/sflsq.c \
@@ -114,7 +114,7 @@ host_triplet = @host@
 
 @FEAT_OPEN_APPID_TRUE@am__append_7 = appid
 @FEAT_OPEN_APPID_TRUE@am__append_8 = include/appId.h  include/appIdApi.h  include/thirdparty_appid_types.h \
-@FEAT_OPEN_APPID_TRUE@				  include/thirdparty_appid_utils.h  include/thirdparty_appid_api.h \
+@FEAT_OPEN_APPID_TRUE@				  include/thirdparty_appid_api.h \
 @FEAT_OPEN_APPID_TRUE@				  include/sfprimetable.h include/sfxhash.h include/sfmemcap.h include/sfhashfcn.h \
 @FEAT_OPEN_APPID_TRUE@				  include/md5.h \
 @FEAT_OPEN_APPID_TRUE@				  include/dns_defs.h 
@@ -1520,9 +1520,6 @@ include/appId.h: $(srcdir)/appid/appId.h
 @FEAT_OPEN_APPID_TRUE@	@src_header=$?; dst_header=$@; $(copy_headers)
 
 @FEAT_OPEN_APPID_TRUE@include/thirdparty_appid_types.h: $(srcdir)/appid/thirdparty_appid_types.h
-@FEAT_OPEN_APPID_TRUE@	@src_header=$?; dst_header=$@; $(copy_headers)
-
-@FEAT_OPEN_APPID_TRUE@include/thirdparty_appid_utils.h: $(srcdir)/appid/thirdparty_appid_utils.h
 @FEAT_OPEN_APPID_TRUE@	@src_header=$?; dst_header=$@; $(copy_headers)
 
 @FEAT_OPEN_APPID_TRUE@include/thirdparty_appid_api.h: $(srcdir)/appid/thirdparty_appid_api.h

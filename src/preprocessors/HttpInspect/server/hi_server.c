@@ -465,6 +465,9 @@ static inline const u_char *extract_http_content_encoding(HTTPINSPECT_CONF *Serv
     else
     {
         header_field_ptr->content_encoding = &header_ptr->content_encoding;
+        header_field_ptr->content_encoding->cont_encoding_start =
+            header_field_ptr->content_encoding->cont_encoding_end = NULL;
+        header_field_ptr->content_encoding->compress_fmt = 0;
         p = p + HTTPRESP_HEADER_LENGTH__CONTENT_ENCODING;
     }
     SkipBlankSpace(start,end,&p);
@@ -504,26 +507,16 @@ static inline const u_char *extract_http_content_encoding(HTTPINSPECT_CONF *Serv
                                     SkipWhiteSpace(start,end,&p);
                                 }
                                 else
-                                {
-                                    header_field_ptr->content_encoding->cont_encoding_start=
-                                        header_field_ptr->content_encoding->cont_encoding_end = NULL;
-                                    header_field_ptr->content_encoding->compress_fmt = 0;
                                     return p;
-                                }
                             }
                             else
-                            {
-                                header_field_ptr->content_encoding->cont_encoding_start=
-                                    header_field_ptr->content_encoding->cont_encoding_end = NULL;
-                                header_field_ptr->content_encoding->compress_fmt = 0;
                                 return p;
-                            }
                         }
                         else
                             break;
                     }
                 }
-                else if(isalpha((int)*p))
+                if(isalpha((int)*p))
                 {
                     header_field_ptr->content_encoding->cont_encoding_start = p;
                     while(hi_util_in_bounds(start, end, p) && *p!='\n' )
@@ -557,12 +550,7 @@ static inline const u_char *extract_http_content_encoding(HTTPINSPECT_CONF *Serv
                     }*/
                 }
                 else
-                {
-                    header_field_ptr->content_encoding->cont_encoding_start=
-                        header_field_ptr->content_encoding->cont_encoding_end = NULL;
-                    header_field_ptr->content_encoding->compress_fmt = 0;
                     return p;
-                }
             }
         }
     }
@@ -714,7 +702,7 @@ static inline const u_char *extractHttpRespHeaderFieldValues(HTTPINSPECT_CONF *S
             p = extract_http_cookie((p + HTTPRESP_HEADER_LENGTH__COOKIE), end, header_ptr, header_field_ptr);
         }
 #if defined(FEAT_OPEN_APPID)
-        else if (IsHeaderFieldName(p, end, HEADER_NAME__SERVER, HEADER_LENGTH__SERVER))
+        else if ((ServerConf->appid_enabled) && (IsHeaderFieldName(p, end, HEADER_NAME__SERVER, HEADER_LENGTH__SERVER)))
         {
             p = p + HEADER_LENGTH__SERVER;
             p = extract_http_server_header(Session, p, start, end, header_ptr, &header_ptr->server);
@@ -763,7 +751,7 @@ static inline const u_char *extractHttpRespHeaderFieldValues(HTTPINSPECT_CONF *S
 #if defined(FEAT_OPEN_APPID)
     else if(((p - offset) == 0) && ((*p == 'V') || (*p == 'v')))
     {
-        if(IsHeaderFieldName(p, end, HEADER_NAME__VIA, HEADER_LENGTH__VIA))
+        if((ServerConf->appid_enabled) && (IsHeaderFieldName(p, end, HEADER_NAME__VIA, HEADER_LENGTH__VIA)))
         {
             p = p + HEADER_LENGTH__VIA;
             p = extract_http_server_header(Session, p, start, end, header_ptr, &header_ptr->via);
@@ -771,7 +759,7 @@ static inline const u_char *extractHttpRespHeaderFieldValues(HTTPINSPECT_CONF *S
     }
     else if(((p - offset) == 0) && ((*p == 'X') || (*p == 'x')))
     {
-        if(IsHeaderFieldName(p, end, HEADER_NAME__X_WORKING_WITH, HEADER_LENGTH__X_WORKING_WITH))
+        if((ServerConf->appid_enabled) && (IsHeaderFieldName(p, end, HEADER_NAME__X_WORKING_WITH, HEADER_LENGTH__X_WORKING_WITH)))
         {
             p = p + HEADER_LENGTH__X_WORKING_WITH;
             p = extract_http_server_header(Session, p, start, end, header_ptr, &header_ptr->xWorkingWith);
@@ -829,6 +817,7 @@ static inline const u_char *hi_server_extract_header(
                     {
                         p++;
                         header_ptr->header.uri_end = p;
+			hsd->resp_state.eoh_found = true;
                         return p;
                     }
                 }
@@ -836,6 +825,7 @@ static inline const u_char *hi_server_extract_header(
                 {
                     p++;
                     header_ptr->header.uri_end = p;
+		    hsd->resp_state.eoh_found = true;
                     return p;
                 }
             }
@@ -1138,8 +1128,8 @@ static inline int hi_server_decompress(HI_SESSION *Session, HttpSessionData *sd,
     int compr_bytes_read, decompr_bytes_read;
     int compr_avail, decompr_avail;
     int total_bytes_read = 0;
-    uint32_t updated_chunk_remainder = 0;
-    uint32_t chunk_read = 0;
+    static uint32_t updated_chunk_remainder = 0;
+    static uint32_t chunk_read = 0;
     uint32_t saved_chunk_size = 0;
 
     compr_depth = sd->decomp_state->compr_depth;
@@ -1199,15 +1189,24 @@ static inline int hi_server_decompress(HI_SESSION *Session, HttpSessionData *sd,
 
     if(!(sd->resp_state.last_pkt_contlen))
     {
-        if(sd->resp_state.last_pkt_chunked
-           && CheckChunkEncoding(Session, start, end, NULL, dechunk_buffer, compr_avail,
-                                 sd->resp_state.chunk_remainder, &updated_chunk_remainder, &chunk_read,
-                                 sd, HI_SI_SERVER_MODE ) == 1)
+        if(sd->resp_state.last_pkt_chunked)
         {
-            sd->resp_state.chunk_remainder = updated_chunk_remainder;
-            compr_avail = chunk_read;
-            zRet = uncompress_gzip(decompression_buffer, decompr_avail, dechunk_buffer,
-                    compr_avail, sd, &total_bytes_read, sd->decomp_state->compress_fmt);
+            int cRet = 1;
+            if(!(sd->decomp_state && sd->decomp_state->stage == HTTP_DECOMP_MID))
+            {
+                chunk_read = 0;
+                updated_chunk_remainder = 0;
+                cRet = CheckChunkEncoding(Session, start, end, NULL, dechunk_buffer, compr_avail,
+                           sd->resp_state.chunk_remainder, &updated_chunk_remainder, &chunk_read,
+                           sd, HI_SI_SERVER_MODE);
+            }
+            if(cRet == 1)
+            {
+                sd->resp_state.chunk_remainder = updated_chunk_remainder;
+                compr_avail = chunk_read;
+                zRet = uncompress_gzip(decompression_buffer, decompr_avail, dechunk_buffer,
+                           compr_avail, sd, &total_bytes_read, sd->decomp_state->compress_fmt);
+            }
         }
         else
         {
@@ -1415,6 +1414,19 @@ int HttpResponseInspection(HI_SESSION *Session, Packet *p, const unsigned char *
     int expected_pkt = 0;
     int alt_dsize;
     uint32_t seq_num = 0;
+
+    static uint32_t paf_bytes_total = 0;
+    static uint32_t paf_bytes_curr = 0;
+    uint32_t paf_bytes_processed = 0;
+
+    if (ScPafEnabled())
+    {
+	paf_bytes_processed = hi_paf_resp_bytes_processed(p->ssnptr);
+	paf_bytes_curr = paf_bytes_processed - paf_bytes_total;
+	paf_bytes_total = paf_bytes_processed;
+	if (paf_bytes_curr < 0)
+	    paf_bytes_curr = paf_bytes_processed;
+    }
 
     if (!Session || !p || !data || (dsize == 0))
         return HI_INVALID_ARG;
@@ -1639,13 +1651,10 @@ int HttpResponseInspection(HI_SESSION *Session, Packet *p, const unsigned char *
             if(expected_pkt)
             {
                 expected_pkt = 0;
-                if(sd != NULL)
-                {
-                    (void)File_Decomp_Reset(sd->fd_state);
-                    ResetGzipState(sd->decomp_state);
-                    ResetRespState(&(sd->resp_state));
-                    sd->resp_state.flow_depth_excd = false;
-                }
+                (void)File_Decomp_Reset(sd->fd_state);
+                ResetGzipState(sd->decomp_state);
+                ResetRespState(&(sd->resp_state));
+                sd->resp_state.flow_depth_excd = false;
             }
             while(hi_util_in_bounds(start, end, ptr))
             {
@@ -1666,6 +1675,18 @@ int HttpResponseInspection(HI_SESSION *Session, Packet *p, const unsigned char *
 
     if (expected_pkt)
     {
+	if (ScPafEnabled() && !sd->resp_state.eoh_found)
+	{
+	    // check for EOH in this packet
+            if (hi_paf_resp_eoh(p->ssnptr))
+	    {
+	        sd->resp_state.eoh_found = true;
+	        ptr += paf_bytes_curr; // jump to body offset
+	        if (ptr == end)
+	           return HI_SUCCESS;
+	    }
+        }
+
         if (hi_util_in_bounds(start, end, ptr))
         {
             iRet = hi_server_inspect_body(Session, sd, ptr, end, &body_ptr);
