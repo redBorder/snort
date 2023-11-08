@@ -24,6 +24,9 @@
 *.x86_64
 *.hex
 
+# temp files
+*~ 
+
 Makefile
 config.h
 config.log
@@ -42,4 +45,4 @@ stamp-h1
 /tools/u2boat/u2boat-u2boat.o
 /tools/u2spewfoo/u2spewfoo
 /tools/u2spewfoo/u2spewfoo-u2spewfoo.o
-
+autom4te.cache

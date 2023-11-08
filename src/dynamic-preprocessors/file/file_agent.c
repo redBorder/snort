@@ -833,7 +833,7 @@ static int file_agent_send_s3(const FileInfo *file,struct s3_info *s3) {
 
     //do {
         S3_put_object(&bucketContext, path, file->file_size, &putProperties,
-                      0, &putObjectHandler, &transference );
+                      0, 0, &putObjectHandler, &transference );
     //}while(S3_status_is_retryable(transference.status));
 
     if(transference.status != S3StatusOK)
