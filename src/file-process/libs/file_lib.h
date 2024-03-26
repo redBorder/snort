@@ -1,7 +1,7 @@
 /*
  **
  **
- **  Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ **  Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  **  Copyright (C) 2012-2013 Sourcefire, Inc.
  **
  **  This program is free software; you can redistribute it and/or modify
@@ -36,8 +36,9 @@
 #include "sf_types.h" /* for bool */
 
 #include "file_api.h"
+#include "sfdaq.h"
 
-#define SNORT_FILE_TYPE_UNKNOWN          UINT16_MAX  /**/
+#define SNORT_FILE_TYPE_UNKNOWN          1024  /**/
 #define SNORT_FILE_TYPE_CONTINUE         0 /**/
 
 typedef struct _MagicData
@@ -69,32 +70,12 @@ typedef struct _FileContext
 {
     bool file_type_enabled;
     bool file_signature_enabled;
-    uint8_t    *file_name;
-    uint32_t   file_name_size;
-#ifdef HAVE_EXTRADATA_FILE
-    uint8_t    *hostname;
-    uint32_t   hostname_size;
-    uint8_t    *file_mailfrom;
-    uint32_t   file_mailfrom_size;
-    uint8_t    *file_rcptto;
-    uint32_t   file_rcptto_size;
-    uint8_t    *file_headers;
-    uint32_t   file_headers_size;
-    uint8_t    *file_ftp_user;
-    uint32_t   file_ftp_user_size;
-    uint8_t    *file_smb_user_id;
-    uint32_t   file_smb_user_id_size;
-    uint8_t    file_smb_is_upload;
-    uint8_t    file_smb_is_upload_valid;
-#endif
     bool       file_name_saved;
-    uint64_t   file_size;
-#ifdef HAVE_EXTRADATA_FILE
-    char       file_size_str[32];
-#endif
     bool       upload;
+    uint32_t   file_name_size;
+    uint8_t    *file_name;
+    uint64_t   file_size;
     uint64_t   processed_bytes;
-    uint32_t   file_type_id;
     uint8_t    *sha256;
     void *     file_type_context;
     void *     file_signature_context;
@@ -102,26 +83,23 @@ typedef struct _FileContext
     time_t     expires;
     uint16_t   app_id;
     bool file_capture_enabled;
+    bool partial_file;
+    uint32_t   file_type_id;
     FileCaptureInfo *file_capture;
     uint8_t *current_data;  /*current file data*/
     uint32_t current_data_len;
     File_Verdict verdict;
     bool suspend_block_verdict;
+    /* for some SMB upload cases, file size is not known during SMB negotiation. We are setting 
+     * SIG_FLUSH during end of stream, but END of file is not set in case of SMB unknown 
+     * file size upload. This causing file capture to fail. This flag is used to set End of file, 
+     * only for SMB upload cases.
+     */
+    bool smb_unknown_file_size;
+    void* attached_file_entry;
     FileState file_state;
     uint32_t file_id;
     uint32_t file_config_version;
-#ifdef HAVE_EXTRADATA_FILE
-    uint32_t xtra_file_sha256_id;
-    uint32_t xtra_file_size_id;
-    uint32_t xtra_file_name_id;
-    uint32_t xtra_file_hostname_id;
-    uint32_t xtra_file_mailfrom_id;
-    uint32_t xtra_file_rcptto_id;
-    uint32_t xtra_file_headers_id;
-    uint32_t xtra_file_ftp_user_id;
-    uint32_t xtra_file_smb_user_id_id;
-    uint32_t xtra_file_smb_is_upload_id;
-#endif
 } FileContext;
 
 /*Main File Processing functions */
@@ -135,22 +113,6 @@ void file_context_free(void *context);
 /*File properties*/
 void file_name_set (FileContext *context, uint8_t *file_name, uint32_t name_size, bool save_in_context);
 int file_name_get (FileContext *context, uint8_t **file_name, uint32_t *name_size);
-#ifdef HAVE_EXTRADATA_FILE
-void file_hostname_set (FileContext *context, uint8_t *file_hostname, uint32_t hostname_size);
-int file_hostname_get (FileContext *context, uint8_t **file_hostname, uint32_t *hostname_size);
-void file_mailfrom_set (FileContext *context, uint8_t *file_mailfrom, uint32_t file_mailfrom_size);
-int file_mailfrom_get (FileContext *context, uint8_t **file_mailfrom, uint32_t *file_mailfrom_size);
-void file_rcptto_set (FileContext *context, uint8_t *file_rcptto, uint32_t file_rcptto_size);
-int file_rcptto_get (FileContext *context, uint8_t **file_rcptto, uint32_t *file_rcptto_size);
-void file_headers_set (FileContext *context, uint8_t *file_headers, uint32_t file_headers_size);
-int file_headers_get (FileContext *context, uint8_t **file_headers, uint32_t *file_headers_size);
-void file_ftp_user_set (FileContext *context, uint8_t *file_headers, uint32_t file_headers_size);
-int file_ftp_user_get (FileContext *context, uint8_t **file_headers, uint32_t *file_headers_size);
-void file_smb_user_id_set (FileContext *context, uint8_t *smb_user_id, uint32_t smb_user_id_size);
-int file_smb_user_id_get (FileContext *context, uint8_t **file_smb_user_id, uint32_t *file_smb_user_id_size);
-void file_smb_is_upload_set (FileContext *context, uint8_t is_upload);
-int file_smb_is_upload_get (FileContext *context, uint8_t *is_upload);
-#endif
 void file_size_set (FileContext *context, uint64_t file_size);
 uint64_t file_size_get (FileContext *context);
 void file_direction_set (FileContext *context, bool upload);
@@ -175,5 +137,35 @@ extern int64_t file_signature_depth;
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
 void file_sha256_print(unsigned char *hash);
 #endif
+
+#if defined (DAQ_VERSION) && DAQ_VERSION > 9
+const DAQ_PktHdr_t* daq_pktHdr;
+#define SAVE_DAQ_PKT_HDR(p) daq_pktHdr = ((Packet*)(p))->pkth
+#define FILE_PKT_DEBUG(logLevel, msg, args...)\
+    SNORT_DEBUG_PKT_LOG(daq_pktHdr,DAQ_DEBUG_PKT_MODULE_SNORTFILEPP,logLevel, msg, ##args)
+
+#define FILE_EMERGENCY(msg,args...) FILE_PKT_DEBUG(DAQ_DEBUG_PKT_LEVEL_EMERGENCY,msg,##args) 
+#define FILE_ALERT(msg,args...) FILE_PKT_DEBUG(DAQ_DEBUG_PKT_LEVEL_ALERT,msg,##args)
+#define FILE_CRITICAL(msg,args...) FILE_PKT_DEBUG(DAQ_DEBUG_PKT_LEVEL_CRITICAL,msg,##args)
+#define FILE_ERROR(msg,args...) FILE_PKT_DEBUG(DAQ_DEBUG_PKT_LEVEL_ERROR,msg,##args)
+#define FILE_WARNING(msg,args...) FILE_PKT_DEBUG(DAQ_DEBUG_PKT_LEVEL_WARNING,msg,##args)
+#define FILE_NOTICE(msg,args...) FILE_PKT_DEBUG(DAQ_DEBUG_PKT_LEVEL_NOTICE,msg,##args)
+#define FILE_INFO(msg,args...) FILE_PKT_DEBUG(DAQ_DEBUG_PKT_LEVEL_INFO,msg,##args)
+#define FILE_DEBUG(msg,args...) FILE_PKT_DEBUG(DAQ_DEBUG_PKT_LEVEL_DEBUG,msg,##args)
+
+#else
+
+#define FILE_LOG_MSGS(msg, args...) DEBUG_WRAP(DebugMessage(DEBUG_FILE, msg"\n", ##args);)
+#define FILE_EMERGENCY(msg,args...) FILE_LOG_MSGS(msg,##args)
+#define FILE_ALERT(msg,args...) FILE_LOG_MSGS(msg,##args)
+#define FILE_CRITICAL(msg,args...) FILE_LOG_MSGS(msg,##args)
+#define FILE_ERROR(msg,args...) FILE_LOG_MSGS(msg,##args)
+#define FILE_WARNING(msg,args...) FILE_LOG_MSGS(msg,##args)
+#define FILE_NOTICE(msg,args...) FILE_LOG_MSGS(msg,##args)
+#define FILE_INFO(msg,args...) FILE_LOG_MSGS(msg,##args)
+#define FILE_DEBUG(msg,args...) FILE_LOG_MSGS(msg,##args)
+#define SAVE_DAQ_PKT_HDR(p)
+#endif
+
 #endif
 

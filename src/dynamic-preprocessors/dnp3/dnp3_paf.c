@@ -14,7 +14,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * Author: Ryan Jordan
@@ -29,7 +29,7 @@
 
 /* Forward declarations */
 static PAF_Status DNP3Paf(void *ssn, void **user, const uint8_t *data,
-                   uint32_t len, uint32_t flags, uint32_t *fp);
+                   uint32_t len, uint64_t *flags, uint32_t *fp, uint32_t *fp_eoh);
 
 /* State-tracking structs */
 typedef enum _dnp3_paf_state
@@ -88,13 +88,14 @@ int DNP3AddServiceToPaf (struct _SnortConfig *sc, uint16_t service, tSfPolicyId 
      uint32_t - length of payload data
      uint32_t - flags to check whether client or server
      uint32_t * - pointer to set flush point
+     uint32_t * - pointer to set header flush point
 
    Returns:
     PAF_Status - PAF_FLUSH if flush point found, PAF_SEARCH otherwise
 */
 
 static PAF_Status DNP3Paf(void *ssn, void **user, const uint8_t *data,
-                     uint32_t len, uint32_t flags, uint32_t *fp)
+                     uint32_t len, uint64_t *flags, uint32_t *fp, uint32_t *fp_eoh)
 {
     dnp3_paf_data_t *pafdata = *(dnp3_paf_data_t **)user;
     uint32_t bytes_processed = 0;

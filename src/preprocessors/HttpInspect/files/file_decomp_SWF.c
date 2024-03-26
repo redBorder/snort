@@ -2,7 +2,7 @@
 /*
 ** file_decomp_SWF.c
 **
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License Version 2 as
@@ -67,7 +67,7 @@ static fd_status_t File_Decomp_Process_LZMA_Header( fd_session_p_t SessionPtr )
     }
     
     /* Set to -1 and let liblzma calculate the size automatically */
-     *((uint64_t*)(LZMA_Header + LZMA_UCL_OFFSET)) = 0xFFFFFFFFFFFFFFFF;
+    *((uint64_t*)(LZMA_Header + LZMA_UCL_OFFSET)) = 0xFFFFFFFFFFFFFFFF;
 
     /* Move the LZMA Properties */
     for( idx=0; idx<SWF_LZMA_PRP_LEN; idx++ )

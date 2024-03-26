@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -72,7 +72,7 @@ typedef struct _SERVICE_DHCP_HEADER
 #pragma pack()
 
 static int bootp_init(const InitServiceAPI * const init_api);
-MakeRNAServiceValidationPrototype(bootp_validate);
+static int bootp_validate(ServiceValidationArgs* args);
 
 static tRNAServiceElement svc_element =
 {
@@ -116,7 +116,7 @@ static int bootp_init(const InitServiceAPI * const init_api)
     return 0;
 }
 
-MakeRNAServiceValidationPrototype(bootp_validate)
+static int bootp_validate(ServiceValidationArgs* args)
 {
     const ServiceBOOTPHeader *bh;
     const ServiceDHCPOption *op;
@@ -125,6 +125,11 @@ MakeRNAServiceValidationPrototype(bootp_validate)
     unsigned op60_len=0;
     const uint8_t *op55=NULL;
     const uint8_t *op60=NULL;
+    tAppIdData *flowp = args->flowp;
+    const uint8_t *data = args->data;
+    SFSnortPacket *pkt = args->pkt; 
+    const int dir = args->dir;
+    uint16_t size = args->size;
 
     if (!size)
         goto inprocess;
@@ -211,11 +216,11 @@ MakeRNAServiceValidationPrototype(bootp_validate)
 
     if (dir == APP_ID_FROM_INITIATOR)
     {
-        setAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED);
+        setAppIdFlag(flowp, APPID_SESSION_UDP_REVERSED);
     }
     else
     {
-        clearAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED);
+        clearAppIdFlag(flowp, APPID_SESSION_UDP_REVERSED);
     }
 
     if (size > sizeof(ServiceBOOTPHeader) + 4)
@@ -281,33 +286,35 @@ MakeRNAServiceValidationPrototype(bootp_validate)
     }
 
 success:
-    if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
+    if (!getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
     {
-        setAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
-        bootp_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
-                                           APP_ID_DHCP, NULL, NULL, NULL);
+        setAppIdFlag(flowp, APPID_SESSION_CONTINUE);
+        bootp_service_mod.api->add_service(flowp, args->pkt, args->dir, &svc_element,
+                                           APP_ID_DHCP, NULL, NULL, NULL, NULL);
     }
     return SERVICE_SUCCESS;
 
 inprocess:
-    if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
+    if (!getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
     {
-        bootp_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+        bootp_service_mod.api->service_inprocess(flowp, args->pkt, args->dir, &svc_element, NULL);
     }
     return SERVICE_INPROCESS;
 
 fail:
-    if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
+    if (!getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
     {
-        bootp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, bootp_service_mod.flow_data_index, pConfig);
+        bootp_service_mod.api->fail_service(flowp, args->pkt, args->dir, &svc_element,
+                                            bootp_service_mod.flow_data_index, args->pConfig, NULL);
     }
-    clearAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
+    clearAppIdFlag(flowp, APPID_SESSION_CONTINUE);
     return SERVICE_NOMATCH;
 
 not_compatible:
-    if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
+    if (!getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
     {
-        bootp_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element, bootp_service_mod.flow_data_index, pConfig);
+        bootp_service_mod.api->incompatible_data(flowp, args->pkt, args->dir, &svc_element,
+                                                 bootp_service_mod.flow_data_index, args->pConfig, NULL);
     }
     return SERVICE_NOT_COMPATIBLE;
 }

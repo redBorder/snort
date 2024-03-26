@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2009-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -25,66 +25,87 @@
 #include "stdint.h"
 #include "stdbool.h"
 #include "ipv6_port.h"
+#include "sfghash.h"
 
 struct AppIdData;
 
 typedef int32_t tAppId;
 
-typedef enum
-{
-    APPID_SESSION_RESPONDER_MONITORED   = (1 << 0),
-    APPID_SESSION_INITIATOR_MONITORED   = (1 << 1),
-    APPID_SESSION_SPECIAL_MONITORED     = (1 << 2),
-    APPID_SESSION_INITIATOR_SEEN        = (1 << 3),
-    APPID_SESSION_RESPONDER_SEEN        = (1 << 4),
-    APPID_SESSION_DISCOVER_USER         = (1 << 5),
-    APPID_SESSION_HAS_DHCP_FP           = (1 << 6),
-    APPID_SESSION_HAS_DHCP_INFO         = (1 << 7),
-    APPID_SESSION_HAS_SMB_INFO          = (1 << 8),
-    APPID_SESSION_MID                   = (1 << 9),
-    APPID_SESSION_OOO                   = (1 << 10),
-    APPID_SESSION_SYN_RST               = (1 << 11),
+#define APPID_SESSION_RESPONDER_MONITORED   (1ULL << 0)
+#define APPID_SESSION_INITIATOR_MONITORED   (1ULL << 1)
+#define APPID_SESSION_SPECIAL_MONITORED     (1ULL << 2)
+#define APPID_SESSION_INITIATOR_SEEN        (1ULL << 3)
+#define APPID_SESSION_RESPONDER_SEEN        (1ULL << 4)
+#define APPID_SESSION_DISCOVER_USER         (1ULL << 5)
+#define APPID_SESSION_HAS_DHCP_FP           (1ULL << 6)
+#define APPID_SESSION_HAS_DHCP_INFO         (1ULL << 7)
+#define APPID_SESSION_HAS_SMB_INFO          (1ULL << 8)
+#define APPID_SESSION_MID                   (1ULL << 9)
+#define APPID_SESSION_OOO                   (1ULL << 10)
+#define APPID_SESSION_SYN_RST               (1ULL << 11)
 
     /**Service missed the first UDP packet in a flow. This causes detectors to see traffic in reverse direction.
      * Detectors should set this flag by verifying that packet from initiator is indeed a packet from responder.
      * Setting this flag without this check will cause RNA to not try other detectors in some cases (see bug 77551).*/
-    APPID_SESSION_UDP_REVERSED          = (1 << 12),
-    APPID_SESSION_HTTP_SESSION          = (1 << 13),
+#define APPID_SESSION_UDP_REVERSED          (1ULL << 12)
+#define APPID_SESSION_HTTP_SESSION          (1ULL << 13)
 
     /**Service protocol was detected */
-    APPID_SESSION_SERVICE_DETECTED      = (1 << 14),
+#define APPID_SESSION_SERVICE_DETECTED      (1ULL << 14)
 
     /**Finsihed with client app detection */
-    APPID_SESSION_CLIENT_DETECTED       = (1 << 15),
+#define APPID_SESSION_CLIENT_DETECTED       (1ULL << 15)
     /**Flow is a data connection not a service */
-    APPID_SESSION_NOT_A_SERVICE         = (1 << 16),
+#define APPID_SESSION_NOT_A_SERVICE         (1ULL << 16)
 
-    APPID_SESSION_DECRYPTED             = (1 << 17),
-    APPID_SESSION_SERVICE_DELETED       = (1 << 18),
+#define APPID_SESSION_DECRYPTED             (1ULL << 17)
+#define APPID_SESSION_SERVICE_DELETED       (1ULL << 18)
 
     //The following attributes are references only with appId
     /**Continue calling the routine after the service has been identified. */
-    APPID_SESSION_CONTINUE              = (1 << 19),
+#define APPID_SESSION_CONTINUE              (1ULL << 19)
     /**Call service detection even if the host does not exist */
-    APPID_SESSION_IGNORE_HOST           = (1 << 20),
+#define APPID_SESSION_IGNORE_HOST           (1ULL << 20)
     /**Service protocol had incompatible client data */
-    APPID_SESSION_INCOMPATIBLE          = (1 << 21),
+#define APPID_SESSION_INCOMPATIBLE          (1ULL << 21)
     /**we are ready to see out of network Server packets */
-    APPID_SESSION_CLIENT_GETS_SERVER_PACKETS = (1 << 22),
+#define APPID_SESSION_CLIENT_GETS_SERVER_PACKETS    (1ULL << 22)
 
-    APPID_SESSION_DISCOVER_APP          = (1 << 23),
+#define APPID_SESSION_DISCOVER_APP          (1ULL << 23)
 
-    APPID_SESSION_PORT_SERVICE_DONE     = (1 << 24),
-    APPID_SESSION_ADDITIONAL_PACKET     = (1 << 25),
-    APPID_SESSION_RESPONDER_CHECKED     = (1 << 26),
-    APPID_SESSION_INITIATOR_CHECKED     = (1 << 27),
-    APPID_SESSION_SSL_SESSION           = (1 << 28),
-    APPID_SESSION_LOGIN_SUCCEEDED       = (1 << 29),
+#define APPID_SESSION_PORT_SERVICE_DONE     (1ULL << 24)
+#define APPID_SESSION_ADDITIONAL_PACKET     (1ULL << 25)
+#define APPID_SESSION_RESPONDER_CHECKED     (1ULL << 26)
+#define APPID_SESSION_INITIATOR_CHECKED     (1ULL << 27)
+#define APPID_SESSION_SSL_SESSION           (1ULL << 28)
+#define APPID_SESSION_LOGIN_SUCCEEDED       (1ULL << 29)
 
-    APPID_SESSION_SPDY_SESSION          = (1 << 30),
-    APPID_SESSION_ENCRYPTED             = (1 << 31),
-} APPID_SESSION_ATTRIBUTES;
+#define APPID_SESSION_SPDY_SESSION          (1ULL << 30)
+#define APPID_SESSION_ENCRYPTED             (1ULL << 31)
 
+#define APPID_SESSION_APP_REINSPECT         (1ULL << 32)
+#define APPID_SESSION_RESPONSE_CODE_CHECKED (1ULL << 33)
+#define APPID_SESSION_REXEC_STDERR          (1ULL << 34)
+#define APPID_SESSION_CHP_INSPECTING        (1ULL << 35)
+#define APPID_SESSION_STICKY_SERVICE        (1ULL << 36)
+#define APPID_SESSION_APP_REINSPECT_SSL     (1ULL << 37)
+
+#define APPID_SESSION_NO_TPI                (1ULL << 38)
+#define APPID_SESSION_IGNORE_FLOW           (1ULL << 39)
+#define APPID_SESSION_IGNORE_FLOW_LOGGED    (1ULL << 40)
+
+#define APPID_SESSION_EXPECTED_EVALUATE     (1ULL << 41)
+#define APPID_SESSION_HOST_CACHE_MATCHED    (1ULL << 42)
+#define APPID_SESSION_OOO_CHECK_TP          (1ULL << 43)
+
+#define APPID_SESSION_HTTP_TUNNEL           (1ULL << 44)
+#define APPID_SESSION_HTTP_CONNECT          (1ULL << 45)
+
+#define APPID_SESSION_IGNORE_ID_FLAGS       (APPID_SESSION_IGNORE_FLOW | \
+                                             APPID_SESSION_NOT_A_SERVICE | \
+                                             APPID_SESSION_NO_TPI | \
+                                             APPID_SESSION_SERVICE_DETECTED | \
+                                             APPID_SESSION_PORT_SERVICE_DONE)
 
 typedef enum
 {
@@ -134,6 +155,10 @@ typedef struct _FpSMBData
 
 //maximum number of appIds replicated for a flow/session
 #define APPID_HA_SESSION_APP_NUM_MAX 8
+#define APPID_HA_FLAGS_APP (1<<0)
+#define APPID_HA_FLAGS_TP_DONE (1<<1)
+#define APPID_HA_FLAGS_SVC_DONE (1<<2)
+#define APPID_HA_FLAGS_HTTP (1<<3)
 
 typedef struct _AppIdSessionHA
 {
@@ -146,7 +171,22 @@ typedef enum
     NOT_A_SEARCH_ENGINE,
     SUPPORTED_SEARCH_ENGINE,
     UNSUPPORTED_SEARCH_ENGINE,
+    SEARCH_SUPPORT_TYPE_UNKNOWN,
 } SEARCH_SUPPORT_TYPE;
+
+typedef enum
+{
+    REQ_AGENT_FID       = 0,
+    REQ_HOST_FID        = 1,
+    REQ_REFERER_FID     = 2,
+    REQ_URI_FID         = 3,
+    REQ_COOKIE_FID      = 4,
+    REQ_BODY_FID        = 5,
+    RSP_CONTENT_TYPE_FID = 6,
+    RSP_LOCATION_FID    = 7,
+    RSP_BODY_FID        = 8,
+    HTTP_FIELD_MAX      = RSP_BODY_FID
+} HTTP_FIELD_ID;
 
 /*******************************************************************************
  * AppId API
@@ -168,6 +208,7 @@ struct AppIdApi
     tAppId (*getFwClientAppId)(struct AppIdData *session);
     tAppId (*getFwPayloadAppId)(struct AppIdData *session);
     tAppId (*getFwReferredAppId)(struct AppIdData *session);
+    SFGHASH*(*getFwMultiPayloadList)(struct AppIdData *session);
 
     bool (*isSessionSslDecrypted)(struct AppIdData *session);
     bool (*isAppIdInspectingSession)(struct AppIdData *session);
@@ -176,12 +217,13 @@ struct AppIdApi
     char* (*getUserName)(struct AppIdData *session, tAppId *service, bool *isLoginSuccessful);
     char* (*getClientVersion)(struct AppIdData *session);
 
-    unsigned (*getAppIdSessionAttribute)(struct AppIdData *session, unsigned int flag);
+    uint64_t (*getAppIdSessionAttribute)(struct AppIdData *session, uint64_t flag);
 
     APPID_FLOW_TYPE (*getFlowType)(struct AppIdData *session);
     void (*getServiceInfo)(struct AppIdData *session, char **serviceVendor, char **serviceVersion, RNAServiceSubtype **subtype);
     short (*getServicePort)(struct AppIdData *session);
     sfaddr_t* (*getServiceIp)(struct AppIdData *session);
+    struct in6_addr* (*getInitiatorIp)(struct AppIdData *session);
 
     char* (*getHttpUserAgent)(struct AppIdData *session);
     char* (*getHttpHost)(struct AppIdData *session);
@@ -201,6 +243,7 @@ struct AppIdApi
     uint16_t (*getHttpCookieOffset)(struct AppIdData *session);
     uint16_t (*getHttpCookieEndOffset)(struct AppIdData *session);
     SEARCH_SUPPORT_TYPE (*getHttpSearch)(struct AppIdData *session);
+    sfaddr_t* (*getHttpXffAddr)(struct AppIdData *session);
 
     char* (*getTlsHost)(struct AppIdData *session);
 
@@ -212,19 +255,29 @@ struct AppIdApi
     void (*freeSmbFpData)(struct AppIdData *session, FpSMBData *data);
     char* (*getNetbiosName)(struct AppIdData *session);
     uint32_t (*produceHAState)(void *lwssn, uint8_t *buf);
-    uint32_t (*consumeHAState)(void *lwssn, const uint8_t *buf, uint8_t length, uint8_t proto, sfaddr_t* ip);
+    uint32_t (*consumeHAState)(void *lwssn, const uint8_t *buf, uint8_t length, uint8_t proto, const struct in6_addr* ip, uint16_t initiatorPort);
     struct AppIdData * (*getAppIdData)(void *lwssn);
+    int (*getAppIdSessionPacketCount)(struct AppIdData *appIdData);
 
-    char* (*getDNSQuery)(struct AppIdData *appIdData, uint8_t *query_len);
+    char* (*getDNSQuery)(struct AppIdData *appIdData, uint8_t *query_len, bool *got_response);
     uint16_t (*getDNSQueryoffset)(struct AppIdData *appIdData);
     uint16_t (*getDNSRecordType)(struct AppIdData *appIdData);
     uint8_t (*getDNSResponseType)(struct AppIdData *appIdData);
     uint32_t (*getDNSTTL)(struct AppIdData *appIdData);
+    uint16_t (*getDNSOptionsOffset)(struct AppIdData *appIdData);
+    char* (*getHttpNewField)(struct AppIdData *session, HTTP_FIELD_ID fieldId);
+    void (*freeHttpNewField)(struct AppIdData *appIdData, HTTP_FIELD_ID fieldId);
+    uint16_t (*getHttpFieldOffset)(struct AppIdData *session, HTTP_FIELD_ID fieldId);
+    uint16_t (*getHttpFieldEndOffset)(struct AppIdData *session, HTTP_FIELD_ID fieldId);
+    bool (*isHttpInspectionDone)(struct AppIdData *session);
+    void (*dumpDebugHostInfo)(void);
 };
 
 /* For access when including header */
 extern struct AppIdApi appIdApi;
 
+//#define UNIT_TESTING // NOTE These testing #define's are used in service_base.c and fw_appid.c
+//#define UNIT_TEST_FIRST_DECRYPTED_PACKET 12 // WARNING this assumes a single stream in a decrypted pcap
 
 #endif  /* __APPID_API_H__ */
 

@@ -1,7 +1,7 @@
 /*
  * snort_ftptelnet.c
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  * Steven A. Sturges <ssturges@sourcefire.com>
  * Daniel J. Roelker <droelker@sourcefire.com>
@@ -96,6 +96,11 @@
 #include "Unified2_common.h"
 #include "ssl_include.h"
 #include <daq_common.h>
+#include "memory_stats.h"
+
+#ifdef DUMP_BUFFER
+#include "ftptelnet_buffer_dump.h"
+#endif
 
 #ifdef PERF_PROFILING
 extern PreprocStats ftpPerfStats;
@@ -106,6 +111,7 @@ int ftppDetectCalled = 0;
 
 #ifdef TARGET_BASED
 unsigned s_ftpdata_eof_cb_id = 0;
+unsigned s_ftpdata_flush_cb_id = 0;
 #endif
 
 extern tSfPolicyUserContextId ftp_telnet_config;
@@ -118,7 +124,6 @@ extern tSfPolicyUserContextId ftp_telnet_config;
 #define INSPECT_TYPE      "inspection_type"
 #define INSPECT_TYPE_STATELESS "stateless"
 #define INSPECT_TYPE_STATEFUL  "stateful"
-
 /*
  * Protocol subkeywords.
  */
@@ -327,7 +332,7 @@ static char* DefaultConf (size_t* pn) {
     for ( i = 0; i < CONF_CHUNKS; i++ )
         sz += strlen(DEFAULT_FTP_CONF[i]);
 
-    str = malloc(sz);
+    str = _dpd.snortAlloc(1, sz, PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
 
     if ( !str )
         DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -839,7 +844,8 @@ int ProcessTelnetConf(FTPTELNET_GLOBAL_CONF *GlobalConf,
     }
 
     GlobalConf->telnet_config =
-        (TELNET_PROTO_CONF *)calloc(1, sizeof(TELNET_PROTO_CONF));
+        (TELNET_PROTO_CONF *)_dpd.snortAlloc(1, sizeof(TELNET_PROTO_CONF),
+                                         PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
     if (GlobalConf->telnet_config == NULL)
     {
         DynamicPreprocessorFatalMessage("Out of memory trying to create "
@@ -1060,7 +1066,9 @@ static int ProcessFTPCmdList(FTP_SERVER_PROTO_CONF *ServerConf,
             {
                 /* Add it to the list */
                 // note that struct includes 1 byte for null, so just add len
-                FTPCmd = (FTP_CMD_CONF *)calloc(1, sizeof(FTP_CMD_CONF)+strlen(cmd));
+                FTPCmd = (FTP_CMD_CONF *)_dpd.snortAlloc(1,
+                                          sizeof(FTP_CMD_CONF)+strlen(cmd),
+                                          PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
                 if (FTPCmd == NULL)
                 {
                     DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1200,7 +1208,9 @@ static int ProcessFTPDataChanCmdsList(FTP_SERVER_PROTO_CONF *ServerConf,
         {
             /* Add it to the list */
             // note that struct includes 1 byte for null, so just add len
-            FTPCmd = (FTP_CMD_CONF *)calloc(1, sizeof(FTP_CMD_CONF)+strlen(cmd));
+            FTPCmd = (FTP_CMD_CONF *)_dpd.snortAlloc(1,
+                                         sizeof(FTP_CMD_CONF) + strlen(cmd),
+                                         PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
             if (FTPCmd == NULL)
             {
                 DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1240,7 +1250,8 @@ static int ProcessFTPDataChanCmdsList(FTP_SERVER_PROTO_CONF *ServerConf,
             }
             else
             {
-                Fmt = (FTP_PARAM_FMT *)calloc(1, sizeof(FTP_PARAM_FMT));
+                Fmt = (FTP_PARAM_FMT *)_dpd.snortAlloc(1, sizeof(FTP_PARAM_FMT),
+                                          PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
                 if (Fmt == NULL)
                 {
                     DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1250,7 +1261,8 @@ static int ProcessFTPDataChanCmdsList(FTP_SERVER_PROTO_CONF *ServerConf,
                 Fmt->type = e_head;
                 FTPCmd->param_format = Fmt;
 
-                Fmt = (FTP_PARAM_FMT *)calloc(1, sizeof(FTP_PARAM_FMT));
+                Fmt = (FTP_PARAM_FMT *)_dpd.snortAlloc(1, sizeof(FTP_PARAM_FMT),
+                                          PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
                 if (Fmt == NULL)
                 {
                     DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1346,7 +1358,9 @@ static int ProcessFTPDirCmdsList(FTP_SERVER_PROTO_CONF *ServerConf,
         {
             /* Add it to the list  */
             // note that struct includes 1 byte for null, so just add len
-            FTPCmd = (FTP_CMD_CONF *)calloc(1, sizeof(FTP_CMD_CONF)+strlen(cmd));
+            FTPCmd = (FTP_CMD_CONF *)_dpd.snortAlloc(1,
+                                         sizeof(FTP_CMD_CONF) + strlen(cmd),
+                                         PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
             if (FTPCmd == NULL)
             {
                 DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1475,7 +1489,10 @@ static void SetOptionalsNext(FTP_PARAM_FMT *ThisFmt, FTP_PARAM_FMT *NextFmt,
             if (numChoices)
             {
                 ThisFmt->numChoices = numChoices;
-                ThisFmt->choices = (FTP_PARAM_FMT **)calloc(numChoices, sizeof(FTP_PARAM_FMT *));
+                ThisFmt->choices = (FTP_PARAM_FMT **)_dpd.snortAlloc(numChoices,
+                                                        sizeof(FTP_PARAM_FMT *),
+                                                        PP_FTPTELNET,
+                                                        PP_MEM_CATEGORY_CONFIG);
                 if (ThisFmt->choices == NULL)
                 {
                     DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1558,14 +1575,20 @@ static int ProcessDateFormat(FTP_DATE_FMT *dateFmt,
                 if (curr_len > 0)
                 {
                     FTP_DATE_FMT *OptFmt;
-                    OptFmt = (FTP_DATE_FMT *)calloc(1, sizeof(FTP_DATE_FMT));
+                    OptFmt = (FTP_DATE_FMT *)_dpd.snortAlloc(1,
+                                                   sizeof(FTP_DATE_FMT),
+                                                   PP_FTPTELNET,
+                                                   PP_MEM_CATEGORY_CONFIG);
                     if (OptFmt == NULL)
                     {
                         DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
                                 *(_dpd.config_file), *(_dpd.config_line));
                     }
 
-                    curr_format = (char *)calloc(curr_len + 1, sizeof(char));
+                    curr_format = (char *)_dpd.snortAlloc(curr_len + 1,
+                                                        sizeof(char),
+                                                        PP_FTPTELNET,
+                                                        PP_MEM_CATEGORY_CONFIG);
                     if (curr_format == NULL)
                     {
                         DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1574,16 +1597,19 @@ static int ProcessDateFormat(FTP_DATE_FMT *dateFmt,
 
                     strncpy(curr_format, start_ch, curr_len);
                     CurrFmt->format_string = curr_format;
-                    curr_len = 0;
                     CurrFmt->optional = OptFmt;
                     OptFmt->prev = CurrFmt;
                     iRet = ProcessDateFormat(OptFmt, CurrFmt, &curr_ch);
                     if (iRet != FTPP_SUCCESS)
                     {
-                        free(OptFmt);
-                        free(curr_format);
+                        _dpd.snortFree(OptFmt, sizeof(FTP_DATE_FMT),
+                                       PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
+                        _dpd.snortFree(curr_format,
+                                       (curr_len + 1) * sizeof(char),
+                                       PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
                         return iRet;
                     }
+                    curr_len = 0;
                 }
                 start_ch = curr_ch;
                 break;
@@ -1591,7 +1617,10 @@ static int ProcessDateFormat(FTP_DATE_FMT *dateFmt,
                 curr_ch++;
                 if (curr_len > 0)
                 {
-                    curr_format = (char *)calloc(curr_len + 1, sizeof(char));
+                    curr_format = (char *)_dpd.snortAlloc(curr_len + 1,
+                                                          sizeof(char),
+                                                          PP_FTPTELNET,
+                                                          PP_MEM_CATEGORY_CONFIG);
                     if (curr_format == NULL)
                     {
                         DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1609,7 +1638,10 @@ static int ProcessDateFormat(FTP_DATE_FMT *dateFmt,
                 curr_ch++;
                 {
                     FTP_DATE_FMT *NewFmt;
-                    NewFmt = (FTP_DATE_FMT *)calloc(1, sizeof(FTP_DATE_FMT));
+                    NewFmt = (FTP_DATE_FMT *)_dpd.snortAlloc(1,
+                                                           sizeof(FTP_DATE_FMT),
+                                                           PP_FTPTELNET,
+                                                           PP_MEM_CATEGORY_CONFIG);
                     if (NewFmt == NULL)
                     {
                         DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1618,7 +1650,10 @@ static int ProcessDateFormat(FTP_DATE_FMT *dateFmt,
 
                     if (curr_len > 0)
                     {
-                        curr_format = (char *)calloc(curr_len + 1, sizeof(char));
+                        curr_format = (char *)_dpd.snortAlloc(curr_len + 1,
+                                                              sizeof(char),
+                                                              PP_FTPTELNET,
+                                                              PP_MEM_CATEGORY_CONFIG);
                         if (curr_format == NULL)
                         {
                             DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1640,7 +1675,10 @@ static int ProcessDateFormat(FTP_DATE_FMT *dateFmt,
                     {
                         return iRet;
                     }
-                    NewFmt = (FTP_DATE_FMT *)calloc(1, sizeof(FTP_DATE_FMT));
+                    NewFmt = (FTP_DATE_FMT *)_dpd.snortAlloc(1,
+                                                  sizeof(FTP_DATE_FMT),
+                                                  PP_FTPTELNET,
+                                                  PP_MEM_CATEGORY_CONFIG);
                     if (NewFmt == NULL)
                     {
                         DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1655,7 +1693,10 @@ static int ProcessDateFormat(FTP_DATE_FMT *dateFmt,
                         return iRet;
                     }
 
-                    NewFmt = (FTP_DATE_FMT *)calloc(1, sizeof(FTP_DATE_FMT));
+                    NewFmt = (FTP_DATE_FMT *)_dpd.snortAlloc(1,
+                                                   sizeof(FTP_DATE_FMT),
+                                                   PP_FTPTELNET,
+                                                   PP_MEM_CATEGORY_CONFIG);
                     if (NewFmt == NULL)
                     {
                         DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1675,7 +1716,9 @@ static int ProcessDateFormat(FTP_DATE_FMT *dateFmt,
                 curr_ch++;
                 if (curr_len > 0)
                 {
-                    curr_format = (char *)calloc(curr_len + 1, sizeof(char));
+                    curr_format = (char *)_dpd.snortAlloc(curr_len + 1,
+                                               sizeof(char), PP_FTPTELNET,
+                                               PP_MEM_CATEGORY_CONFIG);
                     if (curr_format == NULL)
                     {
                         DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1699,7 +1742,9 @@ static int ProcessDateFormat(FTP_DATE_FMT *dateFmt,
                 curr_ch++;
                 if (curr_len > 0)
                 {
-                    curr_format = (char *)calloc(curr_len + 1, sizeof(char));
+                    curr_format = (char *)_dpd.snortAlloc(curr_len + 1,
+                                                    sizeof(char), PP_FTPTELNET,
+                                                    PP_MEM_CATEGORY_CONFIG);
                     if (curr_format == NULL)
                     {
                         DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1728,7 +1773,8 @@ static int ProcessDateFormat(FTP_DATE_FMT *dateFmt,
 
     if (curr_len > 0)
     {
-        curr_format = (char *)calloc(curr_len + 1, sizeof(char));
+        curr_format = (char *)_dpd.snortAlloc(curr_len + 1, sizeof(char),
+                                      PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
         if (curr_format == NULL)
         {
             DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1793,7 +1839,8 @@ int DoNextFormat(FTP_PARAM_FMT *ThisFmt, int allocated,
 
     if (!strcmp(fmt, START_OPT_FMT))
     {
-        NextFmt = (FTP_PARAM_FMT *)calloc(1, sizeof(FTP_PARAM_FMT));
+        NextFmt = (FTP_PARAM_FMT *)_dpd.snortAlloc(1, sizeof(FTP_PARAM_FMT),
+                                         PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
         if (NextFmt == NULL)
         {
             DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1819,7 +1866,11 @@ int DoNextFormat(FTP_PARAM_FMT *ThisFmt, int allocated,
         int numChoices = 1;
         do
         {
-            FTP_PARAM_FMT **tmpChoices = (FTP_PARAM_FMT **)calloc(numChoices, sizeof(FTP_PARAM_FMT *));
+            FTP_PARAM_FMT **tmpChoices =
+                    (FTP_PARAM_FMT **)_dpd.snortAlloc(numChoices,
+                                                      sizeof(FTP_PARAM_FMT *),
+                                                      PP_FTPTELNET,
+                                                      PP_MEM_CATEGORY_CONFIG);
             if (tmpChoices == NULL)
             {
                 DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1836,17 +1887,20 @@ int DoNextFormat(FTP_PARAM_FMT *ThisFmt, int allocated,
                 memcpy(tmpChoices, ThisFmt->choices,
                         sizeof(FTP_PARAM_FMT*) * ThisFmt->numChoices);
             }
-            NextFmt = (FTP_PARAM_FMT *)calloc(1, sizeof(FTP_PARAM_FMT));
+            NextFmt = (FTP_PARAM_FMT *)_dpd.snortAlloc(1, sizeof(FTP_PARAM_FMT),
+                                          PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
             if (NextFmt == NULL)
             {
                 DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
                         *(_dpd.config_file), *(_dpd.config_line));
             }
 
-            ThisFmt->numChoices = numChoices;
             tmpChoices[numChoices-1] = NextFmt;
             if (ThisFmt->choices)
-                free(ThisFmt->choices);
+                _dpd.snortFree(ThisFmt->choices,
+                               (ThisFmt->numChoices * sizeof(FTP_PARAM_FMT *)),
+                               PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
+            ThisFmt->numChoices = numChoices;
             ThisFmt->choices = tmpChoices;
             NextFmt->prev_param_fmt = ThisFmt;
             iRet = DoNextFormat(NextFmt, 1, ErrorString, ErrStrLen);
@@ -1864,7 +1918,8 @@ int DoNextFormat(FTP_PARAM_FMT *ThisFmt, int allocated,
 
     if (!allocated)
     {
-        NextFmt = (FTP_PARAM_FMT *)calloc(1, sizeof(FTP_PARAM_FMT));
+        NextFmt = (FTP_PARAM_FMT *)_dpd.snortAlloc(1, sizeof(FTP_PARAM_FMT),
+                                         PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
         if (NextFmt == NULL)
         {
             DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1896,6 +1951,14 @@ int DoNextFormat(FTP_PARAM_FMT *ThisFmt, int allocated,
     else if (!strcmp(fmt, F_CHAR))
     {
         char *chars_allowed = NextToken(CONF_SEPARATORS);
+        if(!chars_allowed)
+        {
+            snprintf(ErrorString, ErrStrLen,
+                    "Illegal format '' for token '%s'.",
+                     CMD_VALIDITY);
+            return FTPP_INVALID_ARG;
+        }
+
         NextFmt->type = e_char;
         NextFmt->format.chars_allowed = 0;
         while (*chars_allowed != 0)
@@ -1910,7 +1973,8 @@ int DoNextFormat(FTP_PARAM_FMT *ThisFmt, int allocated,
         FTP_DATE_FMT *DateFmt;
         char *format = NextToken(CONF_SEPARATORS);
         NextFmt->type = e_date;
-        DateFmt = (FTP_DATE_FMT *)calloc(1, sizeof(FTP_DATE_FMT));
+        DateFmt = (FTP_DATE_FMT *)_dpd.snortAlloc(1, sizeof(FTP_DATE_FMT),
+                                       PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
         if (DateFmt == NULL)
         {
             DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -1942,7 +2006,8 @@ int DoNextFormat(FTP_PARAM_FMT *ThisFmt, int allocated,
             return FTPP_INVALID_ARG;
         }
         NextFmt->type = e_literal;
-        NextFmt->format.literal = (char *)calloc(1, len+1);
+        NextFmt->format.literal = (char *)_dpd.snortAlloc(1, len + 1,
+                                        PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
         if ( !NextFmt->format.literal )
         {
             DynamicPreprocessorFatalMessage(
@@ -2035,7 +2100,8 @@ static int ProcessFTPCmdValidity(FTP_SERVER_PROTO_CONF *ServerConf,
         return FTPP_FATAL_ERR;
     }
 
-    HeadFmt = (FTP_PARAM_FMT *)calloc(1, sizeof(FTP_PARAM_FMT));
+    HeadFmt = (FTP_PARAM_FMT *)_dpd.snortAlloc(1, sizeof(FTP_PARAM_FMT),
+                                         PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
     if (HeadFmt == NULL)
     {
         DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -2060,7 +2126,9 @@ static int ProcessFTPCmdValidity(FTP_SERVER_PROTO_CONF *ServerConf,
     {
         /* Add it to the list  */
         // note that struct includes 1 byte for null, so just add len
-        FTPCmd = (FTP_CMD_CONF *)calloc(1, sizeof(FTP_CMD_CONF)+strlen(cmd));
+        FTPCmd = (FTP_CMD_CONF *)_dpd.snortAlloc(1,
+                                         sizeof(FTP_CMD_CONF)+strlen(cmd),
+                                         PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
         if (FTPCmd == NULL)
         {
             DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -2392,7 +2460,8 @@ static int ProcessFTPAllowBounce(FTP_CLIENT_PROTO_CONF *ClientConf,
          * return most specific match -- ie a specific host is more specific
          * than subnet.
          */
-        newBounce = (FTP_BOUNCE_TO *)calloc(1, sizeof(FTP_BOUNCE_TO));
+        newBounce = (FTP_BOUNCE_TO *)_dpd.snortAlloc(1, sizeof(FTP_BOUNCE_TO),
+                                         PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
         if (newBounce == NULL)
         {
             snprintf(ErrorString, ErrStrLen,
@@ -2405,7 +2474,8 @@ static int ProcessFTPAllowBounce(FTP_CLIENT_PROTO_CONF *ClientConf,
         {
             snprintf(ErrorString, ErrStrLen,
                     "Invalid argument to token '%s': %s", ALLOW_BOUNCE, pcToken);
-            free(newBounce);
+            _dpd.snortFree(newBounce, sizeof(FTP_BOUNCE_TO),
+                           PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
             return FTPP_FATAL_ERR;
         }
 
@@ -2416,7 +2486,8 @@ static int ProcessFTPAllowBounce(FTP_CLIENT_PROTO_CONF *ClientConf,
         {
             snprintf(ErrorString, ErrStrLen,
                     "Failed to add configuration for Bounce object '%s'.", ALLOW_BOUNCE);
-            free(newBounce);
+            _dpd.snortFree(newBounce, sizeof(FTP_BOUNCE_TO),
+                           PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
             return FTPP_FATAL_ERR;
         }
 
@@ -2747,7 +2818,10 @@ int ProcessFTPClientConf(struct _SnortConfig *sc, FTPTELNET_GLOBAL_CONF *GlobalC
                 // Write this IP into the buffer for printing
                 snprintf(client_list, STD_BUF, "%s", client);
 
-                new_client_conf = (FTP_CLIENT_PROTO_CONF *)calloc(1, sizeof(FTP_CLIENT_PROTO_CONF));
+                new_client_conf = (FTP_CLIENT_PROTO_CONF *)_dpd.snortAlloc(1,
+                                                  sizeof(FTP_CLIENT_PROTO_CONF),
+                                                  PP_FTPTELNET,
+                                                  PP_MEM_CATEGORY_CONFIG);
                 if (new_client_conf == NULL)
                 {
                     DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -2800,7 +2874,9 @@ int ProcessFTPClientConf(struct _SnortConfig *sc, FTPTELNET_GLOBAL_CONF *GlobalC
         }
 
         GlobalConf->default_ftp_client =
-            (FTP_CLIENT_PROTO_CONF *)calloc(1, sizeof(FTP_CLIENT_PROTO_CONF));
+            (FTP_CLIENT_PROTO_CONF *)_dpd.snortAlloc(1,
+                                     sizeof(FTP_CLIENT_PROTO_CONF),
+                                     PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
         if (GlobalConf->default_ftp_client == NULL)
         {
             DynamicPreprocessorFatalMessage("Out of memory trying to create "
@@ -3177,7 +3253,8 @@ int parseFtpServerConfigStr( FTP_SERVER_PROTO_CONF *ftp_conf, char *ConfigParseR
 
     iRet = ProcessFTPServerOptions(ftp_conf, ErrorString, ErrStrLen);
 
-    free(default_conf_str);
+    _dpd.snortFree(default_conf_str, default_conf_len,
+                   PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
     maxToken = saveMaxToken;
 
     if (iRet < 0)
@@ -3335,7 +3412,9 @@ int ProcessFTPServerConf( struct _SnortConfig *sc, FTPTELNET_GLOBAL_CONF *Global
                 /* Write this IP into the buffer for printing */
                 snprintf(server_list, STD_BUF, "%s", server);
 
-                new_server_conf = (FTP_SERVER_PROTO_CONF *)calloc(1, sizeof(FTP_SERVER_PROTO_CONF));
+                new_server_conf = (FTP_SERVER_PROTO_CONF *)_dpd.snortAlloc(1,
+                                                 sizeof(FTP_SERVER_PROTO_CONF),
+                                         PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
                 if (new_server_conf == NULL)
                 {
                     DynamicPreprocessorFatalMessage("%s(%d) => Failed to allocate memory\n",
@@ -3399,7 +3478,9 @@ int ProcessFTPServerConf( struct _SnortConfig *sc, FTPTELNET_GLOBAL_CONF *Global
         }
 
         GlobalConf->default_ftp_server =
-            (FTP_SERVER_PROTO_CONF *)calloc(1, sizeof(FTP_SERVER_PROTO_CONF));
+            (FTP_SERVER_PROTO_CONF *)_dpd.snortAlloc(1,
+                                       sizeof(FTP_SERVER_PROTO_CONF),
+                                       PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
         if (GlobalConf->default_ftp_server == NULL)
         {
             DynamicPreprocessorFatalMessage("Out of memory trying to create "
@@ -3412,7 +3493,9 @@ int ProcessFTPServerConf( struct _SnortConfig *sc, FTPTELNET_GLOBAL_CONF *Global
         GlobalConf->default_ftp_server->serverAddr = strdup("default");
         if (GlobalConf->default_ftp_server->serverAddr == NULL)
         {
-            free(GlobalConf->default_ftp_server);
+            _dpd.snortFree(GlobalConf->default_ftp_server,
+                           sizeof(FTP_SERVER_PROTO_CONF),
+                           PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
             DynamicPreprocessorFatalMessage("Out of memory trying to create "
                     "default ftp server configuration.\n");
         }
@@ -3480,7 +3563,8 @@ void FTPTelnetCleanupFTPCMDConf(void *ftpCmd)
     /* Free the FTP_PARAM_FMT stuff... */
     ftpp_ui_config_reset_ftp_cmd(FTPCmd);
 
-    free(FTPCmd);
+    _dpd.snortFree(FTPCmd, sizeof(FTP_CMD_CONF)+strlen(FTPCmd->cmd_name),
+                          PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
 }
 
 void FTPTelnetCleanupFTPServerConf(void *serverConf)
@@ -3499,7 +3583,8 @@ void FTPTelnetCleanupFTPServerConf(void *serverConf)
 void FTPTelnetCleanupFTPBounceTo(void *ftpBounce)
 {
     FTP_BOUNCE_TO *FTPBounce = (FTP_BOUNCE_TO *)ftpBounce;
-    free(FTPBounce);
+    _dpd.snortFree(FTPBounce, sizeof(FTP_BOUNCE_TO),
+                   PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
 }
 
 void FTPTelnetCleanupFTPClientConf(void *clientConf)
@@ -3545,22 +3630,28 @@ void FTPTelnetFreeConfig(FTPTELNET_GLOBAL_CONF *GlobalConf)
     if (GlobalConf->default_ftp_client != NULL)
     {
         FTPTelnetCleanupFTPClientConf((void *)GlobalConf->default_ftp_client);
-        free(GlobalConf->default_ftp_client);
+        _dpd.snortFree(GlobalConf->default_ftp_client,
+                       sizeof(FTP_CLIENT_PROTO_CONF),
+                       PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
     }
 
     if (GlobalConf->default_ftp_server != NULL)
     {
         FTPTelnetCleanupFTPServerConf((void *)GlobalConf->default_ftp_server);
-        free(GlobalConf->default_ftp_server);
+        _dpd.snortFree(GlobalConf->default_ftp_server,
+                       sizeof(FTP_SERVER_PROTO_CONF),
+                       PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
     }
 
     if (GlobalConf->telnet_config != NULL)
-        free(GlobalConf->telnet_config);
+        _dpd.snortFree(GlobalConf->telnet_config, sizeof(TELNET_PROTO_CONF),
+                          PP_FTPTELNET, PP_MEM_CATEGORY_CONFIG);
 
     ftpp_ui_client_lookup_cleanup(&GlobalConf->client_lookup);
     ftpp_ui_server_lookup_cleanup(&GlobalConf->server_lookup);
 
-    free(GlobalConf);
+    _dpd.snortFree(GlobalConf, sizeof(FTPTELNET_GLOBAL_CONF), PP_FTPTELNET,
+                                                       PP_MEM_CATEGORY_CONFIG);
 }
 
 /*
@@ -3701,10 +3792,11 @@ int FTPTelnetCheckConfigs(struct _SnortConfig *sc, void* pData, tSfPolicyId poli
 
     /* Add FTPTelnet into the preprocessor list */
 #ifdef TARGET_BASED
-    if ( _dpd.fileAPI->get_max_file_depth() >= 0 )
+    if ( _dpd.fileAPI->get_max_file_depth(sc, true) >= 0 )
     {
         _dpd.addPreproc(sc, FTPDataTelnetChecks, PRIORITY_APPLICATION, PP_FTPTELNET, PROTO_BIT__TCP);
         s_ftpdata_eof_cb_id = _dpd.streamAPI->register_event_handler(SnortFTPData_EOF);
+        s_ftpdata_flush_cb_id = _dpd.streamAPI->register_ftp_flush_cb(SnortFTPData_Flush);
     }
     else
 #endif
@@ -4048,6 +4140,10 @@ int SnortTelnet(FTPTELNET_GLOBAL_CONF *GlobalConf, TELNET_SESSION *TelnetSession
     int iRet;
     PROFILE_VARS;
 
+#ifdef DUMP_BUFFER
+    dumpBuffer(TELNET_DUMP,(const char *)p->payload,p->payload_size);
+#endif
+
     if (!TelnetSession)
     {
         if (GlobalConf->inspection_type == FTPP_UI_CONFIG_STATEFUL)
@@ -4237,6 +4333,10 @@ int SnortFTPTelnet(SFSnortPacket *p)
     tSfPolicyId policy_id = _dpd.getNapRuntimePolicy();
     FTPTELNET_GLOBAL_CONF *GlobalConf = NULL;
 
+#ifdef DUMP_BUFFER
+    dumpBufferInit();
+#endif
+
     sfPolicyUserPolicySet (ftp_telnet_config, policy_id);
     GlobalConf = (FTPTELNET_GLOBAL_CONF *)sfPolicyUserDataGetCurrent(ftp_telnet_config);
 
@@ -4368,23 +4468,23 @@ static void FTPDataProcess(SFSnortPacket *p, FTP_DATA_SESSION *data_ssn,
 
     _dpd.setFileDataPtr((uint8_t *)p->payload, (uint16_t)p->payload_size);
 
-
-    if (data_ssn->flags & FTPDATA_FLG_REST)
+    if(data_ssn->flags & FTPDATA_FLG_FLUSH)
     {
-        _dpd.inlineForceDropSessionAndReset(p);
-        return;
+        _dpd.fileAPI->set_file_partial(p,data_ssn->position,data_ssn->direction,true);
     }
-
+    if(data_ssn->flags & FTPDATA_FLG_STOP)
+    {
+        _dpd.fileAPI->set_file_partial(p,data_ssn->position,data_ssn->direction,false);
+    }
     status = _dpd.fileAPI->file_process(p, (uint8_t *)file_data,
-            data_length, data_ssn->position, data_ssn->direction, false);
+            data_length, data_ssn->position, data_ssn->direction, false, (data_ssn->flags & FTPDATA_FLG_FLUSH) ? true : false);
 
-    if (_dpd.active_PacketWasDropped())
+    FTP_SESSION *ft_ssn = (FTP_SESSION *) _dpd.sessionAPI->get_application_data_from_key(data_ssn->ftp_key, PP_FTPTELNET);
+    if(ft_ssn && (ft_ssn->flags & FTP_FLG_MALWARE_ENABLED) && _dpd.active_PacketWasDropped())
     {
-        FTP_SESSION *ft_ssn = (FTP_SESSION *) _dpd.sessionAPI->get_application_data_from_key(data_ssn->ftp_key, PP_FTPTELNET);
-        if(ft_ssn)
-            ft_ssn->flags |= FTP_FLG_MALWARE;
+        _dpd.fileAPI->file_resume_block_add_file(p, data_ssn->path_hash, 0, 0, 0, NULL, ft_ssn->control_clientPort,
+                ft_ssn->control_serverPort, true , data_ssn->direction);
     }
-
 
     /* Filename needs to be set AFTER the first call to file_process( ) */
     if (data_ssn->filename && !(data_ssn->flags & FTPDATA_FLG_FILENAME_SET))
@@ -4405,16 +4505,32 @@ static void FTPDataProcess(SFSnortPacket *p, FTP_DATA_SESSION *data_ssn,
 
 void SnortFTPData_EOF(SFSnortPacket *p)
 {
+    FTP_SESSION *ftp_ssn;
     FTP_DATA_SESSION *data_ssn = (FTP_DATA_SESSION *)
                 _dpd.sessionAPI->get_application_data(p->stream_session, PP_FTPTELNET);
 
     if (!PROTO_IS_FTP_DATA(data_ssn) || !FTPDataDirection(p, data_ssn))
         return;
 
+    ftp_ssn = (FTP_SESSION *) _dpd.sessionAPI->get_application_data_from_key(data_ssn->ftp_key, PP_FTPTELNET);
     initFilePosition(&data_ssn->position, _dpd.fileAPI->get_file_processed_size(p->stream_session));
     finalFilePosition(&data_ssn->position);
 
     _dpd.streamAPI->request_flush_stream(p);
+    if (ftp_ssn && (data_ssn->flags & FTPDATA_FLG_REST) && (ftp_ssn->rest_cmd_offset > 0))
+    {
+        File_Verdict verdict;
+        verdict = _dpd.fileAPI->file_resume_block_check(p, data_ssn->path_hash);
+        data_ssn->flags &= ~FTPDATA_FLG_REST;
+        ftp_ssn->rest_cmd_offset = 0;
+        if((verdict == FILE_VERDICT_BLOCK) || (verdict == FILE_VERDICT_REJECT))
+        {
+            _dpd.fileAPI->file_resume_block_add_file(p, data_ssn->path_hash, 0, 0, 0, NULL, ftp_ssn->control_clientPort,
+                    ftp_ssn->control_serverPort, true, data_ssn->direction);
+        }
+        return;
+    }
+
     if (!(data_ssn->flags & FTPDATA_FLG_STOP))
     {
         data_ssn->flags |= FTPDATA_FLG_STOP;
@@ -4422,6 +4538,23 @@ void SnortFTPData_EOF(SFSnortPacket *p)
                 (uint8_t *)p->payload,
                 (uint16_t)p->payload_size);
     }
+}
+
+void SnortFTPData_Flush(SFSnortPacket *p)
+{
+    FTP_DATA_SESSION *data_ssn = (FTP_DATA_SESSION *)
+                _dpd.sessionAPI->get_application_data(p->stream_session, PP_FTPTELNET);
+
+    if (!PROTO_IS_FTP_DATA(data_ssn) || !FTPDataDirection(p, data_ssn))
+        return;
+
+    initFilePosition(&data_ssn->position, _dpd.fileAPI->get_file_processed_size(p->stream_session));
+    data_ssn->flags |= FTPDATA_FLG_FLUSH;
+
+    _dpd.streamAPI->request_flush_stream(p);
+
+    data_ssn->flags &= ~FTPDATA_FLG_FLUSH;
+    return;
 }
 
 int SnortFTPData(SFSnortPacket *p)
@@ -4474,7 +4607,20 @@ int SnortFTPData(SFSnortPacket *p)
         }
     }
 #endif
-
+    if ((data_ssn->flags & FTPDATA_FLG_REST) && (ftp_ssn->rest_cmd_offset > 0))
+    {
+        File_Verdict verdict;
+        verdict = _dpd.fileAPI->file_resume_block_check(p, data_ssn->path_hash);
+        data_ssn->flags &= ~FTPDATA_FLG_REST;
+        ftp_ssn->rest_cmd_offset = 0;
+        if((verdict == FILE_VERDICT_BLOCK) || (verdict == FILE_VERDICT_REJECT))
+        {
+            data_ssn->flags |= FTPDATA_FLG_STOP;
+            _dpd.fileAPI->file_resume_block_add_file(p, data_ssn->path_hash, 0, 0, 0, NULL, ftp_ssn->control_clientPort,
+                                        ftp_ssn->control_serverPort, true, data_ssn->direction);
+        }
+        return 0 ;
+    }
     //  bail if we have not rebuilt the stream yet.
     if (!_dpd.readyForProcess(p))
         return 0;
@@ -4524,14 +4670,6 @@ int SnortFTPData(SFSnortPacket *p)
     }
     else
     {
-#ifdef HAVE_EXTRADATA_FILE
-        if (ftp_ssn->user_info)
-        {
-            _dpd.fileAPI->set_file_ftp_user(p->stream_session,
-                (uint8_t *)ftp_ssn->user, ftp_ssn->user_info);
-        }
-#endif
-
         initFilePosition(&data_ssn->position,
                 _dpd.fileAPI->get_file_processed_size(p->stream_session));
         if (p->tcp_header && (p->tcp_header->flags & TCPHEADER_FIN))
@@ -4542,7 +4680,6 @@ int SnortFTPData(SFSnortPacket *p)
     return 0;
 }
 #endif /* TARGET_BASED */
-
 
 int FTPPBounceInit(struct _SnortConfig *sc, char *name, char *parameters, void **dataPtr)
 {
@@ -4719,7 +4856,7 @@ static int _addFtpServerConfPortsToStream(struct _SnortConfig *sc, void *pData)
 // preproc will deal with any pipelined commands
 static PAF_Status ftp_paf (
         void* ssn, void** pv, const uint8_t* data, uint32_t len,
-        uint32_t flags, uint32_t* fp)
+        uint64_t *flags, uint32_t* fp, uint32_t* fp_eoh)
 {
 #ifdef HAVE_MEMRCHR
     uint8_t* lf =  memrchr(data, '\n', len);
@@ -4749,8 +4886,8 @@ static void _FTPTelnetAddService (struct _SnortConfig *sc, int16_t app, tSfPolic
 {
     if ( _dpd.isPafEnabled() )
     {
-       ftp_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, true, ftp_paf, false);
-       ftp_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, false, ftp_paf, false);
+       ftp_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, true, ftp_paf, true);
+       ftp_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, false, ftp_paf, true);
     }
 }
 #endif
@@ -4809,7 +4946,9 @@ void FTP_Set_flow_id( void *app_data, uint32_t fid )
 
 void FTPData_Set_flow_id( void *app_data, uint32_t fid )
 {
+#ifdef TARGET_BASED
     FTP_DATA_SESSION *ssn = (FTP_DATA_SESSION *)app_data;
     if( ssn )
         ssn->flow_id = fid;
+#endif
 }

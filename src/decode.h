@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -357,6 +357,8 @@ struct enc_header {
 #define TCPOPT_AUTH   29  /* [RFC5925] - The TCP Authentication Option
                              Intended to replace MD5 Signature Option [RFC2385] */
 
+#define TCPOPT_TFO    34  /* [RFC7413] - TCP Fast Open */
+
 #define TCP_OPT_TRUNC -1
 #define TCP_OPT_BADLEN -2
 
@@ -662,6 +664,12 @@ struct enc_header {
 #define PKT_FILE_EVENT_SET          0x20000000
 #define PKT_EARLY_REASSEMBLY 0x40000000  /* this packet. part of the expected stream, should have stream reassembly set */
 #define PKT_RETRANSMIT       0x80000000  /* this packet is identified as re-transmitted one */
+#define PKT_PURGE            0x0100000000  /* Stream will not flush the data */
+#define PKT_H1_ABORT         0x0200000000  /* Used by H1 and H2 paf */
+#define PKT_UPGRADE_PROTO    0x0400000000  /* Used by H1 paf */
+#define PKT_PSEUDO_FLUSH     0x0800000000
+#define PKT_FAST_BLOCK       0x1000000000 /* pkt blocked by fast-blocking */
+#define PKT_EVAL_DROP        0x2000000000 /* Packet with PKT_EVAL_DROP is evaluated if it is needed to dropped */
 
 #define PKT_PDU_FULL (PKT_PDU_HEAD | PKT_PDU_TAIL)
 
@@ -688,6 +696,7 @@ typedef enum {
 #define PKT_ERR_CKSUM_IGMP   0x10
 #define PKT_ERR_CKSUM_ANY    0x1F
 #define PKT_ERR_BAD_TTL      0x20
+#define PKT_ERR_SYN_RL_DROP  0x40
 
 /*  D A T A  S T R U C T U R E S  *********************************************/
 typedef int (*LogFunction)(void *ssnptr, uint8_t **buf, uint32_t *len, uint32_t *type);
@@ -1599,6 +1608,9 @@ typedef struct _PPPoE_Tag
 
 #define MPLS_HEADER_LEN    4
 #define NUM_RESERVED_LABELS    16
+#ifdef MPLS_RFC4023_SUPPORT
+#define IPPROTO_MPLS    137
+#endif
 
 typedef struct _MplsHdr
 {
@@ -1607,6 +1619,23 @@ typedef struct _MplsHdr
     uint8_t  bos;
     uint8_t  ttl;
 } MplsHdr;
+
+typedef struct _H2PriSpec
+{
+    uint32_t stream_id;
+    uint32_t weight;
+    uint8_t  exclusive;
+} H2PriSpec;
+
+typedef struct _H2Hdr
+{
+    uint32_t length;
+    uint32_t stream_id;
+    uint8_t  type;
+    uint8_t  flags;
+    uint8_t  reserved;
+    H2PriSpec pri;
+} H2Hdr;
 
 #define PGM_NAK_ERR -1
 #define PGM_NAK_OK 0
@@ -1714,7 +1743,7 @@ typedef struct _Packet
 
     PreprocEnableMask preprocessor_bits; /* flags for preprocessors to check */
 
-    uint32_t packet_flags;      /* special flags for the packet */
+    uint64_t packet_flags;      /* special flags for the packet */
 
     uint32_t xtradata_mask;
 
@@ -1756,6 +1785,9 @@ typedef struct _Packet
     uint8_t error_flags;        /* flags indicate checksum errors, bad TTLs, etc. */
     uint8_t encapsulated;
     uint8_t GTPencapsulated;
+    uint8_t GREencapsulated;
+    uint8_t IPnIPencapsulated;
+    uint8_t non_ip_pkt;
     uint8_t next_layer;         /* index into layers for next encap */
 
 #ifndef NO_NON_ETHER_DECODER
@@ -1807,6 +1839,7 @@ typedef struct _Packet
     IP6Hdr outer_ip6h, outer_orig_ip6h;
 
     MplsHdr mplsHdr;
+    H2Hdr   *h2Hdr;
 
     PseudoPacketType pseudo_type;    // valid only when PKT_PSEUDO is set
     uint16_t max_dsize;
@@ -1840,6 +1873,14 @@ typedef struct _Packet
 #define PROTO_BIT__GTP      0x0040
 #define PROTO_BIT__OTHER    0x8000
 #define PROTO_BIT__ALL      0xffff
+
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if defined(DAQ_VERSION) && DAQ_VERSION > 10
+#define GET_OUTER_IPH_PROTOID(p, pkt_header) ((uint32_t)(p->pkt_header->carrier_id) ? p->pkt_header->carrier_id : 0 )
+#else
+#define GET_OUTER_IPH_PROTOID(p, pkt_header) ((uint32_t)((p)->outer_iph ? (IS_IP6(p) ? ((p)->outer_ip6h.next) : ((p)->outer_ip4h.ip_proto)):0))
+#endif
+#endif
 
 #define IsIP(p) (IPH_IS_VALID(p))
 #define IsTCP(p) (IsIP(p) && p->tcph)

@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 ** Copyright (C) 2000-2001 Andrew R. Baker <andrewb@uab.edu>
@@ -37,6 +37,7 @@
 #include "sflsq.h"
 #include "snort.h"
 #include "util.h"
+
 
 /* Macros *********************************************************************/
 /* Rule keywords */
@@ -220,6 +221,10 @@
 #endif
 #define CONFIG_OPT__MAX_IP6_EXTENSIONS              "max_ip6_extensions"
 #define CONFIG_OPT__DISABLE_REPLACE                 "disable_replace"
+#ifdef DUMP_BUFFER
+#define CONFIG_OPT__BUFFER_DUMP                     "buffer_dump"
+#define CONFIG_OPT__BUFFER_DUMP_ALERT               "buffer_dump_alert"
+#endif
 /* exported values */
 extern char *file_name;
 extern int file_line;
@@ -228,6 +233,7 @@ extern int file_line;
 /* rule setup funcs */
 SnortConfig * ParseSnortConf(void);
 void ParseRules(SnortConfig *);
+IpsPortFilter** ParseIpsPortList (SnortConfig*, IpProto);
 
 void ParseOutput(SnortConfig *, SnortPolicy *, char *);
 void OrderRuleLists(SnortConfig *, char *);
@@ -356,6 +362,7 @@ void ConfigPacketSnaplen(SnortConfig *, char *);
 void ConfigPcreMatchLimit(SnortConfig *, char *);
 void ConfigPcreMatchLimitRecursion(SnortConfig *, char *);
 void ConfigPerfFile(SnortConfig *sc, char *);
+void ConfigDumpPeriodicMemStatsFile(SnortConfig *, char *);
 void ConfigPidPath(SnortConfig *, char *);
 void ConfigPolicy(SnortConfig *, char *);
 void ConfigIpsPolicyMode(SnortConfig *, char *);
@@ -398,14 +405,19 @@ void ConfigFile(SnortConfig *, char *);
 void ConfigTunnelVerdicts(SnortConfig*, char*);
 void ConfigMaxIP6Extensions(SnortConfig *, char*);
 void ConfigDisableReplace(SnortConfig *, char*);
+#ifdef DUMP_BUFFER
+void ConfigBufferDump(SnortConfig *, char *);
+#endif
 
 int addRtnToOtn(
+        SnortConfig *sc,
         OptTreeNode *otn,
         tSfPolicyId policyId,
         RuleTreeNode *rtn
         );
 
 RuleTreeNode* deleteRtnFromOtn(
+        SnortConfig *sc,
         OptTreeNode *otn,
         tSfPolicyId policyId
         );

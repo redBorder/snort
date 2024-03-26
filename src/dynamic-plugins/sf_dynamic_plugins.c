@@ -17,7 +17,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * Author: Steven Sturges
@@ -58,6 +58,11 @@ typedef HANDLE PluginHandle;
 #endif /* !WIN32 */
 
 #include <errno.h>
+#include <stdarg.h>
+
+#if defined(FEAT_OPEN_APPID)
+#include <pthread.h>
+#endif
 
 #include "config.h"
 #include "decode.h"
@@ -66,9 +71,12 @@ typedef HANDLE PluginHandle;
 #include "detect.h"
 #include "util.h"
 #include "snort.h"
+#include "memory_stats.h"
 #include "sf_dynamic_engine.h"
 #include "sf_dynamic_detection.h"
 #include "sf_dynamic_preprocessor.h"
+#include "sf_dynamic_decompression.h"
+#include "smtp_api.h"
 #include "sp_dynamic.h"
 #include "sp_preprocopt.h"
 #include "sp_pcre.h"
@@ -95,6 +103,13 @@ typedef HANDLE PluginHandle;
 #include "file_api.h"
 #include "packet_time.h"
 #include "perf_indicators.h"
+#include "reload.h"
+#include "so_rule_mem_adjust.h"
+
+#ifdef SNORT_RELOAD
+#include "appdata_adjuster.h"
+#endif
+
 #if defined(FEAT_OPEN_APPID)
 #include "appIdApi.h"
 #endif /* defined(FEAT_OPEN_APPID) */
@@ -114,9 +129,13 @@ char *no_file = "unknown";
 int no_line = 0;
 #endif
 
+#ifdef SNORT_RELOAD
+static APPDATA_ADJUSTER *ada;
+#endif
+
 /* Predeclare this */
 void VerifySharedLibUniqueness();
-typedef int (*LoadLibraryFunc)(const char * const path, int indent);
+typedef int (*LoadLibraryFunc)(SnortConfig *sc, const char * const path, int indent);
 
 typedef struct _DynamicEnginePlugin
 {
@@ -129,17 +148,6 @@ typedef struct _DynamicEnginePlugin
 } DynamicEnginePlugin;
 
 static DynamicEnginePlugin *loadedEngines = NULL;
-
-typedef struct _DynamicDetectionPlugin
-{
-    PluginHandle handle;
-    DynamicPluginMeta metaData;
-    InitDetectionLibFunc initFunc;
-    struct _DynamicDetectionPlugin *next;
-    struct _DynamicDetectionPlugin *prev;
-} DynamicDetectionPlugin;
-
-static DynamicDetectionPlugin *loadedDetectionPlugins = NULL;
 
 typedef struct _DynamicPreprocessorPlugin
 {
@@ -248,7 +256,7 @@ PluginHandle openDynamicLibrary(const char * const library_name, int useGlobal)
     return handle;
 }
 
-void LoadAllLibs(const char * const path, LoadLibraryFunc loadFunc)
+void LoadAllLibs(struct _SnortConfig *sc, const char * const path, LoadLibraryFunc loadFunc)
 {
 #ifndef WIN32
     char path_buf[PATH_MAX];
@@ -346,7 +354,7 @@ void LoadAllLibs(const char * const path, LoadLibraryFunc loadFunc)
             LoadableModule *tmp = modules;
 
             SnortSnprintf(path_buf, PATH_MAX, "%s%s%s", path, "/", modules->name);
-            loadFunc(path_buf, 1);
+            loadFunc(sc, path_buf, 1);
             count++;
 
             modules = modules->next;
@@ -428,7 +436,7 @@ void AddEnginePlugin(PluginHandle handle,
                      CompatibilityFunc compatFunc,
                      DynamicPluginMeta *meta)
 {
-    DynamicEnginePlugin *newPlugin = NULL;
+    DynamicEnginePlugin *newPlugin;
     newPlugin = (DynamicEnginePlugin *)SnortAlloc(sizeof(DynamicEnginePlugin));
     newPlugin->handle = handle;
 
@@ -472,7 +480,7 @@ void RemoveEnginePlugin(DynamicEnginePlugin *plugin)
     free(plugin);
 }
 
-int ValidateDynamicEngines(void)
+int ValidateDynamicEngines(SnortConfig *sc)
 {
     int testNum = 0;
     DynamicEnginePlugin *curPlugin = loadedEngines;
@@ -484,7 +492,7 @@ int ValidateDynamicEngines(void)
         /* if compatibility checking func is absent, skip validating */
         if( versFunc != NULL)
         {
-            DynamicDetectionPlugin *lib = loadedDetectionPlugins;
+            DynamicDetectionPlugin *lib = sc->loadedDetectionPlugins;
             while( lib != NULL)
             {
                 if (lib->metaData.type == TYPE_DETECTION)
@@ -521,7 +529,7 @@ int ValidateDynamicEngines(void)
     return(testNum);
 }
 
-int LoadDynamicEngineLib(const char * const library_name, int indent)
+int LoadDynamicEngineLib(SnortConfig *sc, const char * const library_name, int indent)
 {
     /* Presume here, that library name is full path */
     InitEngineLibFunc engineInit;
@@ -561,10 +569,10 @@ int LoadDynamicEngineLib(const char * const library_name, int indent)
     return 0;
 }
 
-void LoadAllDynamicEngineLibs(const char * const path)
+void LoadAllDynamicEngineLibs(SnortConfig *sc, const char * const path)
 {
     LogMessage("Loading all dynamic engine libs from %s...\n", path);
-    LoadAllLibs(path, LoadDynamicEngineLib);
+    LoadAllLibs(sc, path, LoadDynamicEngineLib);
     LogMessage("  Finished Loading all dynamic engine libs from %s\n", path);
 }
 
@@ -589,6 +597,10 @@ void CloseDynamicEngineLibs(void)
         plugin = tmpplugin;
     }
     loadedEngines = NULL;
+#ifdef SNORT_RELOAD
+    ada_delete(ada);
+    ada = NULL;
+#endif
 }
 
 void RemovePreprocessorPlugin(DynamicPreprocessorPlugin *plugin)
@@ -638,7 +650,7 @@ void AddPreprocessorPlugin(PluginHandle handle,
     newPlugin->initFunc = initFunc;
 }
 
-void AddDetectionPlugin(PluginHandle handle,
+void AddDetectionPlugin(SnortConfig *sc, PluginHandle handle,
                         InitDetectionLibFunc initFunc,
                         DynamicPluginMeta *meta)
 {
@@ -646,15 +658,15 @@ void AddDetectionPlugin(PluginHandle handle,
     newPlugin = (DynamicDetectionPlugin *)SnortAlloc(sizeof(DynamicDetectionPlugin));
     newPlugin->handle = handle;
 
-    if (!loadedDetectionPlugins)
+    if (!sc->loadedDetectionPlugins)
     {
-        loadedDetectionPlugins = newPlugin;
+        sc->loadedDetectionPlugins = newPlugin;
     }
     else
     {
-        newPlugin->next = loadedDetectionPlugins;
-        loadedDetectionPlugins->prev = newPlugin;
-        loadedDetectionPlugins = newPlugin;
+        newPlugin->next = sc->loadedDetectionPlugins;
+        sc->loadedDetectionPlugins->prev = newPlugin;
+        sc->loadedDetectionPlugins = newPlugin;
     }
 
     memcpy(&(newPlugin->metaData), meta, sizeof(DynamicPluginMeta));
@@ -662,15 +674,15 @@ void AddDetectionPlugin(PluginHandle handle,
     newPlugin->initFunc = initFunc;
 }
 
-void RemoveDetectionPlugin(DynamicDetectionPlugin *plugin)
+void RemoveDetectionPlugin(SnortConfig *sc, DynamicDetectionPlugin *plugin)
 {
     if (!plugin)
         return;
 
-    if (plugin == loadedDetectionPlugins)
+    if (plugin == sc->loadedDetectionPlugins)
     {
-        loadedDetectionPlugins = loadedDetectionPlugins->next;
-        loadedDetectionPlugins->prev = NULL;
+        sc->loadedDetectionPlugins = sc->loadedDetectionPlugins->next;
+        sc->loadedDetectionPlugins->prev = NULL;
     }
     else
     {
@@ -690,7 +702,7 @@ void RemoveDetectionPlugin(DynamicDetectionPlugin *plugin)
     free(plugin);
 }
 
-int LoadDynamicDetectionLib(const char * const library_name, int indent)
+int LoadDynamicDetectionLib(SnortConfig *sc, const char * const library_name, int indent)
 {
     DynamicPluginMeta metaData;
     /* Presume here, that library name is full path */
@@ -730,30 +742,43 @@ int LoadDynamicDetectionLib(const char * const library_name, int indent)
         AddEnginePlugin(handle, engineInit, compatFunc, &metaData);
     }
 
-    AddDetectionPlugin(handle, detectionInit, &metaData);
+    AddDetectionPlugin(sc, handle, detectionInit, &metaData);
 
     LogMessage("done\n");
     return 0;
 }
 
-void CloseDynamicDetectionLibs(void)
+void CloseDynamicDetectionLibs(SnortConfig *sc)
 {
-    DynamicDetectionPlugin *tmpplugin, *plugin = loadedDetectionPlugins;
+    DynamicDetectionPlugin *tmpplugin, *plugin = sc->loadedDetectionPlugins;
     while (plugin)
     {
         tmpplugin = plugin->next;
+#ifndef SNORT_RELOAD
         CloseDynamicLibrary(plugin->handle);
+#else
+        /*
+         * Even if DISABLE_DLCLOSE_FOR_VALGRIND_TESTING is set
+         * we have to do dlclose() for Dynamic detection libs
+         * during reloading.
+         */
+#ifndef WIN32
+        dlclose(plugin->handle);
+#else
+        FreeLibrary(plugin->handle);
+#endif
+#endif
         free(plugin->metaData.libraryPath);
         free(plugin);
         plugin = tmpplugin;
     }
-    loadedDetectionPlugins = NULL;
+    sc->loadedDetectionPlugins = NULL;
 }
 
-void LoadAllDynamicDetectionLibs(const char * const path)
+void LoadAllDynamicDetectionLibs(SnortConfig *sc, const char * const path)
 {
     LogMessage("Loading all dynamic detection libs from %s...\n", path);
-    LoadAllLibs(path, LoadDynamicDetectionLib);
+    LoadAllLibs(sc, path, LoadDynamicDetectionLib);
     LogMessage("  Finished Loading all dynamic detection libs from %s\n", path);
 }
 
@@ -820,7 +845,7 @@ void RemoveDuplicateEngines(void)
     } while (removed);
 }
 
-void RemoveDuplicateDetectionPlugins(void)
+void RemoveDuplicateDetectionPlugins(SnortConfig *sc)
 {
     int removed = 0;
     DynamicDetectionPlugin *lib1 = NULL;
@@ -832,10 +857,10 @@ void RemoveDuplicateDetectionPlugins(void)
     do
     {
         removed = 0;
-        lib1 = loadedDetectionPlugins;
+        lib1 = sc->loadedDetectionPlugins;
         while (lib1 != NULL)
         {
-            lib2 = loadedDetectionPlugins;
+            lib2 = sc->loadedDetectionPlugins;
             while (lib2 != NULL)
             {
                 /* Obviously, the same ones will be the same */
@@ -851,7 +876,7 @@ void RemoveDuplicateDetectionPlugins(void)
                             ((meta1->major == meta2->major) && (meta1->minor == meta2->minor) && (meta1->build > meta2->build)) )
                         {
                             /* Lib1 is newer */
-                            RemoveDetectionPlugin(lib2);
+                            RemoveDetectionPlugin(sc, lib2);
                             removed = 1;
                         }
                         else if ((meta2->major > meta1->major) ||
@@ -859,13 +884,13 @@ void RemoveDuplicateDetectionPlugins(void)
                             ((meta2->major == meta1->major) && (meta2->minor == meta1->minor) && (meta2->build > meta1->build)) )
                         {
                             /* Lib2 is newer */
-                            RemoveDetectionPlugin(lib1);
+                            RemoveDetectionPlugin(sc, lib1);
                             removed = 1;
                         }
                         else if ((meta1->major == meta2->major) && (meta1->minor == meta2->minor) && (meta1->build == meta2->build) )
                         {
                             /* Duplicate */
-                            RemoveDetectionPlugin(lib2);
+                            RemoveDetectionPlugin(sc, lib2);
                             removed = 1;
                         }
                     }
@@ -946,17 +971,17 @@ void RemoveDuplicatePreprocessorPlugins(void)
     } while (removed);
 }
 
-void VerifyDetectionPluginRequirements(void)
+void VerifyDetectionPluginRequirements(SnortConfig *sc)
 {
     DynamicDetectionPlugin *lib1 = NULL;
 
     /* Remove all the duplicates */
-    RemoveDuplicateDetectionPlugins();
+    RemoveDuplicateDetectionPlugins(sc);
 
     /* Cycle through all of them, and ensure that the required
      * detection engine is loaded.
      */
-    lib1 = loadedDetectionPlugins;
+    lib1 = sc->loadedDetectionPlugins;
     while (lib1 != NULL)
     {
         /* Do this check if this library is a DETECTION plugin only.
@@ -1040,13 +1065,19 @@ int InitDynamicEnginePlugins(DynamicEngineData *info)
 typedef struct _DynamicRuleSessionData
 {
     uint32_t sid;
+    uint32_t revision;
     void *data;
-    SessionDataFree cleanupFunc;
+    void *compression_data;
     struct _DynamicRuleSessionData *next;
 
 } DynamicRuleSessionData;
 
 static uint32_t so_rule_memory = 0;
+
+static size_t SoRuleMemInUse()
+{
+    return (size_t) so_rule_memory;
+}
 /*Only only message will be logged within 60 seconds*/
 static ThrottleInfo error_throttleInfo = {0,60,0};
 
@@ -1097,13 +1128,20 @@ static void DynamicRuleDataFreeSession(void *data)
         DynamicRuleSessionData *tmp = drsd;
         drsd = drsd->next;
 
-        if (tmp->data && tmp->cleanupFunc)
-            tmp->cleanupFunc(tmp->data);
+        DynamicRuleDataFree(tmp->data);
+
+#ifdef SNORT_RELOAD
+        ada_appdata_freed(ada, tmp);
+#endif
+        if (tmp->compression_data)
+        {
+            DynamicDecompressDestroy(tmp->compression_data);
+        }
         DynamicRuleDataFree(tmp);
     }
 }
 
-int DynamicSetRuleData(void *p, void *data, uint32_t sid, SessionDataFree sdf)
+int DynamicSetRuleData(void *p, const RuleInformation *info, void *data, void *compression_data)
 {
     Packet *pkt = (Packet *)p;
     if (stream_api && pkt && pkt->ssnptr)
@@ -1118,18 +1156,24 @@ int DynamicSetRuleData(void *p, void *data, uint32_t sid, SessionDataFree sdf)
          * Also need to iterate for duplicates */
         while (tmp != NULL)
         {
-            if (tmp->sid == sid)
+            if (tmp->sid == info->sigID)
             {
                 /* Not the same data */
                 if (tmp->data != data)
                 {
                     /* Cleanup the old and replace with the new */
-                    if (tmp->data && tmp->cleanupFunc)
-                        tmp->cleanupFunc(tmp->data);
+                    DynamicRuleDataFree(tmp->data);
                     tmp->data = data;
                 }
+                /* Not the same data */
+                if (tmp->compression_data && tmp->compression_data != compression_data)
+                {
+                    /* Cleanup the old */
+                    DynamicDecompressDestroy(tmp->compression_data);
+                }
+                tmp->compression_data = compression_data;
 
-                tmp->cleanupFunc = sdf;
+                tmp->revision = info->revision;
                 return 0;
             }
 
@@ -1142,8 +1186,8 @@ int DynamicSetRuleData(void *p, void *data, uint32_t sid, SessionDataFree sdf)
             return -1;
 
         tmp->data = data;
-        tmp->sid = sid;
-        tmp->cleanupFunc = sdf;
+        tmp->sid = info->sigID;
+        tmp->revision = info->revision;
 
         if (head == NULL)
         {
@@ -1153,6 +1197,9 @@ int DynamicSetRuleData(void *p, void *data, uint32_t sid, SessionDataFree sdf)
                 DynamicRuleDataFree(tmp);
                 return -1;
             }
+#ifdef SNORT_RELOAD
+            ada_add( ada, (void *)tmp, pkt->ssnptr );
+#endif
         }
         else
         {
@@ -1165,10 +1212,15 @@ int DynamicSetRuleData(void *p, void *data, uint32_t sid, SessionDataFree sdf)
     return -1;
 }
 
-void * DynamicGetRuleData(void *p, uint32_t sid)
+void DynamicGetRuleData(void *p, const RuleInformation *info, void **p_data, void **p_compression_data)
 {
     Packet *pkt = (Packet *)p;
+    void *compression_data;
 
+    if (!p_compression_data)
+        p_compression_data = &compression_data;
+    *p_data = NULL;
+    *p_compression_data = NULL;
     if (stream_api && pkt && pkt->ssnptr)
     {
         DynamicRuleSessionData *head =
@@ -1176,14 +1228,26 @@ void * DynamicGetRuleData(void *p, uint32_t sid)
 
         while (head != NULL)
         {
-            if (head->sid == sid)
-                return head->data;
+            if (head->sid == info->sigID)
+            {
+            	if (head->revision != info->revision)
+            	{
+                    DynamicRuleDataFree(head->data);
+                    head->data = NULL;
+                    if (head->compression_data)
+                    {
+                        DynamicDecompressDestroy(head->compression_data);
+                        head->compression_data = NULL;
+                    }
+            	}
+                *p_data = head->data;
+                *p_compression_data = head->compression_data;
+                return;
+            }
 
             head = head->next;
         }
     }
-
-    return NULL;
 }
 
 void *pcreCompile(const char *pattern, int options, const char **errptr, int *erroffset, const unsigned char *tableptr)
@@ -1192,7 +1256,7 @@ void *pcreCompile(const char *pattern, int options, const char **errptr, int *er
     return (void *)pcre_compile(pattern, options, errptr, erroffset, tableptr);
 }
 
-void *pcreStudy(const void *code, int options, const char **errptr)
+void *pcreStudy(struct _SnortConfig *sc, const void *code, int options, const char **errptr)
 {
     pcre_extra *extra_extra;
     int snort_options = options & SNORT_PCRE_OVERRIDE_MATCH_LIMIT;
@@ -1201,30 +1265,30 @@ void *pcreStudy(const void *code, int options, const char **errptr)
 
     if (extra_extra)
     {
-        if ((ScPcreMatchLimit() != -1) && !(snort_options & SNORT_PCRE_OVERRIDE_MATCH_LIMIT))
+        if ((ScPcreMatchLimitNewConf(sc) != -1) && !(snort_options & SNORT_PCRE_OVERRIDE_MATCH_LIMIT))
         {
             if (extra_extra->flags & PCRE_EXTRA_MATCH_LIMIT)
             {
-                extra_extra->match_limit = ScPcreMatchLimit();
+                extra_extra->match_limit = ScPcreMatchLimitNewConf(sc);
             }
             else
             {
                 extra_extra->flags |= PCRE_EXTRA_MATCH_LIMIT;
-                extra_extra->match_limit = ScPcreMatchLimit();
+                extra_extra->match_limit = ScPcreMatchLimitNewConf(sc);
             }
         }
 
 #ifdef PCRE_EXTRA_MATCH_LIMIT_RECURSION
-        if ((ScPcreMatchLimitRecursion() != -1) && !(snort_options & SNORT_PCRE_OVERRIDE_MATCH_LIMIT))
+        if ((ScPcreMatchLimitRecursionNewConf(sc) != -1) && !(snort_options & SNORT_PCRE_OVERRIDE_MATCH_LIMIT))
         {
             if (extra_extra->flags & PCRE_EXTRA_MATCH_LIMIT_RECURSION)
             {
-                extra_extra->match_limit_recursion = ScPcreMatchLimitRecursion();
+                extra_extra->match_limit_recursion = ScPcreMatchLimitRecursionNewConf(sc);
             }
             else
             {
                 extra_extra->flags |= PCRE_EXTRA_MATCH_LIMIT_RECURSION;
-                extra_extra->match_limit_recursion = ScPcreMatchLimitRecursion();
+                extra_extra->match_limit_recursion = ScPcreMatchLimitRecursionNewConf(sc);
             }
         }
 #endif
@@ -1232,20 +1296,20 @@ void *pcreStudy(const void *code, int options, const char **errptr)
     else
     {
         if (!(snort_options & SNORT_PCRE_OVERRIDE_MATCH_LIMIT) &&
-            ((ScPcreMatchLimit() != -1) || (ScPcreMatchLimitRecursion() != -1)))
+            ((ScPcreMatchLimitNewConf(sc) != -1) || (ScPcreMatchLimitRecursionNewConf(sc) != -1)))
         {
             extra_extra = (pcre_extra *)SnortAlloc(sizeof(pcre_extra));
-            if (ScPcreMatchLimit() != -1)
+            if (ScPcreMatchLimitNewConf(sc) != -1)
             {
                 extra_extra->flags |= PCRE_EXTRA_MATCH_LIMIT;
-                extra_extra->match_limit = ScPcreMatchLimit();
+                extra_extra->match_limit = ScPcreMatchLimitNewConf(sc);
             }
 
 #ifdef PCRE_EXTRA_MATCH_LIMIT_RECURSION
-            if (ScPcreMatchLimitRecursion() != -1)
+            if (ScPcreMatchLimitRecursionNewConf(sc) != -1)
             {
                 extra_extra->flags |= PCRE_EXTRA_MATCH_LIMIT_RECURSION;
-                extra_extra->match_limit_recursion = ScPcreMatchLimitRecursion();
+                extra_extra->match_limit_recursion = ScPcreMatchLimitRecursionNewConf(sc);
             }
 #endif
         }
@@ -1274,6 +1338,24 @@ static int setFlowId(const void* p, uint32_t id)
 {
     return DAQ_ModifyFlowOpaque(p, id);
 }
+
+#ifdef DAQ_MODFLOW_TYPE_PRESERVE_FLOW
+static int setPreserveFlow(const void* p)
+{
+    DAQ_ModFlow_t mod;
+    int value = 1;
+
+    if ( Active_GetTunnelBypass() )
+        return -1;
+
+    mod.type = DAQ_MODFLOW_TYPE_PRESERVE_FLOW;
+    mod.length = sizeof(value);
+    mod.value = (void*)&value;
+    DAQ_ModifyFlow(p, &mod);
+
+    return 0;
+}
+#endif
 
 static const uint8_t* getHttpBuffer (HTTP_BUFFER hb_type, unsigned* len)
 {
@@ -1346,6 +1428,10 @@ int InitDynamicEngines(char *dynamic_rules_path)
     engineData.pcreOvectorInfo = &pcreOvectorInfo;
     engineData.getHttpBuffer = getHttpBuffer;
 
+    engineData.decompressInit = &DynamicDecompressInit;
+    engineData.decompressDestroy = &DynamicDecompressDestroy;
+    engineData.decompress = &DynamicDecompress;
+
     return InitDynamicEnginePlugins(&engineData);
 }
 
@@ -1368,6 +1454,14 @@ int InitDynamicPreprocessorPlugins(DynamicPreprocessorData *info)
 
         plugin = plugin->next;
     }
+#ifdef SNORT_RELOAD
+    if (!ada) {
+        ada = ada_init(SoRuleMemInUse, PP_SHARED_RULES, (size_t) ScSoRuleMemcap());
+        if (!ada) {
+            FatalError("Failed to initialize so_rule session cache. \n");
+        }
+    }
+#endif
     return 0;
 }
 
@@ -1417,6 +1511,11 @@ void DynamicDisableDetection( void *p )
 void DynamicDisableAllDetection( void *p )
 {
     DisableAllDetect( ( Packet * ) p );
+}
+
+void DynamicEnableContentDetection( void )
+{
+    EnableContentDetect();
 }
 
 void DynamicDisablePacketAnalysis( void *p )
@@ -1532,6 +1631,16 @@ void DynamicChangeIpsRuntimePolicy(tSfPolicyId new_id, void *p)
     pkt->configPolicyId = snort_conf->targeted_policies[new_id]->configPolicyId;
 }
 
+static void DynamicAddPktTraceData(int module, int strLen)
+{
+    addPktTraceData(module, strLen);
+}
+
+static const char* DynamicGetPktTraceActionMsg()
+{
+    return getPktTraceActMsg();
+}
+
 static void* DynamicEncodeNew (void)
 {
     return (void*)Encode_New();
@@ -1588,6 +1697,11 @@ void DynamicActiveResponseMsg(void *p, const uint8_t* buf, uint32_t blen, unsign
 void DynamicActiveInjectData(void *p, uint32_t flags, const uint8_t *buf, uint32_t blen)
 {
     Active_InjectData((Packet *)p, (EncodeFlags)flags, buf, blen);
+}
+
+void DynamicActiveSendForwardReset(void *p)
+{
+    Active_SendReset((Packet *)p, ENC_FLAG_FWD);
 }
 
 int DynamicActiveQueueResponse( Active_ResponseFunc cb, void *data )
@@ -1757,6 +1871,13 @@ int DynamicCanWhitelist(void)
     return DAQ_CanWhitelist();
 }
 
+#if defined(DAQ_CAPA_CST_TIMEOUT)
+bool DynamicCanGetTimeout(void)
+{
+     return Daq_Capa_Timeout;
+}
+#endif
+
 int DynamicSnortIsStrEmpty(const char *s)
 {
     return IsEmptyStr((char*)s);
@@ -1812,6 +1933,21 @@ static int sslAppIdLookup(void *ssnptr, const char * serverName, const char * co
     return 0;
 }
 
+static SetTlsHostAppIdFunc setTlsHostAppIdFnPtr;
+
+static void registerSetTlsHostAppId(SetTlsHostAppIdFunc fnptr)
+{
+    setTlsHostAppIdFnPtr = fnptr;
+}
+
+static void setTlsHostAppId(void *ssnptr, const char *serverName, const char *commonName,
+                        const char *orgName, const char *subjectAltName, bool isSniMismatch,
+                        int32_t *serviceAppId, int32_t *clientAppId, int32_t *payloadAppId)
+{
+    if (setTlsHostAppIdFnPtr)
+        (setTlsHostAppIdFnPtr)(ssnptr, serverName, commonName, orgName, subjectAltName, isSniMismatch, serviceAppId, clientAppId, payloadAppId);
+}
+
 static GetAppIdFunc getAppIdFnPtr = NULL;
 
 static void registerGetAppId(GetAppIdFunc fnptr)
@@ -1836,6 +1972,34 @@ static UpdateSSLSSnLogDataFunc updateSSLSSnLogDataFnPtr;
 static EndSSLSSnLogDataFunc endSSLSSnLogDataFnPtr;
 static GetSSLActualActionFunc getSSLActualActionFnPtr;
 static GetIntfDataFunc getIntfDataFnPtr;
+static ReputationProcessExternalIpFunc reputationProcessExternalIpFnPtr;
+static ReputationGetEntryCountFunc reputatinGetEntryCountFnPtr;
+
+void registerReputationGetEntryCount(ReputationGetEntryCountFunc entryCountFn)
+{
+    reputatinGetEntryCountFnPtr = entryCountFn;
+}
+
+void registerReputationProcessExternal(ReputationProcessExternalIpFunc extProcessFn)
+{
+    reputationProcessExternalIpFnPtr = extProcessFn;
+}
+
+static int _reputation_get_entry_count(void)
+{
+    if(reputatinGetEntryCountFnPtr)
+        return (reputatinGetEntryCountFnPtr());
+    return 0;
+}
+
+static bool _reputation_process_external_ip(void *p, sfaddr_t* ip)
+{
+    if(reputationProcessExternalIpFnPtr)
+    {
+        return ((reputationProcessExternalIpFnPtr)(p,ip));
+    }
+    return false;
+}
 
 void registerUrlQuery(UrlQueryCreateFunc createFn, UrlQueryDestroyFunc destroyFn, UrlQueryMatchFunc matchFn)
 {
@@ -1863,6 +2027,13 @@ static int urlQueryMatch(void *ssnptr, struct urlQueryContext *context, uint16_t
         return (urlQueryMatchFnPtr)(ssnptr, context, inUrlCat, inUrlMinRep, inUrlMaxRep);
     return -1;
 }
+
+#if defined DAQ_CAPA_CST_TIMEOUT
+void RegisterGetDaqCapaTimeout(GetDaqCapaTimeOutFunc timeoutFn)
+{
+     getDaqCapaTimeoutFnPtr = timeoutFn;
+}
+#endif
 
 static void registerUserGroupIdGet(UserGroupIdGetFunc userIdFn)
 {
@@ -2000,6 +2171,31 @@ void DynamicSetSSLPolicyEnabled(struct _SnortConfig *sc, tSfPolicyId policy, boo
     sc->targeted_policies[policy]->ssl_policy_enabled = value;
 }
 
+static ftpGetModefunc ftpGetDataModefnptr;
+void registerFtpModeQuery(ftpGetModefunc fnptr)
+{
+    if (!ftpGetDataModefnptr)
+        ftpGetDataModefnptr = fnptr;
+}
+
+static bool ftpGetDataSessionMode(void *ssnptr)
+{
+    if (ftpGetDataModefnptr)
+    {
+        return ((ftpGetDataModefnptr)(ssnptr));
+    }
+    return 0;
+}
+
+#ifdef SNORT_RELOAD
+int DynamicReloadAdjustRegister(SnortConfig* sc, const char* raName, tSfPolicyId raPolicyId,
+                                ReloadAdjustFunc raFunc, void* raUserData,
+                                ReloadAdjustUserFreeFunc raUserFreeFunc)
+{
+    return ReloadAdjustRegister(sc, raName, raPolicyId, raFunc, raUserData, raUserFreeFunc);
+}
+#endif
+
 #if defined(FEAT_OPEN_APPID)
 typedef struct _IsAppIdRequiredFuncNode
 {
@@ -2009,6 +2205,7 @@ typedef struct _IsAppIdRequiredFuncNode
 IsAppIdRequiredFuncNode;
 
 static IsAppIdRequiredFuncNode * isAppIdRequiredFuncList = NULL;
+static pthread_mutex_t isAppIdRequiredFuncListMutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void registerIsAppIdRequired(IsAppIdRequiredFunc fn)
 {
@@ -2017,21 +2214,31 @@ static void registerIsAppIdRequired(IsAppIdRequiredFunc fn)
     if (fn == NULL)
         return;
 
+    pthread_mutex_lock(&isAppIdRequiredFuncListMutex);
+
     curr = isAppIdRequiredFuncList;
     while (curr != NULL)
     {
         if (curr->fn == fn)
+        {
+            pthread_mutex_unlock(&isAppIdRequiredFuncListMutex);
             return;    /* function is already registered */
+        }
         curr = curr->next;
     }
 
     curr = malloc(sizeof(IsAppIdRequiredFuncNode));
     if (curr == NULL)
+    {
+        pthread_mutex_unlock(&isAppIdRequiredFuncListMutex);
         return;
+    }
 
     curr->fn = fn;
     curr->next = isAppIdRequiredFuncList;
     isAppIdRequiredFuncList = curr;
+
+    pthread_mutex_unlock(&isAppIdRequiredFuncListMutex);
 }
 
 static void unregisterIsAppIdRequired(IsAppIdRequiredFunc fn)
@@ -2042,6 +2249,8 @@ static void unregisterIsAppIdRequired(IsAppIdRequiredFunc fn)
     if (fn == NULL)
         return;
 
+    pthread_mutex_lock(&isAppIdRequiredFuncListMutex);
+
     curr = &isAppIdRequiredFuncList;
     while (*curr != NULL)
     {
@@ -2051,10 +2260,16 @@ static void unregisterIsAppIdRequired(IsAppIdRequiredFunc fn)
     }
 
     if (*curr == NULL)
+    {
+        pthread_mutex_unlock(&isAppIdRequiredFuncListMutex);
         return;    /* function is not currently registered */
+    }
 
     tmp   = *curr;
     *curr = (*curr)->next;
+
+    pthread_mutex_unlock(&isAppIdRequiredFuncListMutex);
+
     free(tmp);
 }
 
@@ -2062,13 +2277,20 @@ static bool isAppIdRequired(void)
 {
     IsAppIdRequiredFuncNode * curr;
 
+    pthread_mutex_lock(&isAppIdRequiredFuncListMutex);
+
     curr = isAppIdRequiredFuncList;
     while (curr != NULL)
     {
-        if (curr->fn())
+        if ((curr->fn != NULL) && curr->fn())
+        {
+            pthread_mutex_unlock(&isAppIdRequiredFuncListMutex);
             return true;
+        }
         curr = curr->next;
     }
+
+    pthread_mutex_unlock(&isAppIdRequiredFuncListMutex);
 
     return false;
 }
@@ -2088,6 +2310,11 @@ static tAppId dummyAppIdFFromAppIdData(struct AppIdData *session)
     return 0;
 }
 
+static SFGHASH* dummyAppIdMultiPayload(struct AppIdData *session)
+{
+    return NULL;
+}
+
 static bool dummyCheckAppIdData(struct AppIdData *session)
 {
     return false;
@@ -2103,7 +2330,7 @@ static char *dummyGetClientVersion(struct AppIdData *session)
     return NULL;
 }
 
-static unsigned dummyGetAppIdSessionAttribute(struct AppIdData *session, unsigned int flag)
+static uint64_t dummyGetAppIdSessionAttribute(struct AppIdData *session, uint64_t flag)
 {
     return 0;
 }
@@ -2122,7 +2349,12 @@ static short dummyGetServicePort(struct AppIdData *appIdData)
     return 0;
 }
 
-static sfaddr_t *dummyGetServiceIp(struct AppIdData *appIdData)
+static sfaddr_t *dummyIpFromAppIdData(struct AppIdData *appIdData)
+{
+    return NULL;
+}
+
+static struct in6_addr *dummyGetInitiatorIp(struct AppIdData *appIdData)
 {
     return NULL;
 }
@@ -2130,6 +2362,21 @@ static sfaddr_t *dummyGetServiceIp(struct AppIdData *appIdData)
 static char *dummyStringFromAppIdData(struct AppIdData *appIdData)
 {
     return NULL;
+}
+
+static char *dummyIndexedStringFromAppIdData(struct AppIdData *appIdData, HTTP_FIELD_ID fieldId)
+{
+    return NULL;
+}
+
+static void dummyFreeIndexedStringFromAppIdData(struct AppIdData *appIdData, HTTP_FIELD_ID fieldId)
+{
+    return;
+}
+
+static uint16_t dummyGetHttpFieldOffset(struct AppIdData *appIdData, HTTP_FIELD_ID fieldId)
+{
+    return 0;
 }
 
 static SEARCH_SUPPORT_TYPE dummySearchTypeFromAppIdData(struct AppIdData *appIdData)
@@ -2179,14 +2426,9 @@ static uint32_t dummyProduceHAState(void *lwssn, uint8_t *buf)
     return 0;
 }
 
-static uint32_t dummyConsumeHAState(void *lwssn, const uint8_t *buf, uint8_t length, uint8_t proto, sfaddr_t *ip)
+static uint32_t dummyConsumeHAState(void *lwssn, const uint8_t *buf, uint8_t length, uint8_t proto, const struct in6_addr* ip, uint16_t initiatorPort)
 {
     return 0;
-}
-
-static void *dummyGetFirewallEarlySessionData(struct AppIdData *session)
-{
-    return NULL;
 }
 
 static struct AppIdData *dummyGetAppIdData(void *lwssn)
@@ -2194,13 +2436,20 @@ static struct AppIdData *dummyGetAppIdData(void *lwssn)
     return NULL;
 }
 
-static char *dummyGetDNSQuery(struct AppIdData *session, uint8_t *query_len)
+static int dummyGetAppIdSessionPacketCount(struct AppIdData * appIdData)
+{
+    return 0;
+}
+
+static char *dummyGetDNSQuery(struct AppIdData *session, uint8_t *query_len, bool *got_response)
 {
     if (query_len)
         *query_len = 0;
+    if (got_response)
+        *got_response = false;
     return NULL;
 }
-static uint16_t dummyGetDNSQueryOffset(struct AppIdData *session)
+static uint16_t dummyGetDNSOffset(struct AppIdData *session)
 {
     return 0;
 }
@@ -2222,6 +2471,10 @@ struct AppIdData* dummyRemoveExpectedAppIdData(struct AppIdData *appIdData)
     return NULL;
 }
 
+static void dummyDumpDebugHostInfo(void)
+{
+}
+
 struct AppIdApi appIdApi = {
     dummyGetApplicationName,    /* getApplicationName */
     dummyGetApplicationId,      /* getApplicationId */
@@ -2238,6 +2491,7 @@ struct AppIdApi appIdApi = {
     dummyAppIdFFromAppIdData,    /* getFwClientAppId */
     dummyAppIdFFromAppIdData,    /* getFwPayloadAppId */
     dummyAppIdFFromAppIdData,    /* getFwReferredAppId */
+    dummyAppIdMultiPayload,      /* getFwMultiPayloadList */
 
     dummyCheckAppIdData,    /* isSessionSslDecrypted */
     dummyCheckAppIdData,    /* isAppIdInspectingSession */
@@ -2251,7 +2505,8 @@ struct AppIdApi appIdApi = {
     dummyGetFlowType,       /* getFlowType */
     dummyGetServiceInfo,    /* getServiceInfo */
     dummyGetServicePort,    /* getServicePort */
-    dummyGetServiceIp,      /* getServiceIp */
+    dummyIpFromAppIdData,   /* getServiceIp */
+    dummyGetInitiatorIp,   /* getInitiatorIp */
 
     dummyStringFromAppIdData,    /* getHttpUserAgent */
     dummyStringFromAppIdData,    /* getHttpHost */
@@ -2271,6 +2526,8 @@ struct AppIdApi appIdApi = {
     dummyOffsetFromAppIdData,    /* getHttpCookieOffset */
     dummyOffsetFromAppIdData,    /* getHttpCookieEndOffset */
     dummySearchTypeFromAppIdData,       /* getHttpSearch */
+    dummyIpFromAppIdData,        /* getHttpXffAddr */
+
 
     dummyStringFromAppIdData,    /* getTlsHost */
 
@@ -2285,18 +2542,73 @@ struct AppIdApi appIdApi = {
     dummyConsumeHAState,                 /* consumeHAState */
 
     dummyGetAppIdData,              /* getAppIdData */
+    dummyGetAppIdSessionPacketCount,     /* getAppIdSessionPacketCount */
 
     dummyGetDNSQuery,           /* getDNSQuery */
-    dummyGetDNSQueryOffset,     /* getDNSQueryoffset */
+    dummyGetDNSOffset,          /* getDNSQueryoffset */
     dummyGetDNSRecordType,      /* getDNSQueryType */
     dummyGetDNSResponseType,    /* getDNSQueryResponseType */
     dummyGetDNSTTL,             /* getDNSTTL */
+    dummyGetDNSOffset,          /* getDNSOptionsOffset */
+
+    dummyIndexedStringFromAppIdData,        /* getHttpNewField */
+    dummyFreeIndexedStringFromAppIdData,    /* freeHttpNewField */
+    dummyGetHttpFieldOffset,    /* getHttpFieldOffset */
+    dummyGetHttpFieldOffset,    /* getHttpFieldEndOffset */
+    dummyCheckAppIdData,        /* isHttpInspectionDone */
+    dummyDumpDebugHostInfo      /* dumpDebugHostInfo */
 };
 #endif /* defined(FEAT_OPEN_APPID) */
 
+int dummySmtpSessionExist (void *data)
+{
+    return 0;
+}
+int dummySmtpGetFileName (void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    return 0;
+}
+int dummySmtpGetMailFrom (void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    return 0;
+}
+int dummySmtpGetRecvTo (void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    return 0;
+}
+int dymmySmtpGetEmailHdr (void *data, uint8_t **buf, uint32_t *len, uint32_t *type)
+{
+    return 0;
+}
+SmtpAPI smtpApi = {
+    dummySmtpSessionExist,
+    dummySmtpGetFileName,
+    dummySmtpGetMailFrom,
+    dummySmtpGetRecvTo,
+    dymmySmtpGetEmailHdr
+};
+
 static int GetSnortPerfIndicators( void *p )
 {
-	    return( PerfIndicator_GetIndicators( (Perf_Indicator_Descriptor_p_t)p ) );
+    return( PerfIndicator_GetIndicators( (Perf_Indicator_Descriptor_p_t)p ) );
+}
+
+static uint32_t GetSnortPacketLatency()
+{
+#ifdef PI_PACKET_LATENCY_SUPPORT
+    return ( GetPacketLatency() );
+#else
+    return 0;
+#endif
+}
+
+static double GetSnortPacketDropPortion()
+{
+#ifdef PI_PACKET_DROPS_SUPPORT
+    return ( GetPacketDropPortion() );
+#else
+    return 0;
+#endif
 }
 
 static bool DynamicIsTestMode(void)
@@ -2307,6 +2619,24 @@ static bool DynamicIsTestMode(void)
 static SnortConfig* GetCurrentSnortConfig(void)
 {
     return snort_conf;
+}
+
+static void DynamicSetIPRepUpdateCount(uint8_t count)
+{
+    return setIPRepUpdateCount(count);
+}
+
+static void ErrorMsgThrottled(void* tinfo, const char *format, ...)
+{
+    char buf[STD_BUF+1];
+    va_list ap;
+    ThrottleInfo *throttleInfo = (ThrottleInfo *)tinfo;
+    
+    va_start(ap, format);
+    vsnprintf(buf, STD_BUF, format, ap);
+    va_end(ap);
+    
+    ErrorMessageThrottled(throttleInfo, "%s", buf);
 }
 
 int InitDynamicPreprocessors(void)
@@ -2324,6 +2654,7 @@ int InitDynamicPreprocessors(void)
     preprocData.errMsg = &ErrorMessage;
     preprocData.fatalMsg = &FatalError;
     preprocData.debugMsg = &DebugMessageFunc;
+    preprocData.errMsgThrottled = &ErrorMsgThrottled;
 #ifdef SF_WCHAR
     preprocData.debugWideMsg = &DebugWideMessageFunc;
 #endif
@@ -2331,6 +2662,9 @@ int InitDynamicPreprocessors(void)
     preprocData.registerPreproc = &RegisterPreprocessor;
 #ifdef SNORT_RELOAD
     preprocData.getRelatedReloadData = GetRelatedReloadData;
+#endif
+#ifdef DUMP_BUFFER
+    preprocData.registerBufferTracer = &RegisterBufferTracer;
 #endif
     preprocData.addPreproc = &AddPreprocessor;
     preprocData.addPreprocAllPolicies = &AddPreprocessorAllPolicies;
@@ -2353,6 +2687,7 @@ int InitDynamicPreprocessors(void)
     preprocData.detect = &DynamicDetect;
     preprocData.disableDetect = &DynamicDisableDetection;
     preprocData.disableAllDetect = &DynamicDisableAllDetection;
+    preprocData.enableContentDetect = &DynamicEnableContentDetection;
     preprocData.disablePacketAnalysis = &DynamicDisablePacketAnalysis;
     preprocData.enablePreprocessor = &DynamicEnablePreprocessor;
     preprocData.sessionAPI = session_api;
@@ -2480,6 +2815,14 @@ int InitDynamicPreprocessors(void)
 #ifdef HAVE_DAQ_QUERYFLOW
     preprocData.dynamicQueryFlow = &DAQ_QueryFlow;
 #endif
+
+#if defined(DAQ_VERSION) && DAQ_VERSION > 8
+    preprocData.dynamicDebugPkt = &DAQ_DebugPkt;
+#endif
+
+#if defined(DAQ_VERSION) && DAQ_VERSION > 9
+    preprocData.dynamicIoctl = &DAQ_Ioctl;
+#endif
     preprocData.addPeriodicCheck = &AddFuncToPeriodicCheckList;
     preprocData.addPostConfigFunc = &AddFuncToPreprocPostConfigList;
     preprocData.addFuncToPostConfigList = &AddFuncToPostConfigList;
@@ -2497,6 +2840,7 @@ int InitDynamicPreprocessors(void)
 #ifdef ACTIVE_RESPONSE
     preprocData.activeInjectData = &DynamicActiveInjectData;
     preprocData.activeSendResponse = &DynamicActiveResponseMsg;
+    preprocData.activeSendForwardReset = &DynamicActiveSendForwardReset;
     preprocData.activeQueueResponse = &DynamicActiveQueueResponse;
 #endif
     preprocData.readyForProcess = &DynamicReadyForProcess;
@@ -2531,11 +2875,15 @@ int InitDynamicPreprocessors(void)
     preprocData.isSSLPolicyEnabled = &DynamicIsSSLPolicyEnabled;
     preprocData.setSSLPolicyEnabled = &DynamicSetSSLPolicyEnabled;
     preprocData.getPerfIndicators = &GetSnortPerfIndicators;
+    preprocData.getPacketLatency = &GetSnortPacketLatency;
+    preprocData.getPacketDropPortion = &GetSnortPacketDropPortion;
 
     preprocData.loadAllLibs = &LoadAllLibs;
     preprocData.openDynamicLibrary = &openDynamicLibrary;
     preprocData.getSymbol = &getSymbol;
     preprocData.closeDynamicLibrary = &CloseDynamicLibrary;
+
+    preprocData.getHttpXffFields = &GetHttpXffFields;
 
 #if defined(FEAT_OPEN_APPID)
     preprocData.appIdApi = &appIdApi;
@@ -2547,6 +2895,40 @@ int InitDynamicPreprocessors(void)
     preprocData.isTestMode = &DynamicIsTestMode;
 
     preprocData.getCurrentSnortConfig = GetCurrentSnortConfig;
+    preprocData.pkt_tracer_enabled = &pkt_trace_enabled;
+    preprocData.trace = trace_line;
+    preprocData.traceMax = MAX_TRACE_LINE;
+    preprocData.addPktTrace = DynamicAddPktTraceData;
+    preprocData.getPktTraceActionMsg = DynamicGetPktTraceActionMsg;
+    preprocData.setIPRepUpdateCount = DynamicSetIPRepUpdateCount;
+
+    preprocData.getCapability = &DAQ_GetCapabilities;
+#if defined(DAQ_CAPA_CST_TIMEOUT)
+    preprocData.canGetTimeout = DynamicCanGetTimeout;
+    preprocData.registerGetDaqCapaTimeout = RegisterGetDaqCapaTimeout;
+#endif
+
+#ifdef SNORT_RELOAD
+    preprocData.reloadAdjustRegister = DynamicReloadAdjustRegister;
+#endif
+
+#ifdef DAQ_MODFLOW_TYPE_PRESERVE_FLOW
+    preprocData.setPreserveFlow = setPreserveFlow;
+#endif
+
+    preprocData.registerMemoryStatsFunc = RegisterMemoryStatsFunction;
+    preprocData.snortAlloc = SnortPreprocAlloc;
+    preprocData.snortFree = SnortPreprocFree;
+    preprocData.registerReputationProcessExternal = &registerReputationProcessExternal;
+    preprocData.reputation_process_external_ip = &_reputation_process_external_ip;
+    preprocData.registerReputationGetEntryCount = &registerReputationGetEntryCount;
+    preprocData.reputation_get_entry_count = &_reputation_get_entry_count;
+    preprocData.registerFtpmodeQuery = &registerFtpModeQuery;
+    preprocData.ftpGetMode = &ftpGetDataSessionMode;
+
+    preprocData.setTlsHostAppId = &setTlsHostAppId;
+    preprocData.registerSetTlsHostAppId = &registerSetTlsHostAppId;
+    preprocData.smtpApi = &smtpApi;
     return InitDynamicPreprocessorPlugins(&preprocData);
 }
 
@@ -2557,9 +2939,9 @@ int InitDynamicDetectionPlugins(SnortConfig *sc)
     if (sc == NULL)
         return -1;
 
-    VerifyDetectionPluginRequirements();
+    VerifyDetectionPluginRequirements(sc);
 
-    plugin = loadedDetectionPlugins;
+    plugin = sc->loadedDetectionPlugins;
     while (plugin)
     {
         if (plugin->initFunc(sc))
@@ -2580,9 +2962,9 @@ int InitDynamicDetectionPlugins(SnortConfig *sc)
     return 0;
 }
 
-int DumpDetectionLibRules(void)
+int DumpDetectionLibRules(SnortConfig *sc)
 {
-    DynamicDetectionPlugin *plugin = loadedDetectionPlugins;
+    DynamicDetectionPlugin *plugin = sc->loadedDetectionPlugins;
     DumpDetectionRules ruleDumpFunc = NULL;
     int retVal = 0;
     int dumped = 0;
@@ -2618,7 +3000,7 @@ int DumpDetectionLibRules(void)
     return retVal;
 }
 
-int LoadDynamicPreprocessor(const char * const library_name, int indent)
+int LoadDynamicPreprocessor(SnortConfig *sc, const char * const library_name, int indent)
 {
     DynamicPluginMeta metaData;
     /* Presume here, that library name is full path */
@@ -2649,10 +3031,10 @@ int LoadDynamicPreprocessor(const char * const library_name, int indent)
     return 0;
 }
 
-void LoadAllDynamicPreprocessors(const char * const path)
+void LoadAllDynamicPreprocessors(SnortConfig *sc, const char * const path)
 {
     LogMessage("Loading all dynamic preprocessor libs from %s...\n", path);
-    LoadAllLibs(path, LoadDynamicPreprocessor);
+    LoadAllLibs(sc, path, LoadDynamicPreprocessor);
     LogMessage("  Finished Loading all dynamic preprocessor libs from %s\n", path);
 }
 
@@ -2691,7 +3073,7 @@ void *GetNextEnginePluginVersion(void *p)
     return (void *) lib;
 }
 
-void *GetNextDetectionPluginVersion(void *p)
+void *GetNextDetectionPluginVersion(SnortConfig *sc, void *p)
 {
     DynamicDetectionPlugin *lib = (DynamicDetectionPlugin *) p;
 
@@ -2701,7 +3083,7 @@ void *GetNextDetectionPluginVersion(void *p)
     }
     else
     {
-        lib = loadedDetectionPlugins;
+        lib = sc->loadedDetectionPlugins;
     }
 
     if ( lib == NULL )
@@ -2768,7 +3150,6 @@ DynamicPluginMeta *GetPreprocessorPluginMetaData(void *p)
 /*
  * Dynamic Side Channel Plugin Support
  */
-
 typedef struct _DynamicSideChannelPlugin
 {
     PluginHandle handle;
@@ -2832,7 +3213,7 @@ void RemoveSideChannelPlugin(DynamicSideChannelPlugin *plugin)
     free(plugin);
 }
 
-int LoadDynamicSideChannelLib(const char * const library_name, int indent)
+int LoadDynamicSideChannelLib(SnortConfig *sc, const char * const library_name, int indent)
 {
     DynamicPluginMeta metaData;
     /* Presume here, that library name is full path */
@@ -2877,10 +3258,10 @@ void CloseDynamicSideChannelLibs(void)
     loadedSideChannelPlugins = NULL;
 }
 
-void LoadAllDynamicSideChannelLibs(const char * const path)
+void LoadAllDynamicSideChannelLibs(SnortConfig *sc, const char * const path)
 {
     LogMessage("Loading all dynamic side channel libs from %s...\n", path);
-    LoadAllLibs(path, LoadDynamicSideChannelLib);
+    LoadAllLibs(sc, path, LoadDynamicSideChannelLib);
     LogMessage("  Finished Loading all dynamic side channel libs from %s\n", path);
 }
 
@@ -3027,3 +3408,34 @@ void RemoveDuplicateSideChannelPlugins(void)
 }
 
 #endif /* SIDE_CHANNEL */
+
+#ifdef SNORT_RELOAD
+void AdjustSoRuleMemory(SnortConfig *new_config, SnortConfig *old_config) {
+    tSfPolicyId policy_id = getParserPolicy(new_config);
+    ada_reload_adjust_register(ada, policy_id, (void *) new_config,  "so_rule", (size_t) new_config->so_rule_memcap);
+} 
+
+void ReloadDynamicDetectionLibs(SnortConfig *sc) 
+{
+   uint32_t i;
+
+   if (sc->dyn_rules != NULL)
+   {
+       /* Load the dynamic detection libs */
+       for (i = 0; i < sc->dyn_rules->count; i++)
+       {
+           switch (sc->dyn_rules->lib_paths[i]->ptype)
+           {
+               case PATH_TYPE__FILE:
+                   LoadDynamicDetectionLib(sc, sc->dyn_rules->lib_paths[i]->path, 0);
+                   break;
+
+               case PATH_TYPE__DIRECTORY:
+                   LoadAllDynamicDetectionLibs(sc, sc->dyn_rules->lib_paths[i]->path);
+                   break;
+           }
+       }
+   }
+}
+#endif
+

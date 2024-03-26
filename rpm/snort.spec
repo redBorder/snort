@@ -20,12 +20,12 @@
 
 %if %{openappid}
 Name: %{realname}-openappid
-Version: 2.9.8.3
+Version: 2.9.20
 Summary: An open source Network Intrusion Detection System (NIDS) with open AppId support
 Conflicts: %{realname}
 %else
 Name: %{realname}
-Version: 2.9.8.3
+Version: 2.9.20
 Summary: An open source Network Intrusion Detection System (NIDS)
 Conflicts: %{realname}-openappid
 %endif
@@ -66,7 +66,7 @@ CFLAGS="$RPM_OPT_FLAGS"
 export AM_CFLAGS="-g -O2"
 SNORT_BASE_CONFIG="--prefix=%{_prefix} --sbindir=%{_sbindir} --exec-prefix=%{_prefix} --with-libpcap-includes=/usr/include \
                    --with-libpcap-libraries=/usr/lib --with-libpfring-includes=/usr/include \
-                   --with-libpfring-libraries=/usr/lib --enable-perfprofiling --enable-normalizer \
+                   --with-libpfring-libraries=/usr/lib --disable-open-appid --enable-perfprofiling --enable-normalizer \
                    --enable-mpls --enable-targetbased --enable-ppm --enable-active-response --enable-reload \
                    --enable-react --enable-flexresp3 --with-daq-libraries=/usr/local/lib \
                    --with-daq-includes=/usr/local/include --enable-control-socket --enable-gdb \
@@ -227,5 +227,7 @@ systemctl daemon-reload
 %docdir %{_docdir}/%{realname}-%{version}
 
 %changelog
+* Tue Mar 26 2024 David Vanhoucke <dvanhoucke@redborder.com> - 2.9.20-1
+- update to snort version 2.9.20
 * Wed Nov 08 2023 David Vanhoucke <dvanhoucke@redborder.com> - 2.9.0-1
 - Created snort rpm for redborder

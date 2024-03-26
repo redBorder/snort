@@ -1,6 +1,6 @@
 /* $Id$ */
 /*
- ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ ** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 1998-2013 Sourcefire, Inc.
  **
  ** This program is free software; you can redistribute it and/or modify
@@ -62,7 +62,7 @@ RuleTreeNode* GenerateSnortEventRtn (OptTreeNode* otn, tSfPolicyId policyId)
         if (rtn)
         {
             rtn->type = RULE_TYPE__ALERT;
-            if (addRtnToOtn(otn, policyId, rtn) != 0)
+            if (addRtnToOtn(NULL, otn, policyId, rtn) != 0)
                 rtn = NULL;
         }
     }
@@ -97,6 +97,33 @@ OptTreeNode * GenerateSnortEventOtn(
 
     return otn;
 }
+
+/*
+ * This function returns the rule action given the
+ * details about the rule
+ */
+int GetSnortEventAction(uint32_t gid, uint32_t sid,
+                        uint32_t rev, uint32_t classification,
+                        uint32_t priority, const char *msg)
+{
+    OptTreeNode *otn;
+    RuleTreeNode *rtn;
+
+    if (msg == NULL)
+        return 0;
+
+    otn = GetApplicableOtn(gid, sid, rev, classification, priority, msg);
+
+    if (otn == NULL)
+        return 0;
+
+    rtn = getRuntimeRtnFromOtn(otn);
+    if (rtn == NULL)
+        return 0;
+
+    return (rtn->type);
+}
+
 
 /*
  * This function has been updated to find an otn and route the call to fpLogEvent

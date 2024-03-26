@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -32,6 +32,7 @@
 #include "detector_base.h"
 #include "detector_api.h"
 #include "detector_http.h"
+#include "detector_cip.h"
 #include "service_ssl.h"
 #include "luaDetectorApi.h"
 #include "luaDetectorModule.h"
@@ -49,7 +50,7 @@ unsigned appIdPolicyId;
 tAppIdConfig appIdConfig;
 tAppIdConfig        *pAppidActiveConfig;
 tAppIdConfig        *pAppidPassiveConfig;
-tAppidStaticConfig  appidStaticConfig;
+tAppidStaticConfig* appidStaticConfig;
 uint32_t app_id_netmasks[33];
 
 /*static const char * const MODULE_NAME = "AppMatcher"; */
@@ -76,7 +77,7 @@ static void DisplayPortExclusionList(SF_LIST *pe_list, uint16_t port)
         _dpd.logMsg("        %d on %s/%s\n", port, p ? p:"ERROR", p2 ? p2:"ERROR");
     }
 }
-static void DisplayConfig(tAppIdConfig *aic)
+static void DisplayConfig(tAppidStaticConfig* appidSC, tAppIdConfig *aic)
 {
     unsigned i;
     int j;
@@ -88,10 +89,11 @@ static void DisplayConfig(tAppIdConfig *aic)
     const char *p2;
     NetworkSet *net_list;
 
-    if (appidStaticConfig.appid_thirdparty_dir)
-    {
-        _dpd.logMsg("    3rd Party Dir: %s\n", appidStaticConfig.appid_thirdparty_dir);
-    }
+    if (appidSC->appid_thirdparty_dir)
+        _dpd.logMsg("    3rd Party Dir: %s\n", appidSC->appid_thirdparty_dir);
+    if (appidSC->tp_config_path)
+        _dpd.logMsg("    3rd Party Conf: %s\n", appidSC->tp_config_path);
+
     net_list = aic->net_list;
     _dpd.logMsg("    Monitoring Networks for any zone:\n");
     for (i = 0; i < net_list->count; i++)
@@ -201,14 +203,14 @@ typedef struct _PORT
     uint16_t port;
 } Port;
 
-static void ReadPortDetectors(tAppIdConfig *aic, const char *files)
+static void ReadPortDetectors(tAppidStaticConfig* appidSC, tAppIdConfig *aic, const char *files)
 {
     int rval;
     glob_t globs;
     char pattern[PATH_MAX];
     uint32_t n;
 
-    snprintf(pattern, sizeof(pattern), "%s/%s", appidStaticConfig.app_id_detector_path, files);
+    snprintf(pattern, sizeof(pattern), "%s/%s", appidSC->app_id_detector_path, files);
 
     memset(&globs, 0, sizeof(globs));
     rval = glob(pattern, 0, NULL, &globs);
@@ -380,7 +382,7 @@ static void AppIdConfigureAnalyze(char *toklist[], uint32_t flag, tAppIdConfig *
                         ias6->addr_flags, zone);
                 if (zone >= 0)
                 {
-                    if (!(net_list = appIdConfig.net_list_by_zone[zone]))
+                    if (!(net_list = pConfig->net_list_by_zone[zone]))
                     {
                         if (NetworkSet_New(&net_list))
                             _dpd.errMsg("%s", "Failed to create a network set");
@@ -454,6 +456,51 @@ static void AppIdConfigureAnalyze(char *toklist[], uint32_t flag, tAppIdConfig *
                 _dpd.errMsg("Invalid analysis parameter: %s", toklist[0]);
         }
     }
+}
+
+static sfaddr_t* AppIdConfigureDebug(char *toklist[])
+{
+    if (!toklist[0]) return NULL;
+
+    struct in6_addr tmp;
+    uint16_t family;
+
+    if (!strchr(toklist[0], ':'))
+    {
+        if (inet_pton(AF_INET, toklist[0], &tmp) <= 0)
+        {
+            _dpd.errMsg("AppId Config: Failed to translate debug host %s", toklist[0]);
+            return NULL;
+        }
+        family = AF_INET;
+    }
+    else
+    {
+        if (inet_pton(AF_INET6, toklist[0], &tmp) <= 0)
+        {
+            _dpd.errMsg("AppId Config: Failed to translate debug host %s", toklist[0]);
+            return NULL;
+        }
+        family = AF_INET6;
+    }
+
+    sfaddr_t* ipAddr = malloc(sizeof(*ipAddr));
+    if (!ipAddr)
+    {
+        _dpd.errMsg("AppId Config: Failed to allocate memory");
+        return NULL;
+    }
+
+    ipAddr->family = family;
+
+    if (ipAddr->family == AF_INET)
+        copyIpv4ToIpv6Network(&ipAddr->ip, tmp.s6_addr32[0]);
+    else
+        memcpy(ipAddr, &tmp, sizeof(tmp));
+
+    _dpd.logMsg("\nAppIdDebugHost: Debugging host IP %s\n", toklist[0]);
+
+    return ipAddr;
 }
 
 static inline int AddPortExclusion(SF_LIST *port_exclusions[], const struct in6_addr *ip,
@@ -647,9 +694,13 @@ static void ProcessConfigDirective(char *toklist[], tAppIdConfig *aic, int reloa
     {
         AppIdConfigureAnalyze(&toklist[i], IPFUNCS_APPLICATION, aic);
     }
+    else if (!strcasecmp(curtok, "DebugHost"))
+    {
+        aic->debugHostIp = AppIdConfigureDebug(&toklist[i]);
+    }
 }
 
-static int AppIdLoadConfigFile(const char *config_file, int reload, int instance_id, tAppIdConfig *pConfig)
+static int AppIdLoadConfigFile(tAppidStaticConfig* appidSC, int reload, int instance_id, tAppIdConfig *pConfig)
 {
     FILE *fp;
     char linebuffer[MAX_LINE];
@@ -666,7 +717,7 @@ static int AppIdLoadConfigFile(const char *config_file, int reload, int instance
     }
     pConfig->net_list_list = pConfig->net_list;
 
-    if (!config_file || (!config_file[0]))
+    if (!appidSC->conf_file || (!appidSC->conf_file[0]))
     {
         char addrString[sizeof("0.0.0.0/0")];
         _dpd.logMsg("Defaulting to monitoring all Snort traffic for AppID.\n");
@@ -680,11 +731,11 @@ static int AppIdLoadConfigFile(const char *config_file, int reload, int instance
     }
     else
     {
-        DEBUG_WRAP(DebugMessage(DEBUG_APPID, "Loading configuration file: %s", config_file););
+        DEBUG_WRAP(DebugMessage(DEBUG_APPID, "Loading configuration file: %s", appidSC->conf_file););
 
-        if (!(fp = fopen(config_file, "r")))
+        if (!(fp = fopen(appidSC->conf_file, "r")))
         {
-            _dpd.errMsg("Unable to open %s", config_file);
+            _dpd.errMsg("Unable to open %s", appidSC->conf_file);
             return -1;
         }
 
@@ -725,9 +776,9 @@ static int AppIdLoadConfigFile(const char *config_file, int reload, int instance
     }
 
 #define DEFAULT_THIRDPARTY_PATH "/usr/local/lib/thirdparty"
-    if (!appidStaticConfig.appid_thirdparty_dir)
+    if (!appidSC->appid_thirdparty_dir)
     {
-        if (!(appidStaticConfig.appid_thirdparty_dir = strdup(DEFAULT_THIRDPARTY_PATH)))
+        if (!(appidSC->appid_thirdparty_dir = strdup(DEFAULT_THIRDPARTY_PATH)))
         {
             _dpd.errMsg("Failed to allocate a module directory");
             return -1;
@@ -766,10 +817,10 @@ static int AppIdLoadConfigFile(const char *config_file, int reload, int instance
     return 0;
 }
 
-static void ReadPorts(tAppIdConfig *aic)
+static void ReadPorts(tAppidStaticConfig* appidSC, tAppIdConfig *aic)
 {
-    ReadPortDetectors(aic, CISCO_PORT_DETECTORS);
-    ReadPortDetectors(aic, CUSTOM_PORT_DETECTORS);
+    ReadPortDetectors(appidSC, aic, CISCO_PORT_DETECTORS);
+    ReadPortDetectors(appidSC, aic, CUSTOM_PORT_DETECTORS);
 }
 
 static void LoadModules(uint32_t instance_id, tAppIdConfig *pConfig)
@@ -912,6 +963,12 @@ static void AppIdCleanupConfig(tAppIdConfig *pConfig)
     memset(pConfig->net_list_by_zone, 0, sizeof(pConfig->net_list_by_zone));
 
     sflist_static_free_all(&pConfig->client_app_args, (void (*)(void*))ConfigItemFree);
+
+    if (pConfig->debugHostIp)
+    {
+        free(pConfig->debugHostIp);
+        pConfig->debugHostIp = NULL;
+    }
 }
 
 static int initAFIndicators(tAppIdConfig *pConfig)
@@ -980,9 +1037,10 @@ else
         passive
 #endif
 
-int AppIdCommonInit(tAppidStaticConfig *config)
+int AppIdCommonInit(tAppidStaticConfig *appidSC)
 {
-    if (!(pAppidActiveConfig = (tAppIdConfig *)calloc(1, sizeof(*pAppidActiveConfig))))
+    if (!(pAppidActiveConfig = (tAppIdConfig *)_dpd.snortAlloc(1,
+        sizeof(*pAppidActiveConfig), PP_APP_ID, PP_MEM_CATEGORY_CONFIG)))
     {
         _dpd.errMsg("Config: Failed to allocate memory for AppIdConfig");
         return -1;
@@ -997,7 +1055,7 @@ int AppIdCommonInit(tAppidStaticConfig *config)
         rnaFwConfigState = RNA_FW_CONFIG_STATE_PENDING;
         InitNetmasks(app_id_netmasks);
         sflist_init(&pAppidActiveConfig->client_app_args);
-        AppIdLoadConfigFile(appidStaticConfig.conf_file, 0, config->instance_id, pAppidActiveConfig);
+        AppIdLoadConfigFile(appidSC, 0, appidSC->instance_id, pAppidActiveConfig);
         if (!initCHPGlossary(pAppidActiveConfig))
             return -1;
         if (!initAFIndicators(pAppidActiveConfig))
@@ -1005,14 +1063,15 @@ int AppIdCommonInit(tAppidStaticConfig *config)
         if (!initAFActives(pAppidActiveConfig))
             return -1;
         luaModuleInit();
-        appInfoTableInit(appidStaticConfig.app_id_detector_path, pAppidActiveConfig);
-        ReadPorts(pAppidActiveConfig);
-        LoadModules(config->instance_id, pAppidActiveConfig);
+        appInfoTableInit(appidSC, pAppidActiveConfig);
+        ReadPorts(appidSC, pAppidActiveConfig);
+        LoadModules(appidSC->instance_id, pAppidActiveConfig);
+        hostPortAppCacheDynamicInit();
         hostPortAppCacheInit(pAppidActiveConfig);
         lengthAppCacheInit(pAppidActiveConfig);
 
-        LoadLuaModules(pAppidActiveConfig);
-        ClientAppInit(pAppidActiveConfig);
+        LoadLuaModules(appidSC, pAppidActiveConfig);
+        ClientAppInit(appidSC, pAppidActiveConfig);
         ServiceInit(pAppidActiveConfig);
         FinalizeLuaModules(pAppidActiveConfig);
 
@@ -1025,14 +1084,17 @@ int AppIdCommonInit(tAppidStaticConfig *config)
         portPatternFinalize(pAppidActiveConfig);
         ClientAppFinalize(pAppidActiveConfig);
         ServiceFinalize(pAppidActiveConfig);
-        appIdStatsInit(appidStaticConfig.app_stats_filename, appidStaticConfig.app_stats_period,
-                appidStaticConfig.app_stats_rollover_size, appidStaticConfig.app_stats_rollover_time);
-        DisplayConfig(pAppidActiveConfig);
+        appIdStatsInit(appidSC->app_stats_filename, appidSC->app_stats_period,
+                appidSC->app_stats_rollover_size, appidSC->app_stats_rollover_time);
+        DisplayConfig(appidSC, pAppidActiveConfig);
 #ifdef DEBUG_APP_COMMON
         DisplayPortConfig(pAppidActiveConfig);
 #endif
-        if (AppIdServiceStateInit(appidStaticConfig.memcap))
-            exit(-1);
+        if (AppIdServiceStateInit(appidSC->memcap))
+        {
+            _dpd.fatalMsg("AppID failed to create the service state cache with %lu memory\n",
+                          appidSC->memcap); 
+        }
         rnaFwConfigState = RNA_FW_CONFIG_STATE_INIT;
         return 0;
     }
@@ -1052,15 +1114,19 @@ int AppIdCommonFini(void)
         CleanupServices(pAppidActiveConfig);
         CleanupClientApp(pAppidActiveConfig);
         luaModuleFini();
+        hostPortAppCacheDynamicFini();
         hostPortAppCacheFini(pAppidActiveConfig);
         AppIdServiceStateCleanup();
         appIdStatsFini();
         fwAppIdFini(pAppidActiveConfig);
+        lengthAppCacheFini(pAppidActiveConfig);
         http_detector_clean(&pAppidActiveConfig->detectorHttpConfig);
         service_ssl_clean(&pAppidActiveConfig->serviceSslConfig);
         service_dns_host_clean(&pAppidActiveConfig->serviceDnsConfig);
+        CipClean();
         rnaFwConfigState = RNA_FW_CONFIG_STATE_UNINIT;
-        free(pAppidActiveConfig);
+        _dpd.snortFree(pAppidActiveConfig, sizeof(*pAppidActiveConfig),
+                PP_APP_ID, PP_MEM_CATEGORY_CONFIG);
         pAppidActiveConfig = NULL;
         pAppidPassiveConfig = NULL;
         return 0;
@@ -1068,13 +1134,13 @@ int AppIdCommonFini(void)
     return -1;
 }
 
-int AppIdCommonReload(void **new_context)
+int AppIdCommonReload(tAppidStaticConfig* appidSC, void **new_context)
 {
-    tAppIdConfig *pNewConfig = (tAppIdConfig *) calloc(1, sizeof(*pNewConfig));
+    tAppIdConfig *pNewConfig = (tAppIdConfig *)_dpd.snortAlloc(1,
+                      sizeof(*pNewConfig), PP_APP_ID, PP_MEM_CATEGORY_CONFIG);
     if (!pNewConfig)
     {
-        _dpd.errMsg("Config: Failed to allocate memory for reload AppIdConfig");
-        return -1;
+        _dpd.fatalMsg("AppID failed to allocate memory for reload AppIdConfig");
     }
     pAppidPassiveConfig = pNewConfig;
 
@@ -1097,7 +1163,7 @@ int AppIdCommonReload(void **new_context)
     pNewConfig->serviceConfig.udp_reversed_service_list = pAppidActiveConfig->serviceConfig.udp_reversed_service_list;
 
     sflist_init(&pNewConfig->client_app_args);
-    AppIdLoadConfigFile(appidStaticConfig.conf_file, 1, 0, pNewConfig);
+    AppIdLoadConfigFile(appidSC, 1, 0, pNewConfig);
     if (!initCHPGlossary(pNewConfig))
         return -1;
     if (!initAFIndicators(pNewConfig))
@@ -1105,14 +1171,14 @@ int AppIdCommonReload(void **new_context)
     if (!initAFActives(pNewConfig))
         return -1;
     sflist_init(&pNewConfig->genericConfigList);
-    appInfoTableInit(appidStaticConfig.app_id_detector_path, pNewConfig);
-    ReadPorts(pNewConfig);
+    appInfoTableInit(appidSC, pNewConfig);
+    ReadPorts(appidSC, pNewConfig);
     ReloadModules(pNewConfig);
     hostPortAppCacheInit(pNewConfig);
     lengthAppCacheInit(pNewConfig);
 
-    LoadLuaModules(pNewConfig);
-    ClientAppInit(pNewConfig);
+    LoadLuaModules(appidSC, pNewConfig);
+    ClientAppInit(appidSC, pNewConfig);
     ReconfigureServices(pNewConfig);
 
     http_detector_finalize(pNewConfig);
@@ -1124,7 +1190,7 @@ int AppIdCommonReload(void **new_context)
     ServiceFinalize(pNewConfig);
 
     appIdStatsReinit();
-    DisplayConfig(pNewConfig);
+    DisplayConfig(appidSC, pNewConfig);
  #ifdef DEBUG_APP_COMMON
     DisplayPortConfig(pNewConfig);
  #endif
@@ -1170,13 +1236,7 @@ void AppIdCommonUnload(void *old_context)
     service_ssl_clean(&pOldConfig->serviceSslConfig);
     service_dns_host_clean(&pOldConfig->serviceDnsConfig);
 
-    free(pOldConfig);
+    _dpd.snortFree(pOldConfig, sizeof(*pOldConfig), PP_APP_ID, PP_MEM_CATEGORY_CONFIG);
     pAppidPassiveConfig = NULL;
-}
-
-void SetSafeSearchEnforcement(int enabled)
-{
-    DEBUG_WRAP(DebugMessage(DEBUG_APPID, "    Safe Search Enforcement enabled = %d.\n",enabled););
-    appidStaticConfig.disable_safe_search = enabled ? 0 : 1;
 }
 

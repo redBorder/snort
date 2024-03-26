@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -24,6 +24,7 @@
 
 #include <sys/types.h>
 #include <inttypes.h>
+#include <pthread.h>
 #include "client_app_base.h"
 #include "service_base.h"
 
@@ -106,6 +107,8 @@ typedef struct _Detector
 
     } client;
 
+    char *callbackFcnName;
+
     lua_State *myLuaState;
 
     /**Reference to lua userdata. This is a key into LUA_REGISTRYINDEX */
@@ -130,6 +133,8 @@ typedef struct _Detector
     /**Snort profiling stats for individual Lua detector.*/
     struct _PreprocStats *pPerfStats;
 #endif
+
+    pthread_mutex_t luaReloadMutex;
 
 } Detector;
 
@@ -189,15 +194,7 @@ void CleanHttpPatternLists(tAppIdConfig *pConfig);
 void CleanClientPortPatternList(tAppIdConfig*);
 void CleanServicePortPatternList(tAppIdConfig*);
 
-int validateAnyService(
-        const uint8_t *data,
-        uint16_t size,
-        const int dir,
-        tAppIdData *flowp,
-        SFSnortPacket *pkt,
-        struct _Detector *detector,
-        const struct appIdConfig_ *
-        );
+int validateAnyService(ServiceValidationArgs *args);
 int checkServiceElement( Detector *detector);
 #endif
 

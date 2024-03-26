@@ -2,7 +2,7 @@
 /*
 ** file_decomp.c
 **
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License Version 2 as
@@ -34,6 +34,8 @@
 #include "file_decomp.h"
 #include "sf_types.h"
 #include "detection_util.h"
+#include "memory_stats.h"
+
 #ifdef FILE_DECOMP_PDF
 #include "file_decomp_PDF.h"
 #endif
@@ -267,7 +269,8 @@ fd_status_t File_Decomp_CleanExit()
 {
     if( (g_Config != NULL) && (g_Config->fd_MemPool != NULL) && (mempool_destroy(g_Config->fd_MemPool) == 0))
     {
-        free( g_Config->fd_MemPool );
+        SnortPreprocFree(g_Config->fd_MemPool, sizeof(MemPool), PP_HTTPINSPECT, 
+             PP_MEM_CATEGORY_MEMPOOL);
         g_Config->fd_MemPool = NULL;
         g_Config = NULL;
         return( File_Decomp_OK );
@@ -281,7 +284,7 @@ fd_status_t File_Decomp_CleanExit()
 /* The caller provides the memory size in the config struct. */
 fd_status_t File_Decomp_Config( fd_config_p_t ConfigPtr )
 {
-    PoolCount Max_Sessions;
+    unsigned Max_Sessions;
 
     if( ConfigPtr == NULL )
         return( File_Decomp_Error );
@@ -291,7 +294,9 @@ fd_status_t File_Decomp_Config( fd_config_p_t ConfigPtr )
 
     Max_Sessions = ConfigPtr->Max_Memory / sizeof( fd_session_t );
 
-    if( (g_Config->fd_MemPool = (MemPool *)SnortAlloc(sizeof(MemPool))) == NULL )
+    g_Config->fd_MemPool = (MemPool *)SnortPreprocAlloc(1, sizeof(MemPool),
+                                           PP_HTTPINSPECT, PP_MEM_CATEGORY_MEMPOOL);
+    if( g_Config->fd_MemPool == NULL )
         return( File_Decomp_Error );
 
     if( (mempool_init(g_Config->fd_MemPool, Max_Sessions, sizeof( fd_session_t ))) != 0 )
@@ -387,7 +392,7 @@ fd_status_t File_Decomp_SetBuf( fd_session_p_t SessionPtr )
 }
 
 /* Returns a new session object from the MemPool */
-fd_session_p_t File_Decomp_New()
+fd_session_p_t File_Decomp_New(void* scbPtr)
 {
     fd_session_p_t New_Session;
     MemBucket *bkt;
@@ -405,6 +410,7 @@ fd_session_p_t File_Decomp_New()
     }
     else
     {
+        bkt->scbPtr = scbPtr;
         New_Session = bkt->data;
         New_Session->bkt = bkt;
         New_Session->State = STATE_NEW;

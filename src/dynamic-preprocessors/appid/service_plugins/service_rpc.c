@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -155,8 +155,9 @@ typedef struct _SERVICE_RPC_DATA
 } ServiceRPCData;
 
 static int rpc_init(const InitServiceAPI * const init_api);
-MakeRNAServiceValidationPrototype(rpc_validate);
-MakeRNAServiceValidationPrototype(rpc_tcp_validate);
+static int rpc_validate(ServiceValidationArgs* args);
+static int rpc_tcp_validate(ServiceValidationArgs* args);
+static void rpc_clean(const CleanServiceAPI * const clean_api);
 
 static tRNAServiceElement svc_element =
 {
@@ -203,7 +204,8 @@ tRNAServiceValidationModule rpc_service_mod =
 {
     "RPC",
     &rpc_init,
-    pp
+    pp,
+    .clean = rpc_clean
 };
 
 typedef struct _RPC_PROGRAM
@@ -213,7 +215,7 @@ typedef struct _RPC_PROGRAM
     char *name;
 } RPCProgram;
 
-static RPCProgram *rpc_programs;
+static RPCProgram *rpc_programs = NULL;
 
 static uint8_t rpc_reply_accepted_pattern[8] = {0,0,0,1,0,0,0,0};
 static uint8_t rpc_reply_denied_pattern[8] = {0,0,0,1,0,0,0,1};
@@ -230,7 +232,9 @@ static int rpc_init(const InitServiceAPI * const init_api)
     struct rpcent *rpc;
     RPCProgram *prog;
 
+#ifdef TARGET_BASED
     app_id = init_api->dpd->addProtocolReference("sunrpc");
+#endif
 
     if (!rpc_programs)
     {
@@ -312,12 +316,12 @@ static int validate_packet(const uint8_t *data, uint16_t size, int dir,
             rpc = (ServiceRPC *)data;
             if (ntohl(rpc->type) == RPC_TYPE_REPLY)
             {
-                setAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED);
+                setAppIdFlag(flowp, APPID_SESSION_UDP_REVERSED);
                 rd->state = RPC_STATE_REPLY;
                 dir = APP_ID_FROM_RESPONDER;
             }
         }
-        else if (getAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED))
+        else if (getAppIdFlag(flowp, APPID_SESSION_UDP_REVERSED))
         {
             dir = (dir == APP_ID_FROM_RESPONDER) ? APP_ID_FROM_INITIATOR:APP_ID_FROM_RESPONDER;
         }
@@ -401,12 +405,24 @@ static int validate_packet(const uint8_t *data, uint16_t size, int dir,
                         dip = GET_DST_IP(pkt);
                         sip = GET_SRC_IP(pkt);
                         tmp = ntohl(pmr->port);
+#ifdef TARGET_BASED
                         pf = rpc_service_mod.api->flow_new(flowp, pkt, dip, 0, sip, (uint16_t)tmp, (uint8_t)ntohl(rd->proto), app_id, 0);
                         if (pf)
                         {
                             rpc_service_mod.api->data_add_id(pf, (uint16_t)tmp,
                                                              flowp->proto==IPPROTO_TCP ? &tcp_svc_element:&svc_element);
+                            pf->rnaServiceState = RNA_STATE_STATEFUL;
+                            setAppIdFlag(pf,
+                                         getAppIdFlag(flowp,
+                                                      APPID_SESSION_RESPONDER_MONITORED |
+                                                      APPID_SESSION_INITIATOR_MONITORED |
+                                                      APPID_SESSION_SPECIAL_MONITORED |
+                                                      APPID_SESSION_RESPONDER_CHECKED |
+                                                      APPID_SESSION_INITIATOR_CHECKED |
+                                                      APPID_SESSION_DISCOVER_APP |
+                                                      APPID_SESSION_DISCOVER_USER));
                         }
+#endif
                     }
                     break;
                 default:
@@ -433,7 +449,7 @@ static int validate_packet(const uint8_t *data, uint16_t size, int dir,
     return SERVICE_INPROCESS;
 }
 
-MakeRNAServiceValidationPrototype(rpc_validate)
+static int rpc_validate(ServiceValidationArgs* args)
 {
     static char subname[64];
     ServiceRPCData *rd;
@@ -442,6 +458,11 @@ MakeRNAServiceValidationPrototype(rpc_validate)
     uint32_t program = 0;
     const char *pname = NULL;
     int rval;
+    tAppIdData *flowp = args->flowp;
+    const uint8_t *data = args->data;
+    SFSnortPacket *pkt = args->pkt; 
+    const int dir = args->dir;
+    uint16_t size = args->size;
 
     if (!size)
     {
@@ -478,14 +499,14 @@ done:
     switch (rval)
     {
     case SERVICE_INPROCESS:
-        if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
+        if (!getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
         {
-            rpc_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+            rpc_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element, NULL);
         }
         return SERVICE_INPROCESS;
 
     case SERVICE_SUCCESS:
-        if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
+        if (!getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
         {
             if (pname && *pname)
             {
@@ -502,32 +523,36 @@ done:
             }
             else subtype = NULL;
             rpc_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
-                                             APP_ID_SUN_RPC, NULL, NULL, subtype);
+                                             APP_ID_SUN_RPC, NULL, NULL, subtype, NULL);
         }
-        setAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
+        setAppIdFlag(flowp, APPID_SESSION_CONTINUE);
         return SERVICE_SUCCESS;
 
     case SERVICE_NOT_COMPATIBLE:
-        if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
+        if (!getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
         {
-            rpc_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element, rpc_service_mod.flow_data_index, pConfig);
+            rpc_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element,
+                                                   rpc_service_mod.flow_data_index,
+                                                   args->pConfig, NULL);
         }
-        clearAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
+        clearAppIdFlag(flowp, APPID_SESSION_CONTINUE);
         return SERVICE_NOT_COMPATIBLE;
 
     case SERVICE_NOMATCH:
-        if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
+        if (!getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
         {
-            rpc_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, rpc_service_mod.flow_data_index, pConfig);
+            rpc_service_mod.api->fail_service(flowp, pkt, dir, &svc_element,
+                                              rpc_service_mod.flow_data_index,
+                                              args->pConfig, NULL);
         }
-        clearAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
+        clearAppIdFlag(flowp, APPID_SESSION_CONTINUE);
         return SERVICE_NOMATCH;
     default:
         return rval;
     }
 }
 
-MakeRNAServiceValidationPrototype(rpc_tcp_validate)
+static int rpc_tcp_validate(ServiceValidationArgs* args)
 {
     ServiceRPCData *rd;
     const ServiceRPCFragment *frag;
@@ -535,14 +560,20 @@ MakeRNAServiceValidationPrototype(rpc_tcp_validate)
     uint32_t fragsize;
     int ret;
     int retval = -1;
-    const ServiceRPCCall *call;
-    const ServiceRPCReply *reply;
+    ServiceRPCCall *call;
+    ServiceRPCReply *reply;
 
     static char subname[64];
     RNAServiceSubtype sub;
     RNAServiceSubtype *subtype;
     uint32_t program = 0;
     const char *pname = NULL;
+
+    tAppIdData *flowp = args->flowp;
+    const uint8_t *data = args->data;
+    SFSnortPacket *pkt = args->pkt; 
+    const int dir = args->dir;
+    uint16_t size = args->size;
 
     if (!size)
         goto inprocess;
@@ -632,7 +663,8 @@ MakeRNAServiceValidationPrototype(rpc_tcp_validate)
             size -= length;
             if (rd->tcppos[dir] >= sizeof(ServiceRPCAuth))
             {
-                length = ntohl(((ServiceRPCCall *)rd->tcpdata[dir])->cred.length);
+                call = (ServiceRPCCall *)rd->tcpdata[dir];
+                length = ntohl(call->cred.length);
                 if (length > (rd->tcpsize[dir] & ~RPC_TCP_FRAG_MASK) ||
                     rd->tcpfragpos[dir]+length > (rd->tcpsize[dir] & ~RPC_TCP_FRAG_MASK))
                     goto bail;
@@ -651,8 +683,9 @@ MakeRNAServiceValidationPrototype(rpc_tcp_validate)
             size -= length;
             if (rd->tcppos[dir] >= rd->tcpauthsize[dir])
             {
-                ((ServiceRPCCall *)rd->tcpdata[dir])->cred.flavor = 0;
-                ((ServiceRPCCall *)rd->tcpdata[dir])->cred.length = 0;
+                call = (ServiceRPCCall *)rd->tcpdata[dir];
+                call->cred.flavor = 0;
+                call->cred.length = 0;
                 rd->tcpstate[dir] = RPC_TCP_STATE_VERIFY;
                 rd->tcppos[dir] = 0;
             }
@@ -673,9 +706,15 @@ MakeRNAServiceValidationPrototype(rpc_tcp_validate)
             if (rd->tcppos[dir] >= sizeof(ServiceRPCAuth))
             {
                 if (dir == APP_ID_FROM_INITIATOR)
-                    length = ntohl(((ServiceRPCCall *)rd->tcpdata[dir])->verify.length);
+                {
+                    call = (ServiceRPCCall *)rd->tcpdata[dir];
+                    length = ntohl(call->verify.length);
+                }
                 else
-                    length = ntohl(((ServiceRPCReply *)rd->tcpdata[dir])->verify.length);
+                {
+                    reply = (ServiceRPCReply *)rd->tcpdata[dir];
+                    length = ntohl(reply->verify.length);
+                }
                 if (length > (rd->tcpsize[dir] & ~RPC_TCP_FRAG_MASK) ||
                     rd->tcpfragpos[dir]+length > (rd->tcpsize[dir] & ~RPC_TCP_FRAG_MASK))
                     goto bail;
@@ -697,8 +736,9 @@ MakeRNAServiceValidationPrototype(rpc_tcp_validate)
             {
                 if (dir == APP_ID_FROM_INITIATOR)
                 {
-                    ((ServiceRPCCall *)rd->tcpdata[dir])->verify.flavor = 0;
-                    ((ServiceRPCCall *)rd->tcpdata[dir])->verify.length = 0;
+                    call = (ServiceRPCCall *)rd->tcpdata[dir];
+                    call->verify.flavor = 0;
+                    call->verify.length = 0;
                     rd->tcpstate[dir] = RPC_TCP_STATE_PARTIAL;
                     rd->tcppos[dir] = sizeof(ServiceRPCCall);
                     if (rd->tcpfragpos[dir] >= (rd->tcpsize[dir] & ~RPC_TCP_FRAG_MASK))
@@ -727,8 +767,9 @@ MakeRNAServiceValidationPrototype(rpc_tcp_validate)
                 }
                 else
                 {
-                    ((ServiceRPCReply *)rd->tcpdata[dir])->verify.flavor = 0;
-                    ((ServiceRPCReply *)rd->tcpdata[dir])->verify.length = 0;
+                    reply = (ServiceRPCReply *)rd->tcpdata[dir];
+                    reply->verify.flavor = 0;
+                    reply->verify.length = 0;
                     rd->tcpstate[dir] = RPC_TCP_STATE_REPLY_HEADER;
                     if (rd->tcpfragpos[dir]+sizeof(uint32_t) > (rd->tcpsize[dir] & ~RPC_TCP_FRAG_MASK))
                         goto bail;
@@ -801,7 +842,7 @@ MakeRNAServiceValidationPrototype(rpc_tcp_validate)
             if (retval == -1) goto fail;
             else
             {
-                clearAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
+                clearAppIdFlag(flowp, APPID_SESSION_CONTINUE);
                 goto done;
             }
         }
@@ -821,14 +862,14 @@ done:
     {
     case SERVICE_INPROCESS:
 inprocess:
-        if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
+        if (!getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
         {
-            rpc_service_mod.api->service_inprocess(flowp, pkt, dir, &tcp_svc_element);
+            rpc_service_mod.api->service_inprocess(flowp, pkt, dir, &tcp_svc_element, NULL);
         }
         return SERVICE_INPROCESS;
 
     case SERVICE_SUCCESS:
-        if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
+        if (!getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
         {
             if (pname && *pname)
             {
@@ -845,33 +886,37 @@ inprocess:
             }
             else subtype = NULL;
             rpc_service_mod.api->add_service(flowp, pkt, dir, &tcp_svc_element,
-                                             APP_ID_SUN_RPC, NULL, NULL, subtype);
+                                             APP_ID_SUN_RPC, NULL, NULL, subtype, NULL);
         }
-        setAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
+        setAppIdFlag(flowp, APPID_SESSION_CONTINUE);
         return SERVICE_SUCCESS;
 
     case SERVICE_NOT_COMPATIBLE:
-        if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
+        if (!getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
         {
-            rpc_service_mod.api->incompatible_data(flowp, pkt, dir, &tcp_svc_element, rpc_service_mod.flow_data_index, pConfig);
+            rpc_service_mod.api->incompatible_data(flowp, pkt, dir, &tcp_svc_element,
+                                                   rpc_service_mod.flow_data_index,
+                                                   args->pConfig, NULL);
         }
-        clearAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
+        clearAppIdFlag(flowp, APPID_SESSION_CONTINUE);
         return SERVICE_NOT_COMPATIBLE;
 
     case SERVICE_NOMATCH:
 fail:
-        if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
+        if (!getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
         {
-            rpc_service_mod.api->fail_service(flowp, pkt, dir, &tcp_svc_element, rpc_service_mod.flow_data_index, pConfig);
+            rpc_service_mod.api->fail_service(flowp, pkt, dir, &tcp_svc_element,
+                                              rpc_service_mod.flow_data_index,
+                                              args->pConfig, NULL);
         }
-        clearAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
+        clearAppIdFlag(flowp, APPID_SESSION_CONTINUE);
         return SERVICE_NOMATCH;
     default:
         return retval;
     }
 
 bail:
-    clearAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
+    clearAppIdFlag(flowp, APPID_SESSION_CONTINUE);
     rd->tcpstate[APP_ID_FROM_INITIATOR] = RPC_TCP_STATE_DONE;
     rd->tcpstate[APP_ID_FROM_RESPONDER] = RPC_TCP_STATE_DONE;
     if (dir == APP_ID_FROM_INITIATOR)
@@ -885,3 +930,19 @@ bail:
     goto done;
 }
 
+static void rpc_clean(const CleanServiceAPI * const clean_api)
+{
+    RPCProgram *prog = NULL;
+
+    while(rpc_programs)
+    {
+        prog = rpc_programs;
+
+        rpc_programs = rpc_programs->next;
+
+        if(prog->name)
+            free(prog->name);
+
+        free(prog);
+    }
+}

@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -67,7 +67,7 @@ typedef struct _SERVICE_IRC_DATA
 } ServiceIRCData;
 
 static int irc_init(const InitServiceAPI * const init_api);
-MakeRNAServiceValidationPrototype(irc_validate);
+static int irc_validate(ServiceValidationArgs* args);
 
 static tRNAServiceElement svc_element =
 {
@@ -106,13 +106,17 @@ static int irc_init(const InitServiceAPI * const init_api)
     return 0;
 }
 
-MakeRNAServiceValidationPrototype(irc_validate)
+static int irc_validate(ServiceValidationArgs* args)
 {
     ServiceIRCData *id;
     const uint8_t *end;
     IRCState *state;
     unsigned *pos;
     const char * *command;
+    tAppIdData *flowp = args->flowp;
+    const uint8_t *data = args->data;
+    const int dir = args->dir;
+    uint16_t size = args->size;
 
     if (!size)
         goto inprocess;
@@ -281,22 +285,24 @@ MakeRNAServiceValidationPrototype(irc_validate)
         }
     }
 inprocess:
-    irc_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+    irc_service_mod.api->service_inprocess(flowp, args->pkt, dir, &svc_element, NULL);
     return SERVICE_INPROCESS;
 
 success:
-    irc_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
-                                     APP_ID_IRCD, NULL, NULL, NULL);
+    irc_service_mod.api->add_service(flowp, args->pkt, dir, &svc_element,
+                                     APP_ID_IRCD, NULL, NULL, NULL, NULL);
     return SERVICE_SUCCESS;
 
 fail:
     if (dir == APP_ID_FROM_RESPONDER)
     {
-        irc_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, irc_service_mod.flow_data_index, pConfig);
+        irc_service_mod.api->fail_service(flowp, args->pkt, dir, &svc_element,
+                                          irc_service_mod.flow_data_index, args->pConfig, NULL);
     }
     else
     {
-        irc_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element, irc_service_mod.flow_data_index, pConfig);
+        irc_service_mod.api->incompatible_data(flowp, args->pkt, dir, &svc_element,
+                                               irc_service_mod.flow_data_index, args->pConfig, NULL);
     }
     return SERVICE_NOMATCH;
 }

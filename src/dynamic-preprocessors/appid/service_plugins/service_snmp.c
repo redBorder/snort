@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -68,7 +68,8 @@ typedef enum
     SNMP_PDU_TRAP,
     SNMP_PDU_GET_BULK_REQUEST,
     SNMP_PDU_INFORM_REQUEST,
-    SNMP_PDU_TRAPV2
+    SNMP_PDU_TRAPV2,
+    SNMP_PDU_REPORT
 } SNMPPDUType;
 
 #pragma pack(1)
@@ -86,7 +87,7 @@ typedef struct _SERVICE_SNMP_HEADER
 #pragma pack()
 
 static int snmp_init(const InitServiceAPI * const init_api);
-MakeRNAServiceValidationPrototype(snmp_validate);
+static int snmp_validate(ServiceValidationArgs* args);
 
 static tRNAServiceElement svc_element =
 {
@@ -126,7 +127,9 @@ static int16_t app_id = 0;
 
 static int snmp_init(const InitServiceAPI * const init_api)
 {
+#ifdef TARGET_BASED
     app_id = init_api->dpd->addProtocolReference("snmp");
+#endif
 
     init_api->RegisterPattern(&snmp_validate, IPPROTO_UDP, SNMP_PATTERN_2, sizeof(SNMP_PATTERN_2), 2, "snmp", init_api->pAppidConfig);
     init_api->RegisterPattern(&snmp_validate, IPPROTO_UDP, SNMP_PATTERN_3, sizeof(SNMP_PATTERN_3), 2, "snmp", init_api->pAppidConfig);
@@ -137,12 +140,12 @@ static int snmp_init(const InitServiceAPI * const init_api)
     init_api->RegisterPattern(&snmp_validate, IPPROTO_UDP, SNMP_PATTERN_2, sizeof(SNMP_PATTERN_2), 4, "snmp", init_api->pAppidConfig);
     init_api->RegisterPattern(&snmp_validate, IPPROTO_UDP, SNMP_PATTERN_3, sizeof(SNMP_PATTERN_3), 4, "snmp", init_api->pAppidConfig);
     init_api->RegisterPattern(&snmp_validate, IPPROTO_UDP, SNMP_PATTERN_4, sizeof(SNMP_PATTERN_4), 4, "snmp", init_api->pAppidConfig);
-	unsigned i;
-	for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
-	{
-		_dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
-		init_api->RegisterAppId(&snmp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
-	}
+    unsigned i;
+    for (i=0; i < sizeof(appIdRegistry)/sizeof(*appIdRegistry); i++)
+    {
+        _dpd.debugMsg(DEBUG_LOG,"registering appId: %d\n",appIdRegistry[i].appId);
+        init_api->RegisterAppId(&snmp_validate, appIdRegistry[i].appId, appIdRegistry[i].additionalInfo, init_api->pAppidConfig);
+    }
 
     return 0;
 }
@@ -373,7 +376,7 @@ static int snmp_verify_packet(const uint8_t * * const data,
     return 0;
 }
 
-MakeRNAServiceValidationPrototype(snmp_validate)
+static int snmp_validate(ServiceValidationArgs* args)
 {
     ServiceSNMPData *sd;
     ServiceSNMPData *tmp_sd;
@@ -383,6 +386,13 @@ MakeRNAServiceValidationPrototype(snmp_validate)
     sfaddr_t *dip;
     uint8_t version;
     const char *version_str = NULL;
+    tAppIdData *flowp = args->flowp;
+    const uint8_t *data = args->data;
+    SFSnortPacket *pkt = args->pkt; 
+    const int dir = args->dir;
+    uint16_t size = args->size;
+    bool app_id_debug_session_flag = args->app_id_debug_session_flag;
+    char* app_id_debug_session = args->app_id_debug_session;
 
     if (!size)
         goto inprocess;
@@ -403,7 +413,9 @@ MakeRNAServiceValidationPrototype(snmp_validate)
 
     if (snmp_verify_packet(&data, data+size, &pdu, &version))
     {
-        if (getAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED))
+        if (app_id_debug_session_flag)
+            _dpd.logMsg("AppIdDbg %s snmp payload verify failed\n", app_id_debug_session);
+        if (getAppIdFlag(flowp, APPID_SESSION_UDP_REVERSED))
         {
             if (dir == APP_ID_FROM_RESPONDER) goto bail;
             else goto fail;
@@ -415,19 +427,22 @@ MakeRNAServiceValidationPrototype(snmp_validate)
         }
     }
 
+    if (app_id_debug_session_flag)
+        _dpd.logMsg("AppIdDbg %s snmp state %d\n", app_id_debug_session, sd->state);
+
     switch (sd->state)
     {
     case SNMP_STATE_CONNECTION:
         if (pdu != SNMP_PDU_GET_RESPONSE && dir == APP_ID_FROM_RESPONDER)
         {
             sd->state = SNMP_STATE_R_RESPONSE;
-            setAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED);
+            setAppIdFlag(flowp, APPID_SESSION_UDP_REVERSED);
             break;
         }
         if (pdu == SNMP_PDU_GET_RESPONSE && dir == APP_ID_FROM_INITIATOR)
         {
             sd->state = SNMP_STATE_R_REQUEST;
-            setAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED);
+            setAppIdFlag(flowp, APPID_SESSION_UDP_REVERSED);
             break;
         }
 
@@ -439,14 +454,14 @@ MakeRNAServiceValidationPrototype(snmp_validate)
 
         if (pdu == SNMP_PDU_TRAP || pdu == SNMP_PDU_TRAPV2)
         {
-            setAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED | APPID_SESSION_NOT_A_SERVICE);
-            clearAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
+            setAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED | APPID_SESSION_NOT_A_SERVICE);
+            clearAppIdFlag(flowp, APPID_SESSION_CONTINUE);
             flowp->serviceAppId = APP_ID_SNMP;
             break;
         }
         sd->state = SNMP_STATE_RESPONSE;
 
-        /*adding expected connection to account for future traps */
+        /*adding expected connection in case the server doesn't send from 161*/
         dip = GET_DST_IP(pkt);
         sip = GET_SRC_IP(pkt);
         pf = snmp_service_mod.api->flow_new(flowp, pkt, dip, 0, sip, pkt->src_port, flowp->proto, app_id, 0);
@@ -463,15 +478,19 @@ MakeRNAServiceValidationPrototype(snmp_validate)
             }
             if (snmp_service_mod.api->data_add_id(pf, pkt->dst_port, &svc_element))
             {
-                setAppIdExtFlag(pf, APPID_SESSION_SERVICE_DETECTED);
-                clearAppIdExtFlag(pf, APPID_SESSION_CONTINUE);
+                setAppIdFlag(pf, APPID_SESSION_SERVICE_DETECTED);
+                clearAppIdFlag(pf, APPID_SESSION_CONTINUE);
                 tmp_sd->state = SNMP_STATE_ERROR;
                 return SERVICE_ENULL;
             }
-        }
+            PopulateExpectedFlow(flowp, pf, APPID_SESSION_EXPECTED_EVALUATE, APP_ID_APPID_SESSION_DIRECTION_MAX);
+            pf->rnaServiceState = RNA_STATE_STATEFUL;
+            pf->scan_flags |= SCAN_HOST_PORT_FLAG;
+            sfaddr_copy_to_raw(&pf->common.initiator_ip, sip);
+       }
         break;
     case SNMP_STATE_RESPONSE:
-        if (pdu == SNMP_PDU_GET_RESPONSE)
+        if (pdu == SNMP_PDU_GET_RESPONSE || pdu == SNMP_PDU_REPORT)
         {
             if (dir == APP_ID_FROM_RESPONDER) goto success;
             goto fail;
@@ -487,7 +506,7 @@ MakeRNAServiceValidationPrototype(snmp_validate)
         if (dir == APP_ID_FROM_INITIATOR) goto fail;
         break;
     case SNMP_STATE_R_RESPONSE:
-        if (pdu == SNMP_PDU_GET_RESPONSE)
+        if (pdu == SNMP_PDU_GET_RESPONSE || pdu == SNMP_PDU_REPORT)
         {
             if (dir == APP_ID_FROM_INITIATOR) goto success;
             goto fail;
@@ -508,7 +527,7 @@ MakeRNAServiceValidationPrototype(snmp_validate)
     }
 
 inprocess:
-    snmp_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+    snmp_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element, NULL);
     return SERVICE_INPROCESS;
 
 success:
@@ -532,15 +551,19 @@ success:
     }
     snmp_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
                                       APP_ID_SNMP,
-                                      SNMP_VENDOR_STR, version_str, NULL);
+                                      SNMP_VENDOR_STR, version_str, NULL, NULL);
     return SERVICE_SUCCESS;
 
 bail:
-    snmp_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element, snmp_service_mod.flow_data_index, pConfig);
+    snmp_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element,
+                                            snmp_service_mod.flow_data_index,
+                                            args->pConfig, NULL);
     return SERVICE_NOT_COMPATIBLE;
 
 fail:
-    snmp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, snmp_service_mod.flow_data_index, pConfig);
+    snmp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element,
+                                       snmp_service_mod.flow_data_index,
+                                       args->pConfig, NULL);
     return SERVICE_NOMATCH;
 }
 

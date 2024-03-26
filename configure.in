@@ -1,11 +1,11 @@
 # $Id$
-AC_INIT
+AC_INIT([snort], [m4_esyscmd_s([cat ./VERSION])])
 AC_CONFIG_SRCDIR([src/snort.c])
 AC_PREREQ(2.50)
 AM_CONFIG_HEADER(config.h)
 # When changing the snort version, please also update the VERSION
 # definition in "src/win32/WIN32-Includes/config.h"
-AM_INIT_AUTOMAKE(snort,2.9.8.3)
+AM_INIT_AUTOMAKE(snort,2.9.20)
 
 NO_OPTIMIZE="no"
 
@@ -256,7 +256,7 @@ SN_CHECK_DECLS(printf fprintf syslog puts fputs fputc fopen  \
            strcasecmp strncasecmp strerror perror socket sendto   \
            vsnprintf snprintf strtoul)
 
-AC_CHECK_FUNCS([sigaction strlcpy strlcat strerror vswprintf wprintf memrchr inet_ntop])
+AC_CHECK_FUNCS([sigaction strlcpy strlcat strerror vswprintf wprintf memrchr inet_ntop gettid])
 
 AC_CHECK_FUNC([snprintf],[have_snprintf="yes"],[have_snprintf="no"])
 AM_CONDITIONAL(BUILD_SNPRINTF, test "x$have_snprintf" != "xyes")
@@ -594,11 +594,14 @@ AM_CONDITIONAL(SO_WITH_STATIC_LIB, test "x$enable_so_with_static_lib" = "xyes")
 AC_ARG_ENABLE(control_socket,
 [  --enable-control-socket  Enable the control socket],
        enable_control_socket="$enableval", enable_control_socket="no")
+os=`(uname -s)`
 if test "x$linux" != "xyes"; then
-    if test "x$enable_control_socket" = "xyes"; then
-        AC_MSG_WARN([[The control socket is only supported on Linux systems.]])
-        enable_control_socket="no"
-    fi
+    if test "$OSTYPE" != "FreeBSD" && "$os" != "FreeBSD"; then
+          if test "x$enable_control_socket" = "xyes"; then
+             AC_MSG_WARN([[The control socket is only supported on Linux or FreeBSD systems.]])
+             enable_control_socket="no"
+          fi
+     fi
 fi
 AM_CONDITIONAL(BUILD_CONTROL_SOCKET, test "x$enable_control_socket" = "xyes")
 if test "x$enable_control_socket" = "xyes"; then
@@ -609,9 +612,11 @@ AC_ARG_ENABLE(side_channel,
 [  --enable-side-channel    Enable the side channel (Experimental)],
        enable_side_channel="$enableval", enable_side_channel="no")
 if test "x$linux" != "xyes"; then
-    if test "x$enable_side_channel" = "xyes"; then
-        AC_MSG_WARN([[The side channel is only supported on Linux systems.]])
-        enable_side_channel="no"
+    if test "$OSTYPE" != "FreeBSD" && "$os" != "FreeBSD"; then
+       if test "x$enable_side_channel" = "xyes"; then
+           AC_MSG_WARN([[The side channel is only supported on Linux or FreeBSD systems.]])
+           enable_side_channel="no"
+       fi
     fi
 fi
 AM_CONDITIONAL(BUILD_SIDE_CHANNEL, test "x$enable_side_channel" = "xyes")
@@ -729,6 +734,29 @@ if test "x$have_daq_real_addresses" = "xyes"; then
         [DAQ version supports real addresses in header.])
 fi
 
+AC_CHECK_DECL([DAQ_PKT_FLAG_DECRYPTED_SSL], [have_daq_decrypted_ssl="yes"],
+[have_daq_decrypted_ssl="no"], [#include <daq_common.h>])
+if test "x$have_daq_decrypted_ssl" = "xyes"; then
+    AC_DEFINE([HAVE_DAQ_DECRYPTED_SSL],[1],
+        [DAQ version supports decrypted ssl])
+fi
+
+AC_CHECK_DECL([DAQ_PKT_FLAG_LOCALLY_ORIGINATED],
+[have_daq_locally_originated="yes"],
+[have_daq_locally_originated="no"], [#include <daq_common.h>])
+if test "x$have_daq_locally_originated" = "xyes"; then
+    AC_DEFINE([HAVE_DAQ_LOCALLY_ORIGINATED],[1],
+        [DAQ version defines flags for locally originated traffic])
+fi
+
+AC_CHECK_DECL([DAQ_PKT_FLAG_LOCALLY_DESTINED],
+[have_daq_locally_destined="yes"],
+[have_daq_locally_destined="no"], [#include <daq_common.h>])
+if test "x$have_daq_locally_destined" = "xyes"; then
+    AC_DEFINE([HAVE_DAQ_LOCALLY_DESTINED],[1],
+        [DAQ version defines flags for locally destined traffic])
+fi
+
 if test "x$ac_cv_func_daq_dp_add_dc" = "xyes"; then
 
     AC_CHECK_MEMBER([struct _DAQ_DP_key_t.sa.src_ip4],[],[DAQ_C99_STRUCT="no"],[#include <daq_common.h>])
@@ -820,6 +848,43 @@ if test "x$have_daq_queryflow" = "xyes"; then
         [DAQ version supports query flow.])
 fi
 
+AC_MSG_CHECKING([for daq data channel flags])
+AC_RUN_IFELSE(
+[AC_LANG_PROGRAM(
+[[
+#include <daq.h>
+]],
+[[
+   DAQ_Data_Channel_Params_t params;
+]])],
+[have_daq_data_channel_flags="yes"],
+[have_daq_data_channel_flags="no"])
+AC_MSG_RESULT($have_daq_data_channel_flags)
+if test "x$have_daq_data_channel_flags" = "xyes"; then
+    CCONFIGFLAGS="${CCONFIGFLAGS} -DHAVE_DAQ_DATA_CHANNEL_PARAMS"
+    AC_DEFINE([HAVE_DAQ_DATA_CHANNEL_PARAMS],[1],
+        [DAQ version supports data channel.])
+fi
+
+AC_MSG_CHECKING([for separate IP versions on pinhole endpoints])
+AC_RUN_IFELSE(
+[AC_LANG_PROGRAM(
+[[
+#include <daq.h>
+]],
+[[
+   DAQ_DP_key_t dpKey;
+   dpKey.src_af = 0;
+]])],
+[have_daq_data_channel_separate_ip_versions="yes"],
+[have_daq_data_channel_separate_ip_versions="no"])
+AC_MSG_RESULT($have_daq_data_channel_separate_ip_versions)
+if test "x$have_daq_data_channel_separate_ip_versions" = "xyes"; then
+    CCONFIGFLAGS="${CCONFIGFLAGS} -DHAVE_DAQ_DATA_CHANNEL_SEPARATE_IP_VERSIONS"
+    AC_DEFINE([HAVE_DAQ_DATA_CHANNEL_SEPARATE_IP_VERSIONS],[1],
+        [DAQ version supports separate IP versions on pinhole endpoints.])
+fi
+
 AC_MSG_CHECKING([for DAQ_VERDICT_RETRY])
 AC_RUN_IFELSE(
 [AC_LANG_PROGRAM(
@@ -836,6 +901,46 @@ AC_MSG_RESULT($have_daq_verdict_retry)
 if test "x$have_daq_verdict_retry" = "xyes"; then
     AC_DEFINE([HAVE_DAQ_VERDICT_RETRY],[1],
         [DAQ version supports DAQ_VERDICT_RETRY in DAQ_Verdict.])
+fi
+
+AC_MSG_CHECKING([for daq packet trace])
+AC_RUN_IFELSE(
+[AC_LANG_PROGRAM(
+[[
+#include <daq.h>
+]],
+[[
+   DAQ_PktHdr_t hdr;
+   hdr.flags = DAQ_PKT_FLAG_TRACE_ENABLED;
+]])],
+[have_daq_packet_trace="yes"],
+[have_daq_packet_trace="no"])
+AC_MSG_RESULT($have_daq_packet_trace)
+if test "x$have_daq_packet_trace" = "xyes"; then
+    AC_DEFINE([HAVE_DAQ_PKT_TRACE],[1],
+        [DAQ version supports packet trace.])
+else
+    echo "DAQ version doesn't support packet trace."
+fi
+
+AC_MSG_CHECKING([for daq verdict reason])
+AC_RUN_IFELSE(
+[AC_LANG_PROGRAM(
+[[
+#include <daq.h>
+]],
+[[
+   DAQ_ModFlow_t fl;
+   fl.type = DAQ_MODFLOW_TYPE_VER_REASON;
+]])],
+[have_daq_verdict_reason="yes"],
+[have_daq_verdict_reason="no"])
+AC_MSG_RESULT($have_daq_verdict_reason)
+if test "x$have_daq_verdict_reason" = "xyes"; then
+    AC_DEFINE([HAVE_DAQ_VERDICT_REASON],[1],
+        [DAQ version supports tracing verdict reason.])
+else
+    echo "DAQ version doesn't support tracing verdict reason."
 fi
 
 # any sparc platform has to have this one defined.
@@ -913,6 +1018,54 @@ AC_ARG_ENABLE(dlclose,
        enable_dlclose="$enableval", enable_dlclose="yes")
 if test "x$enable_dlclose" = "xno"; then
     AC_DEFINE([DISABLE_DLCLOSE_FOR_VALGRIND_TESTING],[1],[Don't close opened shared objects for valgrind leak testing of dynamic libraries])
+fi
+
+##################################################
+# Fedora 28+ does not have inbuilt SunRPC support#
+# in glibc and is separately availble in tirpc   #
+# package. Make sure we've got the library and   #
+# link it                                        #
+##################################################
+
+if test -f /etc/fedora-release ; then
+    DISTRO_VERSION=$(awk '{ print $3 }' /etc/fedora-release)
+    if test $DISTRO_VERSION -ge 28 ; then
+        TIRPC=""
+        AC_CHECK_LIB(tirpc,bindresvport,, TIRPC="no")
+        echo "$TIRPC"
+        if test "x$TIRPC" = "xno"; then
+            echo
+            echo " ERROR! tirpc not found, get it by running "
+            echo " yum install libtirpc-devel "
+            exit
+        fi
+        LIBS="${LIBS} -ltirpc"
+        extra_incl="-I/usr/include/tirpc"
+    fi
+fi
+
+##################################################
+# Centos 8+ does not have inbuilt SunRPC support  #
+# in glibc and is separately availble in tirpc   #
+# package. Make sure we've got the library and   #
+# link it                                        #
+##################################################
+if test -f /etc/centos-release ; then
+    LINUX_FLAVOUR=$(awk '{ print $1 }' /etc/centos-release)
+    DISTRO_VERSION=`cut -d ' ' -f 4 /etc/centos-release | cut -d '.' -f 1`
+    if [[ "$LINUX_FLAVOUR" == "CentOS" ]] && [[ $DISTRO_VERSION -ge 8 ]]; then
+        TIRPC=""
+        AC_CHECK_LIB(tirpc,bindresvport,, TIRPC="no")
+        echo "$TIRPC"
+        if test "x$TIRPC" = "xno"; then
+            echo
+            echo " ERROR! tirpc not found, get it by running "
+            echo " yum install libtirpc-devel or dnf install libtirpc-devel"
+            exit
+        fi
+        LIBS="${LIBS} -ltirpc"
+        extra_incl="-I/usr/include/tirpc"
+    fi
 fi
 
 Z_LIB=""
@@ -1132,12 +1285,64 @@ if test "x$enable_inline_init_failopen" = "xyes"; then
     LIBS="$LIBS -lpthread"
 fi
 
+AC_ARG_ENABLE(jemalloc,
+[  --enable-jemalloc Enable jemalloc allocator library],
+       enable_jemalloc="$enableval", enable_jemalloc="no")
+
+AC_ARG_WITH(jemalloc_includes,
+       [  --with-jemalloc-includes=DIR  jemalloc include directory],
+       [with_jemalloc_includes="$withval"],[with_jemalloc_includes="no"])
+
+AC_ARG_WITH(jemalloc_libraries,
+       [  --with-jemalloc-libraries=DIR jemalloc library directory],
+       [with_jemalloc_libraries="$withval"],[with_jemalloc_libraries="no"])
+
+AM_CONDITIONAL(HAVE_JEMALLOC, test "x$enable_jemalloc" = "xyes")
+if test "x$enable_jemalloc" = "xyes"; then
+
+    if test "x$with_jemalloc_includes" != "xno"; then
+        CPPFLAGS="${CPPFLAGS} -I${with_jemalloc_includes}"
+        JEMALLOC_HEADERS="yes"
+    else
+        AC_CHECK_HEADERS(jemalloc.h, JEMALLOC_HEADERS="yes", JEMALLOC_HEADERS="no")
+    fi
+
+    if test "x$with_jemalloc_libraries" != "xno"; then
+        LDFLAGS="${LDFLAGS} -L${with_jemalloc_libraries} -Wl,-rpath,'\$\$ORIGIN/libs/jemalloc',-rpath,'\$\$ORIGIN/jemalloc'"
+        JEMALLOC_LIB="yes"
+    else
+        AC_CHECK_LIB(jemalloc, malloc, JEMALLOC_LIB="yes", JEMALLOC_LIB="no")
+    fi
+
+    if test "x$JEMALLOC_LIB" != "xno"; then
+        if test "x$JEMALLOC_HEADERS" != "xno"; then
+            CPPFLAGS="$CPPFLAGS -DJEMALLOC"
+            LIBS="-ljemalloc $LIBS"
+        fi
+    fi
+
+    if test "x$JEMALLOC_LIB" = "xno"; then
+        echo
+        echo "   ERROR!  jemalloc library not found."
+        echo "   Go get it from http://jemalloc.net/ ." 1>&2; 
+        exit 1; 
+    fi 
+
+    if test "x$JEMALLOC_HEADERS" = "xno"; then
+        echo
+        echo "   ERROR!  jemalloc header not found."
+        echo "   Go get it from http://jemalloc.net/ ." 1>&2; 
+        exit 1; 
+    fi 
+fi 
+
 AC_ARG_ENABLE(pthread,
 [  --disable-pthread        Disable pthread support],
        enable_pthread="$enableval", enable_pthread="yes")
 
 if test "x$enable_pthread" = "xyes"; then
     LIBS="$LIBS -lpthread"
+    AC_CHECK_FUNCS([pthread_tryjoin_np])
 fi
 
 AC_ARG_ENABLE(debug-msgs,
@@ -1237,6 +1442,7 @@ AC_ARG_ENABLE(reload-error-restart,
 [  --disable-reload-error-restart   Disable restarting on reload error],
        enable_reload_error_restart="$enableval", enable_reload_error_restart="yes")
 
+AM_CONDITIONAL(BUILD_SNORT_RELOAD, test "x$enable_reload" = "xyes")
 if test "x$enable_reload" = "xyes"; then
     if test "x$enable_reload_error_restart" = "xyes"; then
         CONFIGFLAGS="$CONFIGFLAGS -DSNORT_RELOAD"
@@ -1255,6 +1461,16 @@ AM_CONDITIONAL(BUILD_HA, test "x$enable_ha" = "xyes")
 if test "x$enable_ha" = "xyes"; then
     CONFIGFLAGS="$CONFIGFLAGS -DENABLE_HA"
 fi
+
+AC_ARG_ENABLE(buffer-dump,
+[  --enable-buffer-dump    Enable Buffer dump utility to dump packet buffers],
+       enable_buffer_dump="$enableval", enable_buffer_dump="no")
+
+AM_CONDITIONAL(BUILD_BUFFER_DUMP, test "x$enable_buffer_dump" = "xyes")
+if test "x$enable_buffer_dump" = "xyes"; then
+    CONFIGFLAGS="$CONFIGFLAGS -DDUMP_BUFFER"
+fi
+
 
 # define NO_NON_ETHER_DECODERS by default
 AC_ARG_ENABLE(non-ether-decoders,
@@ -1321,18 +1537,47 @@ AC_ARG_WITH(intel_soft_cpm_libraries,
 
 if test "x$with_intel_soft_cpm_includes" != "xno"; then
     enable_intel_soft_cpm="yes"
-    CPPFLAGS="${CPPFLAGS} -I${with_intel_soft_cpm_includes}"
 fi
 
 if test "x$with_intel_soft_cpm_libraries" != "xno"; then
     enable_intel_soft_cpm="yes"
-    LDFLAGS="${LDFLAGS} -L${with_intel_soft_cpm_libraries}"
-    LIBS="${LIBS} -lpm"
 fi
 
 AM_CONDITIONAL(HAVE_INTEL_SOFT_CPM, test "x$enable_intel_soft_cpm" = "xyes")
 if test "x$enable_intel_soft_cpm" = "xyes"; then
-    CPPFLAGS="${CPPFLAGS} -DINTEL_SOFT_CPM"
+
+    if test "x$with_intel_soft_cpm_includes" != "xno"; then
+        CPPFLAGS="${CPPFLAGS} -I${with_intel_soft_cpm_includes}"
+        INTEL_SOFT_CPM_HEADERS="yes"
+    else
+        AC_CHECK_HEADERS(cpa.h, INTEL_SOFT_CPM_HEADERS="yes", INTEL_SOFT_CPM_HEADERS="no")
+    fi
+
+    if test "x$with_intel_soft_cpm_libraries" != "xno"; then
+        LDFLAGS="${LDFLAGS} -L${with_intel_soft_cpm_libraries}"
+        INTEL_SOFT_CPM_LIB="yes"
+    else
+        AC_CHECK_LIB(pm, cpaPmPdbAddPattern, INTEL_SOFT_CPM_LIB="yes", INTEL_SOFT_CPM_LIB="no")
+    fi
+
+    if test "x$INTEL_SOFT_CPM_LIB" != "xno"; then
+        if test "x$INTEL_SOFT_CPM_HEADERS" != "xno"; then
+            CPPFLAGS="$CPPFLAGS -DINTEL_SOFT_CPM"
+            LIBS="$LIBS -lpm"
+        fi
+    fi
+
+    if test "x$INTEL_SOFT_CPM_HEADERS" = "xno"; then
+        echo
+        echo "   ERROR!  intel-soft-cpm header not found." 1>&2; 
+        exit 1; 
+    fi
+
+    if test "x$with_intel_soft_cpm_libraries" = "xno"; then
+        echo
+        echo "   ERROR!  intel-soft-cpm library not found." 1>&2; 
+        exit 1;
+    fi
 fi
 
 AC_ARG_ENABLE(shared_rep,
@@ -1381,13 +1626,13 @@ export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
 
 ###### Start OpenAppId
 AC_ARG_ENABLE([open-appid],
-    [AS_HELP_STRING([--enable-open-appid ],[Build with application id support. (Experimental)])],
-    [enable_open_appid=$enableval],[enable_open_appid=no])
+    [AS_HELP_STRING([--disable-open-appid],[Disable application identification support.])],
+    [enable_open_appid="$enableval"],[enable_open_appid="yes"])
 
-AM_CONDITIONAL([FEAT_OPEN_APPID],[test x$enable_open_appid = xyes])
+AM_CONDITIONAL([FEAT_OPEN_APPID],[test "x$enable_open_appid" = "xyes"])
 
 if test "x$enable_open_appid" = "xyes"; then
-    AC_DEFINE([FEAT_OPEN_APPID],[1],[Build with application id support. (Experimental)])
+    AC_DEFINE([FEAT_OPEN_APPID],[1],[Build with application identification support.])
     CONFIGFLAGS="$CONFIGFLAGS -DFEAT_OPEN_APPID"
 
     PKG_CHECK_MODULES(luajit, luajit,LLUAJIT="yes",LLUAJIT="no")
@@ -1403,8 +1648,8 @@ if test "x$enable_open_appid" = "xyes"; then
 
     else
         echo
-        echo "   ERROR!  LuaJIT library not found. For better performance, go get it from"
-        echo "   http://www.luajit.org/."
+        echo "   ERROR!  LuaJIT library not found. Go get it from http://www.luajit.org/ (or)"
+        echo "   Try compiling without openAppId using '--disable-open-appid'"
         AC_MSG_ERROR("Fatal!")
     fi
 
@@ -1412,12 +1657,59 @@ if test "x$enable_open_appid" = "xyes"; then
     if test "x$openssl_x509" = "xno"; then
         echo
         echo "   ERROR!  openssl/x509.h or openssl library not found." 
+        echo "   Try compiling without openAppId using '--disable-open-appid'"
         AC_MSG_ERROR("Fatal!")
     fi
 fi
 
 ###### End OpenAppId
-# let's make some fixes..
+
+#include luajit libs
+
+AC_ARG_WITH(libluajit_includes,
+       [  --with-libluajit-includes=DIR    libluajit include directory],
+       [with_libluajit_includes="$withval"],[with_libluajit_includes="no"])
+
+AC_ARG_WITH(libluajit_libraries,
+       [  --with-libluajit-libraries=DIR   libluajit library directory],
+       [with_libluajit_libraries="$withval"],[with_libluajit_libraries="no"])
+
+if test "x$with_libluajit_includes" != "xno"; then
+    CPPFLAGS="${CPPFLAGS} -I${with_libluajit_includes}"
+fi
+
+if test "x$with_libluajit_libraries" != "xno"; then
+    LDFLAGS="${LDFLAGS}  -L${with_libluajit_libraries}"
+fi
+
+#include nghttp2 libs
+
+AC_ARG_WITH(libnghttp2_includes,
+       [  --with-libnghttp2-includes=DIR    libnghttp2 include directory],
+       [with_libnghttp2_includes="$withval"],[with_libnghttp2_includes="no"])
+
+AC_ARG_WITH(libnghttp2_libraries,
+       [  --with-libnghttp2-libraries=DIR   libnghttp2 library directory],
+       [with_libnghttp2_libraries="$withval"],[with_libnghttp2_libraries="no"])
+
+if test "x$with_libnghttp2_includes" != "xno"; then
+    CPPFLAGS="${CPPFLAGS} -I${with_libnghttp2_includes}"
+    ICONFIGFLAGS="${ICONFIGFLAGS} -I${with_libnghttp2_includes}"
+fi
+
+if test "x$with_libnghttp2_libraries" != "xno"; then
+    LDFLAGS="${LDFLAGS}  -L${with_libnghttp2_libraries}"
+fi
+
+# Verify that we have the library
+NGHTTP_L=""
+AC_CHECK_LIB(nghttp2, nghttp2_option_new, ,NGHTTP_L="no")
+if test "x$NGHTTP_L" = "xno"; then
+    echo
+    echo "   Libnghttp2 library not found."
+    echo "   Get it from https://nghttp2.org/"
+    echo
+fi
 
 CFLAGS="${CFLAGS} ${CCONFIGFLAGS}"
 CFLAGS=`echo $CFLAGS | sed -e 's/-I\/usr\/include //g'`
@@ -1510,10 +1802,26 @@ if test "$ICC" = "no"; then
     CFLAGS="$CFLAGS -Wall"
 fi
 
+AC_MSG_CHECKING(for SFLINUX)
+if test -f /etc/os.conf; then
+    CFLAGS="${CFLAGS} -DSFLINUX"
+    AC_MSG_RESULT(yes)
+else 
+    AC_MSG_RESULT(no)
+fi
+
+AC_MSG_CHECKING(for WRLINUX)
+if test -f /etc/os-release && grep -q "wrlinux" /etc/os-release; then
+    CFLAGS="${CFLAGS} -DWRLINUX"
+    AC_MSG_RESULT(yes)
+else
+    AC_MSG_RESULT(no)
+fi
+
 echo $CFLAGS > cflags.out
 echo $CPPFLAGS > cppflags.out
 
-INCLUDES='-I$(top_srcdir) -I$(top_srcdir)/src -I$(top_srcdir)/src/sfutil $(extra_incl) -I$(top_srcdir)/src/output-plugins -I$(top_srcdir)/src/detection-plugins -I$(top_srcdir)/src/dynamic-plugins -I$(top_srcdir)/src/preprocessors -I$(top_srcdir)/src/preprocessors/portscan -I$(top_srcdir)/src/preprocessors/HttpInspect/include -I$(top_srcdir)/src/preprocessors/Session -I$(top_srcdir)/src/preprocessors/Stream6 -I$(top_srcdir)/src/target-based -I$(top_srcdir)/src/control -I$(top_srcdir)/src/file-process -I$(top_srcdir)/src/file-process/libs -I$(top_srcdir)/src/side-channel -I$(top_srcdir)/src/side-channel/plugins'
+INCLUDES='-I$(top_srcdir) -I$(top_srcdir)/src -I$(top_srcdir)/src/sfutil $(extra_incl) -I$(top_srcdir)/src/output-plugins -I$(top_srcdir)/src/detection-plugins -I$(top_srcdir)/src/dynamic-plugins -I$(top_srcdir)/src/preprocessors -I$(top_srcdir)/src/preprocessors/portscan -I$(top_srcdir)/src/preprocessors/HttpInspect/include -I$(top_srcdir)/src/preprocessors/Session -I$(top_srcdir)/src/preprocessors/Stream6 -I$(top_srcdir)/src/target-based -I$(top_srcdir)/src/control -I$(top_srcdir)/src/file-process -I$(top_srcdir)/src/file-process/libs -I$(top_srcdir)/src/side-channel -I$(top_srcdir)/src/side-channel/plugins -I$(top_srcdir)/src/reload-adjust'
 
 AC_SUBST(INCLUDES)
 AC_SUBST(CONFIGFLAGS)
@@ -1558,6 +1866,7 @@ src/dynamic-preprocessors/dns/Makefile \
 src/dynamic-preprocessors/ssl/Makefile \
 src/dynamic-preprocessors/modbus/Makefile \
 src/dynamic-preprocessors/dnp3/Makefile \
+src/dynamic-preprocessors/s7commplus/Makefile \
 src/dynamic-preprocessors/file/Makefile \
 src/dynamic-preprocessors/appid/Makefile \
 src/dynamic-output/Makefile \
@@ -1595,6 +1904,7 @@ tools/u2spewfoo/Makefile \
 tools/u2openappid/Makefile \
 tools/u2streamer/Makefile \
 tools/file_server/Makefile \
-src/win32/Makefile])
+src/win32/Makefile \
+src/reload-adjust/Makefile])
 
 AC_OUTPUT

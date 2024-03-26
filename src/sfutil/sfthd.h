@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -236,7 +236,8 @@ ThresholdObjects * sfthd_objs_new(void);
 void sfthd_objs_free(ThresholdObjects *);
 
 int sfthd_test_rule(SFXHASH *rule_hash, THD_NODE *sfthd_node,
-                    sfaddr_t* sip, sfaddr_t* dip, long curtime);
+                    sfaddr_t* sip, sfaddr_t* dip, long curtime,
+                    detection_option_eval_data_t *eval_data);
 
 void * sfthd_create_rule_threshold(
    int id,
@@ -281,7 +282,8 @@ int sfthd_test_local(
     THD_NODE   * sfthd_node,
     sfaddr_t*    sip,
     sfaddr_t*    dip,
-    time_t       curtime );
+    time_t       curtime,
+    detection_option_eval_data_t *eval_data);
 
 #ifdef THD_DEBUG
 int sfthd_show_objects( THD_STRUCT * thd );

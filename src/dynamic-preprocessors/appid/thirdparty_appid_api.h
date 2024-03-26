@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -38,7 +38,12 @@ struct ThirdPartyConfig
     unsigned ftp_userid_disabled:1;
     unsigned chp_body_collection_disabled:1;
     unsigned tp_allow_probes:1;
-    char     appid_tp_dir[TP_PATH_MAX];
+    unsigned http_upgrade_reporting_enabled:1;
+    char     tp_config_path[TP_PATH_MAX];
+    int      numXffFields;
+    char**   xffFields;
+    int      oldNumXffFields;
+    char**   oldXffFields;
 };
 
 struct ThirdPartyUtils
@@ -49,6 +54,7 @@ struct ThirdPartyUtils
 
 typedef int (*ThirdPartyAppIDModInit)(struct ThirdPartyConfig* config,
                                       struct ThirdPartyUtils* utils);
+typedef int (*ThirdPartyAppIDModReconfigure)(struct ThirdPartyConfig* config);
 typedef int (*ThirdPartyAppIDModFini)(void);
 typedef void* (*ThirdPartyAppIDSessionCreate)(void);
 typedef int (*ThirdPartyAppIDSessionDelete)(void* tpsession, int just_reset_state);
@@ -76,6 +82,7 @@ typedef struct _ThirdPartyAppIDModule
     const uint32_t api_version;
     const char* module_name;
     ThirdPartyAppIDModInit init;
+    ThirdPartyAppIDModReconfigure reconfigure;
     ThirdPartyAppIDModFini fini;
     ThirdPartyAppIDSessionCreate session_create;
     ThirdPartyAppIDSessionDelete session_delete;

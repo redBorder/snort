@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -50,6 +50,7 @@
 #include "hi_return_codes.h"
 #include "hi_cmd_lookup.h"
 #include "sfrt.h"
+#include "memory_stats.h"
 
 static void serverConfFree(void *pData);
 
@@ -288,19 +289,34 @@ void  hi_ui_server_lookup_destroy(SERVER_LOOKUP *ServerLookup)
 static void serverConfFree(void *pData)
 {
     HTTPINSPECT_CONF *ServerConf = (HTTPINSPECT_CONF *)pData;
+    int i;
 
     if (ServerConf)
     {
         ServerConf->referenceCount--;
         if (ServerConf->referenceCount == 0)
         {
+            for (i = 0; i < HTTP_MAX_XFF_FIELDS; i++)
+            {
+                if (ServerConf->xff_headers[i] != NULL)
+                {
+                    SnortPreprocFree(ServerConf->xff_headers[i], 
+                         sizeof(*(ServerConf->xff_headers[i])), 
+                         PP_HTTPINSPECT, PP_MEM_CATEGORY_CONFIG);
+                    ServerConf->xff_headers[i] = NULL;
+                }
+            }
+
             http_cmd_lookup_cleanup(&ServerConf->cmd_lookup);
             if (ServerConf->iis_unicode_map_filename)
             {
-                free(ServerConf->iis_unicode_map_filename);
+                SnortPreprocFree(ServerConf->iis_unicode_map_filename,
+                     sizeof(*(ServerConf->iis_unicode_map_filename)), 
+                     PP_HTTPINSPECT, PP_MEM_CATEGORY_CONFIG);
             }
 
-            free(ServerConf);
+            SnortPreprocFree(ServerConf, sizeof(HTTPINSPECT_CONF), 
+                 PP_HTTPINSPECT, PP_MEM_CATEGORY_CONFIG);
         }
     }
 }

@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -21,12 +21,14 @@
 #ifndef _THIRDPARTY_APPID_UTILS_H_
 #define _THIRDPARTY_APPID_UTILS_H_
 
+#include "appIdConfig.h"
 #include "thirdparty_appid_api.h"
 #include "appIdConfig.h"
 
 extern ThirdPartyAppIDModule* thirdparty_appid_module;    //NULL means no 3rd party AppID module
 
 void ThirdPartyAppIDInit(struct AppidStaticConfig *appidStaticConfig);
+void ThirdPartyAppIDReconfigure(void);
 void ThirdPartyAppIDFini(void);
 
 #endif

@@ -1,5 +1,5 @@
 /*
- ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ ** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2013-2013 Sourcefire, Inc.
  **
  ** This program is free software; you can redistribute it and/or modify
@@ -51,7 +51,6 @@
 #include "sfPolicy.h"
 
 int sockfd = 0;
-int using_s3 = 0;
 
 /*Use circular buffer to synchronize writer/reader threads*/
 static CircularBuffer* file_list;
@@ -70,16 +69,6 @@ uint64_t capture_disk_avaiable; /* bytes available */
 static pthread_cond_t file_available_cond  = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t file_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-#ifdef HAVE_MIME_DROP
-typedef struct {
-    int* data;
-    int capacity;
-    int size;
-} MimeBlacklist;
-
-MimeBlacklist mime_blacklist;
-#endif
-
 typedef struct _FILE_MESSAGE_HEADER
 {
     /* All values must be in network byte order */
@@ -93,34 +82,16 @@ typedef struct _FILE_MESSAGE_HEADER
 #define FILE_HEADER_VERSION   0x0001
 #define FILE_HEADER_DATA      0x0009
 
-#ifdef HAVE_S3FILE
-#define KAFKA_MESSAGE_LEN 1024
-#define S3_PATH "mdata/input"
-#endif
-
 static int file_agent_save_file (FileInfo *, char *);
 static int file_agent_send_file (FileInfo *);
-#ifdef HAVE_S3FILE
-static int file_agent_send_s3(const FileInfo *,struct s3_info*);
-#endif
 static FileInfo* file_agent_get_file(void);
 static FileInfo *file_agent_finish_file(void);
 static File_Verdict file_agent_type_callback(void*, void*, uint32_t, bool,uint32_t);
 static File_Verdict file_agent_signature_callback(void*, void*, uint8_t*,
-        uint64_t, FileState *, bool, uint32_t);
-#ifdef HAVE_MIME_DROP
-static int file_agent_should_drop_file_mime(uint32_t type_id);
-static void parseMimeBlacklist(const char* str, MimeBlacklist* arr);
-static void freeMimeArray(MimeBlacklist* arr);
-static void addToMimeBlacklistArray(MimeBlacklist* arr, int value);
-static void initMimeBlacklist(MimeBlacklist* arr);
-#endif
+        uint64_t, FileState *, bool, uint32_t, bool);
 static int file_agent_queue_file(void*, void *);
 static int file_agent_init_socket(char *hostname, int portno);
 
-#ifdef HAVE_MIME_DROP
-bool should_drop = false;
-#endif
 /* Initialize sockets for file transfer to other host
  *
  * Args:
@@ -195,13 +166,8 @@ static void file_agent_send_data(int socket_fd, const uint8_t *resp,
 }
 
 /* Process all the files in the file queue*/
-#ifdef HAVE_S3FILE
-static inline void file_agent_process_files(CircularBuffer *file_list,
-        char *capture_dir, char *hostname, struct s3_info *s3)
-#else
 static inline void file_agent_process_files(CircularBuffer *file_list,
         char *capture_dir, char *hostname)
-#endif
 {
     while (!cbuffer_is_empty(file_list))
     {
@@ -216,12 +182,6 @@ static inline void file_agent_process_files(CircularBuffer *file_list,
             /* Send to other host */
             if (hostname)
                 file_agent_send_file(file);
-#ifdef HAVE_S3FILE
-            /* Send to S3 */
-            if (s3 && s3->cluster) {
-                file_agent_send_s3(file,s3);
-            }
-#endif
             /* Default, memory only */
         }
 
@@ -230,7 +190,7 @@ static inline void file_agent_process_files(CircularBuffer *file_list,
         if (file)
         {
             _dpd.fileAPI->release_file(file->file_mem);
-            free(file);
+            _dpd.snortFree(file, sizeof(FileInfo), PP_FILE_INSPECT, PP_MEM_CATEGORY_SESSION);
         }
     }
 }
@@ -242,12 +202,6 @@ static void* FileCaptureThread(void *arg)
     FileInspectConf* conf = (FileInspectConf*) arg;
     char *capture_dir = NULL;
     char *hostname = NULL;
-#ifdef HAVE_S3FILE
-    struct s3_info s3 = {
-        .bucket = NULL, .cluster = NULL,
-        .access_key = NULL, .secret_key = NULL,
-    };
-#endif
 
 #if defined(LINUX) && defined(SYS_gettid)
     capture_thread_pid =  syscall(SYS_gettid);
@@ -263,24 +217,10 @@ static void* FileCaptureThread(void *arg)
         capture_dir = strdup(conf->capture_dir);
     if (conf->hostname)
         hostname = strdup(conf->hostname);
-#ifdef HAVE_S3FILE
-    if (conf->s3.bucket)
-        s3.bucket = strdup(conf->s3.bucket);
-    if (conf->s3.cluster)
-        s3.cluster = strdup(conf->s3.cluster);
-    if (conf->s3.access_key)
-        s3.access_key = strdup(conf->s3.access_key);
-    if (conf->s3.secret_key)
-        s3.secret_key = strdup(conf->s3.secret_key);
-#endif
 
     while(1)
     {
-#ifdef HAVE_S3FILE
-        file_agent_process_files(file_list, capture_dir, hostname, &s3);
-#else
         file_agent_process_files(file_list, capture_dir, hostname);
-#endif
 
         if (stop_file_capturing)
             break;
@@ -295,21 +235,11 @@ static void* FileCaptureThread(void *arg)
         free(capture_dir);
     if (conf->hostname)
         free(hostname);
-#ifdef HAVE_S3FILE
-    if (conf->s3.bucket)
-        free(s3.bucket);
-    if (conf->s3.cluster)
-        free(s3.cluster);
-    if (conf->s3.access_key)
-        free(s3.access_key);
-    if (conf->s3.secret_key)
-        free(s3.secret_key);
-#endif
     capture_thread_running = false;
     return NULL;
 }
 
-void file_agent_init(void *config)
+void file_agent_init(struct _SnortConfig *sc, void *config)
 {
     FileInspectConf* conf = (FileInspectConf *)config;
 
@@ -317,41 +247,25 @@ void file_agent_init(void *config)
 
     if (conf->file_type_enabled)
     {
-        _dpd.fileAPI->enable_file_type(file_agent_type_callback);
+        _dpd.fileAPI->enable_file_type(sc, file_agent_type_callback);
         file_type_enabled = true;
     }
     if (conf->file_signature_enabled)
     {
-        _dpd.fileAPI->enable_file_signature(file_agent_signature_callback);
+        _dpd.fileAPI->enable_file_signature(sc, file_agent_signature_callback);
         file_signature_enabled = true;
     }
 
     if (conf->file_capture_enabled)
     {
-        _dpd.fileAPI->enable_file_capture(file_agent_signature_callback);
+        _dpd.fileAPI->enable_file_capture(sc, file_agent_signature_callback);
         file_capture_enabled = true;
     }
-#ifdef HAVE_MIME_DROP
-    if(conf->mime.file_capture_enable_drop){
-        should_drop = true;
-    }
-#endif
 
-#ifdef HAVE_EXTRADATA_FILE
-    if (conf->file_extradata_enabled)
-        _dpd.fileAPI->enable_file_extradata();
-#endif
-
-    if (conf->hostname)
+    if (!sockfd && conf->hostname)
     {
         file_agent_init_socket(conf->hostname, conf->portno);
     }
-#ifdef HAVE_MIME_DROP
-    _dpd.logMsg("File inspect: Parsing mime list\n");
-    initMimeBlacklist(&mime_blacklist);
-    parseMimeBlacklist(conf->mime.file_capture_mime_blacklist, &mime_blacklist);
-#endif
-
 }
 
 /* Add another thread for file capture to disk or network
@@ -378,27 +292,6 @@ void file_agent_thread_init(struct _SnortConfig *sc, void *config)
     sigaddset(&mask, SIGVTALRM);
 
     pthread_sigmask(SIG_SETMASK, &mask, NULL);
-
-#ifdef HAVE_S3FILE
-    if( conf->s3.cluster && 
-        (conf->s3.bucket== NULL || conf->s3.access_key == NULL
-            || conf->s3.secret_key == NULL) ) {
-        FILE_FATAL_ERROR("%s(%d) S3 cluster specified but no %s specified",
-            conf->s3.bucket == NULL     ? "bucket" :
-            conf->s3.access_key == NULL ? "access key" : "secret key");
-    }
-
-    if ( conf->s3.cluster ) {
-        const S3Status init_rc = S3_initialize("s3", S3_INIT_ALL,
-            conf->s3.cluster);
-        if (init_rc != S3StatusOK) {
-            FILE_FATAL_ERROR("Can't initialize libs3: %s",
-                S3_get_status_name(init_rc));
-        }
-
-        using_s3 = 1;
-    }
-#endif
 
     file_list = cbuffer_init(conf->file_capture_queue_size);
 
@@ -440,7 +333,7 @@ static int file_agent_queue_file(void* ssnptr, void *file_mem)
         return -1;
     }
 
-    finfo = calloc(1, sizeof (*finfo));
+    finfo = _dpd.snortAlloc(1, sizeof(FileInfo), PP_FILE_INSPECT, PP_MEM_CATEGORY_SESSION);
 
     if (!finfo)
     {
@@ -451,7 +344,7 @@ static int file_agent_queue_file(void* ssnptr, void *file_mem)
 
     if (!sha256)
     {
-        free(finfo);
+        _dpd.snortFree(finfo, sizeof(FileInfo), PP_FILE_INSPECT, PP_MEM_CATEGORY_SESSION);
         return -1;
     }
 
@@ -461,10 +354,10 @@ static int file_agent_queue_file(void* ssnptr, void *file_mem)
 
     pthread_mutex_lock(&file_list_mutex);
 
-    if(cbuffer_write(file_list, finfo))
+    if (cbuffer_write(file_list, finfo)) 
     {
         pthread_mutex_unlock(&file_list_mutex);
-        free(finfo);
+        _dpd.snortFree(finfo, sizeof(FileInfo), PP_FILE_INSPECT, PP_MEM_CATEGORY_SESSION);
         return -1;
     }
 
@@ -571,7 +464,7 @@ static int file_agent_save_file(FileInfo *file,  char *capture_dir)
 
     if (filename_len >= FILE_NAME_LEN )
     {
-        free(file);
+        _dpd.snortFree(file, sizeof(FileInfo), PP_FILE_INSPECT, PP_MEM_CATEGORY_SESSION);
         return -1;
     }
 
@@ -691,191 +584,17 @@ static int file_agent_send_file(FileInfo *file)
     return 0;
 }
 
-#ifdef HAVE_S3FILE
-struct s3_transference {
-    S3Status status;
-    
-    uint8_t *cur_buf;
-    int cur_buf_size;
-    int cur_buf_remaining;
-
-    void *file_mem;
-    char err[4096];
-};
-
-static size_t min_size(size_t a,size_t b){
-    return a>b?b:a;
-}
-
-static void responseCompleteCallback(S3Status status,
-    const S3ErrorDetails *error,void *callbackData) {
-
-    struct s3_transference *transference = (struct s3_transference *)callbackData;
-    transference->status = status;
-
-    int len = 0;
-    if (error && error->message) {
-        len += snprintf(&(transference->err[len]), sizeof(transference->err) - len,
-                        "  Message: %s\n", error->message);
-    }
-    if (error && error->resource) {
-        len += snprintf(&(transference->err[len]), sizeof(transference->err) - len,
-                        "  Resource: %s\n", error->resource);
-    }
-    if (error && error->furtherDetails) {
-        len += snprintf(&(transference->err[len]), sizeof(transference->err) - len,
-                        "  Further Details: %s\n", error->furtherDetails);
-    }
-    if (error && error->extraDetailsCount) {
-        len += snprintf(&(transference->err[len]), sizeof(transference->err) - len,
-                        "%s", "  Extra Details:\n");
-        int i;
-        for (i = 0; i < error->extraDetailsCount; i++) {
-            len += snprintf(&(transference->err[len]), 
-                            sizeof(transference->err) - len, "    %s: %s\n", 
-                            error->extraDetails[i].name,
-                            error->extraDetails[i].value);
-        }
-    }
-
-}
-
-static int putObjectDataCallback(int bufferSize, char *buffer, 
-                                 void *callbackData) {
-    struct s3_transference *transference = callbackData;
-
-    if(!transference->cur_buf && transference->file_mem)
-    {
-        /* First call, need to load first file_mem */
-        transference->file_mem = _dpd.fileAPI->read_file(
-                        transference->file_mem, 
-                        &transference->cur_buf, &transference->cur_buf_size);
-        transference->cur_buf_remaining = transference->cur_buf_size;
-    }
-
-    if(!transference->cur_buf && !transference->file_mem)
-    {
-        /* Last call, returning 0 to indicate all data transferred */
-        return 0;
-    }
-
-    const size_t to_transfer = min_size(bufferSize,
-                                              transference->cur_buf_remaining);
-    const uint8_t *cursor = transference->cur_buf 
-              + (transference->cur_buf_size - transference->cur_buf_remaining);
-    memcpy(buffer,cursor,to_transfer);
-    transference->cur_buf_remaining -= to_transfer;
-
-    /* Need to load next file info? */
-    if(transference->cur_buf_remaining == 0)
-    {
-        if(transference->file_mem)
-        {
-            transference->file_mem = _dpd.fileAPI->read_file(
-                        transference->file_mem, 
-                        &transference->cur_buf, &transference->cur_buf_size);
-            transference->cur_buf_remaining = transference->cur_buf_size;
-        }
-        else
-        {
-            transference->cur_buf = NULL;
-            transference->cur_buf_size = 0;
-        }
-    }
-
-    return to_transfer;
-}
-
-static void str_tolower(char *str,size_t str_len) {
-    for(;*str;++str)
-        *str = tolower(*str);
-}
-
-static int file_agent_send_s3(const FileInfo *file,struct s3_info *s3) {
-    char sha256[SHA256_HASH_SIZE];
-    char fsha[FILE_NAME_LEN];
-    char path[FILE_NAME_LEN];
-
-    struct s3_transference transference;
-    memset(&transference,0,sizeof(transference));
-    transference.file_mem = file->file_mem;
-
-    memcpy(sha256,file->sha256,sizeof(sha256));
-    sha_to_str(sha256, fsha, sizeof(fsha));
-    str_tolower(fsha,sizeof(fsha));
-    snprintf(path,sizeof(path),S3_PATH "/%s",fsha);
-
-    S3BucketContext bucketContext = {
-        0,
-        s3->bucket,
-        S3ProtocolHTTPS,
-        S3UriStylePath /* or S3UriStyleVirtualHost */,
-        s3->access_key,
-        s3->secret_key
-    };
-
-    S3PutProperties putProperties = {
-        NULL /* contentType */,
-        NULL /* md5 */,
-        NULL /* cacheControl */,
-        NULL /* contentDispositionFilename */,
-        NULL /* contentEncoding */,
-        0    /* expires */,
-        S3CannedAclPrivate /* cannedAcl */,
-        0    /* metaPropertiesCount */,
-        NULL /* metaPropertie */
-    };
-
-    S3PutObjectHandler putObjectHandler = {
-        { NULL /* responsePropertiesCallback */, &responseCompleteCallback },
-        &putObjectDataCallback
-    };
-
-    //do {
-        S3_put_object(&bucketContext, path, file->file_size, &putProperties,
-                      0, 0, &putObjectHandler, &transference );
-    //}while(S3_status_is_retryable(transference.status));
-
-    if(transference.status != S3StatusOK)
-    {
-        /* Extracted directly from S3 example */
-        if (transference.status < S3StatusErrorAccessDenied)
-        {
-            _dpd.logMsg("File inspect: can't upload a file to S3: %s\n",
-                S3_get_status_name(transference.status));
-        }
-        else 
-        {
-            _dpd.logMsg("File inspect: can't upload a file to S3: %s,%s\n",
-                S3_get_status_name(transference.status),transference.err);
-        }
-
-        file_inspect_stats.files_to_s3_failures++;
-    }
-    else
-    {
-        file_inspect_stats.files_to_s3++;
-    }
-    
-    return 0;
-}
-#endif
-
 /* Close file agent
  * 1) stop capture thread: waiting all files queued to be captured
  * 2) free file queue
- * 3) free sha256 cache
- * 4) close socket
- * 5) close s3
+ * 3) close socket
  */
 void file_agent_close(void)
 {
     int rval;
 
     stop_file_capturing = true;
-#ifdef HAVE_MIME_DROP
-    freeMimeArray(&mime_blacklist);
-#endif
+
     pthread_mutex_lock(&file_list_mutex);
     pthread_cond_signal(&file_available_cond);
     pthread_mutex_unlock(&file_list_mutex);
@@ -890,16 +609,27 @@ void file_agent_close(void)
         sleep(1);
 
     cbuffer_free(file_list);
-    
+
     if (sockfd)
     {
         close(sockfd);
         sockfd = 0;
     }
-#ifdef HAVE_S3FILE
-    if ( using_s3 )
-        S3_deinitialize();
-#endif
+}
+
+/*
+ * File type callback when file type is identified
+ *
+ * For file capture or file signature, FILE_VERDICT_PENDING must be returned
+ */
+static File_Verdict file_agent_type_callback(void* p, void* ssnptr,
+        uint32_t file_type_id, bool upload, uint32_t file_id)
+{
+    file_inspect_stats.file_types_total++;
+    if (file_signature_enabled || file_capture_enabled)
+        return FILE_VERDICT_UNKNOWN;
+    else
+        return FILE_VERDICT_LOG;
 }
 
 static inline int file_agent_capture_error(FileCaptureState capture_state)
@@ -929,135 +659,26 @@ static inline int file_agent_capture_error(FileCaptureState capture_state)
 }
 
 /*
- * File type callback when file type is identified
- *
- * For file capture or file signature, FILE_VERDICT_PENDING must be returned
- */
-static File_Verdict file_agent_type_callback(void* p, void* ssnptr,
-        uint32_t file_type_id, bool upload, uint32_t file_id)
-{
-    file_inspect_stats.file_types_total++;
-    #ifdef HAVE_MIME_DROP
-        _dpd.logMsg("File inspect: file type identified %d\n", file_type_id);
-        if(file_agent_should_drop_file_mime(file_type_id)){
-            _dpd.logMsg("File inspect: File Type Mime -> blacklist -> identified -> %d -> drop\n", file_type_id);
-            return FILE_VERDICT_BLOCK;
-        } else    
-    #endif
-        if (file_signature_enabled || file_capture_enabled){
-            _dpd.logMsg("File inspect: verdict -> pending...\n");
-            return FILE_VERDICT_PENDING;
-        } else {
-            return FILE_VERDICT_LOG;
-        }
-}
-
-#ifdef HAVE_MIME_DROP
-/*
-    Init mime blacklist array
-*/
-static void initMimeBlacklist(MimeBlacklist* arr) {
-    arr->data = NULL;
-    arr->capacity = 0;
-    arr->size = 0;
-}
-
-/*
-    Add type_id ids to the mimeblacklist array
-*/
-static void addToMimeBlacklistArray(MimeBlacklist* arr, int value) {
-    if (arr->size >= arr->capacity) {
-        arr->capacity = (arr->capacity == 0) ? 1 : arr->capacity * 2;
-        _dpd.logMsg("File inspect, re-allocating memory for new data.\n");
-        int* new_data = realloc(arr->data, arr->capacity * sizeof(int));
-        if (new_data == NULL) {
-            _dpd.logMsg("File inspect error: Failed to allocate memory for MimeBlacklist array\n");
-            exit(EXIT_FAILURE);
-        }
-        arr->data = new_data;
-    }
-    _dpd.logMsg("File inspect: MIME id loaded into mem.\n");
-    arr->data[arr->size++] = value;
-}
-
-/*
-    Free memory of the mimeblacklist array
-*/
-static void freeMimeArray(MimeBlacklist* arr) {
-    free(arr->data);
-    arr->data = NULL;
-    arr->capacity = 0;
-    arr->size = 0;
-}
-
-/*
-    Parse data of mimeblacklist array
-*/
-static void parseMimeBlacklist(const char* str, MimeBlacklist* arr) {
-    char* copy = strdup(str);
-    if (copy == NULL) {
-        // Handle strdup failure, e.g., return an error code or exit the program.
-        // In this example, we exit the program.
-        _dpd.logMsg("File inspect error: Failed to duplicate string\n");
-        exit(EXIT_FAILURE);
-    }
-
-    char* token = strtok(copy, "[|]");
-    while (token != NULL) {
-        int value = atoi(token);
-        _dpd.logMsg("File inspect: loaded blacklisted type id: %d\n", value);
-        addToMimeBlacklistArray(arr, value);
-        token = strtok(NULL, "[|]");
-    }
-
-    free(copy);
-}
-
-/*
-    Check on the config for drop the file
-*/
-static int file_agent_should_drop_file_mime(uint32_t type_id) {
-    if (should_drop) {
-        _dpd.logMsg("File inspect: Checking blacklist of MIME types to drop the file\n");
-
-        int i;
-        for (i = 0; i < mime_blacklist.size; i++) {
-            if (type_id == mime_blacklist.data[i]) {
-                _dpd.logMsg("File inspect: Droping file...\n");
-                return 1;
-            }
-        }
-    }
-    _dpd.logMsg("File inspect: This MIME isnt blacklisted, FILE_VERDICT will be determinated later...\n");
-    return 0;
-}
-
-#endif
-/*
  * File signature callback when file transfer is completed
  * or capture/singature is aborted
  */
 static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
-        uint8_t* file_sig, uint64_t file_size, FileState *state, bool upload, uint32_t file_id)
+        uint8_t* file_sig, uint64_t file_size, FileState *state, bool upload, uint32_t file_id, bool is_partial)
 {
-    _dpd.logMsg("File inspect: Proccessing file...\n");
     FileCaptureInfo *file_mem = NULL;
     FileCaptureState capture_state;
     File_Verdict verdict = FILE_VERDICT_UNKNOWN;
     FileInspectConf *conf = sfPolicyUserDataGetDefault(file_config);
     uint64_t capture_file_size;
-    uint32_t type_id;
-    SFSnortPacket *pkt = (SFSnortPacket*)p;
 
+    SFSnortPacket *pkt = (SFSnortPacket*)p;
 
     file_inspect_stats.file_signatures_total++;
 
-    //Drop file if it has been found in the sha blacklist config file
     if (conf && file_sig)
     {
         FileSigInfo *file_verdict;
         file_verdict = (FileSigInfo *)sha_table_find(conf->sig_table, file_sig);
-
         if (file_verdict)
         {
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
@@ -1075,11 +696,6 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
     if (!file_capture_enabled)
         return verdict;
 
-    /* File blacklisted and we do not want to save it, since we already know
-    what file is */
-    if(conf->dont_save_blacklist && verdict == FILE_VERDICT_BLOCK)
-        return verdict;
-
     /* Check whether there is any error during processing file*/
     if (state->capture_state != FILE_CAPTURE_SUCCESS)
     {
@@ -1094,7 +710,6 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
     /*Check whether there is any error for the last piece of file*/
     if (file_agent_capture_error(capture_state))
     {
-        _dpd.logMsg("File inspect: error in file.");
         return verdict;
     }
 
@@ -1105,56 +720,15 @@ static File_Verdict file_agent_signature_callback (void* p, void* ssnptr,
         _dpd.logMsg("File inspect: file size error %d != %d\n",
                 file_size, capture_file_size);
     }
-#ifdef HAVE_MIME_DROP
-    /*
-        Drop file if it is bigger than our file size in the config file (in bytes, unsigned integer of 32 bits is the max bytes)
-        Drop file on transfer complete if it is in our snort config, the transfer is complete, so the alert would trigger this
-    */
-    if(conf->mime.file_capture_max_file_size < capture_file_size && conf->mime.file_capture_max_file_size > 0){ //For testing on the SDK
-        _dpd.logMsg("File inspect -> Dropping file due to max size reached\n");
-        verdict = FILE_VERDICT_BLOCK;
-        return verdict;
-    }
 
-    /*
-        void *ssnptr: session pointer
-        get_file_type_id retrieves uint32_t with type id of the file what we want to get
-    */
-
-    type_id = _dpd.fileAPI->get_file_type_id(ssnptr);
-    _dpd.logMsg("File inspect: got file type id %d\n", type_id);
-    if(file_agent_should_drop_file_mime(type_id)){
-        _dpd.logMsg("File inspect: got blacklisted MIME, blocking...");
-        return FILE_VERDICT_BLOCK;
-    }
-#endif
-    if(NULL != conf->sha256_cache)
-    {
-        /* See if we have sha256 cache configured, and if it already contains
-         * the file
-         *
-         * sfxhash_get_node will create a new node if it does not exists, so we
-         * have to know if we hit with "find_success"
-         */
-        const unsigned before_find_success = sfxhash_find_success(conf->sha256_cache);
-        const void *sfxhash_get_rc = sfxhash_get_node(conf->sha256_cache, file_sig);
-        if(NULL == sfxhash_get_rc)
-        {
-            _dpd.errMsg("File inspect: Can't get a node from cache!\n");
-        }
-        else if(sfxhash_find_success(conf->sha256_cache) == before_find_success + 1)
-        {
-            file_inspect_stats.file_cbuffer_duplicates_total++;
-            /* Don't want to queue, so we just return */
-            return verdict;
-        }
-    }
     /*Save the file to our file queue*/
-    if (file_agent_queue_file(pkt->stream_session, file_mem) < 0)
+    if ((!is_partial) && (file_agent_queue_file(pkt->stream_session, file_mem) < 0))
     {
         file_inspect_stats.file_agent_memcap_failures++;
         _dpd.logMsg("File inspect: can't queue file!\n");
         return verdict;
     }
+
     return verdict;
 }
+

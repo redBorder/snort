@@ -1,6 +1,6 @@
 /* $Id$ */
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2007-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -50,6 +50,7 @@
 #include "sp_byte_check.h"
 #include "sp_byte_jump.h"
 #include "sp_byte_extract.h"
+#include "sp_byte_math.h"
 #include "sp_clientserver.h"
 #include "sp_cvs.h"
 #include "sp_dsize_check.h"
@@ -97,7 +98,6 @@
 #include "sfPolicy.h"
 #include "detection_filter.h"
 #include "encode.h"
-#include "stream_api.h"
 #if defined(FEAT_OPEN_APPID)
 #include "stream_common.h"
 #include "sp_appid.h"
@@ -131,6 +131,9 @@ uint32_t detection_option_hash_func(SFHASHFCN *p, unsigned char *k, int n)
             break;
         case RULE_OPTION_TYPE_BYTE_EXTRACT:
             hash = ByteExtractHash(key->option_data);
+            break;
+        case RULE_OPTION_TYPE_BYTE_MATH:
+            hash = ByteMathHash(key->option_data);
             break;
         case RULE_OPTION_TYPE_FLOW:
             hash = FlowHash(key->option_data);
@@ -292,6 +295,9 @@ int detection_option_key_compare_func(const void *k1, const void *k2, size_t n)
         case RULE_OPTION_TYPE_BYTE_EXTRACT:
             ret = ByteExtractCompare(key1->option_data, key2->option_data);
             break;
+        case RULE_OPTION_TYPE_BYTE_MATH:
+            ret = ByteMathCompare(key1->option_data, key2->option_data);
+            break;
         case RULE_OPTION_TYPE_FLOW:
             ret = FlowCompare(key1->option_data, key2->option_data);
             break;
@@ -433,6 +439,9 @@ int detection_hash_free_func(void *option_key, void *data)
             break;
         case RULE_OPTION_TYPE_BYTE_EXTRACT:
             ByteExtractFree(key->option_data);
+            break;
+        case RULE_OPTION_TYPE_BYTE_MATH:
+            ByteMathFree(key->option_data);
             break;
         case RULE_OPTION_TYPE_FLOW:
             free(key->option_data);
@@ -804,6 +813,7 @@ char *option_type_str[] =
 #if defined(FEAT_OPEN_APPID)
     ,"RULE_OPTION_TYPE_APPID"
 #endif /* defined(FEAT_OPEN_APPID) */
+    ,"RULE_OPTION_TYPE_BYTE_MATH"
 };
 
 #ifdef DEBUG_OPTION_TREE
@@ -858,20 +868,6 @@ int add_detection_option_tree(SnortConfig *sc, detection_option_tree_node_t *opt
     return DETECTION_OPTION_NOT_EQUAL;
 }
 
-static bool PacketSelection(Packet *p)
-{
-    if (stream_api->get_reassembly_direction(p->ssnptr) == SSN_DIR_NONE)
-        return true;
-
-    else
-    {
-        if(p->packet_flags & PKT_REBUILT_STREAM)
-            return true;
-
-        else
-            return false;
-    }
-}
 
 uint64_t rule_eval_pkt_count = 0;
 
@@ -1015,6 +1011,7 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
                         pattern_size = pmd->pattern_size;
 
                     // See "detection_leaf_node.c" (detection_leaf_node_eval).
+#ifdef TARGET_BASED
                     switch (detection_leaf_node_eval (node, eval_data))
                     {
                         case Leaf_Abort:
@@ -1031,14 +1028,15 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
                             NODE_PROFILE_TMPSTART(node);
                             break;
                     }
+#endif
 
                     if (eval_rtn_result)
                     {
 			    if ((!otn->detection_filter) ||
-			     ((PacketSelection(eval_data->p) || OtnFlowIgnoreReassembled(otn)) && (!detection_filter_test(
+                                 !detection_filter_test(
                                  otn->detection_filter,
                                  GET_SRC_IP(eval_data->p), GET_DST_IP(eval_data->p),
-                                 eval_data->p->pkth->ts.tv_sec))))
+                                 eval_data->p->pkth->ts.tv_sec, eval_data))
                         {
 #ifdef PERF_PROFILING
                             if (PROFILING_RULES)
@@ -1118,6 +1116,7 @@ int detection_option_node_evaluate(detection_option_tree_node_t *node, detection
             case RULE_OPTION_TYPE_BYTE_TEST:
             case RULE_OPTION_TYPE_BYTE_JUMP:
             case RULE_OPTION_TYPE_BYTE_EXTRACT:
+            case RULE_OPTION_TYPE_BYTE_MATH:
             case RULE_OPTION_TYPE_FLOW:
             case RULE_OPTION_TYPE_CVS:
             case RULE_OPTION_TYPE_DSIZE:

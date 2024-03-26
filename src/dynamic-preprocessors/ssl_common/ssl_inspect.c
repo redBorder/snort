@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -31,6 +31,10 @@
 #include "ssl_ha.h"
 #endif
 #include <assert.h>
+
+#ifdef DUMP_BUFFER
+#include "../ssl/ssl_buffer_dump.h"
+#endif
 
 /* Ultimately calls SnortEventqAdd */
 /* Arguments are: gid, sid, rev, classification, priority, message, rule_info */
@@ -388,6 +392,9 @@ static inline uint32_t SSLPP_process_alert(
         DISABLE_DETECT();
     }
 
+#ifdef DUMP_BUFFER
+    dumpBuffer(SSL_PROCESS_ALERT_DUMP,packet->payload,packet->payload_size);
+#endif
     /* Need to negate the application flags from the opposing side. */
 
     if(packet->flags & FLAG_FROM_CLIENT)
@@ -449,6 +456,9 @@ static inline uint32_t SSLPP_process_app(
 
     }
 
+#ifdef DUMP_BUFFER
+        dumpBuffer(SSL_PROCESS_APP_DUMP,packet->payload,packet->payload_size);
+#endif
     return ssn_flags | new_flags;
 }
 
@@ -511,6 +521,9 @@ static inline void SSLPP_process_other(
 #endif
     }
 
+#ifdef DUMP_BUFFER
+        dumpBuffer(SSL_PROCESS_OTHER_DUMP,packet->payload,packet->payload_size);
+#endif
 }
 
 /* SSL Preprocessor process callback. */
@@ -526,7 +539,6 @@ void SSLPP_process(void *raw_packet, void *context)
     uint8_t heartbleed_type = 0;
     SSLPP_config_t *config = NULL;
     PROFILE_VARS;
-
     sfPolicyUserPolicySet (ssl_config, _dpd.getNapRuntimePolicy());
     config = (SSLPP_config_t *)sfPolicyUserDataGetCurrent(ssl_config);
 
@@ -691,7 +703,9 @@ void SSLPP_process(void *raw_packet, void *context)
         uint8_t dir = (packet->flags & FLAG_FROM_SERVER)? 1 : 0;
         uint8_t index = (packet->flags & FLAG_REBUILT_STREAM)? 2 : 0;
         new_flags = SSL_decode(packet->payload, (int)packet->payload_size, packet->flags, sd->ssn_flags, &heartbleed_type, &(sd->partial_rec_len[dir+index]), config->max_heartbeat_len);
-
+#ifdef DUMP_BUFFER
+        dumpBuffer(SSL_DECODE_DUMP,packet->payload,packet->payload_size);
+#endif
         if(heartbleed_type & SSL_HEARTBLEED_REQUEST)
         {
             ALERT(SSL_ALERT_HB_REQUEST, SSL_HEARTBLEED_REQUEST_STR);
@@ -843,6 +857,58 @@ int SSLPP_rule_eval(void *raw_packet, const uint8_t **cursor, void *data)
     return RULE_NOMATCH;
 }
 
+void DisplaySSLPPStats (uint16_t type, void *old_context, struct _THREAD_ELEMENT *te, ControlDataSendFunc f)
+{
+    char buffer[CS_STATS_BUF_SIZE + 1];
+    int len = 0;
+
+    if(counts.decoded) {
+        len += snprintf(buffer, CS_STATS_BUF_SIZE, "SSL Preprocessor:\n"
+                "   SSL packets decoded: " FMTu64("-10") "\n"
+                "          Client Hello: " FMTu64("-10") "\n"
+                "          Server Hello: " FMTu64("-10") "\n"
+                "           Certificate: " FMTu64("-10") "\n"
+                "           Server Done: " FMTu64("-10") "\n"
+                "   Client Key Exchange: " FMTu64("-10") "\n"
+                "   Server Key Exchange: " FMTu64("-10") "\n"
+                "         Change Cipher: " FMTu64("-10") "\n"
+                "              Finished: " FMTu64("-10") "\n"
+                "    Client Application: " FMTu64("-10") "\n"
+                "    Server Application: " FMTu64("-10") "\n"
+                "                 Alert: " FMTu64("-10") "\n"
+                "  Unrecognized records: " FMTu64("-10") "\n"
+                "  Completed handshakes: " FMTu64("-10") "\n"
+                "        Bad handshakes: " FMTu64("-10") "\n"
+                "      Sessions ignored: " FMTu64("-10") "\n"
+                "    Detection disabled: " FMTu64("-10") "\n"
+                , counts.decoded
+                , counts.hs_chello
+                , counts.hs_shello
+                , counts.hs_cert
+                , counts.hs_sdone
+                , counts.hs_ckey
+                , counts.hs_skey
+                , counts.cipher_change
+                , counts.hs_finished
+                , counts.capp
+                , counts.sapp
+                , counts.alerts
+                , counts.unrecognized
+                , counts.completed_hs
+                , counts.bad_handshakes
+                , counts.stopped
+                , counts.disabled);
+#ifdef ENABLE_HA
+        len += DisplaySSLHAStats(buffer + len);
+#endif
+    } else {
+        len  = snprintf(buffer, CS_STATS_BUF_SIZE, "SSL Packet Details Not available\n SSL packets decoded: " FMTu64("-10") "\n", counts.decoded);
+    }
+
+    if (-1 == f(te, (const uint8_t *)buffer, len)) {
+        _dpd.logMsg("Unable to send data to the frontend\n");
+    }
+}
 
 void SSLPP_drop_stats(int exiting)
 {

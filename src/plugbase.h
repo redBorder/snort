@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -169,6 +169,12 @@ void FreeRuleOptParseCleanupList(RuleOptParseCleanupNode *);
 void RegisterByteOrderKeyword(char *, RuleOptByteOrderFunc);
 RuleOptByteOrderFunc GetByteOrderFunc(char *);
 void FreeRuleOptByteOrderFuncs(RuleOptByteOrderFuncNode *);
+
+/***************************** Buffer Dump API ********************************/
+
+#ifdef DUMP_BUFFER
+void RegisterBufferTracer(TraceBuffer * (*)(), BUFFER_DUMP_FUNC);
+#endif
 
 /***************************** Non Rule Detection API *************************/
 typedef void (*DetectionEvalFunc)(Packet *, void *);
@@ -449,5 +455,9 @@ void AddFuncToSignalList(PluginSignalFunc, void *, PluginSignalFuncNode **);
 void PostConfigInitPlugins(struct _SnortConfig *, PostConfigFuncNode *);
 void FreePluginSigFuncs(PluginSignalFuncNode *);
 void FreePluginPostConfigFuncs(PostConfigFuncNode *);
+
+typedef char** (*GetHttpXffFieldsFunc)(int* nFields);
+char** GetHttpXffFields(int* nFields);
+void RegisterGetHttpXffFields(GetHttpXffFieldsFunc fn);
 
 #endif /* __PLUGBASE_H__ */

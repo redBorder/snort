@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -35,6 +35,7 @@ static const DetectorApi detector_api =
 
 extern RNADetectorValidationModule imap_detector_mod;
 extern RNADetectorValidationModule pop3_detector_mod;
+extern RNADetectorValidationModule smtp_detector_mod;
 extern RNADetectorValidationModule kerberos_detector_mod;
 extern RNADetectorValidationModule pattern_detector_mod;
 
@@ -42,6 +43,7 @@ static RNADetectorValidationModule *static_detector_list[] =
 {
     &imap_detector_mod,
     &pop3_detector_mod,
+    &smtp_detector_mod,
     &kerberos_detector_mod
 };
 

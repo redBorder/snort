@@ -14,7 +14,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  * Author: Russ Combs
@@ -53,6 +53,7 @@ typedef enum {
      OPTION_TYPE_PKT_DATA,
      OPTION_TYPE_BASE64_DATA,
      OPTION_TYPE_BASE64_DECODE,
+     OPTION_TYPE_BYTE_MATH,
      OPTION_TYPE_MAX
 } DynamicOptionType;
 

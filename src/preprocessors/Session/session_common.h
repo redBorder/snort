@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -35,6 +35,7 @@
 #include "session_api.h"
 #include "mempool.h"
 #include "sf_types.h"
+#include "plugbase.h"
 
 #ifdef TARGET_BASED
 #include "target-based/sftarget_hostentry.h"
@@ -48,6 +49,10 @@
 #define STREAM_MAX_SSN_TIMEOUT      3600 * 24 /* max timeout (approx 1 day) */
 #define STREAM_MIN_SSN_TIMEOUT      1         /* min timeout (1 second) */
 #define STREAM_MIN_ALT_HS_TIMEOUT   0         /* min timeout (0 seconds) */
+/* Lower timeout value in seconds to clean up the session
+ * for receiving valid RST for a ongoing/hanged tcp session.
+ */
+#define STREAM_SSN_RST_TIMEOUT      180
 #define STREAM_TRACK_YES            1
 #define STREAM_TRACK_NO             0
 
@@ -68,6 +73,8 @@
 #define CS_TYPE_DEBUG_STREAM_HA     ((PP_STREAM << 7) + 0)     // 0x680 / 1664
 
 /*  D A T A   S T R U C T U R E S  **********************************/
+
+typedef void (*NoRefCallback)( void *data );
 
 #ifdef ENABLE_HA
 typedef struct _SessionHAConfig
@@ -97,6 +104,7 @@ typedef struct _SessionConfiguration
 #ifdef ENABLE_HA
     char       enable_ha;
 #endif
+    uint32_t   max_sessions;
     uint32_t   max_tcp_sessions;
     uint32_t   max_udp_sessions;
     uint32_t   max_icmp_sessions;
@@ -119,6 +127,10 @@ typedef struct _SessionConfiguration
 #endif
     uint32_t  numSnortPolicies;
     uint32_t  *policy_ref_count;
+#ifdef SNORT_RELOAD
+    NoRefCallback no_ref_cb;
+    void         *no_ref_cb_data;
+#endif
 } SessionConfiguration;
 
 #ifdef MPLS
@@ -160,6 +172,7 @@ typedef struct _SessionControlBlock
     uint16_t    client_port;
     uint16_t    server_port;
     bool        port_guess;
+    bool        stream_config_stale;
 
     uint8_t     protocol;
 
@@ -185,6 +198,8 @@ typedef struct _SessionControlBlock
     bool    session_established;
     bool    new_session;
     bool    in_oneway_list;
+    bool    is_session_deletion_delayed;
+    uint8_t iprep_update_counter;
 
     // pointers for linking into list of oneway sessions
     struct _SessionControlBlock *ows_prev;
@@ -198,7 +213,6 @@ typedef struct _SessionControlBlock
    MPLS_Hdr *clientMplsHeader;
    MPLS_Hdr *serverMplsHeader;
 #endif
-
 } SessionControlBlock;
 
 
@@ -241,12 +255,17 @@ uint32_t GetSessionPruneLogMax( void );
 uint32_t GetSessionMemCap( void );
 void SessionFreeConfig( SessionConfiguration * );
 int isPacketFilterDiscard( Packet *p, int ignore_any_rules );
+int isPacketFilterDiscardUdp( Packet *p, int ignore_any_rules );
 
 typedef void ( *set_dir_ports_cb )( Packet *p, SessionControlBlock *scb );
 typedef int ( *flush_stream_cb )( Packet *p, SessionControlBlock *scb );
 
 void registerDirectionPortCallback( uint8_t proto, set_dir_ports_cb cb_func );
 void registerFlushStreamCallback( bool client_to_server, flush_stream_cb cb_func );
+
+#ifdef SNORT_RELOAD
+void register_no_ref_policy_callback(SessionConfiguration *session_conf, NoRefCallback cb, void *data);
+#endif
 
 struct session_plugins
 {
@@ -263,7 +282,6 @@ void freeSessionPlugins( void );
 // shared session state
 extern SessionStatistics session_stats;
 extern uint32_t firstPacketTime;
-extern MemPool sessionFlowMempool;
 extern SessionConfiguration *session_configuration;
 
 extern uint32_t session_mem_in_use;

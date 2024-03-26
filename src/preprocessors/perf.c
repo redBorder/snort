@@ -3,7 +3,7 @@
 **
 **  perf.c
 **
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Dan Roelker <droelker@sourcefire.com>
 **
@@ -57,6 +57,11 @@ SFEVENT sfEvent;
 int perfmon_rotate_perf_file = 0;
 static uint32_t pkt_cnt = 0;
 
+#ifdef SNORT_RELOAD
+    extern SFPERF* perfmon_config;
+    PERFRELOAD_STATUS perfmon_reload_status = PERF_NOT_RELOADING;
+#endif
+
 static void UpdatePerfStats(SFPERF *, Packet *p);
 static bool CheckSampleInterval(SFPERF *, time_t);
 static inline bool sfCheckFileSize(FILE *, uint32_t);
@@ -104,19 +109,27 @@ FILE * sfOpenBaseStatsFile(const char *file)
 {
     static bool start_up = true;
     FILE *fh = NULL;
+    bool reload = false;
+
+#ifdef SNORT_RELAOD
+    reload = perfmon_reload_status != PERF_NOT_RELOADING;
+#endif
+
 #ifndef WIN32
+
     // This file needs to be readable by everyone
     mode_t old_umask = umask(022);
 #endif
 
     if (file != NULL)
     {
-        // Append to the existing file if just starting up, otherwise we've
+        // Append to the existing file if just starting up or reloading, otherwise we've
         // rotated so start a new one.
-        fh = fopen(file, start_up ? "a" : "w");
+        bool append = start_up || reload;
+        fh = fopen(file, append ? "a" : "w");
         if (fh != NULL)
         {
-            WriteTimeStamp(fh, start_up ? "start" : "rotate");
+            WriteTimeStamp(fh, append ? "start" : "rotate");
             LogBasePerfHeader(fh);
         }
     }
@@ -145,6 +158,12 @@ FILE * sfOpenFlowStatsFile(const char *file)
 {
     static bool start_up = true;
     FILE *fh = NULL;
+    bool  reload = false;
+
+#ifdef SNORT_RELOAD
+    reload = perfmon_reload_status != PERF_NOT_RELOADING;
+#endif
+
 #ifndef WIN32
     // This file needs to be readable by everyone
     mode_t old_umask = umask(022);
@@ -152,12 +171,13 @@ FILE * sfOpenFlowStatsFile(const char *file)
 
     if (file != NULL)
     {
-        // Append to the existing file if just starting up, otherwise we've
+        // Append to the existing file if just starting up or reloading, otherwise we've
         // rotated so start a new one.
-        fh = fopen(file, start_up ? "a" : "w");
+        bool append = start_up || reload;
+        fh = fopen(file, append ? "a" : "w");
         if (fh != NULL)
         {
-            WriteTimeStamp(fh, start_up ? "start" : "rotate");
+            WriteTimeStamp(fh, append ? "start" : "rotate");
             LogFlowPerfHeader(fh);
         }
     }
@@ -186,6 +206,12 @@ FILE * sfOpenFlowIPStatsFile(const char *file)
 {
     static bool start_up = true;
     FILE *fh = NULL;
+    bool  reload = false;
+
+#ifdef SNORT_RELOAD
+    reload = perfmon_reload_status != PERF_NOT_RELOADING;
+#endif
+
 #ifndef WIN32
     // This file needs to be readable by everyone
     mode_t old_umask = umask(022);
@@ -193,9 +219,9 @@ FILE * sfOpenFlowIPStatsFile(const char *file)
 
     if (file != NULL)
     {
-        // Append to the existing file if just starting up, otherwise we've
+        // Append to the existing file if just starting up or reloading, otherwise we've
         // rotated so start a new one.
-        fh = fopen(file, start_up ? "a" : "w");
+        fh = fopen(file, start_up || reload ? "a" : "w");
     }
 
 #ifndef WIN32
@@ -684,4 +710,178 @@ void sfPerfStatsSummary(SFPERF *sfPerf)
     if (sfPerf->perf_flags & SFPERF_SUMMARY_EVENT)
         sfProcessEventStats(sfPerf);
 }
+
+static void sfInitBaseStats(SFPERF *sfPerf)
+{
+    if (sfPerf->perf_flags & SFPERF_BASE)
+        InitBaseStats(&sfBase);
+}
+
+static void sfInitFlowStats(SFPERF *sfPerf)
+{
+    if (sfPerf->perf_flags & SFPERF_FLOW)
+        InitFlowStats(&sfFlow);
+}
+
+static void sfInitFlowIPStats(SFPERF *sfPerf)
+{
+    if (sfPerf->perf_flags & SFPERF_FLOWIP)
+        InitFlowIPStats(&sfFlow);
+}
+
+static void sfInitEventStats(SFPERF *sfPerf)
+{
+    if (sfPerf->perf_flags & SFPERF_EVENT)
+        InitEventStats(&sfEvent);
+}
+
+static void sfFreeFlowStats(SFPERF *sfPerf)
+{
+    FreeFlowStats(&sfFlow);
+}
+
+static void sfFreeFlowIPStats(SFPERF *sfPerf)
+{
+    FreeFlowIPStats(&sfFlow);
+}
+
+#ifdef SNORT_RELOAD
+//this function determines what is necessary to swap configs and keep stats and files synchronized
+//it will perform the actions necessary durring the appropriate stage of ReloadSwap
+// or you can force it to perform all actions by setting fullSync to a non-zero value
+//
+//if fullSync is set to 0 then actions are taken under the following conditions
+//If files need to be opened they are opened durring ReloadVerify
+//If stats need to be written to files and flushed it is done durring ReloadSwap
+//If files need to be closed it is done durring ReloadSwapFree
+static void syncStats(  SFPERF *currentSFPerf, SFPERF *newSFPerf,
+                        int flag, int summaryFlag, //if summaryFlag is set then flag is set
+                        char *currentFile, char *newFile,
+                        FILE **currentFH, FILE **newFH,
+                        void (*processFunc)(SFPERF *),
+                        void (*initFunc)(SFPERF *), void (*freeFunc)(SFPERF *),
+                        FILE* (*openFileFunc)(const char *), void (*closeFileFunc)(SFPERF *),
+                        int fullSync)
+{
+    int old_flags = currentSFPerf->perf_flags;
+    int new_flags = newSFPerf->perf_flags;
+    int config_flags = old_flags | new_flags;
+
+    //summaryFlag implies that flag is set
+    //otherwise code breaks <- I got this implication from other sets of code (i.e. InitPerfStats)
+
+    //these stats were recorded, but are not recorded in new config
+    if (old_flags & flag && !(new_flags & flag))
+    {
+        //we need to flush the stats at the correct time
+        if (perfmon_reload_status == PERF_RELOAD_SWAP || fullSync)
+            //write stats for last period (or summary)
+            (*processFunc)(currentSFPerf);
+        //only close files in ReloadSwapFree to avoid latencies
+        if (perfmon_reload_status == PERF_RELOAD_SWAP_FREE || fullSync)
+        {
+            //not every stat group has a file
+            if (closeFileFunc != NULL)
+                (*closeFileFunc)(currentSFPerf);
+            //not every stat group uses dynamic memory
+            if (freeFunc != NULL)
+                (*freeFunc)(currentSFPerf);
+        }
+    }
+    //these stats were not recorded, but will be recorded in new config
+    else if ( !(old_flags & flag) && new_flags & flag )
+    {
+        if (perfmon_reload_status == PERF_RELOAD_VERIFY || fullSync)
+        {
+           //init/reset stats
+           (*initFunc)(newSFPerf);
+           //open up new file
+           if (openFileFunc)
+               *newFH = (*openFileFunc)(newFile);
+        }
+    }
+    // both configs have flag
+    else if (config_flags & flag)
+    {
+        //one config is not summary
+       if (!(old_flags & summaryFlag && new_flags & summaryFlag))
+        {
+            if (perfmon_reload_status == PERF_RELOAD_SWAP || fullSync)
+            {
+                //log and clear stats
+                (*processFunc)(currentSFPerf);
+                (*initFunc)(currentSFPerf);
+            }
+        }
+        //stat group must have log files
+        if ( openFileFunc != NULL && closeFileFunc != NULL)
+        {
+            //the new file has a new name
+            if ( newFile != NULL
+                    && (currentFile == NULL || strcmp(currentFile,newFile) != 0))
+            {
+                if (perfmon_reload_status == PERF_RELOAD_VERIFY || fullSync)
+                    *newFH = (*openFileFunc)(newFile);
+                if (perfmon_reload_status == PERF_RELOAD_SWAP_FREE || fullSync)
+                    (*closeFileFunc)(currentSFPerf);
+            }
+            //use the same file
+            else if (*currentFH != NULL)
+            {
+                if (perfmon_reload_status == PERF_RELOAD_SWAP || fullSync)
+                    *newFH = *currentFH;
+            }
+        }
+    }
+    //else neither config has stats logged
+}
+
+//you can have SFPERF_SUMMARY_FLAG without a SFPERF_FLAG, but 
+//perfmon acts as though neither flag is set and doesn't do any logging
+//for those statisitcs
+void syncAllStats(SFPERF *currentSFPerf, SFPERF *newSFPerf)
+{
+    if (currentSFPerf == NULL || newSFPerf == NULL)
+        return;
+
+    //base stats
+    syncStats(  currentSFPerf, newSFPerf,
+                SFPERF_BASE, SFPERF_SUMMARY_BASE,
+                currentSFPerf->file, newSFPerf->file,
+                &(currentSFPerf->fh), &(newSFPerf->fh),
+                &sfProcessBaseStats,
+                &sfInitBaseStats, NULL,
+                &sfOpenBaseStatsFile, &sfCloseBaseStatsFile,
+                0);
+    //flow stats
+    syncStats(  currentSFPerf,newSFPerf,
+                SFPERF_FLOW, SFPERF_SUMMARY_FLOW,
+                currentSFPerf->flow_file, newSFPerf->flow_file,
+                &(currentSFPerf->flow_fh), &(newSFPerf->flow_fh),
+                &sfProcessFlowStats,
+                &sfInitFlowStats, &sfFreeFlowStats,
+                &sfOpenFlowStatsFile, &sfCloseFlowStatsFile,
+                0);
+
+   //flowip stats
+    syncStats(  currentSFPerf, newSFPerf,
+                SFPERF_FLOWIP, SFPERF_SUMMARY_FLOWIP,
+                currentSFPerf->flowip_file, newSFPerf->flowip_file,
+                &(currentSFPerf->flowip_fh), &(newSFPerf->flowip_fh),
+                &sfProcessFlowIpStats,
+                &sfInitFlowIPStats, &sfFreeFlowIPStats,
+                &sfOpenFlowIPStatsFile, &sfCloseFlowIPStatsFile,
+                0);
+
+   //event stats
+   syncStats(   currentSFPerf, newSFPerf,
+                SFPERF_EVENT, SFPERF_SUMMARY_EVENT,
+                NULL, NULL,
+                NULL, NULL,
+                &sfProcessEventStats,
+                &sfInitEventStats, NULL,
+                NULL, NULL,
+                0);
+}
+#endif
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2002-2013 Sourcefire, Inc.
  * Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
  *
@@ -29,43 +29,6 @@ typedef struct _record {
     uint32_t length;
     uint8_t *data;
 } u2record;
-
-typedef struct _extendedu2record {
-	uint32_t sensor_id;
-    uint32_t event_id;
-    uint32_t event_second;
-    uint32_t event_microsecond;
-    uint32_t signature_id;
-    uint32_t generator_id;
-} u2event;
-
-typedef struct _ipv4event{
-	uint32_t sensor_id;
-    uint32_t event_id;
-    uint32_t event_second;
-    uint32_t event_microsecond;
-    uint32_t signature_id;
-    uint32_t generator_id;
-    uint32_t signature_revision;
-    uint32_t classification_id;
-    uint32_t priority_id;
-    uint32_t ip_source;
-    uint32_t ip_destination;
-} u2ipv4event;
-
-typedef struct _ipv6event{
-	uint32_t sensor_id;
-    uint32_t event_id;
-    uint32_t event_second;
-    uint32_t event_microsecond;
-    uint32_t signature_id;
-    uint32_t generator_id;
-    uint32_t signature_revision;
-    uint32_t classification_id;
-    uint32_t priority_id;
-    struct in6_addr ip_source;
-    struct in6_addr ip_destination;
-} u2ipv6event;
 
 typedef struct _u2iterator {
     FILE *file;

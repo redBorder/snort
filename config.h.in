@@ -22,7 +22,7 @@
 /* Build with extended file inspection features. (Experimental) */
 #undef FEAT_FILE_INSPECT
 
-/* Build with application id support. (Experimental) */
+/* Build with application identification support. */
 #undef FEAT_OPEN_APPID
 
 /* Define if FreeBSD */
@@ -31,11 +31,23 @@
 /* Define to 1 if the system has the type `boolean'. */
 #undef HAVE_BOOLEAN
 
+/* Define to 1 if you have the <cpa.h> header file. */
+#undef HAVE_CPA_H
+
 /* Define to 1 if you have the `daq_acquire_with_meta' function. */
 #undef HAVE_DAQ_ACQUIRE_WITH_META
 
 /* DAQ version supports address space ID in header. */
 #undef HAVE_DAQ_ADDRESS_SPACE_ID
+
+/* DAQ version supports data channel. */
+#undef HAVE_DAQ_DATA_CHANNEL_PARAMS
+
+/* DAQ version supports separate IP versions on pinhole endpoints. */
+#undef HAVE_DAQ_DATA_CHANNEL_SEPARATE_IP_VERSIONS
+
+/* DAQ version supports decrypted ssl */
+#undef HAVE_DAQ_DECRYPTED_SSL
 
 /* Define to 1 if you have the `daq_dp_add_dc' function. */
 #undef HAVE_DAQ_DP_ADD_DC
@@ -49,11 +61,23 @@
 /* Define to 1 if you have the `daq_hup_apply' function. */
 #undef HAVE_DAQ_HUP_APPLY
 
+/* DAQ version defines flags for locally destined traffic */
+#undef HAVE_DAQ_LOCALLY_DESTINED
+
+/* DAQ version defines flags for locally originated traffic */
+#undef HAVE_DAQ_LOCALLY_ORIGINATED
+
+/* DAQ version supports packet trace. */
+#undef HAVE_DAQ_PKT_TRACE
+
 /* DAQ version supports query flow. */
 #undef HAVE_DAQ_QUERYFLOW
 
 /* DAQ version supports real addresses in header. */
 #undef HAVE_DAQ_REAL_ADDRESSES
+
+/* DAQ version supports tracing verdict reason. */
+#undef HAVE_DAQ_VERDICT_REASON
 
 /* DAQ version supports DAQ_VERDICT_RETRY in DAQ_Verdict. */
 #undef HAVE_DAQ_VERDICT_RETRY
@@ -73,6 +97,9 @@
 /* Define to 1 if you have the <GeoIP.h> header file. */
 #undef HAVE_GEOIP_H
 
+/* Define to 1 if you have the `gettid' function. */
+#undef HAVE_GETTID
+
 /* Define to 1 if you have the `inet_ntop' function. */
 #undef HAVE_INET_NTOP
 
@@ -91,6 +118,9 @@
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
+/* Define to 1 if you have the <jemalloc.h> header file. */
+#undef HAVE_JEMALLOC_H
+
 /* Define to 1 if you have the `dnet' library (-ldnet). */
 #undef HAVE_LIBDNET
 
@@ -99,6 +129,9 @@
 
 /* Define to 1 if you have the `m' library (-lm). */
 #undef HAVE_LIBM
+
+/* Define to 1 if you have the `nghttp2' library (-lnghttp2). */
+#undef HAVE_LIBNGHTTP2
 
 /* Define to 1 if you have the `nsl' library (-lnsl). */
 #undef HAVE_LIBNSL
@@ -115,11 +148,11 @@
 /* Define to 1 if you have the `rt' library (-lrt). */
 #undef HAVE_LIBRT
 
-/* Define to 1 if you have the <libs3.h> header file. */
-#undef HAVE_LIBS3_H
-
 /* Define to 1 if you have the `socket' library (-lsocket). */
 #undef HAVE_LIBSOCKET
+
+/* Define to 1 if you have the `tirpc' library (-ltirpc). */
+#undef HAVE_LIBTIRPC
 
 /* Define to 1 if you have the `uuid' library (-luuid). */
 #undef HAVE_LIBUUID
@@ -168,6 +201,9 @@
 
 /* Define to 1 if you have the <pfring.h> header file. */
 #undef HAVE_PFRING_H
+
+/* Define to 1 if you have the `pthread_tryjoin_np' function. */
+#undef HAVE_PTHREAD_TRYJOIN_NP
 
 /* Define to 1 if you have the `sigaction' function. */
 #undef HAVE_SIGACTION

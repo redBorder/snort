@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -33,6 +33,7 @@
 
 #include "sfPolicyUserData.h"
 #include "file_mail_common.h"
+#include "sf_email_attach_decode.h"
 #define CONF_SEPARATORS                  " \t\n\r"
 #define CONF_PORTS                       "ports"
 #define CONF_POP_MEMCAP                  "memcap"
@@ -97,6 +98,19 @@ typedef struct _POPConfig
     int ref_count;
 
 } POPConfig;
+
+typedef struct _POP_Stats
+{
+    uint64_t sessions;
+    uint64_t conc_sessions;
+    uint64_t max_conc_sessions;
+    uint64_t log_memcap_exceeded;
+    uint64_t cur_sessions;
+    MimeStats mime_stats;
+
+} POP_Stats;
+
+extern POP_Stats pop_stats;
 
 /* Function prototypes  */
 void POP_ParseArgs(POPConfig *, char *);

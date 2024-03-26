@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -68,6 +68,10 @@
 #include "file_api.h"
 #ifdef DEBUG_MSGS
 #include "sf_types.h"
+#endif
+
+#ifdef DUMP_BUFFER
+#include "imap_buffer_dump.h"
 #endif
 
 #include "imap_paf.h"
@@ -214,7 +218,8 @@ void IMAP_InitCmds(IMAPConfig *config)
         return;
 
     /* add one to CMD_LAST for NULL entry */
-    config->cmds = (IMAPToken *)calloc(CMD_LAST + 1, sizeof(IMAPToken));
+    config->cmds = (IMAPToken *)_dpd.snortAlloc(CMD_LAST + 1, sizeof(IMAPToken), PP_IMAP, 
+                                     PP_MEM_CATEGORY_CONFIG);
     if (config->cmds == NULL)
     {
         DynamicPreprocessorFatalMessage("%s(%d) => failed to allocate memory for imap "
@@ -237,7 +242,8 @@ void IMAP_InitCmds(IMAPConfig *config)
     }
 
     /* initialize memory for command searches */
-    config->cmd_search = (IMAPSearch *)calloc(CMD_LAST, sizeof(IMAPSearch));
+    config->cmd_search = (IMAPSearch *)_dpd.snortAlloc(CMD_LAST, sizeof(IMAPSearch), PP_IMAP, 
+                                            PP_MEM_CATEGORY_CONFIG);
     if (config->cmd_search == NULL)
     {
         DynamicPreprocessorFatalMessage("%s(%d) => failed to allocate memory for imap "
@@ -316,12 +322,13 @@ static IMAP * IMAP_GetNewSession(SFSnortPacket *p, tSfPolicyId policy_id)
 {
     IMAP *ssn;
     IMAPConfig *pPolicyConfig = NULL;
+    int ret = 0;
 
     pPolicyConfig = (IMAPConfig *)sfPolicyUserDataGetCurrent(imap_config);
 
     DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "Creating new session data structure\n"););
 
-    ssn = (IMAP *)calloc(1, sizeof(IMAP));
+    ssn = (IMAP *)_dpd.snortAlloc(1, sizeof(IMAP), PP_IMAP, PP_MEM_CATEGORY_SESSION);
     if (ssn == NULL)
     {
         DynamicPreprocessorFatalMessage("Failed to allocate IMAP session data\n");
@@ -334,11 +341,20 @@ static IMAP * IMAP_GetNewSession(SFSnortPacket *p, tSfPolicyId policy_id)
     imap_ssn->mime_ssn.decode_conf = &(imap_eval_config->decode_conf);
     imap_ssn->mime_ssn.mime_mempool = imap_mime_mempool;
     imap_ssn->mime_ssn.log_mempool = imap_mempool;
+    imap_ssn->mime_ssn.mime_stats = &(imap_stats.mime_stats);
     imap_ssn->mime_ssn.methods = &(mime_methods);
 
-    if (_dpd.fileAPI->set_log_buffers(&(imap_ssn->mime_ssn.log_state), &(pPolicyConfig->log_config), imap_mempool) < 0)
+    if (( ret = _dpd.fileAPI->set_log_buffers(&(imap_ssn->mime_ssn.log_state), &(pPolicyConfig->log_config),imap_mempool, p->stream_session, PP_IMAP)) < 0)
     {
-        free(ssn);
+        if( ret == -1 )
+        {
+            if(imap_stats.log_memcap_exceeded % 10000 == 0)
+            {
+                _dpd.logMsg("WARNING: IMAP memcap exceeded.\n");
+            }
+            imap_stats.log_memcap_exceeded++;
+        }
+	_dpd.snortFree(ssn, sizeof(*ssn), PP_IMAP, PP_MEM_CATEGORY_SESSION);
         return NULL;
     }
 
@@ -377,6 +393,11 @@ static IMAP * IMAP_GetNewSession(SFSnortPacket *p, tSfPolicyId policy_id)
     ssn->config = imap_config;
     ssn->flow_id = 0;
     pPolicyConfig->ref_count++;
+    imap_stats.sessions++;
+    imap_stats.conc_sessions++;
+    imap_stats.cur_sessions++;
+    if(imap_stats.max_conc_sessions < imap_stats.conc_sessions)
+       imap_stats.max_conc_sessions = imap_stats.conc_sessions;
 
     return ssn;
 }
@@ -530,18 +551,25 @@ static void IMAP_SessionFree(void *session_data)
     if(imap->mime_ssn.decode_state != NULL)
     {
         mempool_free(imap_mime_mempool, imap->mime_ssn.decode_bkt);
-        free(imap->mime_ssn.decode_state);
+	_dpd.snortFree(imap->mime_ssn.decode_state, sizeof(Email_DecodeState), PP_IMAP, 
+             PP_MEM_CATEGORY_SESSION);
     }
 
     if(imap->mime_ssn.log_state != NULL)
     {
         mempool_free(imap_mempool, imap->mime_ssn.log_state->log_hdrs_bkt);
-        free(imap->mime_ssn.log_state);
+	_dpd.snortFree(imap->mime_ssn.log_state, sizeof(MAIL_LogState), PP_IMAP, 
+             PP_MEM_CATEGORY_SESSION);
     }
     if ( ssl_cb )
         ssl_cb->session_free(imap->flow_id);
 
-    free(imap);
+    _dpd.snortFree(imap, sizeof(*imap), PP_IMAP, PP_MEM_CATEGORY_SESSION);
+    if(imap_stats.conc_sessions)
+       imap_stats.conc_sessions--;
+
+    if(imap_stats.cur_sessions)
+	imap_stats.cur_sessions--;
 }
 
 static int IMAP_FreeConfigsPolicy(
@@ -578,18 +606,18 @@ void IMAP_FreeConfig(IMAPConfig *config)
         IMAPToken *tmp = config->cmds;
 
         for (; tmp->name != NULL; tmp++)
-            free(tmp->name);
+	    _dpd.snortFree(tmp->name, sizeof(*(tmp->name)), PP_IMAP, PP_MEM_CATEGORY_CONFIG);
 
-        free(config->cmds);
+	_dpd.snortFree(config->cmds, sizeof(*(config->cmds)), PP_IMAP, PP_MEM_CATEGORY_CONFIG);
     }
 
     if (config->cmd_search_mpse != NULL)
         _dpd.searchAPI->search_instance_free(config->cmd_search_mpse);
 
     if (config->cmd_search != NULL)
-        free(config->cmd_search);
+	_dpd.snortFree(config->cmd_search, sizeof(*(config->cmd_search)), PP_IMAP, PP_MEM_CATEGORY_CONFIG);
 
-    free(config);
+    _dpd.snortFree(config, sizeof(*config), PP_IMAP, PP_MEM_CATEGORY_CONFIG);
 }
 
 
@@ -705,6 +733,11 @@ static const uint8_t * IMAP_HandleCommand(SFSnortPacket *p, const uint8_t *ptr, 
     }
     else
     {
+
+#ifdef DUMP_BUFFER
+        dumpBuffer(IMAP_CLIENT_CMD_DUMP,ptr,eolm-ptr);
+#endif
+
         if (imap_ssn->state == STATE_UNKNOWN)
             imap_ssn->state = STATE_COMMAND;
     }
@@ -733,6 +766,10 @@ static void IMAP_ProcessClientPacket(SFSnortPacket *p)
 {
     const uint8_t *ptr = p->payload;
     const uint8_t *end = p->payload + p->payload_size;
+
+#ifdef DUMP_BUFFER
+    dumpBuffer(IMAP_CLIENT_DUMP,p->payload,p->payload_size);
+#endif
 
     ptr = IMAP_HandleCommand(p, ptr, end);
 
@@ -763,6 +800,11 @@ static void IMAP_ProcessServerPacket(SFSnortPacket *p)
 
     body_start = body_end = NULL;
 
+#ifdef DUMP_BUFFER
+    dumpBuffer(IMAP_SERVER_DUMP,p->payload,p->payload_size);
+#endif
+
+
     ptr = p->payload;
     end = p->payload + p->payload_size;
 
@@ -783,7 +825,11 @@ static void IMAP_ProcessServerPacket(SFSnortPacket *p)
                 else
                     data_end = ptr + len;
 
-                ptr = _dpd.fileAPI->process_mime_data(p, ptr, end, &(imap_ssn->mime_ssn), 0, true);
+#ifdef DUMP_BUFFER
+                dumpBuffer(IMAP_SERVER_BODY_DATA_DUMP,ptr,len);
+#endif
+
+                ptr = _dpd.fileAPI->process_mime_data(p, ptr, end, &(imap_ssn->mime_ssn), 0, true, "IMAP", PP_IMAP);
 
                 if( ptr < data_end)
                     len = len - (data_end - ptr);
@@ -973,6 +1019,11 @@ void SnortIMAP(SFSnortPacket *p)
     int pkt_dir;
     tSfPolicyId policy_id = _dpd.getNapRuntimePolicy();
     ssl_callback_interface_t *ssl_cb = (ssl_callback_interface_t *)_dpd.getSSLCallback();
+
+#ifdef DUMP_BUFFER
+    dumpBufferInit();
+#endif
+
 
     PROFILE_VARS;
 

@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -39,6 +39,7 @@
 #include "service_api.h"
 #include "service_bgp.h"
 #include "service_bootp.h"
+#include "detector_cip.h"
 #include "service_dcerpc.h"
 #include "service_flap.h"
 #include "service_ftp.h"
@@ -56,7 +57,6 @@
 #include "service_rshell.h"
 #include "service_rsync.h"
 #include "service_rtmp.h"
-#include "service_smtp.h"
 #include "service_snmp.h"
 #include "service_ssh.h"
 #include "service_ssl.h"
@@ -87,10 +87,6 @@
 #define STATE_ID_MAX_VALID_COUNT             5
 #define STATE_ID_NEEDED_DUPE_DETRACT_COUNT   3
 
-/* If this is greater than 1, more than 1 service detector can be searched for
- * and tried per flow based on port/pattern (if a valid detector doesn't
- * already exist). */
-#define MAX_CANDIDATE_SERVICES 10
 
 static void *service_flowdata_get(tAppIdData *flow, unsigned service_id);
 static int service_flowdata_add(tAppIdData *flow, void *data, unsigned service_id, AppIdFreeFCN fcn);
@@ -116,6 +112,7 @@ const ServiceApi serviceapi =
     .incompatible_data = &AppIdServiceIncompatibleData,
     .add_host_info = &AppIdAddHostInfo,
     .add_payload = &AppIdAddPayload,
+    .add_multipayload = &AppIdAddMultiPayload,
     .add_user = &AppIdAddUser,
     .add_service_consume_subtype = &AppIdServiceAddServiceSubtype,
     .add_misc = &AppIdServiceAddMisc,
@@ -160,6 +157,7 @@ static InitServiceAPI svc_init_api =
     .RemovePorts = CServiceRemovePorts,
     .RegisterPatternUser = &ServiceRegisterPatternUser,
     .RegisterAppId = &appSetServiceValidator,
+    .RegisterDetectorCallback = &appSetServiceDetectorCallback,
 };
 
 static CleanServiceAPI svc_clean_api =
@@ -169,13 +167,16 @@ static CleanServiceAPI svc_clean_api =
 extern tRNAServiceValidationModule timbuktu_service_mod;
 extern tRNAServiceValidationModule bit_service_mod;
 extern tRNAServiceValidationModule tns_service_mod;
+extern tRNAServiceValidationModule http_service_mod;
 
 static tRNAServiceValidationModule *static_service_list[] =
 {
     &bgp_service_mod,
     &bootp_service_mod,
     &dcerpc_service_mod,
+    &cip_service_mod,
     &dns_service_mod,
+    &enip_service_mod,
     &flap_service_mod,
     &ftp_service_mod,
     &irc_service_mod,
@@ -192,7 +193,6 @@ static tRNAServiceValidationModule *static_service_list[] =
     &rshell_service_mod,
     &rsync_service_mod,
     &rtmp_service_mod,
-    &smtp_service_mod,
     &snmp_service_mod,
     &ssh_service_mod,
     &ssl_service_mod,
@@ -205,7 +205,8 @@ static tRNAServiceValidationModule *static_service_list[] =
     &timbuktu_service_mod,
     &bit_service_mod,
     &tns_service_mod,
-    &pattern_service_mod
+    &pattern_service_mod,
+    &http_service_mod
 };
 
 typedef struct _SERVICE_MATCH
@@ -305,10 +306,19 @@ tAppId getPortServiceId(uint8_t proto, uint16_t port, const tAppIdConfig *pConfi
 
     if (proto == IPPROTO_TCP)
         appId = pConfig->tcp_port_only[port];
-    else if (proto == IPPROTO_UDP)
-        appId = pConfig->udp_port_only[port];
     else
-        appId = pConfig->ip_protocol[proto];
+        appId = pConfig->udp_port_only[port];
+
+    checkSandboxDetection(appId);
+
+    return appId;
+}
+
+tAppId getProtocolServiceId(uint8_t proto, const tAppIdConfig *pConfig)
+{
+    tAppId appId;
+
+    appId = pConfig->ip_protocol[proto];
 
     checkSandboxDetection(appId);
 
@@ -352,7 +362,7 @@ static inline tRNAServiceElement *AppIdGetNextServiceByPort(
     tRNAServiceElement *service = NULL;
     SF_LIST *list = NULL;
 
-    if (AppIdServiceDetectionLevel(rnaData) == 1)
+    if (AppIdServiceDetectionLevel(rnaData))
     {
         unsigned remappedPort = sslPortRemap(port);
         if (remappedPort)
@@ -391,7 +401,7 @@ static inline tRNAServiceElement *AppIdGetNextServiceByPort(
     return service;
 }
 
-static inline tRNAServiceElement *AppIdNextServiceByPattern(AppIdServiceIDState *id_state
+static inline tRNAServiceElement *AppIdNextServiceByPattern(struct _SERVICE_MATCH **currentService
 #ifdef SERVICE_DEBUG
 #if SERVICE_DEBUG_PORT
                                                            , uint16_t port
@@ -401,12 +411,12 @@ static inline tRNAServiceElement *AppIdNextServiceByPattern(AppIdServiceIDState 
 {
     tRNAServiceElement *service = NULL;
 
-    while (id_state->currentService)
+    while (*currentService)
     {
-        id_state->currentService = id_state->currentService->next;
-        if (id_state->currentService && id_state->currentService->svc->current_ref_count)
+        *currentService = (*currentService)->next;
+        if (*currentService && (*currentService)->svc->current_ref_count)
         {
-            service = id_state->currentService->svc;
+            service = (*currentService)->svc;
             break;
         }
     }
@@ -422,7 +432,7 @@ static inline tRNAServiceElement *AppIdNextServiceByPattern(AppIdServiceIDState 
     return service;
 }
 
-const tRNAServiceElement *ServiceGetServiceElement(RNAServiceValidationFCN fcn, struct _Detector *userdata,
+tRNAServiceElement *ServiceGetServiceElement(RNAServiceValidationFCN fcn, struct _Detector *userdata,
                                                   tAppIdConfig *pConfig)
 {
     tRNAServiceElement *li;
@@ -796,7 +806,7 @@ int LoadServiceModules(const char **dir_list, uint32_t instance_id, tAppIdConfig
     unsigned i;
 
     svc_init_api.instance_id = instance_id;
-    svc_init_api.debug = appidStaticConfig.app_id_debug;
+    svc_init_api.debug = appidStaticConfig->app_id_debug;
     svc_init_api.dpd = &_dpd;
     svc_init_api.pAppidConfig = pConfig;
 
@@ -929,7 +939,7 @@ void ReconfigureServices(tAppIdConfig *pConfig)
 
 void CleanupServices(tAppIdConfig *pConfig)
 {
-#ifdef RNA_FULL_CLEANUP
+#ifdef APPID_FULL_CLEANUP
     tServicePatternData *pattern;
     tRNAServiceElement *se;
     ServiceMatch *sm;
@@ -994,7 +1004,6 @@ void CleanupServices(tAppIdConfig *pConfig)
         free_service_match = sm->next;
         free(sm);
     }
-    cleanupFreeServiceMatch();
     if (smOrderedList)
      {
         free(smOrderedList);
@@ -1034,8 +1043,8 @@ static int AppIdPatternPrecedence(const void *a, const void *b)
  * this sensor.
 */
 static inline tRNAServiceElement *AppIdGetServiceByPattern(const SFSnortPacket *pkt, uint8_t proto,
-                                                          const int dir, AppIdServiceIDState *id_state,
-                                                          const tServiceConfig *pServiceConfig)
+                                                          const int dir, const tServiceConfig *pServiceConfig,
+                                                          struct _SERVICE_MATCH **serviceList, struct _SERVICE_MATCH **currentService)
 {
     void *patterns = NULL;
     ServiceMatch *match_list;
@@ -1124,19 +1133,10 @@ static inline tRNAServiceElement *AppIdGetServiceByPattern(const SFSnortPacket *
     smOrderedList[i]->next = NULL;
 
     service = smOrderedList[0]->svc;
-
-    if (id_state)
-    {
-        id_state->svc = service;
-        if (id_state->serviceList != NULL)
-        {
-            AppIdFreeServiceMatchList(id_state->serviceList);
-        }
-        id_state->serviceList = smOrderedList[0];
-        id_state->currentService = smOrderedList[0];
-    }
-    else
-        AppIdFreeServiceMatchList(smOrderedList[0]);
+    if (*serviceList)
+        AppIdFreeServiceMatchList(*serviceList);
+    *serviceList = smOrderedList[0];
+    *currentService = smOrderedList[0];
 
 #ifdef SERVICE_DEBUG
 #if SERVICE_DEBUG_PORT
@@ -1170,7 +1170,18 @@ static inline tRNAServiceElement * AppIdGetServiceByBruteForce(
 
 static void AppIdAddHostInfo(tAppIdData *flow, SERVICE_HOST_INFO_CODE code, const void *info)
 {
+    if (code == SERVICE_HOST_INFO_NETBIOS_NAME)
+    {
+        if (flow->netbios_name)
+        {
+            if (strcmp(flow->netbios_name,(char *)info) == 0)
+                return;
+            free(flow->netbios_name);
+        }
+        flow->netbios_name = strdup((char *)info);
+    }
 }
+
 void AppIdFreeDhcpData(DhcpFPData *dd)
 {
     free(dd);
@@ -1180,7 +1191,7 @@ static int AppIdAddDHCP(tAppIdData *flowp, unsigned op55_len, const uint8_t *op5
 
 
 {
-    if(op55_len && op55_len <= DHCP_OPTION55_LEN_MAX && !getAppIdExtFlag(flowp, APPID_SESSION_HAS_DHCP_FP))
+    if(op55_len && op55_len <= DHCP_OPTION55_LEN_MAX && !getAppIdFlag(flowp, APPID_SESSION_HAS_DHCP_FP))
     {
         DhcpFPData *rdd;
 
@@ -1194,7 +1205,7 @@ static int AppIdAddDHCP(tAppIdData *flowp, unsigned op55_len, const uint8_t *op5
             return -1;
         }
 
-        setAppIdExtFlag(flowp, APPID_SESSION_HAS_DHCP_FP);
+        setAppIdFlag(flowp, APPID_SESSION_HAS_DHCP_FP);
         rdd->op55_len = (op55_len > DHCP_OP55_MAX_SIZE) ? DHCP_OP55_MAX_SIZE:op55_len;
         memcpy(rdd->op55, op55, rdd->op55_len);
         rdd->op60_len =  (op60_len > DHCP_OP60_MAX_SIZE) ? DHCP_OP60_MAX_SIZE:op60_len;
@@ -1223,7 +1234,7 @@ static void AppIdAddHostIP(tAppIdData *flow, const uint8_t *mac, uint32_t ip, in
     if (memcmp(mac, zeromac, 6) == 0 || ip == 0)
          return;
 
-    if (!getAppIdExtFlag(flow, APPID_SESSION_DO_RNA) || getAppIdExtFlag(flow, APPID_SESSION_HAS_DHCP_INFO))
+    if (!getAppIdFlag(flow, APPID_SESSION_DO_RNA) || getAppIdFlag(flow, APPID_SESSION_HAS_DHCP_INFO))
         return;
 
     flags = isIPv4HostMonitored(ntohl(ip), zone);
@@ -1243,7 +1254,7 @@ static void AppIdAddHostIP(tAppIdData *flow, const uint8_t *mac, uint32_t ip, in
         AppIdFreeDhcpInfo(info);
         return;
     }
-    setAppIdExtFlag(flow, APPID_SESSION_HAS_DHCP_INFO);
+    setAppIdFlag(flow, APPID_SESSION_HAS_DHCP_INFO);
     info->ipAddr = ip;
     memcpy(info->macAddr, mac, sizeof(info->macAddr));
     info->subnetmask = subnetmask;
@@ -1267,6 +1278,9 @@ static void AppIdAddSMBData(tAppIdData *flow, unsigned major, unsigned minor, ui
     if (flags & FINGERPRINT_UDP_FLAGS_XENIX)
         return;
 
+    if (getAppIdFlag(flow, APPID_SESSION_HAS_SMB_INFO))
+        return;
+
     if (smb_data_free_list)
     {
         sd = smb_data_free_list;
@@ -1283,7 +1297,7 @@ static void AppIdAddSMBData(tAppIdData *flow, unsigned major, unsigned minor, ui
         return;
     }
 
-    setAppIdExtFlag(flow, APPID_SESSION_HAS_SMB_INFO);
+    setAppIdFlag(flow, APPID_SESSION_HAS_SMB_INFO);
     sd->major = major;
     sd->minor = minor;
     sd->flags = flags & FINGERPRINT_UDP_FLAGS_MASK;
@@ -1291,11 +1305,14 @@ static void AppIdAddSMBData(tAppIdData *flow, unsigned major, unsigned minor, ui
 
 static int AppIdServiceAddServiceEx(tAppIdData *flow, const SFSnortPacket *pkt, int dir,
                                     const tRNAServiceElement *svc_element,
-                                    tAppId appId, const char *vendor, const char *version)
+                                    tAppId appId, const char *vendor, const char *version, AppIdServiceIDState *id_state)
 {
-    AppIdServiceIDState *id_state;
     uint16_t port;
     sfaddr_t *ip;
+
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+    uint32_t cid = GET_SFOUTER_IPH_PROTOID(pkt, pkt_header);
+#endif
 
     if (!flow || !pkt || !svc_element)
     {
@@ -1303,6 +1320,11 @@ static int AppIdServiceAddServiceEx(tAppIdData *flow, const SFSnortPacket *pkt, 
         return SERVICE_EINVALID;
     }
 
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+    uint16_t asId; 
+#endif
+
+    tAppId tmpServiceAppId = flow->serviceAppId;
     flow->serviceData = svc_element;
 
     if (vendor)
@@ -1321,26 +1343,37 @@ static int AppIdServiceAddServiceEx(tAppIdData *flow, const SFSnortPacket *pkt, 
         if (!flow->serviceVersion)
             _dpd.errMsg("failed to allocate service version");
     }
-    setAppIdExtFlag(flow, APPID_SESSION_SERVICE_DETECTED);
+    setAppIdFlag(flow, APPID_SESSION_SERVICE_DETECTED);
     flow->serviceAppId = appId;
 
     checkSandboxDetection(appId);
 
-    if (getAppIdExtFlag(flow, APPID_SESSION_IGNORE_HOST))
+    if (appId > APP_ID_NONE && tmpServiceAppId != appId)
+        CheckDetectorCallback(pkt, flow, (APPID_SESSION_DIRECTION) dir, appId, pAppidActiveConfig);
+
+    if (getAppIdFlag(flow, APPID_SESSION_IGNORE_HOST))
         return SERVICE_SUCCESS;
 
-    if (!getAppIdExtFlag(flow, APPID_SESSION_UDP_REVERSED))
+    if (!getAppIdFlag(flow, APPID_SESSION_UDP_REVERSED))
     {
         if (dir == APP_ID_FROM_INITIATOR)
         {
             ip = GET_DST_IP(pkt);
             port = pkt->dst_port;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+            asId = pkt->pkt_header->address_space_id_dst;
+#endif
         }
         else
         {
             ip = GET_SRC_IP(pkt);
             port = pkt->src_port;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+            asId = pkt->pkt_header->address_space_id_src;
+#endif
         }
+        if (flow->service_port)
+            port = flow->service_port;
     }
     else
     {
@@ -1348,53 +1381,70 @@ static int AppIdServiceAddServiceEx(tAppIdData *flow, const SFSnortPacket *pkt, 
         {
             ip = GET_SRC_IP(pkt);
             port = pkt->src_port;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+            asId = pkt->pkt_header->address_space_id_src;
+#endif
         }
         else
         {
             ip = GET_DST_IP(pkt);
             port = pkt->dst_port;
-        }
-    }
-
-    /* If we ended up with UDP reversed, make sure we're pointing to the
-     * correct host tracker entry. */
-    if (getAppIdExtFlag(flow, APPID_SESSION_UDP_REVERSED))
-    {
-        flow->id_state = AppIdGetServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow));
-    }
-
-    if (!(id_state = flow->id_state))
-    {
-        if (!(id_state = AppIdAddServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow))))
-        {
-            _dpd.errMsg("Add service failed to create state");
-            return SERVICE_ENOMEM;
-        }
-        flow->id_state = id_state;
-        flow->service_ip = *ip;
-        flow->service_port = port;
-    }
-    else
-    {
-        if (id_state->serviceList)
-        {
-            AppIdFreeServiceMatchList(id_state->serviceList);
-            id_state->serviceList = NULL;
-            id_state->currentService = NULL;
-        }
-        if (!sfaddr_is_set(&flow->service_ip))
-        {
-            flow->service_ip = *ip;
-            flow->service_port = port;
-        }
-#ifdef SERVICE_DEBUG
-#if SERVICE_DEBUG_PORT
-        if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+            asId = pkt->pkt_header->address_space_id_dst;
 #endif
-            fprintf(SF_DEBUG_FILE, "Service %d for protocol %u on port %u (%u->%u) is valid\n",
-                    (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port, (unsigned)pkt->src_port, (unsigned)pkt->dst_port);
-#endif
+        }
     }
+    if (!id_state)
+    {
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        id_state = AppIdGetServiceIDState(ip, flow->proto, port,
+                                          AppIdServiceDetectionLevel(flow),
+                                          asId, cid);
+#else
+        id_state = AppIdGetServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow), cid);
+#endif
+#else /* No carrier id */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        id_state = AppIdGetServiceIDState(ip, flow->proto, port,
+                                          AppIdServiceDetectionLevel(flow),
+                                          asId);
+#else
+        id_state = AppIdGetServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow));
+#endif
+#endif
+    } 
+
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)   
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+    if (!id_state && !(id_state = AppIdAddServiceIDState(ip, flow->proto, port,
+                                                         AppIdServiceDetectionLevel(flow), 
+                                                         asId, cid)))
+#else
+    if (!id_state && !(id_state = AppIdAddServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow), cid)))
+#endif
+#else /* No carrier id */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF) 
+    if (!id_state && !(id_state = AppIdAddServiceIDState(ip, flow->proto, port,
+                                                         AppIdServiceDetectionLevel(flow),
+                                                         asId)))
+#else
+    if (!id_state && !(id_state = AppIdAddServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow))))
+#endif
+#endif
+    {
+        _dpd.errMsg("Add service failed to create state");
+        return SERVICE_ENOMEM;
+    }
+    flow->service_ip = *ip;
+    flow->service_port = port;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+    flow->serviceAsId = asId;
+#endif
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+    flow->carrierId = cid;
+#endif
+
     id_state->reset_time = 0;
     if (id_state->state != SERVICE_ID_VALID)
     {
@@ -1409,15 +1459,33 @@ static int AppIdServiceAddServiceEx(tAppIdData *flow, const SFSnortPacket *pkt, 
 
 #ifdef SERVICE_DEBUG
 #if SERVICE_DEBUG_PORT
-if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
+    if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
 #endif
-{
-    char ipstr[INET6_ADDRSTRLEN];
+    {
+        char ipstr[INET6_ADDRSTRLEN];
 
-    ipstr[0] = 0;
-    inet_ntop(sfaddr_family(&flow->service_ip), (void *)sfaddr_get_ptr(&flow->service_ip), ipstr, sizeof(ipstr));
-    fprintf(SF_DEBUG_FILE, "Valid: %s:%u:%u %p %d\n", ipstr, (unsigned)flow->proto, (unsigned)flow->service_port, id_state, (int)id_state->state);
-}
+        ipstr[0] = 0;
+        inet_ntop(sfaddr_family(&flow->service_ip), (void *)sfaddr_get_ptr(&flow->service_ip), ipstr, sizeof(ipstr));
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        fprintf(SF_DEBUG_FILE, "Valid: %s:%u:%u AS %u CID:%u %p %d\n", ipstr,
+                (unsigned)flow->proto, (unsigned)flow->service_port,
+                asId, (unsigned)cid, id_state, (int)id_state->state);
+#else
+        fprintf(SF_DEBUG_FILE, "Valid: %s:%u:%u CID:%u %p %d\n", ipstr, (unsigned)flow->proto,
+                (unsigned)flow->service_port, (unsigned)cid, id_state, (int)id_state->state);
+#endif
+#else /* No carrierid support */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        fprintf(SF_DEBUG_FILE, "Valid: %s:%u:%u AS %u %p %d\n", ipstr,
+                (unsigned)flow->proto, (unsigned)flow->service_port,
+                asId, id_state, (int)id_state->state);
+#else
+        fprintf(SF_DEBUG_FILE, "Valid: %s:%u:%u %p %d\n", ipstr, (unsigned)flow->proto,
+                (unsigned)flow->service_port, id_state, (int)id_state->state);
+#endif
+#endif
+    }
 #endif
 
     if (!id_state->valid_count)
@@ -1431,15 +1499,33 @@ if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
     else if (id_state->valid_count < STATE_ID_MAX_VALID_COUNT)
         id_state->valid_count++;
 
-    /* Done looking for this session. */
-    id_state->searching = false;
-
 #ifdef SERVICE_DEBUG
 #if SERVICE_DEBUG_PORT
     if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
 #endif
+    {
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        fprintf(SF_DEBUG_FILE, "Service %d for protocol %u on port %u (%u->%u) AS %u CID %u is valid\n",
+                (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port,
+                (unsigned)pkt->src_port, (unsigned)pkt->dst_port, asId, (unsigned) cid);
+#else
+        fprintf(SF_DEBUG_FILE, "Service %d for protocol %u on port %u (%u->%u) CID %u is valid\n",
+                (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port,
+                (unsigned)pkt->src_port, (unsigned)pkt->dst_port, (unsigned) cid);
+#endif
+#else /* No carrier id support */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        fprintf(SF_DEBUG_FILE, "Service %d for protocol %u on port %u (%u->%u) AS %u is valid\n",
+                (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port,
+                (unsigned)pkt->src_port, (unsigned)pkt->dst_port, asId);
+#else
         fprintf(SF_DEBUG_FILE, "Service %d for protocol %u on port %u (%u->%u) is valid\n",
-                (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port, (unsigned)pkt->src_port, (unsigned)pkt->dst_port);
+                (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port,
+                (unsigned)pkt->src_port, (unsigned)pkt->dst_port);
+#endif
+#endif
+    }
 #endif
     return SERVICE_SUCCESS;
 }
@@ -1447,7 +1533,7 @@ if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
 int AppIdServiceAddServiceSubtype(tAppIdData *flow, const SFSnortPacket *pkt, int dir,
                                   const tRNAServiceElement *svc_element,
                                   tAppId appId, const char *vendor, const char *version,
-                                  RNAServiceSubtype *subtype)
+                                  RNAServiceSubtype *subtype, AppIdServiceIDState *id_state)
 {
     flow->subtype = subtype;
     if (!svc_element->current_ref_count)
@@ -1456,18 +1542,39 @@ int AppIdServiceAddServiceSubtype(tAppIdData *flow, const SFSnortPacket *pkt, in
 #if SERVICE_DEBUG_PORT
         if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
 #endif
+        {
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+            fprintf(SF_DEBUG_FILE, "Service %d for protocol %u on port %u (%u->%u) AS %u CID %u is valid, but skipped\n",
+                    (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port,
+                    (unsigned)pkt->src_port, (unsigned)pkt->dst_port, flow->serviceAsId, (unsigned)flow->carrierId); 
+#else
+            fprintf(SF_DEBUG_FILE, "Service %d for protocol %u on port %u (%u->%u) CID %u is valid, but skipped\n",
+                    (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port,
+                    (unsigned)pkt->src_port, (unsigned)pkt->dst_port, (unsigned)flow->carrierId);
+#endif
+#else /* No carrier id */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+            fprintf(SF_DEBUG_FILE, "Service %d for protocol %u on port %u (%u->%u) AS %u is valid, but skipped\n",
+                    (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port,
+                    (unsigned)pkt->src_port, (unsigned)pkt->dst_port, flow->serviceAsId);
+#else
             fprintf(SF_DEBUG_FILE, "Service %d for protocol %u on port %u (%u->%u) is valid, but skipped\n",
-                    (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port, (unsigned)pkt->src_port, (unsigned)pkt->dst_port);
+                    (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port,
+                    (unsigned)pkt->src_port, (unsigned)pkt->dst_port);
+#endif
+#endif
+        }
 #endif
         return SERVICE_SUCCESS;
     }
-    return AppIdServiceAddServiceEx(flow, pkt, dir, svc_element, appId, vendor, version);
+    return AppIdServiceAddServiceEx(flow, pkt, dir, svc_element, appId, vendor, version, id_state);
 }
 
 int AppIdServiceAddService(tAppIdData *flow, const SFSnortPacket *pkt, int dir,
                            const tRNAServiceElement *svc_element,
                            tAppId appId, const char *vendor, const char *version,
-                           const RNAServiceSubtype *subtype)
+                           const RNAServiceSubtype *subtype, AppIdServiceIDState *id_state)
 {
     RNAServiceSubtype *new_subtype = NULL;
     RNAServiceSubtype *tmp_subtype;
@@ -1478,8 +1585,29 @@ int AppIdServiceAddService(tAppIdData *flow, const SFSnortPacket *pkt, int dir,
 #if SERVICE_DEBUG_PORT
         if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
 #endif
+        {
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+            fprintf(SF_DEBUG_FILE, "Service %d for protocol %u on port %u (%u->%u) AS %u CID %u is valid, but skipped\n",
+                    (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port,
+                    (unsigned)pkt->src_port, (unsigned)pkt->dst_port, flow->serviceAsId, (unsigned)flow->carrierId);
+#else
+            fprintf(SF_DEBUG_FILE, "Service %d for protocol %u on port %u (%u->%u) CID %u is valid, but skipped\n",
+                    (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port,
+                    (unsigned)pkt->src_port, (unsigned)pkt->dst_port, (unsigned)flow->carrierId);
+#endif
+#else /* No carrierid support */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+            fprintf(SF_DEBUG_FILE, "Service %d for protocol %u on port %u (%u->%u) AS %u is valid, but skipped\n",
+                    (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port,
+                    (unsigned)pkt->src_port, (unsigned)pkt->dst_port, flow->serviceAsId);
+#else
             fprintf(SF_DEBUG_FILE, "Service %d for protocol %u on port %u (%u->%u) is valid, but skipped\n",
-                    (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port, (unsigned)pkt->src_port, (unsigned)pkt->dst_port);
+                    (int)appId, (unsigned)flow->proto, (unsigned)flow->service_port,
+                    (unsigned)pkt->src_port, (unsigned)pkt->dst_port);
+#endif
+#endif
+        }
 #endif
         return SERVICE_SUCCESS;
     }
@@ -1512,81 +1640,67 @@ int AppIdServiceAddService(tAppIdData *flow, const SFSnortPacket *pkt, int dir,
         }
     }
     flow->subtype = new_subtype;
-    return AppIdServiceAddServiceEx(flow, pkt, dir, svc_element, appId, vendor, version);
+    return AppIdServiceAddServiceEx(flow, pkt, dir, svc_element, appId, vendor, version, id_state);
 }
 
 int AppIdServiceInProcess(tAppIdData *flow, const SFSnortPacket *pkt, int dir,
-                          const tRNAServiceElement *svc_element)
+                          const tRNAServiceElement *svc_element,
+                          AppIdServiceIDState *id_state)
 {
-    AppIdServiceIDState *id_state;
-
     if (!flow || !pkt)
     {
         _dpd.errMsg( "Invalid arguments to service_in_process");
         return SERVICE_EINVALID;
     }
 
-    if (dir == APP_ID_FROM_INITIATOR || getAppIdExtFlag(flow, APPID_SESSION_IGNORE_HOST|APPID_SESSION_UDP_REVERSED))
+    if (dir == APP_ID_FROM_INITIATOR || getAppIdFlag(flow, APPID_SESSION_IGNORE_HOST|APPID_SESSION_UDP_REVERSED))
         return SERVICE_SUCCESS;
 
-    if (!(id_state = flow->id_state))
+    if (!sfaddr_is_set(&flow->service_ip))
     {
-        uint16_t port;
         sfaddr_t *ip;
 
         ip = GET_SRC_IP(pkt);
-        port = pkt->src_port;
-
-        if (!(id_state = AppIdAddServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow))))
-        {
-            _dpd.errMsg( "In-process service failed to create state");
-            return SERVICE_ENOMEM;
-        }
-        flow->id_state = id_state;
         flow->service_ip = *ip;
-        flow->service_port = port;
-        id_state->state = SERVICE_ID_NEW;
-        id_state->svc = svc_element;
-    }
-    else
-    {
-        if (!sfaddr_is_set(&flow->service_ip))
-        {
-            sfaddr_t *ip = GET_SRC_IP(pkt);
-            flow->service_ip = *ip;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        flow->serviceAsId = pkt->pkt_header->address_space_id_src;
+#endif
+        if (!flow->service_port)
             flow->service_port = pkt->src_port;
-        }
-#ifdef SERVICE_DEBUG
-#if SERVICE_DEBUG_PORT
-        if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
-#endif
-            fprintf(SF_DEBUG_FILE, "Service for protocol %u on port %u is in process (%u->%u), %p %s",
-                    (unsigned)flow->proto, (unsigned)flow->service_port, (unsigned)pkt->src_port, (unsigned)pkt->dst_port,
-                    svc_element->validate, svc_element->name ? :"UNKNOWN");
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+        flow->carrierId = GET_SFOUTER_IPH_PROTOID(pkt, pkt_header);
 #endif
     }
-
-#ifdef SERVICE_DEBUG
-#if SERVICE_DEBUG_PORT
-if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
-#endif
-{
-    char ipstr[INET6_ADDRSTRLEN];
-
-    ipstr[0] = 0;
-    inet_ntop(sfaddr_family(&flow->service_ip), (void *)sfaddr_get_ptr(&flow->service_ip), ipstr, sizeof(ipstr));
-    fprintf(SF_DEBUG_FILE, "Inprocess: %s:%u:%u %p %d\n", ipstr, (unsigned)flow->proto, (unsigned)flow->service_port,
-            id_state, (int)id_state->state);
-}
-#endif
-
 #ifdef SERVICE_DEBUG
 #if SERVICE_DEBUG_PORT
     if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
 #endif
-        fprintf(SF_DEBUG_FILE, "Service for protocol %u on port %u is in process (%u->%u), %s\n",
+    {
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        fprintf(SF_DEBUG_FILE, "Service for protocol %u on port %u is in process (%u->%u) AS %u CID %u, %p %s",
+                (unsigned)flow->proto, (unsigned)flow->service_port, (unsigned)pkt->src_port,
+                (unsigned)pkt->dst_port, flow->serviceAsId, (unsigned)flow->carrierId, 
+                svc_element->validate, svc_element->name ? :"UNKNOWN");
+#else
+        fprintf(SF_DEBUG_FILE, "Service for protocol %u on port %u is in process (%u->%u) CID %u, %p %s",
                 (unsigned)flow->proto, (unsigned)flow->service_port, (unsigned)pkt->src_port, (unsigned)pkt->dst_port,
-                svc_element->name ? :"UNKNOWN");
+                (unsigned)flow->carrierId, svc_element->validate, svc_element->name ? :"UNKNOWN");
+#endif
+#else /* No carrierid support */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        fprintf(SF_DEBUG_FILE, "Service for protocol %u on port %u is in process (%u->%u) AS %u, %p %s",
+                (unsigned)flow->proto, (unsigned)flow->service_port, (unsigned)pkt->src_port,
+                (unsigned)pkt->dst_port, flow->serviceAsId, 
+                svc_element->validate, svc_element->name ? :"UNKNOWN");
+#else
+        fprintf(SF_DEBUG_FILE, "Service for protocol %u on port %u is in process (%u->%u), %p %s",
+                (unsigned)flow->proto, (unsigned)flow->service_port, (unsigned)pkt->src_port, (unsigned)pkt->dst_port,
+                svc_element->validate, svc_element->name ? :"UNKNOWN");
+#endif
+#endif
+
+    }
 #endif
 
     return SERVICE_SUCCESS;
@@ -1599,10 +1713,9 @@ if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
  * clients going to same service then this most likely the service is something else.
  */
 int AppIdServiceIncompatibleData(tAppIdData *flow, const SFSnortPacket *pkt, int dir,
-                                 const tRNAServiceElement *svc_element, unsigned flow_data_index, const tAppIdConfig *pConfig)
+                                 const tRNAServiceElement *svc_element, unsigned flow_data_index,
+                                 const tAppIdConfig *pConfig, AppIdServiceIDState *id_state)
 {
-    AppIdServiceIDState *id_state;
-
     if (!flow || !pkt)
     {
         _dpd.errMsg("Invalid arguments to service_incompatible_data");
@@ -1615,81 +1728,130 @@ int AppIdServiceIncompatibleData(tAppIdData *flow, const SFSnortPacket *pkt, int
     /* If we're still working on a port/pattern list of detectors, then ignore
      * individual fails until we're done looking at everything. */
     if (    (flow->serviceData == NULL)                                                /* we're working on a list of detectors, and... */
-         && (flow->candidate_service_list != NULL)
-         && (flow->id_state != NULL) )
+         && (flow->candidate_service_list != NULL))
     {
         if (sflist_count(flow->candidate_service_list) != 0)                           /*     it's not empty */
         {
             return SERVICE_SUCCESS;
         }
-        else if (    (flow->num_candidate_services_tried >= MAX_CANDIDATE_SERVICES)    /*     or it's empty, but we're tried everything we're going to try */
-                  || (flow->id_state->state == SERVICE_ID_BRUTE_FORCE) )
-        {
-            return SERVICE_SUCCESS;
-        }
     }
 
-    setAppIdExtFlag(flow, APPID_SESSION_SERVICE_DETECTED);
-    clearAppIdExtFlag(flow, APPID_SESSION_CONTINUE);
+    setAppIdFlag(flow, APPID_SESSION_SERVICE_DETECTED);
+    clearAppIdFlag(flow, APPID_SESSION_CONTINUE);
 
     flow->serviceAppId = APP_ID_NONE;
 
-    if (getAppIdExtFlag(flow, APPID_SESSION_IGNORE_HOST|APPID_SESSION_UDP_REVERSED) || (svc_element && !svc_element->current_ref_count))
+    if (getAppIdFlag(flow, APPID_SESSION_IGNORE_HOST|APPID_SESSION_UDP_REVERSED) || (svc_element && !svc_element->current_ref_count))
         return SERVICE_SUCCESS;
 
     if (dir == APP_ID_FROM_INITIATOR)
     {
-        setAppIdExtFlag(flow, APPID_SESSION_INCOMPATIBLE);
+        setAppIdFlag(flow, APPID_SESSION_INCOMPATIBLE);
         return SERVICE_SUCCESS;
     }
 
-    if (!(id_state = flow->id_state))
+    uint16_t port;
+    sfaddr_t *ip;
+    ip = GET_SRC_IP(pkt);
+    port = flow->service_port ? flow->service_port : pkt->src_port;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+    uint16_t asId = pkt->pkt_header->address_space_id_src;
+#endif
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+    uint32_t cid = GET_SFOUTER_IPH_PROTOID(pkt, pkt_header);
+#endif
+
+    if (!id_state)
+    {    
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        id_state = AppIdGetServiceIDState(ip, flow->proto, port,
+                                          AppIdServiceDetectionLevel(flow),
+                                          asId, cid);
+#else
+        id_state = AppIdGetServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow), cid);
+#endif
+#else /* No carrier id */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        id_state = AppIdGetServiceIDState(ip, flow->proto, port,
+                                          AppIdServiceDetectionLevel(flow),
+                                          asId);
+#else
+        id_state = AppIdGetServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow));
+#endif
+#endif
+    }   
+
+    if (!id_state)
     {
-        uint16_t port;
-        sfaddr_t *ip;
-
-        ip = GET_SRC_IP(pkt);
-        port = pkt->src_port;
-
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        if (!(id_state = AppIdAddServiceIDState(ip, flow->proto, port,
+                                                AppIdServiceDetectionLevel(flow), 
+                                                asId, cid)))
+#else
+        if (!(id_state = AppIdAddServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow), cid)))
+#endif
+#else /* No carrier id */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF) 
+        if (!(id_state = AppIdAddServiceIDState(ip, flow->proto, port,
+                                                AppIdServiceDetectionLevel(flow),
+                                                asId)))
+#else
         if (!(id_state = AppIdAddServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow))))
+#endif
+#endif
         {
             _dpd.errMsg("Incompatible service failed to create state");
             return SERVICE_ENOMEM;
         }
-        flow->id_state = id_state;
-        flow->service_ip = *ip;
-        flow->service_port = port;
-        id_state->state = SERVICE_ID_NEW;
         id_state->svc = svc_element;
     }
     else
     {
-        if (!sfaddr_is_set(&flow->service_ip))
-        {
-            sfaddr_t *ip = GET_SRC_IP(pkt);
-            flow->service_ip = *ip;
-            flow->service_port = pkt->src_port;
-    #ifdef SERVICE_DEBUG
-    #if SERVICE_DEBUG_PORT
-            if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
-    #endif
-                fprintf(SF_DEBUG_FILE, "service_IC: Changed State to %s for protocol %u on port %u (%u->%u), count %u, %s\n",
-                        serviceIdStateName[id_state->state], (unsigned)flow->proto, (unsigned)flow->service_port,
-                        (unsigned)pkt->src_port, (unsigned)pkt->dst_port, id_state->invalid_count,
-                        (id_state->svc && id_state->svc->name) ? id_state->svc->name:"UNKNOWN");
-    #endif
-        }
         id_state->reset_time = 0;
     }
-
+    flow->service_ip = *ip;
+    flow->service_port = port;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+    flow->serviceAsId = asId;
+#endif
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+    flow->carrierId = cid;
+#endif
 #ifdef SERVICE_DEBUG
 #if SERVICE_DEBUG_PORT
     if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
 #endif
+    {
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+       fprintf(SF_DEBUG_FILE, "service_IC: State %s for protocol %u on port %u (%u->%u) AS %u CID %u, count %u, %s\n",
+               serviceIdStateName[id_state->state], (unsigned)flow->proto, (unsigned)flow->service_port,
+               (unsigned)pkt->src_port, (unsigned)pkt->dst_port, asId, (unsigned)flow->carrierId,
+               id_state->invalid_client_count,
+               (id_state->svc && id_state->svc->name) ? id_state->svc->name:"UNKNOWN");
+#else
+        fprintf(SF_DEBUG_FILE, "service_IC: State %s for protocol %u on port %u (%u->%u) CID %u, count %u, %s\n",
+                serviceIdStateName[id_state->state], (unsigned)flow->proto, (unsigned)flow->service_port,
+                (unsigned)pkt->src_port, (unsigned)pkt->dst_port, (unsigned) flow->carrierId, id_state->invalid_client_count,
+                (id_state->svc && id_state->svc->name) ? id_state->svc->name:"UNKNOWN");
+#endif
+#else /* No carrier id */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+       fprintf(SF_DEBUG_FILE, "service_IC: State %s for protocol %u on port %u (%u->%u) AS %u, count %u, %s\n",
+               serviceIdStateName[id_state->state], (unsigned)flow->proto, (unsigned)flow->service_port,
+               (unsigned)pkt->src_port, (unsigned)pkt->dst_port, asId, 
+               id_state->invalid_client_count,
+               (id_state->svc && id_state->svc->name) ? id_state->svc->name:"UNKNOWN");
+#else
         fprintf(SF_DEBUG_FILE, "service_IC: State %s for protocol %u on port %u (%u->%u), count %u, %s\n",
                 serviceIdStateName[id_state->state], (unsigned)flow->proto, (unsigned)flow->service_port,
                 (unsigned)pkt->src_port, (unsigned)pkt->dst_port, id_state->invalid_client_count,
                 (id_state->svc && id_state->svc->name) ? id_state->svc->name:"UNKNOWN");
+#endif
+#endif
+    }
 #endif
 
 #ifdef SERVICE_DEBUG
@@ -1707,43 +1869,22 @@ if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
 }
 #endif
 
-#ifdef SERVICE_DEBUG
-#if SERVICE_DEBUG_PORT
-if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
-#endif
-{
-    char ipstr[INET6_ADDRSTRLEN];
-
-    ipstr[0] = 0;
-    inet_ntop(sfaddr_family(&flow->service_ip), (void *)sfaddr_get_ptr(&flow->service_ip), ipstr, sizeof(ipstr));
-    fprintf(SF_DEBUG_FILE, "Incompat End: %s:%u:%u %p %d %s\n", ipstr, (unsigned)flow->proto, (unsigned)flow->service_port,
-            id_state, (int)id_state->state, (id_state->svc && id_state->svc->name) ? id_state->svc->name:"UNKNOWN");
-}
-#endif
-
     return SERVICE_SUCCESS;
 }
 
 int AppIdServiceFailService(tAppIdData* flow, const SFSnortPacket *pkt, int dir,
-                            const tRNAServiceElement *svc_element, unsigned flow_data_index, const tAppIdConfig *pConfig)
+                            const tRNAServiceElement *svc_element, unsigned flow_data_index,
+                            const tAppIdConfig *pConfig, AppIdServiceIDState *id_state)
 {
-    AppIdServiceIDState *id_state;
-
     if (flow_data_index != APPID_SESSION_DATA_NONE)
         AppIdFlowdataDelete(flow, flow_data_index);
 
     /* If we're still working on a port/pattern list of detectors, then ignore
      * individual fails until we're done looking at everything. */
     if (    (flow->serviceData == NULL)                                                /* we're working on a list of detectors, and... */
-         && (flow->candidate_service_list != NULL)
-         && (flow->id_state != NULL) )
+         && (flow->candidate_service_list != NULL))
     {
         if (sflist_count(flow->candidate_service_list) != 0)                           /*     it's not empty */
-        {
-            return SERVICE_SUCCESS;
-        }
-        else if (    (flow->num_candidate_services_tried >= MAX_CANDIDATE_SERVICES)    /*     or it's empty, but we're tried everything we're going to try */
-                  || (flow->id_state->state == SERVICE_ID_BRUTE_FORCE) )
         {
             return SERVICE_SUCCESS;
         }
@@ -1751,60 +1892,81 @@ int AppIdServiceFailService(tAppIdData* flow, const SFSnortPacket *pkt, int dir,
 
     flow->serviceAppId = APP_ID_NONE;
 
-    setAppIdExtFlag(flow, APPID_SESSION_SERVICE_DETECTED);
-    clearAppIdExtFlag(flow, APPID_SESSION_CONTINUE);
+    setAppIdFlag(flow, APPID_SESSION_SERVICE_DETECTED);
+    clearAppIdFlag(flow, APPID_SESSION_CONTINUE);
 
     /* detectors should be careful in marking flow UDP_REVERSED otherwise the same detector
      * gets all future flows. UDP_REVERSE should be marked only when detector positively
      * matches opposite direction patterns. */
 
-    if (getAppIdExtFlag(flow, APPID_SESSION_IGNORE_HOST|APPID_SESSION_UDP_REVERSED) || (svc_element && !svc_element->current_ref_count))
+    if (getAppIdFlag(flow, APPID_SESSION_IGNORE_HOST|APPID_SESSION_UDP_REVERSED) || (svc_element && !svc_element->current_ref_count))
         return SERVICE_SUCCESS;
 
     /* For subsequent packets, avoid marking service failed on client packet,
      * otherwise the service will show up on client side. */
     if (dir == APP_ID_FROM_INITIATOR)
     {
-        setAppIdExtFlag(flow, APPID_SESSION_INCOMPATIBLE);
+        setAppIdFlag(flow, APPID_SESSION_INCOMPATIBLE);
         return SERVICE_SUCCESS;
     }
 
-    if (!(id_state = flow->id_state))
+    uint16_t port;
+    sfaddr_t *ip;
+    ip = GET_SRC_IP(pkt);
+    port = flow->service_port ? flow->service_port : pkt->src_port;
+    flow->service_ip = *ip;
+    flow->service_port = port;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+    flow->serviceAsId = pkt->pkt_header->address_space_id_src;
+#endif
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+    flow->carrierId = GET_SFOUTER_IPH_PROTOID(pkt, pkt_header);
+#endif
+    if (!id_state)
+    { 
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)   
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF) 
+       id_state = AppIdGetServiceIDState(ip, flow->proto, port,
+                                         AppIdServiceDetectionLevel(flow),
+                                         flow->serviceAsId, flow->carrierId);
+#else
+       id_state = AppIdGetServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow), flow->carrierId);
+#endif
+#else /* No carrierid support */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+       id_state = AppIdGetServiceIDState(ip, flow->proto, port,
+                                         AppIdServiceDetectionLevel(flow),
+                                         flow->serviceAsId);
+#else
+       id_state = AppIdGetServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow));
+#endif
+#endif
+    }   
+
+    if (!id_state)
     {
-        uint16_t port;
-        sfaddr_t *ip;
-
-        ip = GET_SRC_IP(pkt);
-        port = pkt->src_port;
-
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        if (!(id_state = AppIdAddServiceIDState(ip, flow->proto, port,
+                                                AppIdServiceDetectionLevel(flow),
+                                                flow->serviceAsId, flow->carrierId)))
+#else
+        if (!(id_state = AppIdAddServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow), flow->carrierId)))
+#endif
+#else /* No carrierid support */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF) 
+        if (!(id_state = AppIdAddServiceIDState(ip, flow->proto, port,
+                                                AppIdServiceDetectionLevel(flow),
+                                                flow->serviceAsId)))
+#else
         if (!(id_state = AppIdAddServiceIDState(ip, flow->proto, port, AppIdServiceDetectionLevel(flow))))
+#endif
+#endif
         {
             _dpd.errMsg("Fail service failed to create state");
             return SERVICE_ENOMEM;
         }
-        flow->id_state = id_state;
-        flow->service_ip = *ip;
-        flow->service_port = port;
-        id_state->state = SERVICE_ID_NEW;
         id_state->svc = svc_element;
-    }
-    else
-    {
-        if (!sfaddr_is_set(&flow->service_ip))
-        {
-            sfaddr_t *ip = GET_SRC_IP(pkt);
-            flow->service_ip = *ip;
-            flow->service_port = pkt->src_port;
-        }
-#ifdef SERVICE_DEBUG
-#if SERVICE_DEBUG_PORT
-        if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
-#endif
-            fprintf(SF_DEBUG_FILE, "service_fail: State %s for protocol %u on port %u (%u->%u), count %u, valid count %u, currSvc %s\n",
-                    serviceIdStateName[id_state->state], (unsigned)flow->proto, (unsigned)flow->service_port,
-                    (unsigned)pkt->src_port, (unsigned)pkt->dst_port, id_state->invalid_count, id_state->valid_count,
-                    (svc_element && svc_element->name) ? svc_element->name:"UNKNOWN");
-#endif
     }
     id_state->reset_time = 0;
 
@@ -1812,10 +1974,35 @@ int AppIdServiceFailService(tAppIdData* flow, const SFSnortPacket *pkt, int dir,
 #if SERVICE_DEBUG_PORT
     if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
 #endif
+    {
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+       fprintf(SF_DEBUG_FILE, "service_fail: State %s for protocol %u on port %u (%u->%u) AS %u CID %u, count %u, valid count %u, currSvc %s\n",
+               serviceIdStateName[id_state->state], (unsigned)flow->proto, (unsigned)flow->service_port,
+               (unsigned)pkt->src_port, (unsigned)pkt->dst_port, flow->serviceAsId, (unsigned)flow->carrierId,
+               id_state->invalid_client_count, id_state->valid_count,
+               (svc_element && svc_element->name) ? svc_element->name:"UNKNOWN");
+#else
+        fprintf(SF_DEBUG_FILE, "service_fail: State %s for protocol %u on port %u (%u->%u) CID %u, count %u, valid count %u, currSvc %s\n",
+                serviceIdStateName[id_state->state], (unsigned)flow->proto, (unsigned)flow->service_port,
+                (unsigned)pkt->src_port, (unsigned)pkt->dst_port, (unsigned)flow->carrierId, id_state->invalid_client_count, id_state->valid_count,
+                (svc_element && svc_element->name) ? svc_element->name:"UNKNOWN");
+#endif
+#else /* No carrierid support */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+       fprintf(SF_DEBUG_FILE, "service_fail: State %s for protocol %u on port %u (%u->%u) AS %u, count %u, valid count %u, currSvc %s\n",
+               serviceIdStateName[id_state->state], (unsigned)flow->proto, (unsigned)flow->service_port,
+               (unsigned)pkt->src_port, (unsigned)pkt->dst_port, flow->serviceAsId, 
+               id_state->invalid_client_count, id_state->valid_count,
+               (svc_element && svc_element->name) ? svc_element->name:"UNKNOWN");
+#else
         fprintf(SF_DEBUG_FILE, "service_fail: State %s for protocol %u on port %u (%u->%u), count %u, valid count %u, currSvc %s\n",
                 serviceIdStateName[id_state->state], (unsigned)flow->proto, (unsigned)flow->service_port,
-                (unsigned)pkt->src_port, (unsigned)pkt->dst_port, id_state->invalid_count, id_state->valid_count,
+                (unsigned)pkt->src_port, (unsigned)pkt->dst_port, id_state->invalid_client_count, id_state->valid_count,
                 (svc_element && svc_element->name) ? svc_element->name:"UNKNOWN");
+#endif
+#endif
+    }
 #endif
 
 #ifdef SERVICE_DEBUG
@@ -1833,20 +2020,6 @@ if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
 }
 #endif
 
-#ifdef SERVICE_DEBUG
-#if SERVICE_DEBUG_PORT
-if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
-#endif
-{
-    char ipstr[INET6_ADDRSTRLEN];
-
-    ipstr[0] = 0;
-    inet_ntop(sfaddr_family(&flow->service_ip), (void *)sfaddr_get_ptr(&flow->service_ip), ipstr, sizeof(ipstr));
-    fprintf(SF_DEBUG_FILE, "Fail End: %s:%u:%u %p %d %s\n", ipstr, (unsigned)flow->proto, (unsigned)flow->service_port,
-            id_state, (int)id_state->state, (id_state->svc && id_state->svc->name) ? id_state->svc->name:"UNKNOWN");
-}
-#endif
-
     return SERVICE_SUCCESS;
 }
 
@@ -1859,8 +2032,11 @@ if (pkt->dst_port == SERVICE_DEBUG_PORT || pkt->src_port == SERVICE_DEBUG_PORT)
 static void HandleFailure(tAppIdData *flowp,
                           AppIdServiceIDState *id_state,
                           sfaddr_t *client_ip,
-                          unsigned timeout)
+                          SFSnortPacket *p)
 {
+    if (!id_state)
+        return;
+
     /* If we had a valid detector, check for too many fails.  If so, start
      * search sequence again. */
     if (id_state->state == SERVICE_ID_VALID)
@@ -1876,12 +2052,16 @@ static void HandleFailure(tAppIdData *flowp,
                 id_state->valid_count = 0;
                 id_state->detract_count = 0;
                 IP_CLEAR(id_state->last_detract);
+                id_state->svc = NULL;
             }
             else
             {
                 id_state->valid_count--;
                 id_state->last_invalid_client = *client_ip;
                 id_state->invalid_client_count = 0;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+                id_state->asId = flowp->serviceAsId;
+#endif
             }
         }
         /* Just a plain old fail.  If too many of these happen, start
@@ -1890,8 +2070,13 @@ static void HandleFailure(tAppIdData *flowp,
         {
             if (sfip_fast_eq6(&id_state->last_detract, client_ip))
                 id_state->detract_count++;
-            else
+            else 
+            {
                 id_state->last_detract = *client_ip;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+                id_state->asId = flowp->serviceAsId;
+#endif
+            }
 
             if (id_state->detract_count >= STATE_ID_NEEDED_DUPE_DETRACT_COUNT)
             {
@@ -1903,36 +2088,21 @@ static void HandleFailure(tAppIdData *flowp,
                     id_state->valid_count = 0;
                     id_state->detract_count = 0;
                     IP_CLEAR(id_state->last_detract);
+                    id_state->svc = NULL;
                 }
                 else
                     id_state->valid_count--;
             }
         }
     }
-    /* If we were port/pattern searching and timed out, just restart over next
-     * time. */
-    else if (timeout && (flowp->candidate_service_list != NULL))
+    /* In SERVICE_ID_NEW, if port/pattern fails and not in a mid-stream, go to brute force. */
+    else if (id_state->state == SERVICE_ID_NEW &&
+            flowp->search_state == SERVICE_ID_PENDING &&
+            (sflist_count(flowp->candidate_service_list) == 0) &&
+            p && !(_dpd.sessionAPI->get_session_flags(p->stream_session) & SSNFLAG_MIDSTREAM))
     {
-        id_state->state = SERVICE_ID_NEW;
+        id_state->state = SERVICE_ID_BRUTE_FORCE;
     }
-    /* If we were working on a port/pattern list of detectors, see if we
-     * should restart search (because of invalid clients) or just let it
-     * naturally continue onto brute force next. */
-    else if (    (flowp->candidate_service_list != NULL)
-              && (id_state->state == SERVICE_ID_BRUTE_FORCE) )
-    {
-        /* If we're getting some invalid clients, keep retrying
-         * port/pattern search until we either find something or until we
-         * just see too many invalid clients. */
-        if (    (id_state->invalid_client_count > 0)
-             && (id_state->invalid_client_count < STATE_ID_INVALID_CLIENT_THRESHOLD) )
-        {
-            id_state->state = SERVICE_ID_NEW;
-        }
-    }
-
-    /* Done looking for this session. */
-    id_state->searching = false;
 }
 
 /**Changes in_process service state to failed state when a flow is terminated.
@@ -1949,17 +2119,38 @@ void FailInProcessService(tAppIdData *flowp, const tAppIdConfig *pConfig)
     AppIdServiceIDState *id_state;
     sfaddr_t *tmp_ip;
 
-    if (getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED|APPID_SESSION_UDP_REVERSED))
+    if (getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED|APPID_SESSION_UDP_REVERSED))
         return;
-
-    id_state = AppIdGetServiceIDState(&flowp->service_ip, flowp->proto, flowp->service_port, AppIdServiceDetectionLevel(flowp));
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+    id_state = AppIdGetServiceIDState(&flowp->service_ip, flowp->proto, 
+                                      flowp->service_port, 
+                                      AppIdServiceDetectionLevel(flowp),
+                                      flowp->serviceAsId, flowp->carrierId);
+#else
+    id_state = AppIdGetServiceIDState(&flowp->service_ip, flowp->proto,
+                                      flowp->service_port, 
+                                      AppIdServiceDetectionLevel(flowp), flowp->carrierId);
+#endif
+#else /* No carrier id support */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF) 
+    id_state = AppIdGetServiceIDState(&flowp->service_ip, flowp->proto,
+                                      flowp->service_port, 
+                                      AppIdServiceDetectionLevel(flowp),
+                                      flowp->serviceAsId);
+#else
+    id_state = AppIdGetServiceIDState(&flowp->service_ip, flowp->proto,
+                                      flowp->service_port, 
+                                      AppIdServiceDetectionLevel(flowp));
+#endif
+#endif
 
 #ifdef SERVICE_DEBUG
 #if SERVICE_DEBUG_PORT
     if (flowp->service_port == SERVICE_DEBUG_PORT)
 #endif
-        fprintf(SF_DEBUG_FILE, "FailInProcess %08X, %08X:%u proto %u\n",
-                flowp->common.flow_flags, flowp->common.initiator_ip.ip.u6_addr32[0],
+        fprintf(SF_DEBUG_FILE, "FailInProcess %" PRIx64 ", %08X:%u proto %u\n",
+                flowp->common.flags, sfaddr_get_ip4_value(&flowp->common.initiator_ip),
                 (unsigned)flowp->service_port, (unsigned)flowp->proto);
 #endif
 
@@ -1977,11 +2168,13 @@ void FailInProcessService(tAppIdData *flowp, const tAppIdConfig *pConfig)
 
     id_state->invalid_client_count += STATE_ID_INCONCLUSIVE_SERVICE_WEIGHT;
 
+#ifdef TARGET_BASED
     tmp_ip = _dpd.sessionAPI->get_session_ip_address(flowp->ssn, SSN_DIR_FROM_SERVER);
     if (sfip_fast_eq6(tmp_ip, &flowp->service_ip))
         tmp_ip = _dpd.sessionAPI->get_session_ip_address(flowp->ssn, SSN_DIR_FROM_CLIENT);
+#endif
 
-    HandleFailure(flowp, id_state, tmp_ip, 1);
+    HandleFailure(flowp, id_state, tmp_ip, 0);
 
 #ifdef SERVICE_DEBUG
 #if SERVICE_DEBUG_PORT
@@ -2010,122 +2203,124 @@ static const tRNAServiceElement * AppIdGetNextService(const SFSnortPacket *p,
                                                       const int dir,
                                                       tAppIdData *rnaData,
                                                       const tAppIdConfig *pConfig,
-                                                      AppIdServiceIDState * id_state)
+                                                      const tRNAServiceElement *lastService,
+                                                      struct _SERVICE_MATCH **serviceList,
+                                                      struct _SERVICE_MATCH **currentService)
 {
+    tRNAServiceElement *svc = NULL;
     uint8_t proto;
 
     proto = rnaData->proto;
 
-    /* If NEW, just advance onto trying ports. */
-    if (id_state->state == SERVICE_ID_NEW)
-    {
-        id_state->state = SERVICE_ID_PORT;
-        id_state->svc   = NULL;
-    }
-
     /* See if there are any port detectors to try.  If not, move onto patterns. */
-    if (id_state->state == SERVICE_ID_PORT)
+    if (rnaData->search_state == SERVICE_ID_PORT)
     {
-        id_state->svc = AppIdGetNextServiceByPort(proto, (uint16_t)((dir == APP_ID_FROM_RESPONDER) ? p->src_port : p->dst_port), id_state->svc, rnaData, pConfig);
-        if (id_state->svc != NULL)
-        {
-            return id_state->svc;
-        }
+        svc = AppIdGetNextServiceByPort(proto, (uint16_t)((dir == APP_ID_FROM_RESPONDER) ? p->src_port : p->dst_port), lastService, rnaData, pConfig);
+        if (svc)
+            return svc;
         else
-        {
-            id_state->state = SERVICE_ID_PATTERN;
-            id_state->svc   = NULL;
-            if (id_state->serviceList != NULL)
-            {
-                id_state->currentService = id_state->serviceList;
-            }
-            else
-            {
-                id_state->serviceList    = NULL;
-                id_state->currentService = NULL;
-            }
-        }
+            rnaData->search_state = SERVICE_ID_PATTERN;
     }
 
-    if (id_state->state == SERVICE_ID_PATTERN)
+    if (rnaData->search_state == SERVICE_ID_PATTERN)
     {
         /* If we haven't found anything yet, try to see if we get any hits
          * first with UDP reversed services before moving onto pattern matches. */
         if (dir == APP_ID_FROM_INITIATOR)
         {
-            if (    !getAppIdExtFlag(rnaData, APPID_SESSION_ADDITIONAL_PACKET) && (proto == IPPROTO_UDP)
+            if (!getAppIdFlag(rnaData, APPID_SESSION_ADDITIONAL_PACKET) && (proto == IPPROTO_UDP)
                  && !rnaData->tried_reverse_service )
             {
                 AppIdServiceIDState * reverse_id_state;
                 const tRNAServiceElement * reverse_service = NULL;
                 sfaddr_t * reverse_ip = GET_SRC_IP(p);
                 rnaData->tried_reverse_service = true;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+                uint32_t cid = GET_SFOUTER_IPH_PROTOID(p, pkt_header);
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+                if((reverse_id_state = AppIdGetServiceIDState(reverse_ip, proto, p->src_port, 
+                                                              AppIdServiceDetectionLevel(rnaData), 
+                                                              p->pkt_header->address_space_id_src, cid)))
+#else
+                if ((reverse_id_state = AppIdGetServiceIDState(reverse_ip, proto, p->src_port, AppIdServiceDetectionLevel(rnaData),
+                                                               cid)))
+#endif
+#else /* No carrierid support */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF) 
+                if((reverse_id_state = AppIdGetServiceIDState(reverse_ip, proto, p->src_port,
+                                                              AppIdServiceDetectionLevel(rnaData),
+                                                              p->pkt_header->address_space_id_src)))
+#else
                 if ((reverse_id_state = AppIdGetServiceIDState(reverse_ip, proto, p->src_port, AppIdServiceDetectionLevel(rnaData))))
+#endif
+#endif
                 {
                     reverse_service = reverse_id_state->svc;
                 }
                 if (    reverse_service
                      || (pConfig->serviceConfig.udp_reversed_services[p->src_port] && (reverse_service = sflist_first(pConfig->serviceConfig.udp_reversed_services[p->src_port])))
-                     || (p->payload_size && (reverse_service = AppIdGetServiceByPattern(p, proto, dir, NULL, &pConfig->serviceConfig))) )
+                     || (p->payload_size && (reverse_service = AppIdGetServiceByPattern(p, proto, dir, &pConfig->serviceConfig, serviceList, currentService))) )
                 {
-                    id_state->svc = reverse_service;
-                    return id_state->svc;
+                    return reverse_service;
                 }
             }
             return NULL;
         }
-        /* Try pattern match detectors.  If not, give up, and go to brute
-         * force. */
+        /* Try pattern match detectors. */
         else    /* APP_ID_FROM_RESPONDER */
         {
-            if (id_state->serviceList == NULL)    /* no list yet (need to make one) */
+            if (*serviceList == NULL) // no list yet (need to make one)
+                svc = AppIdGetServiceByPattern(p, proto, dir, &pConfig->serviceConfig, serviceList, currentService);
+            else /* already have a pattern service list (just use it) */
             {
-                id_state->svc = AppIdGetServiceByPattern(p, proto, dir, id_state, &pConfig->serviceConfig);
-            }
-            else    /* already have a pattern service list (just use it) */
-            {
-                id_state->svc = AppIdNextServiceByPattern(id_state
+                svc = AppIdNextServiceByPattern(currentService
 #ifdef SERVICE_DEBUG
 #if SERVICE_DEBUG_PORT
-                                                          , flow->service_port
+                                                , flow->service_port
 #endif
 #endif
-                                                         );
+                                                );
             }
-
-            if (id_state->svc != NULL)
-            {
-                return id_state->svc;
-            }
+            if (svc)
+                return svc;
             else
-            {
-                id_state->state = SERVICE_ID_BRUTE_FORCE;
-                id_state->svc   = NULL;
-                return NULL;
-            }
+                rnaData->search_state = SERVICE_ID_PENDING; // We are done pattern matching
         }
     }
 
-    /* Don't do anything if it was in VALID or BRUTE FORCE. */
+    /* If it was in VALID or BRUTE FORCE or no service found */
     return NULL;
 }
-
-int AppIdDiscoverService(SFSnortPacket *p, const int dir, tAppIdData *rnaData, const tAppIdConfig *pConfig)
+int AppIdDiscoverService(SFSnortPacket *p, const APPID_SESSION_DIRECTION dir, tAppIdData *rnaData, const tAppIdConfig *pConfig)
 {
-    sfaddr_t *ip;
     int ret = SERVICE_NOMATCH;
-    const tRNAServiceElement *service;
-    AppIdServiceIDState *id_state;
-    uint8_t proto;
-    uint16_t port;
+    const tRNAServiceElement *service = NULL;
+    AppIdServiceIDState *id_state = NULL;
+    uint8_t proto = rnaData->proto;
     SF_LNODE *node;
+    ServiceValidationArgs args;
+    bool bruteForceDone = false;
+    bool appIdFailServiceDone = false;
+    sfaddr_t *ip;
+    uint16_t port;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+    uint16_t asId;
+#endif
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+    uint32_t cid = 0;
+#endif
 
     /* Get packet info. */
-    proto = rnaData->proto;
     if (sfaddr_is_set(&rnaData->service_ip))
     {
         ip   = &rnaData->service_ip;
         port = rnaData->service_port;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        asId = rnaData->serviceAsId;
+#endif
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+        cid = rnaData->carrierId;
+#endif
     }
     else
     {
@@ -2133,63 +2328,127 @@ int AppIdDiscoverService(SFSnortPacket *p, const int dir, tAppIdData *rnaData, c
         {
             ip   = GET_SRC_IP(p);
             port = p->src_port;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+            asId = p->pkt_header->address_space_id_src;
+#endif
         }
         else
         {
             ip   = GET_DST_IP(p);
             port = p->dst_port;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+            asId = p->pkt_header->address_space_id_dst;
+#endif
         }
+        rnaData->service_ip = *ip;
+        rnaData->service_port = port;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        rnaData->serviceAsId = asId;
+#endif
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+        rnaData->carrierId = GET_SFOUTER_IPH_PROTOID(p, pkt_header);
+#endif
     }
 
-    /* Get host tracker state. */
-    id_state = rnaData->id_state;
-    if (id_state == NULL)
+    /* When a new flow was initialized, rnaData->search_state = 0 (SERVICE_ID_START) */
+    if (rnaData->search_state == SERVICE_ID_START)
     {
+        rnaData->search_state = SERVICE_ID_PORT; // Also ensures this block to be executed once per flow
+        /* Get host tracker state. */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF) 
+        id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData),
+                                          asId, cid);
+#else
+        id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData), cid);
+#endif        
+#else /* No carrier id support */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+        id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData),
+                                          asId);
+#else
         id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData));
-
+#endif
+#endif
         /* Create it if it doesn't exist yet. */
         if (id_state == NULL)
         {
+            /* New one is memset to 0, hence id_state->state = 0 (SERVICE_ID_NEW) */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+            if (!(id_state = AppIdAddServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData),
+                                                    asId, cid)))
+#else 
+            if (!(id_state = AppIdAddServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData), cid)))
+#endif
+#else /* No carrierid support */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+            if (!(id_state = AppIdAddServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData),
+                                                    asId)))
+#else
             if (!(id_state = AppIdAddServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData))))
+#endif
+#endif
             {
                 _dpd.errMsg("Discover service failed to create state");
                 return SERVICE_ENOMEM;
             }
-            memset(id_state, 0, sizeof(*id_state));
         }
-        rnaData->id_state = id_state;
+        /* No more searching if brute force already walked the list unsuccessfully. */
+        else if (id_state->state == SERVICE_ID_BRUTE_FORCE_FAILED)
+        {
+            if (app_id_debug_session_flag)
+                _dpd.logMsg("AppIdDbg %s brute-force failed state, no service match\n", app_id_debug_session);
+            AppIdServiceFailService(rnaData, p, dir, NULL, APPID_SESSION_DATA_NONE, pConfig, id_state);
+            return SERVICE_NOMATCH;
+        }
+
+        if (rnaData->serviceData == NULL)
+        {
+            /* If a valid service already exists in host tracker, give it a try. */
+            if ((id_state->svc != NULL) && (id_state->state == SERVICE_ID_VALID))
+            {
+                rnaData->serviceData = id_state->svc;
+            }
+            /* If we've gotten to brute force, give next detector a try. */
+            else if ( id_state->state == SERVICE_ID_BRUTE_FORCE &&
+                      (sflist_count(rnaData->candidate_service_list) == 0) )
+            {
+                if (app_id_debug_session_flag)
+                    _dpd.logMsg("AppIdDbg %s brute-force state\n", app_id_debug_session);
+                rnaData->serviceData = AppIdGetServiceByBruteForce(proto, id_state->svc, pConfig);
+                id_state->svc = rnaData->serviceData;
+                bruteForceDone = true;
+                if (!rnaData->serviceData)
+                    id_state->state = SERVICE_ID_BRUTE_FORCE_FAILED;
+            }
+        }
     }
 
-    if (rnaData->serviceData == NULL)
-    {
-        /* If a valid service already exists in host tracker, give it a try. */
-        if ((id_state->svc != NULL) && (id_state->state == SERVICE_ID_VALID))
-        {
-            rnaData->serviceData = id_state->svc;
-        }
-        /* If we've gotten to brute force, give next detector a try. */
-        else if (    (id_state->state == SERVICE_ID_BRUTE_FORCE)
-                  && (rnaData->num_candidate_services_tried == 0)
-                  && !id_state->searching )
-        {
-            rnaData->serviceData = AppIdGetServiceByBruteForce(proto, id_state->svc, pConfig);
-            id_state->svc = rnaData->serviceData;
-        }
-    }
+    args.data = p->payload;
+    args.size = p->payload_size;
+    args.dir = dir;
+    args.flowp = rnaData;
+    args.pkt = p;
+    args.pConfig = pConfig;
+    args.app_id_debug_session_flag = app_id_debug_session_flag;
+    args.app_id_debug_session = app_id_debug_session;
 
     /* If we already have a service to try, then try it out. */
     if (rnaData->serviceData != NULL)
     {
         service = rnaData->serviceData;
-        ret = service->validate(p->payload, p->payload_size, dir, rnaData, p, service->userdata, pConfig);
+        args.userdata = service->userdata;
+        ret = service->validate(&args);
         if (ret == SERVICE_NOT_COMPATIBLE)
             rnaData->got_incompatible_services = 1;
+        rnaData->search_state = SERVICE_ID_PENDING;
         if (app_id_debug_session_flag)
             _dpd.logMsg("AppIdDbg %s %s returned %d\n", app_id_debug_session,
                         service->name ? service->name:"UNKNOWN", ret);
     }
     /* Else, try to find detector(s) to use based on ports and patterns. */
-    else
+    else if (!bruteForceDone)
     {
         if (rnaData->candidate_service_list == NULL)
         {
@@ -2199,43 +2458,26 @@ int AppIdDiscoverService(SFSnortPacket *p, const int dir, tAppIdData *rnaData, c
                 return SERVICE_ENOMEM;
             }
             sflist_init(rnaData->candidate_service_list);
-            rnaData->num_candidate_services_tried = 0;
-
-            /* This is our first time in for this session, and we're about to
-             * search for a service, because we don't have any solid history on
-             * this IP/port yet.  If some other session is also currently
-             * searching on this host tracker entry, reset state here, so that
-             * we can start search over again with this session. */
-            if (id_state->searching)
-                id_state->state = SERVICE_ID_NEW;
-            id_state->searching = true;
         }
 
         /* See if we've got more detector(s) to add to the candidate list. */
-        if (    (id_state->state == SERVICE_ID_NEW)
-             || (id_state->state == SERVICE_ID_PORT)
-             || ((id_state->state == SERVICE_ID_PATTERN) && (dir == APP_ID_FROM_RESPONDER)) )
+        if ((rnaData->search_state == SERVICE_ID_PORT) ||
+            ((rnaData->search_state == SERVICE_ID_PATTERN) && (dir == APP_ID_FROM_RESPONDER)))
         {
-            while (rnaData->num_candidate_services_tried < MAX_CANDIDATE_SERVICES)
+            struct _SERVICE_MATCH *serviceList = NULL;
+            struct _SERVICE_MATCH *currentService = NULL;
+            const tRNAServiceElement *tmp = NULL; // Also used to remember last service in the loop
+            while ((tmp = AppIdGetNextService(p, dir, rnaData, pConfig, tmp, &serviceList, &currentService)))
             {
-                const tRNAServiceElement *tmp = AppIdGetNextService(p, dir, rnaData, pConfig, id_state);
-                if (tmp != NULL)
-                {
-                    /* Add to list (if not already there). */
-                    service = sflist_first(rnaData->candidate_service_list);
-                    while (service && (service != tmp))
-                        service = sflist_next(rnaData->candidate_service_list);
-                    if (service == NULL)
-                    {
-                        sflist_add_tail(rnaData->candidate_service_list, (void*)tmp);
-                        rnaData->num_candidate_services_tried++;
-                    }
-                }
-                else
-                {
-                    break;
-                }
+                // Add to list if not already there
+                service = sflist_first(rnaData->candidate_service_list);
+                while (service && (service != tmp))
+                    service = sflist_next(rnaData->candidate_service_list);
+                if (service == NULL)
+                    sflist_add_tail(rnaData->candidate_service_list, (void*)tmp);
             }
+            if (serviceList)
+                AppIdFreeServiceMatchList(serviceList);
         }
 
         /* Run all of the detectors that we currently have. */
@@ -2248,7 +2490,8 @@ int AppIdDiscoverService(SFSnortPacket *p, const int dir, tAppIdData *rnaData, c
             SF_LNODE *node_tmp;
 
             service = (tRNAServiceElement*)SFLIST_NODE_TO_DATA(node);
-            result = service->validate(p->payload, p->payload_size, dir, rnaData, p, service->userdata, pConfig);
+            args.userdata = service->userdata;
+            result = service->validate(&args);
             if (result == SERVICE_NOT_COMPATIBLE)
                 rnaData->got_incompatible_services = 1;
             if (app_id_debug_session_flag)
@@ -2275,30 +2518,68 @@ int AppIdDiscoverService(SFSnortPacket *p, const int dir, tAppIdData *rnaData, c
         if (ret != SERVICE_SUCCESS)
         {
             if (    (sflist_count(rnaData->candidate_service_list) == 0)
-                 && (    (rnaData->num_candidate_services_tried >= MAX_CANDIDATE_SERVICES)
-                      || (id_state->state == SERVICE_ID_BRUTE_FORCE) ) )
+                 && (rnaData->search_state == SERVICE_ID_PENDING) )
             {
-                AppIdServiceFailService(rnaData, p, dir, NULL, APPID_SESSION_DATA_NONE, pConfig);
+                if (!id_state)
+                {    
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+                    id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData),
+                                                      asId, cid);
+#else
+                    id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData), cid);
+#endif
+#else /* No carrierid support */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF) 
+                    id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData),
+                                                      asId);
+#else
+                    id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData));
+#endif
+#endif
+                }                    
+                AppIdServiceFailService(rnaData, p, dir, NULL, APPID_SESSION_DATA_NONE, pConfig, id_state);
+                appIdFailServiceDone = true;
                 ret = SERVICE_NOMATCH;
             }
         }
     }
 
-    if (service != NULL)
-    {
-        id_state->reset_time = 0;
-    }
-    else if (dir == APP_ID_FROM_RESPONDER)    /* we have seen bidirectional exchange and have not identified any service */
+    /* We have seen bidirectional exchange and have not identified any service */
+    if (!service && (dir == APP_ID_FROM_RESPONDER))
     {
         if (app_id_debug_session_flag)
             _dpd.logMsg("AppIdDbg %s no RNA service detector\n", app_id_debug_session);
-        AppIdServiceFailService(rnaData, p, dir, NULL, APPID_SESSION_DATA_NONE, pConfig);
-        ret = SERVICE_NOMATCH;
+        if (!appIdFailServiceDone)
+        {
+            if (!id_state)
+            {
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+                id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData),
+                                                  asId, cid);
+#else
+                id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData), cid);
+#endif
+#else /* No carrierid support */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF) 
+                id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData),
+                                                  asId);
+#else
+                id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData));
+#endif
+#endif
+            }
+            AppIdServiceFailService(rnaData, p, dir, NULL, APPID_SESSION_DATA_NONE, pConfig, id_state);
+            appIdFailServiceDone = true;
+            ret = SERVICE_NOMATCH;
+        }
     }
 
-    /* Handle failure exception cases in states. */
-    if ((ret != SERVICE_INPROCESS) && (ret != SERVICE_SUCCESS))
+    if ( ((appIdFailServiceDone && !bruteForceDone) || rnaData->got_incompatible_services) &&
+         (ret != SERVICE_INPROCESS) && (ret != SERVICE_SUCCESS) )
     {
+        /* Handle failure exception cases in states. */
         sfaddr_t *tmp_ip;
         if (dir == APP_ID_FROM_RESPONDER)
             tmp_ip = GET_DST_IP(p);
@@ -2307,7 +2588,25 @@ int AppIdDiscoverService(SFSnortPacket *p, const int dir, tAppIdData *rnaData, c
 
         if (rnaData->got_incompatible_services)
         {
-            if (id_state->invalid_client_count < STATE_ID_INVALID_CLIENT_THRESHOLD)
+            if (!id_state)
+            {
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+                id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData),
+                                                  asId, cid);
+#else
+                id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData), cid);
+#endif
+#else /* No carrier id support */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF) 
+                id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData),
+                                                  asId);
+#else
+                id_state = AppIdGetServiceIDState(ip, proto, port, AppIdServiceDetectionLevel(rnaData));
+#endif
+#endif
+            }
+            if (id_state && id_state->invalid_client_count < STATE_ID_INVALID_CLIENT_THRESHOLD)
             {
                 if (sfip_fast_equals_raw(&id_state->last_invalid_client, tmp_ip))
                     id_state->invalid_client_count++;
@@ -2319,21 +2618,8 @@ int AppIdDiscoverService(SFSnortPacket *p, const int dir, tAppIdData *rnaData, c
             }
         }
 
-        HandleFailure(rnaData, id_state, tmp_ip, 0);
+        HandleFailure(rnaData, id_state, tmp_ip, p);
     }
-
-    /* Can free up any pattern match lists if done with them. */
-    if (    (id_state->state == SERVICE_ID_BRUTE_FORCE)
-         || (id_state->state == SERVICE_ID_VALID) )
-    {
-        if (id_state->serviceList != NULL)
-        {
-            AppIdFreeServiceMatchList(id_state->serviceList);
-        }
-        id_state->serviceList    = NULL;
-        id_state->currentService = NULL;
-    }
-
     return ret;
 }
 

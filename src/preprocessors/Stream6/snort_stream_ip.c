@@ -1,6 +1,6 @@
 /****************************************************************************
 *
-* Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+* Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 *  Copyright (C) 2005-2013 Sourcefire, Inc.
 *
 *  This program is free software; you can redistribute it and/or modify
@@ -40,7 +40,9 @@
 #include "sfxhash.h"
 #include "sf_types.h"
 #include "snort_debug.h"
+#include "memory_stats.h"
 
+#include "spp_session.h"
 #include "session_api.h"
 #include "snort_session.h"
 
@@ -49,10 +51,13 @@
 #include "stream5_ha.h"
 #include "util.h"
 
+#include "reg_test.h"
+
 #ifdef PERF_PROFILING
 PreprocStats s5IpPerfStats;
 #endif
 
+static SessionCache* ip_lws_cache = NULL;
 
 //-------------------------------------------------------------------------
 // private methods
@@ -149,6 +154,7 @@ void IpSessionCleanup (void* ssn)
 
     scb->expire_time = 0;
     scb->ha_state.ignore_direction = 0;
+    s5stats.active_ip_sessions--;
 }
 
 
@@ -167,7 +173,11 @@ static SessionControlBlock *StreamIPCreateSession (const SessionKey *key)
 {
     setNapRuntimePolicy(getDefaultPolicy());
 
-    return session_api->create_session(ip_lws_cache, NULL, key);
+    SessionControlBlock *scb = session_api->create_session(ip_lws_cache, NULL, key);
+    if (scb)
+        s5stats.active_ip_sessions++;
+
+    return scb;
 }
 
 static int StreamIPDeleteSession (const SessionKey *key)
@@ -177,7 +187,10 @@ static int StreamIPDeleteSession (const SessionKey *key)
     if( scb != NULL )
     {
         if( StreamSetRuntimeConfiguration(scb, scb->protocol) == 0 )
-            session_api->delete_session(ip_lws_cache, scb, "ha sync");
+        {
+            session_api->delete_session(ip_lws_cache, scb, "ha sync", false);
+            s5stats.active_ip_sessions--;
+        }
         else
             WarningMessage(" WARNING: Attempt to delete an IP Session when no valid runtime configuration\n" );
     }
@@ -247,7 +260,8 @@ void StreamIpConfigFree (StreamIpConfig* config)
     if (config == NULL)
         return;
 
-    free(config);
+    SnortPreprocFree(config, sizeof(StreamIpConfig),
+                      PP_STREAM, PP_MEM_CATEGORY_CONFIG);
 }
 
 int StreamVerifyIpConfig (StreamIpConfig* config, tSfPolicyId policy_id)
@@ -288,6 +302,7 @@ static inline void InitSession (Packet* p, SessionControlBlock *scb)
         "Stream IP session initialized!\n"););
 
     s5stats.total_ip_sessions++;
+    s5stats.active_ip_sessions++;
     IP_COPY_VALUE(scb->client_ip, GET_SRC_IP(p));
     IP_COPY_VALUE(scb->server_ip, GET_DST_IP(p));
 }
@@ -314,6 +329,10 @@ static inline int BlockedSession (Packet* p, SessionControlBlock *scb)
 #ifdef ACTIVE_RESPONSE
         StreamActiveResponse(p, scb);
 #endif
+        if (pkt_trace_enabled)
+            addPktTraceData(VERDICT_REASON_STREAM, snprintf(trace_line, MAX_TRACE_LINE,
+                "Stream: session was already blocked, %s\n", getPktTraceActMsg()));
+        else addPktTraceData(VERDICT_REASON_STREAM, 0);
         return 1;
     }
     return 0;
@@ -336,6 +355,7 @@ static inline int IgnoreSession (Packet* p, SessionControlBlock *scb)
     return 0;
 }
 
+#ifdef ENABLE_EXPECTED_IP
 static inline int CheckExpectedSession (Packet* p, SessionControlBlock *scb)
 {
     int ignore;
@@ -355,6 +375,7 @@ static inline int CheckExpectedSession (Packet* p, SessionControlBlock *scb)
 
     return 0;
 }
+#endif
 
 static inline void UpdateSession (Packet* p, SessionControlBlock* scb)
 {
@@ -396,6 +417,7 @@ static inline void UpdateSession (Packet* p, SessionControlBlock* scb)
     {
         StreamIpPolicy* policy;
         policy = (StreamIpPolicy*)scb->proto_policy;
+
         session_api->set_expire_timer(p, scb, policy->session_timeout);
     }
 }
@@ -411,7 +433,19 @@ int StreamProcessIp( Packet *p, SessionControlBlock *scb, SessionKey *skey )
     PREPROC_PROFILE_START( s5IpPerfStats );
 
     if( scb->proto_policy == NULL )
+    {
         scb->proto_policy = ( ( StreamConfig * ) scb->stream_config )->ip_config;
+#if defined(DAQ_CAPA_CST_TIMEOUT)
+        if (Daq_Capa_Timeout)
+        {
+          StreamIpPolicy* policy;
+          uint64_t timeout;
+          policy = (StreamIpPolicy*)scb->proto_policy;
+          GetTimeout(p,&timeout);
+          policy->session_timeout = timeout;
+        }
+#endif
+    }
     if( !scb->session_established )
     {
         scb->session_established = true;
@@ -467,6 +501,35 @@ int StreamProcessIp( Packet *p, SessionControlBlock *scb, SessionKey *skey )
     UpdateSession( p, scb );
 
     PREPROC_PROFILE_END( s5IpPerfStats );
+
+    return 0;
+}
+
+#ifdef SNORT_RELOAD
+void SessionIPReload(uint32_t max_sessions, uint16_t pruningTimeout, uint16_t nominalTimeout)
+{
+    SessionReload(ip_lws_cache, max_sessions, pruningTimeout, nominalTimeout
+#ifdef REG_TEST
+                  , "IP"
+#endif
+                  );
+}
+
+unsigned SessionIPReloadAdjust(unsigned maxWork)
+{
+    return SessionProtocolReloadAdjust(ip_lws_cache, session_configuration->max_ip_sessions, 
+                                       maxWork, 0
+#ifdef REG_TEST
+                                       , "IP"
+#endif
+                                       );
+}
+#endif
+
+size_t get_ip_used_mempool()
+{
+    if (ip_lws_cache && ip_lws_cache->protocol_session_pool)
+        return ip_lws_cache->protocol_session_pool->used_memory;
 
     return 0;
 }

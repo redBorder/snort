@@ -1,7 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -58,6 +58,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 
 #include "generators.h"
@@ -68,6 +69,7 @@
 #include "stream_api.h"
 #include "snort_debug.h"
 #include "snort_httpinspect.h"
+#include "memory_stats.h"
 
 #ifdef DEBUG_MSGS
 #define HI_TRACE     // define for state trace
@@ -87,6 +89,12 @@
 #define HIF_PST 0x0800  // post (requires content-length or chunks)
 #define HIF_EOL 0x1000  // already saw at least one eol (for v09)
 #define HIF_ECD 0x2000  // Content Encoding 
+#define HIF_UPG 0x4000  // Http/2 Upgrade:h2c
+#define HIF_TST 0x8000  // HTTPv1.0 with chunked header, peek first few bytes of body
+#define HIF_END 0x10000  //seen end of header
+#define HIF_ALT 0x20000  // alet for no header
+#define HIF_CHE 0x40000 //HTTP chunk extension
+#define HIF_V1X 0x80000  // invalid HTTP 1.XX version
 
 enum FlowDepthState
 {
@@ -99,15 +107,20 @@ enum FlowDepthState
 
 
 typedef struct {
+    int flow_depth;
     uint32_t len;
-    uint16_t flags;
+    uint32_t flags;
+    uint32_t pipe;
+    uint32_t paf_bytes;
     uint8_t msg;
     uint8_t fsm;
-    uint32_t pipe;
-    int flow_depth;
     uint8_t flow_depth_state;
+    uint8_t char_end_of_header;
+    uint8_t junk_chars;
     bool eoh;
-    uint32_t paf_bytes;
+    bool disable_chunked;
+    bool valid_http;
+    bool fast_blocking;
 } Hi5State;
 
 // config stuff
@@ -122,6 +135,19 @@ static bool flow_depth_reset = false;
 
 static uint8_t hi_paf_id = 0;
 
+static bool hi_eoh_found = false;
+static bool hi_is_chunked = false;
+
+#ifdef TARGET_BASED
+extern int16_t hi_app_protocol_id;
+#endif
+
+#define MAX_JUNK_CHAR_BEFORE_RESP_STATUS 127
+#define  MAX_CHAR_BEFORE_RESP_STATUS 255
+#define MAX_CHAR_AFTER_CHUNK_SIZE 255
+
+
+
 //--------------------------------------------------------------------
 // char classification stuff per RFC 2616
 //--------------------------------------------------------------------
@@ -130,6 +156,7 @@ static uint8_t hi_paf_id = 0;
 #define CLASS_ANY 0x01
 #define CLASS_CHR 0x02
 #define CLASS_TOK 0x04
+#define CLASS_CRT 0X08
 #define CLASS_LWS 0x10
 #define CLASS_SEP 0x20
 #define CLASS_EOL 0x40
@@ -138,13 +165,13 @@ static uint8_t hi_paf_id = 0;
 static const uint8_t class_map[256] =
 {
 //                                                         tab    lf                cr
-    0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x33, 0x43, 0x03, 0x03, 0x03, 0x03, 0x03,
+    0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x33, 0x43, 0x03, 0x03, 0x0B, 0x03, 0x03,
     0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
 //
-//   ' ',  '!',  '"',  '#',  '$',  '%',  '&',  ''',  '(',  ')',  '*',  '+',  ',',  '-',  '.',  '/' 
+//   ' ',  '!',  '"',  '#',  '$',  '%',  '&',  ''',  '(',  ')',  '*',  '+',  ',',  '-',  '.',  '/'
     0x33, 0x07, 0x23, 0x07, 0x07, 0x07, 0x07, 0x07, 0x23, 0x23, 0x07, 0x07, 0x23, 0x07, 0x07, 0x23,
 //
-//   '0',  '1',  '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9',  ':',  ';',  '<',  '=',  '>',  '?' 
+//   '0',  '1',  '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9',  ':',  ';',  '<',  '=',  '>',  '?'
     0x87, 0x87, 0x87, 0x87, 0x87, 0x87, 0x87, 0x87, 0x87, 0x87, 0x23, 0x23, 0x23, 0x23, 0x23, 0x23,
 //
 //   '@',  'A',  'B',  'C',  'D',  'E',  'F',  'G',  'H',  'I',  'J',  'K',  'L',  'M',  'N',  'O' 
@@ -179,6 +206,7 @@ static const uint8_t class_map[256] =
 #define SEPS "\5"  // matches SEP
 #define CHRS "\6"  // matches CHAR
 #define DIGS "\7"  // matches DIGIT
+#define CRET "\10" // matches CR
 
 static inline bool is_lwspace(const char c)
 {
@@ -195,6 +223,9 @@ static uint8_t Classify (const char* s)
 
     if ( !strcmp(s, TOKS) )
         return CLASS_TOK;
+
+    if ( !strcmp(s, CRET) )
+        return CLASS_CRT;
 
     if ( !strcmp(s, LWSS) )
         return CLASS_LWS;
@@ -218,11 +249,13 @@ static uint8_t Classify (const char* s)
 typedef enum {
     ACT_NOP, ACT_NOB,
     ACT_GET, ACT_PST,
-    ACT_V09, ACT_V10, ACT_V11,
+    ACT_V09, ACT_V10, ACT_V11, ACT_V1X,
     ACT_SRL, ACT_REQ, ACT_RSP,
     ACT_SHI, ACT_SHX,
     ACT_LNB, ACT_LNC, ACT_LN0, ACT_ECD,
-    ACT_CHK, ACT_CK0, ACT_HDR
+    ACT_CHK, ACT_CK0, ACT_HDR,
+    ACT_H2, ACT_UPG,
+    ACT_JNK
 } Action;
 
 typedef struct {
@@ -252,31 +285,34 @@ typedef struct {
 // of blocks; the states MUST match array index
 // more of these make it easier to insert states
 #define P0 (0)
-#define P1 (P0+6)
-#define P2 (P1+10)
-#define P3 (P2+3)
+#define P1 (P0+8)
+#define P2 (P1+11)
+#define P3 (P2+2)
+#define P4 (P3+2)
 
-#define Q0 (P3+3)
-#define Q1 (Q0+12)
+#define Q0 (P4+3)
+#define Q1 (Q0+15)
 #define Q2 (Q1+6)
 #define Q3 (Q2+9)
 
 #define R2 (Q3+3)
 #define R3 (R2+7)
 #define R4 (R3+5)
-#define R5 (R4+1)
-#define R6 (R5+4)
-#define R7 (R6+2)
+#define R5 (R4+5)
+#define R6 (R5+1)
+#define R7 (R6+4)
 #define R8 (R7+2)
+#define R9 (R8+2)
+#define R10 (R9+1)
 
-#define MAX_STATE        (R8+2)
+#define MAX_STATE        (R10+4)
 #define RSP_START_STATE  (P0)
 #define REQ_START_STATE  (Q0)
 #define REQ_V09_STATE_1  (Q1+3)
 #define REQ_V09_STATE_2  (Q2)
-#define MSG_CHUNK_STATE  (R6)
-#define MSG_EOL_STATE    (R8)
-#define RSP_ABORT_STATE  (P3)
+#define MSG_CHUNK_STATE  (R7)
+#define MSG_EOL_STATE    (R10)
+#define RSP_ABORT_STATE  (P4)
 #define REQ_ABORT_STATE  (Q3)
 
 // -------------------------------------------------------------------
@@ -299,11 +335,13 @@ static HiRule hi_rule[] =
     // P* are resPonse specific
     // http version starts response (8 chars)
     { P0+ 0, P0+ 1, P3   , ACT_SRL, "H"  },
-    { P0+ 1, P0+ 2, P3+ 2, ACT_NOP, "TTP/1." },
-    { P0+ 2, P0+ 4, P0+ 3, ACT_V10, "0"  },
-    { P0+ 3, P0+ 4, P3   , ACT_V11, "1"  },
-    { P0+ 4, P0+ 5, P3   , ACT_NOP, LWSS },
-    { P0+ 5, P0+ 5, P1   , ACT_NOP, LWSS },
+    { P0+ 1, P0+ 2, P3   , ACT_NOP, "TTP/1." },
+    { P0+ 2, P0+ 5, P0+ 3, ACT_V10, "0"  },
+    { P0+ 3, P0+ 5, P0+ 4, ACT_V11, "1"  },
+    { P0+ 4, P0+ 5, P0+ 6, ACT_V11, DIGS },
+    { P0+ 5, P0+ 5, P0+ 6, ACT_V1X, DIGS },
+    { P0+ 6, P0+ 7, P4   , ACT_NOP, LWSS },
+    { P0+ 7, P0+ 7, P1   , ACT_NOP, LWSS },
 
     // now get status code (3 chars)
     { P1+ 0, P1+ 6, P1+ 1, ACT_NOB, "1"  },
@@ -313,19 +351,23 @@ static HiRule hi_rule[] =
     { P1+ 4, P1+ 8, P1+ 7, ACT_NOB, "4"  },
     { P1+ 5, P1+ 6, P1+ 6, ACT_NOP, DIGS },
     { P1+ 6, P1+ 7, P1+ 7, ACT_NOP, DIGS },
-    { P1+ 7, P1+ 8, P3+ 2, ACT_NOP, DIGS },
-    { P1+ 8, P1+ 9, P3+ 2, ACT_NOP, LWSS },
-    { P1+ 9, P1+ 9, P2   , ACT_NOP, LWSS },
+    { P1+ 7, P1+ 8, P4+ 2, ACT_NOP, DIGS },
+    { P1+ 8, P1+ 10, P1+ 9, ACT_NOP, LWSS }, 
+    // no status message (http response status code followed by \r\n)    
+    { P1+ 9, R2+ 0, P4+ 2, ACT_RSP, EOLS },
+    { P1+ 10, P1+ 10, P2, ACT_NOP, LWSS },
 
     // now get status message (variable)
-    { P2+ 0, P2+ 1, P2+ 1, ACT_NOP, ANYS },
-    { P2+ 1, R2+ 0, P2+ 2, ACT_RSP, EOLS },
-    { P2+ 2, P2+ 1, P2+ 1, ACT_NOP, ANYS },
+    { P2+ 0, R2+ 0, P2+ 1, ACT_RSP, EOLS },
+    { P2+ 1, P2+ 0, P2+ 0, ACT_NOP, ANYS },
+
+    { P3+ 0, P0   , P3+ 1,   ACT_JNK, EOLS },
+    { P3+ 1, P3+ 0, P3+ 0,   ACT_JNK, ANYS },
 
     // resync state
-    { P3+ 0, P0   , P3+ 1, ACT_NOP, LWSS },
-    { P3+ 1, P0   , P3+ 2, ACT_NOP, EOLS },
-    { P3+ 2, P3   , P3+ 0, ACT_NOP, ANYS },
+    { P4+ 0, P0   , P4+ 1, ACT_NOP, LWSS },
+    { P4+ 1, P0   , P4+ 2, ACT_NOP, EOLS },
+    { P4+ 2, P4   , P4+ 0, ACT_NOP, ANYS },
 
     // Q* are reQuest specific
     // get method required for 0.9 request
@@ -337,26 +379,31 @@ static HiRule hi_rule[] =
     { Q0+ 4, Q0+ 5, Q0+10, ACT_NOP, "EAD" },
     { Q0+ 5, Q1+ 0, Q0+10, ACT_NOB, LWSS },
     // post method must have content-length or chunks
-    { Q0+ 6, Q0+ 7, Q0+ 9, ACT_SRL, "P"  },
-    { Q0+ 7, Q0+ 8, Q0+10, ACT_NOP, "OST" },
-    { Q0+ 8, Q1+ 0, Q0+10, ACT_PST, LWSS },
+    { Q0+ 6, Q0+ 7, Q0+12, ACT_SRL, "P"  },
+    { Q0+ 7, Q0+ 8, Q0+10, ACT_NOP, "O" },
+    { Q0+ 8, Q0+ 9, Q0+13, ACT_NOP, "ST" },
+    { Q0+ 9, Q1+ 0, Q0+13, ACT_PST, LWSS },
+
+    { Q0+ 10, Q0+ 11, Q0+ 13, ACT_NOP, "R"  },
+    { Q0+ 11, R8+ 1, Q0+ 13, ACT_H2, "I * HTTP/2.0"  }, // R8+0 or R8+1
+
     // other method
-    { Q0+ 9, Q0+10, Q3+ 0, ACT_SRL, TOKS },
-    { Q0+10, Q0+10, Q0+11, ACT_NOP, TOKS },
-    { Q0+11, Q1+ 0, Q3+ 2, ACT_NOP, LWSS },
+    { Q0+ 12, Q0+13, Q3+ 0, ACT_SRL, TOKS },
+    { Q0+ 13, Q0+13, Q0+14, ACT_NOP, TOKS },
+    { Q0+ 14, Q1+ 0, Q3+ 2, ACT_NOP, LWSS },
 
     // this gets required URI / next token
-    { Q1+ 0, R8+ 0, Q1+ 1, ACT_NOP, EOLS },
+    { Q1+ 0, R10+ 0, Q1+ 1, ACT_NOP, EOLS },
     { Q1+ 1, Q1+ 0, Q1+ 2, ACT_NOP, LWSS },
     { Q1+ 2, Q1+ 3, Q1+ 3, ACT_NOP, ANYS },
-    { Q1+ 3, R8+ 0, Q1+ 4, ACT_V09, EOLS },
+    { Q1+ 3, R10+ 0, Q1+ 4, ACT_V09, EOLS },
     { Q1+ 4, Q2+ 0, Q1+ 5, ACT_NOP, LWSS },
     { Q1+ 5, Q1+ 3, Q1+ 3, ACT_NOP, ANYS },
 
     // this gets version, allowing extra tokens
     // if start line doesn't end with version,
     // assume 0.9 SimpleRequest (1 line header)
-    { Q2+ 0, R8+ 0, Q2+ 1, ACT_V09, EOLS },
+    { Q2+ 0, R10+ 0, Q2+ 1, ACT_V09, EOLS },
     { Q2+ 1, Q2+ 0, Q2+ 2, ACT_NOP, LWSS },
     { Q2+ 2, Q2+ 3, Q2+ 8, ACT_NOP, "H"  },
     { Q2+ 3, Q2+ 4, Q2+ 8, ACT_NOP, "TTP/1." },
@@ -376,44 +423,54 @@ static HiRule hi_rule[] =
     // direction of transfer (eg cookie only from client).
     // content-length is optional
     { R2+ 0, R2+ 1, R3   , ACT_HDR, "C"  },
-    { R2+ 1, R2+ 2, R8   , ACT_NOP, "ONTENT-"   },
+    { R2+ 1, R2+ 2, R10  , ACT_NOP, "ONTENT-"   },
     { R2+ 2, R2+ 4, R2+3 , ACT_NOP, "LENGTH"    },
-    { R2+ 3, R2+ 4, R8   , ACT_ECD, "ENCODING"  },
+    { R2+ 3, R2+ 4, R10  , ACT_ECD, "ENCODING"  },
     { R2+ 4, R2+ 4, R2+5 , ACT_NOP, LWSS },
-    { R2+ 5, R2+ 6, R8   , ACT_NOP, ":"  },
-    { R2+ 6, R2+ 6, R5   , ACT_LN0, LWSS }, 
+    { R2+ 5, R2+ 6, R10   , ACT_NOP, ":"  },
+    { R2+ 6, R2+ 6, R6   , ACT_LN0, LWSS }, 
+    // Upgrade parameter
+    { R3+ 0, R3+ 1, R4   , ACT_HDR, "U"  },
+    { R3+ 1, R3+ 2, R10   , ACT_NOP, "PGRADE"  },
+    { R3+ 2, R3+ 2, R3+ 3, ACT_NOP, LWSS },
+    { R3+ 3, R3+ 4, R10   , ACT_NOP, ":"  },
+    { R3+ 4, R3+ 4, R9   , ACT_NOP, LWSS },
 
     // transfer-encoding required for chunks
-    { R3+ 0, R3+ 1, R8   , ACT_HDR, "T"  },
-    { R3+ 1, R3+ 2, R8   , ACT_NOP, "RANSFER-ENCODING"  },
-    { R3+ 2, R3+ 2, R3+ 3, ACT_NOP, LWSS },
-    { R3+ 3, R3+ 4, R8   , ACT_NOP, ":"  },
-    { R3+ 4, R3+ 4, R4   , ACT_NOP, LWSS },
+    { R4+ 0, R4+ 1, R10   , ACT_HDR, "T"  },
+    { R4+ 1, R4+ 2, R10   , ACT_NOP, "RANSFER-ENCODING"  },
+    { R4+ 2, R4+ 2, R4+ 3, ACT_NOP, LWSS },
+    { R4+ 3, R4+ 4, R10   , ACT_NOP, ":"  },
+    { R4+ 4, R4+ 4, R5   , ACT_NOP, LWSS },
 
     // only recognized encoding
-    { R4+ 0, R8   , R8   , ACT_CHK, "CHUNKED" },
+    { R5+ 0, R10   , R10   , ACT_CHK, "CHUNKED" },
 
     // extract decimal content length
-    { R5+ 0, R2   , R5+ 1, ACT_LNB, EOLS },
-    { R5+ 1, R5   , R5+ 2, ACT_SHI, DIGS },
-    { R5+ 2, R5   , R5+ 3, ACT_SHI, LWSS },
-    { R5+ 3, R8   , R8   , ACT_SHI, ANYS },
+    { R6+ 0, R2   , R6+ 1, ACT_LNB, EOLS },
+    { R6+ 1, R6   , R6+ 2, ACT_SHI, DIGS },
+    { R6+ 2, R6   , R6+ 3, ACT_SHI, LWSS },
+    { R6+ 3, R10   , R10   , ACT_SHI, ANYS },
 
     // extract hex chunk length
-    { R6+ 0, R7   , R6+ 1, ACT_LNC, EOLS },
-    { R6+ 1, R6   , R6   , ACT_SHX, ANYS },
+    { R7+ 0, R8   , R7+ 1, ACT_LNC, EOLS },
+    { R7+ 1, R7   , R7   , ACT_SHX, ANYS },
 
     // skip to end of line after chunk data
-    { R7+ 0, R6   , R7+ 1, ACT_LN0, EOLS },
-    { R7+ 1, R7   , R7   , ACT_NOP, ANYS },
+    { R8+ 0, R7   , R8+ 1, ACT_LN0, EOLS },
+    { R8+ 1, R8   , R8   , ACT_NOP, ANYS },
+
+    { R9+ 0, R10   , R10   , ACT_UPG, "h2c" },
 
     // skip to end of line
-    { R8+ 0, R2   , R8+ 1, ACT_NOP, EOLS },
-    { R8+ 1, R8   , R8   , ACT_NOP, ANYS },
+    { R10+ 0, R2    , R10+1  , ACT_NOP, EOLS },
+    { R10+ 1, R10+3 , R10+2  , ACT_NOP, CRET },
+    { R10+ 2, R10   , R10    , ACT_NOP, ANYS },
+    { R10+ 3, R2    , R10+2  , ACT_NOP, EOLS },
 };
-
 static void hi_update_flow_depth_state(Hi5State *hip, uint32_t* fp, PAF_Status *paf );
-static void get_flow_depth(void *ssn, uint32_t flags, Hi5State *hip);
+static void get_flow_depth(void *ssn, uint64_t flags, Hi5State *hip);
+static void get_fast_blocking_status(Hi5State *hip);
 
 
 //--------------------------------------------------------------------
@@ -443,6 +500,7 @@ static void get_state (int s, char* buf, int max)
     else if ( s >= Q1 ) { sbase = "Q1"; nbase = Q1; }
     else if ( s >= Q0 ) { sbase = "Q0"; nbase = Q0; }
 
+    else if ( s >= P4 ) { sbase = "P4"; nbase = P4; }
     else if ( s >= P3 ) { sbase = "P3"; nbase = P3; }
     else if ( s >= P2 ) { sbase = "P2"; nbase = P2; }
     else if ( s >= P1 ) { sbase = "P1"; nbase = P1; }
@@ -507,7 +565,6 @@ static void hi_fsm_dump ()
 static void hi_load (State* state, int event, HiRule* rule)
 {
     //assert(state->cell[event].next == TBD);
-
     state->cell[event].action = rule->action;
     state->cell[event].next = rule->match;
 }
@@ -587,7 +644,8 @@ static bool hi_fsm_compile (void)
     hi_fsm_size = max + extra;
     assert(hi_fsm_size < TBD);  // using uint8_t for Cell.next and Hi5State.fsm
 
-    hi_fsm = malloc(hi_fsm_size*sizeof(*hi_fsm));
+    hi_fsm = SnortPreprocAlloc(1, hi_fsm_size*sizeof(*hi_fsm), PP_HTTPINSPECT, 
+                  PP_MEM_CATEGORY_SESSION);
     if ( hi_fsm == NULL )
     {
         DEBUG_WRAP(DebugMessage(DEBUG_STREAM_PAF, "Unable to allocate memory for hi_fsm."););
@@ -671,6 +729,14 @@ static inline void hi_paf_event_msg_size ()
         HI_EO_CLISRV_MSG_SIZE_EXCEPTION_STR, NULL);
 }
 
+static inline void hi_paf_invalid_chunked ()
+{
+    SnortEventqAdd(
+        GENERATOR_SPP_HTTP_INSPECT,
+        HI_EO_CLISRV_INVALID_CHUNKED_ENCODING+1, 1, 0, 3,
+        HI_EO_CLISRV_INVALID_CHUNKED_EXCEPTION_STR, NULL);
+}
+
 static inline void hi_paf_event_pipe ()
 {
     SnortEventqAdd(
@@ -679,7 +745,31 @@ static inline void hi_paf_event_pipe ()
         HI_EO_CLIENT_PIPELINE_MAX_STR, NULL);
 }
 
-static inline PAF_Status hi_exec (Hi5State* s, Action a, int c)
+static inline void hi_paf_response_junk_line ()
+{
+    SnortEventqAdd(
+        GENERATOR_SPP_HTTP_INSPECT,
+        HI_EO_SERVER_JUNK_LINE_BEFORE_RESP_HEADER+1, 1, 0, 2,
+        HI_EO_SERVER_JUNK_LINE_BEFORE_RESP_HEADER_STR, NULL);
+}
+
+static inline void hi_paf_response_invalid_chunksize ()
+{
+    SnortEventqAdd(
+        GENERATOR_SPP_HTTP_INSPECT,
+        HI_EO_SERVER_INVALID_CHUNK_SIZE+1, 1, 0, 2,
+        HI_EO_SERVER_INVALID_CHUNK_SIZE_STR, NULL);
+}
+
+static inline void hi_paf_response_invalid_version ()
+{
+    SnortEventqAdd(
+        GENERATOR_SPP_HTTP_INSPECT,
+        HI_EO_SERVER_INVALID_VERSION_RESP_HEADER+1, 1, 0, 2,
+        HI_EO_SERVER_INVALID_VERSION_RESP_HEADER_STR, NULL);
+}
+
+static inline PAF_Status hi_exec (Hi5State* s, Action a, int c, void* ssn)
 {
     switch ( a )
     {
@@ -697,6 +787,13 @@ static inline PAF_Status hi_exec (Hi5State* s, Action a, int c)
             break;
         case ACT_V11:
             s->flags |= HIF_V11;
+            break;
+        case ACT_V1X:
+            if ( !(s->flags & HIF_V1X) )
+            {
+                s->flags |= HIF_V1X;
+                hi_paf_response_invalid_version();
+            }
             break;
         case ACT_NOB:
             s->flags |= HIF_NOB;
@@ -729,13 +826,41 @@ static inline PAF_Status hi_exec (Hi5State* s, Action a, int c)
         case ACT_SHX:
             if ( s->flags & HIF_ERR )
                 break;
-            if ( isxdigit(c) && !(s->len & 0xF8000000) )
+            if ( isxdigit(c) && !(s->len & 0xF8000000) && !(s->flags & HIF_CHE) )
+            {
                 s->len = (s->len << 4) + xton(c);
-            else
+            }
+            else if((s->len & 0xF8000000)) 
             {
                 hi_paf_event_msg_size();
                 s->flags |= HIF_ERR;
                 return PAF_FLUSH;
+            }
+            else
+            {
+                if( !(s->flags & HIF_CHE) )
+                {
+                    /*A correct chunk extension starts with semi-colon*/
+                    if( c != ';' )
+                    {
+                        hi_paf_response_invalid_chunksize();
+                    }
+                    else
+                    {
+                        s->flags |= HIF_CHE;
+                        s->junk_chars = 1;
+                    }
+                }
+                else if( s->flags & HIF_CHE )
+                {
+                    s->junk_chars++;
+                    if(s->junk_chars >= MAX_CHAR_AFTER_CHUNK_SIZE )
+                    {
+                        s->flags |= HIF_ERR;
+                        s->junk_chars = 0;
+                        return PAF_FLUSH;
+                    }
+                }
             }
             break;
         case ACT_LNB:
@@ -748,6 +873,8 @@ static inline PAF_Status hi_exec (Hi5State* s, Action a, int c)
            break;
         case ACT_LNC:
             s->flags |= HIF_LEN;
+            s->flags &= ~HIF_CHE;
+            s->junk_chars = 0;
             DEBUG_WRAP(DebugMessage(DEBUG_STREAM_PAF,
                 "%s: lnc=%u\n", __FUNCTION__, s->len);)
             if ( s->len )
@@ -762,12 +889,30 @@ static inline PAF_Status hi_exec (Hi5State* s, Action a, int c)
             break;
         case ACT_CHK:
             s->flags |= HIF_CHK;
+            hi_is_chunked = true;
             break;
+        case ACT_UPG:
+            DEBUG_WRAP(DebugMessage(DEBUG_STREAM_PAF,
+            "%s: Http/1 Connection upgrade possible to Http/2\n", __FUNCTION__);)
+            s->flags |= HIF_UPG;
+            break;
+        case ACT_H2:
+            DEBUG_WRAP(DebugMessage(DEBUG_STREAM_PAF,
+            "%s: Http/2 Connection preface received\n", __FUNCTION__);)
+            stream_api->set_session_http2(ssn);
+            return PAF_ABORT;
         case ACT_CK0:
             s->flags |= HIF_NOF;
             s->flags &= ~HIF_CHK;
             s->fsm = MSG_CHUNK_STATE;
             s->len = 0;
+            break;
+        case ACT_JNK:
+            if(++(s->junk_chars) >= MAX_JUNK_CHAR_BEFORE_RESP_STATUS)
+            {
+                s->valid_http = false;
+                return PAF_ABORT;
+            }  
             break;
     }
     return PAF_SEARCH;
@@ -856,7 +1001,7 @@ static inline bool paf_abort (Hi5State* s)
 
 // this is the 2nd step of stateful scanning, which executes
 // the fsm.
-static PAF_Status hi_scan_fsm (Hi5State* s, int c)
+static PAF_Status hi_scan_fsm (Hi5State* s, int c, void* ssn)
 {
     PAF_Status status;
     State* m = hi_fsm + s->fsm;
@@ -878,7 +1023,7 @@ static PAF_Status hi_scan_fsm (Hi5State* s, int c)
         cell->action, after, s->fsm);)
 #endif
 
-    status = hi_exec(s, cell->action, c);
+    status = hi_exec(s, cell->action, c, ssn);
 
     return status;
 }
@@ -889,41 +1034,59 @@ static PAF_Status hi_eoh (Hi5State* s, void* ssn)
         "%s: flags=0x%X, len=%u\n", __FUNCTION__, s->flags, s->len);)
 
     s->eoh = true;
+    s->flags &= ~HIF_ALT;
 
     if ( (s->flags & HIF_REQ) )
         hi_pipe_push(s, ssn);
     else
         hi_pipe_pop(s, ssn);
 
+    if( (s->flags & HIF_V10 &&
+        s->flags & HIF_CHK))
+    {
+        hi_paf_invalid_chunked();
+        s->flags |= HIF_TST;
+    }
     if ( (s->flags & HIF_PST) &&
         !(s->flags & (HIF_CHK|HIF_LEN)) )
     {
         hi_paf_event_post();
         s->flags |= HIF_ERR;
     }
+
+    if( s->junk_chars && (s->flags & HIF_RSP))
+    {
+        hi_paf_response_junk_line();
+        s->junk_chars = 0;
+    }
+
     if ( (s->flags & HIF_ERR) ||
         ((s->flags & HIF_NOB) && (s->flags & HIF_RSP))
     ) {
         if ( s->flags & HIF_V09 )
             hi_paf_event_simple();
 
-        hi_exec(s, ACT_LN0, 0);
+        hi_exec(s, ACT_LN0, 0, ssn);
         return PAF_FLUSH;
     }
     if ( s->flags & HIF_CHK )
     {
-        uint32_t fp;
-        PAF_Status paf = PAF_SEARCH;
-        hi_exec(s, ACT_CK0, 0);
-        hi_update_flow_depth_state(s, &fp, &paf );
-        return paf;
+        if( !(s->flags & HIF_TST) )
+        {
+            uint32_t fp;
+            PAF_Status paf = PAF_SEARCH;
+            hi_exec(s, ACT_CK0, 0, ssn);
+            hi_update_flow_depth_state(s, &fp, &paf );
+            return paf;
+        }
+         return PAF_SEARCH;
     }
     if ( (s->flags & (HIF_REQ|HIF_LEN)) )
         return PAF_FLUSH;
 
     if ( (s->flags & HIF_V11) && (s->flags & HIF_RSP) )
     {
-        hi_exec(s, ACT_LN0, 0);
+        hi_exec(s, ACT_LN0, 0, ssn);
         hi_paf_event_msg_size();
         return PAF_FLUSH;
     }
@@ -948,9 +1111,21 @@ static inline PAF_Status hi_scan_msg (
 
     if ( c == '\r' )
     {
-        *fp = 0;
-        return paf;
+        if ( hi_is_chunked  && hi_eoh_found  )
+        {
+            hi_paf_response_invalid_chunksize();
+            hi_is_chunked = false;
+        }
+        hi_eoh_found = false;
+
+        if ( s->msg != 1 && s->msg != 5 )
+        {
+            *fp = 0;
+            return paf;
+        }
     }
+    hi_eoh_found = false;
+
     switch ( s->msg )
     {
     case 0:
@@ -962,61 +1137,133 @@ static inline PAF_Status hi_scan_msg (
 
                 if ( simple_allowed(s) )
                 {
-                    hi_scan_fsm(s, EOL);
+                    hi_scan_fsm(s, EOL, ssn);
                     paf = hi_eoh(s, ssn);
                 }
                 else
                     s->msg = 1;
             }
             else if ( s->flags & HIF_NOF )
-                paf = hi_scan_fsm(s, EOL);
+                paf = hi_scan_fsm(s, EOL, ssn);
             else
                 s->msg = 1;
         }
         else
-            paf = hi_scan_fsm(s, c);
+            paf = hi_scan_fsm(s, c, ssn);
         break;
 
     case 1:
         if ( c == '\n' )
         {
-            hi_scan_fsm(s, EOL);
+            hi_scan_fsm(s, EOL, ssn);
 
             if ( have_pdu(s) )
                 paf = hi_eoh(s, ssn);
+            s->msg = 0;
         }
-        else if ( c == ' ' || c == '\t' )
+        else if (c == ' ' || c == '\t' || c == 0xb || c == 0xc)
         {
-            // folding, just continue
-            paf = hi_scan_fsm(s, LWS);
+            if(s->fsm == MSG_EOL_STATE)
+            {
+             /* This s->char_end_of_header + 3 to avoid \n\r\n and \n\r\r\n */
+               s->char_end_of_header = s->char_end_of_header + 3; 
+               hi_scan_fsm(s, c, ssn);
+               s->msg = 5;
+            }
+            else if(!(s->flags & HIF_RSP))
+        {
+            paf = hi_scan_fsm(s, LWS, ssn);
+            s->msg = 0;
+        }
+            else
+            {
+               *fp = 0;
+               return paf;
+            }
+        }
+        else if ( c == '\r')
+        {
+            if(s->fsm == MSG_EOL_STATE)
+            {
+               s->char_end_of_header++;
+               hi_scan_fsm(s, c, ssn);
+               s->msg = 5;
+            }
+            else
+            {
+               *fp = 0;
+               return paf;
+            }
         }
         else
         {
-            paf = hi_scan_fsm(s, EOL);
+            paf = hi_scan_fsm(s, EOL, ssn);
 
             if ( paf == PAF_SEARCH )
-                paf = hi_scan_fsm(s, c);
+                paf = hi_scan_fsm(s, c, ssn);
+            s->msg = 0;
         }
-        s->msg = 0;
         break;
 
     case 3:
         if ( c == '\n' )
             paf = hi_eoh(s, ssn);
         else
+        {
             s->msg = 4;
+        }
         break;
 
     case 4:
         if ( c == '\n' )
+        {
             s->msg = 3;
-        break; }
+        }
+        break;
+    case 5:
+        if ( c == '\n' )
+        {
+            hi_eoh_found = true;
+            if ( s->char_end_of_header >= 2)
+               s->flags |= HIF_END;
+            s->char_end_of_header =0;
+            hi_scan_fsm(s, EOL, ssn);
+
+            if ( have_pdu(s) )
+                paf = hi_eoh(s, ssn);
+            s->msg = 0;
+        }
+        else if (c == '\r' ||c == '\t' || c == ' ' ||  c == 0xb || c == 0xc)
+        {
+          s->char_end_of_header++;
+          hi_scan_fsm(s, c, ssn);
+        }
+        else
+        {
+            s->msg = 0;
+            hi_scan_fsm(s, c, ssn);
+            s->char_end_of_header =0;
+        }
+        break;
+
+    }
 
     if ( paf_abort(s) )
         paf = PAF_ABORT;
 
-    else if ( paf != PAF_SEARCH )
+    else if ( paf != PAF_SEARCH ) {
+        /*
+         * If the flush point is set based on content-length,
+         * then the payload is eligible for pseudo flush for
+         * early detection and file processing.
+         */
         *fp = s->len;
+        if (paf == PAF_FLUSH && s->fast_blocking &&
+            !(stream_api->is_session_decrypted(ssn)) )
+        {
+            paf = PAF_PSEUDO_FLUSH_SEARCH;
+        }
+    }
 
     if( paf != PAF_SEARCH && paf != PAF_ABORT )
     {
@@ -1030,7 +1277,7 @@ static inline PAF_Status hi_scan_msg (
 // utility
 //--------------------------------------------------------------------
 
-static void hi_reset (Hi5State* s, uint32_t flags, void *ssn)
+static void hi_reset (Hi5State* s, uint64_t flags, void *ssn)
 {
     s->len = s->msg = 0;
 
@@ -1043,6 +1290,7 @@ static void hi_reset (Hi5State* s, uint32_t flags, void *ssn)
         s->fsm = RSP_START_STATE;
     }
     s->flags = 0;
+    s->junk_chars = 0;
     s->flow_depth_state = HI_FLOW_DEPTH_STATE_NONE;
 
     if( flow_depth_reset )
@@ -1051,8 +1299,42 @@ static void hi_reset (Hi5State* s, uint32_t flags, void *ssn)
         flow_depth_reset = false;
     }
 
+    get_fast_blocking_status(s);
+
     DEBUG_WRAP(DebugMessage(DEBUG_STREAM_PAF,
         "%s: fsm=%u, flags=0x%X\n", __FUNCTION__, s->fsm, s->flags);)
+}
+
+/*peek into first few bytes of response body to guess if this is chunked.*/ 
+bool  peek_chunk_size(const uint8_t* data, uint32_t len)
+{
+    bool chunk_len = false;
+    int n = 0;
+    while ( n < len )
+    {
+        char c = data[n];
+        if(isdigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
+        {
+            chunk_len = true;
+            //Too big a chunk, probably not chunk size
+            if( n > 8 )
+                return false;
+        }
+        else if( c == '\r' || c == '\n' || c == ';')
+        {
+            if( chunk_len )
+                return true;
+            else
+                return false;
+        }
+        else
+        {
+            //other character,cant be chunk size
+            return false;
+        }
+        n++;
+    }
+    return true;
 }
 
 //--------------------------------------------------------------------
@@ -1061,7 +1343,7 @@ static void hi_reset (Hi5State* s, uint32_t flags, void *ssn)
 
 static PAF_Status hi_paf (
     void* ssn, void** pv, const uint8_t* data, uint32_t len,
-    uint32_t flags, uint32_t* fp)
+    uint64_t *flags, uint32_t* fp, uint32_t *fp_eoh)
 {
     Hi5State* hip = *pv;
     PAF_Status paf = PAF_SEARCH;
@@ -1069,34 +1351,54 @@ static PAF_Status hi_paf (
     uint32_t n = 0;
     *fp = 0;
 
+#ifdef TARGET_BASED
+    if ( session_api )
+    {
+        int16_t proto_id = session_api->get_application_protocol_id(ssn);
+    
+        if ( (proto_id > 0) && (proto_id != hi_app_protocol_id) )
+        {
+             DEBUG_WRAP(DebugMessage(DEBUG_STREAM_PAF,
+                        "%s: its not HTTP, no need to detect\n",
+                         __FUNCTION__);)
+             return PAF_ABORT;
+        }
+    }
+#endif
+
     if ( !hip )
     {
         // beware - we allocate here but s5 calls free() directly
         // so no pointers allowed
-        hip = calloc(1, sizeof(Hi5State));
+        hip = SnortPreprocAlloc(1, sizeof(Hi5State), PP_HTTPINSPECT, 
+                   PP_MEM_CATEGORY_SESSION);
 
         if ( !hip )
+        {
+            *flags |= PKT_H1_ABORT;
             return PAF_ABORT;
-
+        }
         *pv = hip;
 
         flow_depth_reset = true;
 
-        hi_reset(hip, flags, ssn );
+        hi_reset(hip, *flags, ssn );
     }
 
     hip->eoh = false;
-
+hip->valid_http = true;
     DEBUG_WRAP(DebugMessage(DEBUG_STREAM_PAF,
         "%s: len=%u\n", __FUNCTION__, len);)
 
     if ( hip->flags & HIF_ERR )
     {
+        *flags |= PKT_H1_ABORT;
         return PAF_ABORT;
     }
 
     if ( hi_cap && (hi_paf_bytes > hi_cap) )
     {
+        *flags |= PKT_H1_ABORT;
         return PAF_ABORT;
     }
 
@@ -1107,16 +1409,49 @@ static PAF_Status hi_paf (
         hi_paf_calls++;
 
         if ( paf == PAF_DISCARD_END )
-            hi_reset(hip, flags, ssn);
+            hi_reset(hip, *flags, ssn);
 
         hi_paf_bytes += *fp;
-
+        
+        if (paf == PAF_ABORT)
+            *flags |= PKT_H1_ABORT;
         return paf;
     }
 
 
     while ( n < len )
     {
+        if( !(hip->flags & HIF_ERR) && hip->flags & HIF_TST )
+        {
+            if( n != len )
+            {
+                if(peek_chunk_size(data + n, len - n))
+                {
+                    hi_exec(hip, ACT_CK0, 0, ssn);
+                    hip->flags &= ~HIF_LEN;
+                    hi_update_flow_depth_state(hip, fp, &paf );
+                }
+                else
+                {
+                     if( hip->flags & HIF_LEN )
+                     {
+                          paf = PAF_FLUSH;
+                          *fp = hip->len;
+                          hip->flags &= ~HIF_CHK;
+                          hi_update_flow_depth_state(hip, fp, &paf );
+                     }
+                     else
+                     {
+                         if ( (hip->flags & HIF_PST))
+                             hi_paf_event_post();
+                         paf = PAF_ABORT;
+                     }
+                     hip->disable_chunked = true;
+                }
+                hip->flags &= ~HIF_TST;
+            }
+        }
+
         // jump ahead to next linefeed when possible
         if ( (hip->msg == 0) && (hip->fsm == MSG_EOL_STATE) )
         {
@@ -1128,7 +1463,42 @@ static PAF_Status hi_paf (
             }
             n += (lf - (data + n));
         }
-        paf = hi_scan_msg(hip, data[n++], fp, ssn);
+        if( paf == PAF_SEARCH)
+        {
+            paf = hi_scan_msg(hip, data[n++], fp, ssn);
+            if( (hip->flags & HIF_RSP) && hip->flags &  HIF_END)
+            {
+                SnortEventqAdd(
+                GENERATOR_SPP_HTTP_INSPECT,
+                HI_EO_SERVER_NO_RESP_HEADER_END+1, 1, 0, 2,
+                HI_EO_SERVER_NO_RESP_HEADER_END_STR, NULL);
+                hip->flags |= HIF_ALT;
+                hip->flags &= ~HIF_END;
+                hip->char_end_of_header = 0; 
+            }
+            if (hip->flags & HIF_ALT)
+            {
+                hip->char_end_of_header++;
+                if (hip->char_end_of_header  >= MAX_CHAR_BEFORE_RESP_STATUS )
+                { 
+                      paf = PAF_ABORT;
+                      hip->flags &= ~HIF_ALT;
+                      hip->char_end_of_header = 0;
+                 }
+             }
+        }
+        
+        if ( hip->flags & HIF_UPG)
+        {
+            *flags |= PKT_UPGRADE_PROTO;
+            //Before a client preface is received server can start
+            //sending messages. From next packet h2_paf will take over.
+            if (*flags & PKT_FROM_SERVER)
+            {
+                stream_api->set_session_http2(ssn);
+                stream_api->set_session_http2_upg(ssn);
+            }
+        }
 
         if ( paf != PAF_SEARCH )
         {
@@ -1139,9 +1509,19 @@ static PAF_Status hi_paf (
             }
 
             *fp += n;
+            if( hip->eoh && (( hip->flags & HIF_PST ))){
+                *fp_eoh = n;
+                if(*fp <= len )
+                    *fp_eoh = 0;
+            }
 
             if ( paf != PAF_SKIP && paf != PAF_DISCARD_START )
-                hi_reset(hip, flags, ssn);
+                hi_reset(hip, *flags, ssn);
+
+            if ( hip->fast_blocking && (paf == PAF_SKIP) &&
+                 !(stream_api->is_session_decrypted(ssn)) )
+                paf = PAF_PSEUDO_FLUSH_SKIP;
+
             break;
         }
     }
@@ -1153,6 +1533,8 @@ static PAF_Status hi_paf (
     hi_paf_bytes += n;
 
     hip->paf_bytes += n;
+    if ( paf == PAF_ABORT)
+        *flags |= PKT_H1_ABORT;
 
     return paf;
 }
@@ -1182,6 +1564,12 @@ int hi_paf_register_port (
     return 0;
 }
 
+static void hi_paf_cleanup(void *pafData)
+{
+    if (pafData)
+        SnortPreprocFree(pafData, sizeof(Hi5State), PP_HTTPINSPECT, PP_MEM_CATEGORY_SESSION);
+}
+
 int hi_paf_register_service (
     struct _SnortConfig *sc, uint16_t service, bool client, bool server, tSfPolicyId pid, bool auto_on)
 {
@@ -1195,11 +1583,15 @@ int hi_paf_register_service (
         return -1;
 
     if ( client )
+    {
         hi_paf_id = stream_api->register_paf_service(sc, pid, service, true, hi_paf, auto_on);
-
+        stream_api->register_paf_free(hi_paf_id, hi_paf_cleanup);
+    }
     if ( server )
+    {
         hi_paf_id = stream_api->register_paf_service(sc, pid, service, false, hi_paf, auto_on);
-
+        stream_api->register_paf_free(hi_paf_id, hi_paf_cleanup);
+    }
     return 0;
 }
 
@@ -1224,7 +1616,8 @@ bool hi_paf_init (uint32_t cap)
 
 void hi_paf_term (void)
 {
-    free(hi_fsm);
+    SnortPreprocFree(hi_fsm, hi_fsm_size*sizeof(*hi_fsm), PP_HTTPINSPECT, 
+         PP_MEM_CATEGORY_SESSION);
     DEBUG_WRAP(DebugMessage(DEBUG_STREAM_PAF,
         "%s: calls=%u, bytes=%u\n",  __FUNCTION__,
         hi_paf_calls, hi_paf_bytes);)
@@ -1247,7 +1640,12 @@ bool hi_paf_simple_request (void* ssn)
     return false;
 }
 
-static void  get_flow_depth(void *ssn, uint32_t flags, Hi5State *hip)
+static void get_fast_blocking_status(Hi5State *hip)
+{
+    hip->fast_blocking = GetHttpFastBlockingStatus();
+}
+
+static void  get_flow_depth(void *ssn, uint64_t flags, Hi5State *hip)
 {
     hip->flow_depth = GetHttpFlowDepth(ssn, flags);
 }
@@ -1382,3 +1780,32 @@ uint32_t hi_paf_resp_bytes_processed(void* ssn)
     }
     return 0;
 }
+
+bool hi_paf_valid_http(void* ssn)
+{
+    if ( ssn )
+    {   
+        Hi5State** s = (Hi5State **)stream_api->get_paf_user_data(ssn, 0, hi_paf_id);
+         
+        if ( s && *s )
+            return ((*s)->valid_http);
+    }
+    return 1;
+}
+bool hi_paf_disable_te(void* ssn, bool to_server)
+{
+    if ( ssn )
+    {
+        Hi5State** s = (Hi5State **)stream_api->get_paf_user_data(ssn, to_server?1:0, hi_paf_id);
+
+        if ( s && *s )
+            return ( (*s)->disable_chunked);
+    }
+    return false;
+}
+
+uint32_t hi_paf_get_size()
+{
+    return sizeof(Hi5State);
+}
+

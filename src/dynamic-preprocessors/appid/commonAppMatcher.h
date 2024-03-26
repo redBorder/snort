@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -60,7 +60,7 @@ int AppIdCommonFini(void);
  * @param new_context - return reference that points to new AppId configuration
  * @return 0 on success, -1 on failure
  */
-int AppIdCommonReload(void **new_context);
+int AppIdCommonReload(struct AppidStaticConfig* appidSC, void **new_context);
 
 /**
  * \brief Swap AppId configuration
@@ -83,8 +83,6 @@ void *AppIdCommonReloadSwap(void *new_context);
  * @return None
  */
 void AppIdCommonUnload(void *old_context);
-
-void SetSafeSearchEnforcement(int enabled);
 
 void *AppIDFlowdataGet(struct AppIdData *flow, unsigned id);
 

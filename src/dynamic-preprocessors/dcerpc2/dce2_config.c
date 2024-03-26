@@ -1,5 +1,5 @@
 /****************************************************************************
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -252,7 +252,6 @@ static DCE2_Ret DCE2_GcParseMemcap(DCE2_GlobalConfig *, char **, char *);
 static DCE2_Ret DCE2_GcParseMaxFrag(DCE2_GlobalConfig *, char **, char *);
 static DCE2_Ret DCE2_GcParseEvents(DCE2_GlobalConfig *, char **, char *);
 static inline void DCE2_GcSetEvent(DCE2_GlobalConfig *, DCE2_EventFlag);
-static inline void DCE2_GcClearEvent(DCE2_GlobalConfig *, DCE2_EventFlag);
 static inline void DCE2_GcClearAllEvents(DCE2_GlobalConfig *);
 static inline DCE2_EventFlag DCE2_GcParseEvent(char *, char *, int *);
 static DCE2_Ret DCE2_GcParseReassembleThreshold(DCE2_GlobalConfig *, char **, char *);
@@ -275,7 +274,6 @@ static DCE2_Ret DCE2_ScParseValidSmbVersions(DCE2_ServerConfig *, char **, char 
 static DCE2_Ret DCE2_ScParseSmbFileInspection(DCE2_ServerConfig *, char **, char *);
 static inline DCE2_ValidSmbVersionFlag DCE2_ScParseValidSmbVersion(char *, char *, int *);
 static inline void DCE2_ScSetValidSmbVersion(DCE2_ServerConfig *, DCE2_ValidSmbVersionFlag);
-static inline void DCE2_ScClearValidSmbVersion(DCE2_ServerConfig *, DCE2_ValidSmbVersionFlag);
 static inline void DCE2_ScClearAllValidSmbVersionFlags(DCE2_ServerConfig *);
 static DCE2_Ret DCE2_ScAddToRoutingTable(DCE2_Config *, DCE2_ServerConfig *, DCE2_Queue *);
 static int DCE2_ScSmbShareCompare(const void *, const void *);
@@ -947,26 +945,6 @@ static inline DCE2_EventFlag DCE2_GcParseEvent(char *start, char *end, int *emas
 static inline void DCE2_GcSetEvent(DCE2_GlobalConfig *gc, DCE2_EventFlag eflag)
 {
     gc->event_mask |= eflag;
-}
-
-/*********************************************************************
- * Function: DCE2_GcClearEvent()
- *
- * Clears the bit associated with the event type flag passed in for
- * the global configuration event mask.
- *
- * Arguments:
- *  DCE2_GlobalConfig *
- *      Pointer to global config structure.
- *  DCE2_EventFlag
- *      The event type flag to clear.
- *
- * Returns: None
- *
- *********************************************************************/
-static inline void DCE2_GcClearEvent(DCE2_GlobalConfig *gc, DCE2_EventFlag eflag)
-{
-    gc->event_mask &= ~eflag;
 }
 
 /*********************************************************************
@@ -2916,27 +2894,6 @@ static inline void DCE2_ScSetValidSmbVersion(DCE2_ServerConfig *sc,
 }
 
 /*********************************************************************
- * Function: DCE2_ScClearValidSmbVersion()
- *
- * Sets the bit associated with the smb version flag passed in for
- * the server configuration valid smb versions mask.
- *
- * Arguments:
- *  DCE2_ServerConfig *
- *      Pointer to server config structure.
- *  DCE2_ValidSmbVersionFlag
- *      The smb version flag to clear.
- *
- * Returns: None
- *
- *********************************************************************/
-static inline void DCE2_ScClearValidSmbVersion(DCE2_ServerConfig *sc,
-        DCE2_ValidSmbVersionFlag vflag)
-{
-    sc->valid_smb_versions_mask &= ~vflag;
-}
-
-/*********************************************************************
  * Function: DCE2_ScClearAllValidSmbVersionFlags()
  *
  * Clears all of the bits in the server configuration smb
@@ -3878,22 +3835,32 @@ static int DCE2_ScCheckTransport(void *data)
 {
     unsigned int i;
     DCE2_ServerConfig *sc = (DCE2_ServerConfig *)data;
+    uint32_t *smb_ports = (uint32_t *)sc->smb_ports;
+    uint32_t *tcp_ports = (uint32_t *)sc->tcp_ports;
+    uint32_t *udp_ports = (uint32_t *)sc->udp_ports;
+    uint32_t *http_proxy_ports = (uint32_t *)sc->http_proxy_ports;
+    uint32_t *http_server_ports = (uint32_t *)sc->http_server_ports;
+    uint32_t *auto_smb_ports = (uint32_t *)sc->auto_smb_ports;
+    uint32_t *auto_tcp_ports = (uint32_t *)sc->auto_tcp_ports;
+    uint32_t *auto_udp_ports = (uint32_t *)sc->auto_udp_ports;
+    uint32_t *auto_http_proxy_ports = (uint32_t *)sc->auto_http_proxy_ports;
+    uint32_t *auto_http_server_ports = (uint32_t *)sc->auto_http_server_ports;
 
     if (data == NULL)
         return 0;
 
-    for (i = 0; i < DCE2_PORTS__MAX_INDEX - 3; i += 4)
+    for (i = 0; i < DCE2_PORTS__MAX_INDEX >> 2; i++)
     {
-        if (*((uint32_t *)&sc->smb_ports[i]) ||
-            *((uint32_t *)&sc->tcp_ports[i]) ||
-            *((uint32_t *)&sc->udp_ports[i]) ||
-            *((uint32_t *)&sc->http_proxy_ports[i]) ||
-            *((uint32_t *)&sc->http_server_ports[i]) ||
-            *((uint32_t *)&sc->auto_smb_ports[i]) ||
-            *((uint32_t *)&sc->auto_tcp_ports[i]) ||
-            *((uint32_t *)&sc->auto_udp_ports[i]) ||
-            *((uint32_t *)&sc->auto_http_proxy_ports[i]) ||
-            *((uint32_t *)&sc->auto_http_server_ports[i]))
+        if (smb_ports[i] ||
+            tcp_ports[i] ||
+            udp_ports[i] ||
+            http_proxy_ports[i] ||
+            http_server_ports[i] ||
+            auto_smb_ports[i] ||
+            auto_tcp_ports[i] ||
+            auto_udp_ports[i] ||
+            auto_http_proxy_ports[i] ||
+            auto_http_server_ports[i])
         {
             return 0;
         }
@@ -3951,13 +3918,17 @@ int DCE2_ScCheckTransports(DCE2_Config *config)
 static DCE2_Ret DCE2_ScCheckPortOverlap(const DCE2_ServerConfig *sc)
 {
     unsigned int i;
+    uint32_t *smb_ports = (uint32_t *)sc->smb_ports;
+    uint32_t *tcp_ports = (uint32_t *)sc->tcp_ports;
+    uint32_t *http_proxy_ports = (uint32_t *)sc->http_proxy_ports;
+    uint32_t *http_server_ports = (uint32_t *)sc->http_server_ports;
 
     /* All port array masks should be the same size */
-    for (i = 0; i < sizeof(sc->smb_ports) - 3; i += 4)
+    for (i = 0; i < sizeof(sc->smb_ports) >> 2; i++)
     {
         /* Take 4 bytes at a time and bitwise and them.  Should
          * be 0 if there are no overlapping ports. */
-        uint32_t overlap = *((uint32_t *)&sc->smb_ports[i]) & *((uint32_t *)&sc->tcp_ports[i]);
+        uint32_t overlap = smb_ports[i] & tcp_ports[i];
         uint32_t cached;
 
         if (overlap)
@@ -3968,8 +3939,8 @@ static DCE2_Ret DCE2_ScCheckPortOverlap(const DCE2_ServerConfig *sc)
             return DCE2_RET__ERROR;
         }
 
-        cached = *((uint32_t *)&sc->smb_ports[i]) | *((uint32_t *)&sc->tcp_ports[i]);
-        overlap = *((uint32_t *)&sc->http_proxy_ports[i]) & cached;
+        cached = smb_ports[i] | tcp_ports[i];
+        overlap = http_proxy_ports[i] & cached;
 
         if (overlap)
         {
@@ -3979,8 +3950,8 @@ static DCE2_Ret DCE2_ScCheckPortOverlap(const DCE2_ServerConfig *sc)
             return DCE2_RET__ERROR;
         }
 
-        cached |= *((uint32_t *)&sc->http_proxy_ports[i]);
-        overlap = *((uint32_t *)&sc->http_server_ports[i]) & cached;
+        cached |= http_proxy_ports[i];
+        overlap = http_server_ports[i] & cached;
 
         if (overlap)
         {

@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -47,5 +47,10 @@ uint32_t StreamGetIpPrunes(void);
 void StreamResetIpPrunes(void);
 
 void IpSessionCleanup (void* lws);
+
+void SessionIPReload(uint32_t max_sessions, uint16_t pruningTimeout, uint16_t nominalTimeout);
+unsigned SessionIPReloadAdjust(unsigned maxWork);
+
+size_t get_ip_used_mempool();
 
 #endif

@@ -1,6 +1,6 @@
 /* $Id$ */
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 **
@@ -87,6 +87,7 @@
 #include "detection-plugins/sp_byte_check.h"
 #include "detection-plugins/sp_byte_jump.h"
 #include "detection-plugins/sp_byte_extract.h"
+#include "detection-plugins/sp_byte_math.h"
 #include "detection-plugins/sp_isdataat.h"
 #include "detection-plugins/sp_pcre.h"
 #include "detection-plugins/sp_flowbits.h"
@@ -124,6 +125,10 @@
 #include "output-plugins/spo_log_ascii.h"
 #include "output-plugins/spo_unified2.h"
 
+#ifdef DUMP_BUFFER
+#include "output-plugins/spo_log_buffer_dump.h"
+#endif
+
 #ifdef LINUX
 #include "output-plugins/spo_alert_sf_socket.h"
 #endif
@@ -144,12 +149,8 @@ extern PreprocSignalFuncNode *preproc_reset_stats_funcs;
 extern PreprocStatsFuncNode *preproc_stats_funcs;
 extern PluginSignalFuncNode *plugin_shutdown_funcs;
 extern PluginSignalFuncNode *plugin_clean_exit_funcs;
-#ifdef SNORT_RELOAD
-extern PostConfigFuncNode *plugin_reload_funcs;
-#endif
 extern OutputFuncNode *AlertList;
 extern OutputFuncNode *LogList;
-extern PeriodicCheckFuncNode *periodic_check_funcs;
 
 /**************************** Detection Plugin API ****************************/
 /* For translation from enum to char* */
@@ -165,6 +166,7 @@ static const char *optTypeMap[OPT_TYPE_MAX] =
     ((num < sizeof(map)/sizeof(map[0])) ? map[num] : "undefined")
 #endif
 
+static GetHttpXffFieldsFunc getHttpXffFieldsFunc = NULL;
 
 void RegisterRuleOptions(void)
 {
@@ -195,6 +197,7 @@ void RegisterRuleOptions(void)
     SetupByteTest();
     SetupByteJump();
     SetupByteExtract();
+    SetupByteMath();
     SetupIsDataAt();
     SetupFileData();
     SetupBase64Decode();
@@ -665,6 +668,15 @@ void FreeDetectionEvalFuncs(DetectionEvalFuncNode *head)
         head = tmp;
     }
 }
+
+/************************** Buffer Dump Plugin API ***************************/
+#ifdef DUMP_BUFFER
+void RegisterBufferTracer(TraceBuffer *(*bdfunc)(), BUFFER_DUMP_FUNC type)
+{
+    getBuffers[type] = bdfunc;
+    bdmask |= (UINT64_C(1) << type);
+}
+#endif
 
 /************************** Preprocessor Plugin API ***************************/
 static void AddFuncToPreprocSignalList(PreprocSignalFunc, void *,
@@ -1327,8 +1339,6 @@ void AddFuncToPeriodicCheckList(PeriodicFunc periodic_func, void *arg,
     PeriodicCheckFuncNode **list= &periodic_check_funcs;
     PeriodicCheckFuncNode *node;
 
-    if (list == NULL)
-        return;
 
     node = (PeriodicCheckFuncNode *)SnortAlloc(sizeof(PeriodicCheckFuncNode));
 
@@ -1578,6 +1588,10 @@ void RegisterOutputPlugins(void)
     Unified2Setup();
     LogAsciiSetup();
 
+#ifdef DUMP_BUFFER
+    LogBufferDumpSetup();
+#endif
+
 #ifdef LINUX
     /* This uses linux only capabilities */
     AlertSFSocket_Setup();
@@ -1603,6 +1617,7 @@ void RegisterOutputPlugins(void)
 void RegisterOutputPlugin(char *keyword, int type_flags, OutputConfigFunc oc_func)
 {
     OutputConfigFuncNode *node = (OutputConfigFuncNode *)SnortAlloc(sizeof(OutputConfigFuncNode));
+
 
     DEBUG_WRAP(DebugMessage(DEBUG_PLUGIN,"Registering keyword:output => %s:%p\n",
                             keyword, oc_func););
@@ -1645,26 +1660,30 @@ void RemoveOutputPlugin(char *keyword)
         return;
 
     /*If head node, remove head*/
-    if (strcasecmp(head->keyword, keyword) == 0)
+    if(head->keyword != NULL)
     {
-        output_config_funcs = head->next;
-        if (head->keyword != NULL)
+        if (strcasecmp(head->keyword, keyword) == 0)
+        {
+            output_config_funcs = head->next;
             free(head->keyword);
-        free(head);
-        return;
+            free(head);
+            return;
+        }
     }
 
     while (head->next != NULL)
     {
         OutputConfigFuncNode *next;
         next = head->next;
-        if (strcasecmp(next->keyword, keyword) == 0)
+        if(next->keyword != NULL )
         {
-            head->next = next->next;
-            if (next->keyword != NULL)
+            if (strcasecmp(next->keyword, keyword) == 0)
+            {
+                head->next = next->next;
                 free(next->keyword);
-            free(next);
-            break;
+                free(next);
+                break;
+            }
         }
         head = head->next;
     }
@@ -1689,6 +1708,7 @@ OutputConfigFunc GetOutputConfigFunc(char *keyword)
 
     return NULL;
 }
+
 
 int GetOutputTypeFlags(char *keyword)
 {
@@ -1787,6 +1807,42 @@ void AddFuncToOutputList(SnortConfig *sc, OutputFunc o_func, OutputType type, vo
     }
 }
 
+#ifdef DUMP_BUFFER
+/****************************************************************************
+ *
+ * Function: AddBDFuncToOutputList()
+ *
+ * Purpose: This function is called only when buffer dump is enabled. For
+ * BufferDump output plugin, bdfptr points to LogBufferDump function. For all
+ * other output plugins, bdfptr points to NULL.
+ *
+ * Arguments: sc => snort config
+ *            o_func => output plugin function
+ *            type => alert or log types
+ *            arg => pointer to output stream to which buffers will be dumped
+ *
+ * Returns: void function
+ *
+ ***************************************************************************/
+
+void AddBDFuncToOutputList(SnortConfig *sc, OutputFunc o_func, OutputType type, void *arg)
+{
+
+    OutputFuncNode *node;
+
+    if (sc->head_tmp != NULL)
+        node = sc->head_tmp->LogList;
+
+    else
+        node = LogList;
+
+    while (node->next != NULL)
+        node = node->next;
+
+    node->bdfptr = o_func;
+}
+#endif
+
 void AppendOutputFuncList(OutputFunc o_func, void *arg, OutputFuncNode **list)
 {
     OutputFuncNode *node;
@@ -1812,6 +1868,11 @@ void AppendOutputFuncList(OutputFunc o_func, void *arg, OutputFuncNode **list)
 
     node->func = o_func;
     node->arg = arg;
+
+#ifdef DUMP_BUFFER
+    node->bdfptr = NULL;
+#endif
+
 }
 
 
@@ -1936,4 +1997,13 @@ void FreeRuleOptParseCleanupList(RuleOptParseCleanupNode *head)
     }
 }
 
+void RegisterGetHttpXffFields(GetHttpXffFieldsFunc fn)
+{
+    if (!getHttpXffFieldsFunc) getHttpXffFieldsFunc = fn;
+}
 
+char** GetHttpXffFields(int* nFields)
+{
+    if (getHttpXffFieldsFunc) return getHttpXffFieldsFunc(nFields);
+    else return NULL;
+}

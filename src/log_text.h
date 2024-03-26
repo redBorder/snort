@@ -1,7 +1,7 @@
 
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -53,6 +53,10 @@ void LogTCPHeader(TextLog*, Packet*);
 void LogUDPHeader(TextLog*, Packet*);
 void LogICMPHeader(TextLog*, Packet*);
 void LogArpHeader(TextLog*, Packet*);
+
+#ifdef DUMP_BUFFER
+void LogBuffer(TextLog *, char *, char *, const int);
+#endif
 
 #if 0
 /* these are implemented in log_text.c but not public */

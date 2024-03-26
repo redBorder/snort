@@ -4,7 +4,7 @@
 ** perf-flow.c
 **
 **
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Marc Norton <mnorton@sourcefire.com>
 ** Dan Roelker <droelker@sourcefire.com>
@@ -62,6 +62,12 @@
 #include "util.h"
 #include "sf_types.h"
 
+#ifdef SNORT_RELOAD
+#ifdef REG_TEST
+#include "reg_test.h"
+#endif
+#endif
+
 static void DisplayFlowStats(SFFLOW_STATS *sfFlowStats);
 static void WriteFlowStats(SFFLOW_STATS *, FILE *);
 static void DisplayFlowIPStats(SFFLOW *sfFlow);
@@ -96,28 +102,35 @@ typedef struct _sfSingleFlowStatsValue
 */
 int InitFlowStats(SFFLOW *sfFlow)
 {
-    static char first = 1;
+        if (sfFlow->pktLenCnt == NULL)
+            sfFlow->pktLenCnt = (uint64_t*)SnortAlloc(sizeof(uint64_t) * (SF_MAX_PKT_LEN + 2));
+        else
+            memset(sfFlow->pktLenCnt, 0, sizeof(uint64_t) * (SF_MAX_PKT_LEN + 2));
 
-    if (first)
-    {
-        sfFlow->pktLenCnt = (uint64_t*)SnortAlloc(sizeof(uint64_t) * (SF_MAX_PKT_LEN + 2));
-        sfFlow->portTcpSrc = (uint64_t*)SnortAlloc(sizeof(uint64_t) * (SF_MAX_PORT+1));
-        sfFlow->portTcpDst = (uint64_t*)SnortAlloc(sizeof(uint64_t) * (SF_MAX_PORT+1));
-        sfFlow->portUdpSrc = (uint64_t*)SnortAlloc(sizeof(uint64_t) * (SF_MAX_PORT+1));
-        sfFlow->portUdpDst = (uint64_t*)SnortAlloc(sizeof(uint64_t) * (SF_MAX_PORT+1));
-        sfFlow->typeIcmp = (uint64_t *)SnortAlloc(sizeof(uint64_t) * 256);
+        if (sfFlow->portTcpSrc == NULL)
+            sfFlow->portTcpSrc = (uint64_t*)SnortAlloc(sizeof(uint64_t) * (SF_MAX_PORT+1));
+        else
+            memset(sfFlow->portTcpSrc, 0, sizeof(uint64_t) * (SF_MAX_PORT+1));
 
-        first = 0;
-    }
-    else
-    {
-        memset(sfFlow->pktLenCnt, 0, sizeof(uint64_t) * (SF_MAX_PKT_LEN + 2));
-        memset(sfFlow->portTcpSrc, 0, sizeof(uint64_t) * (SF_MAX_PORT+1));
-        memset(sfFlow->portTcpDst, 0, sizeof(uint64_t) * (SF_MAX_PORT+1));
-        memset(sfFlow->portUdpSrc, 0, sizeof(uint64_t) * (SF_MAX_PORT+1));
-        memset(sfFlow->portUdpDst, 0, sizeof(uint64_t) * (SF_MAX_PORT+1));
-        memset(sfFlow->typeIcmp, 0, sizeof(uint64_t) * 256);
-    }
+        if (sfFlow->portTcpDst == NULL)
+            sfFlow->portTcpDst = (uint64_t*)SnortAlloc(sizeof(uint64_t) * (SF_MAX_PORT+1));
+        else
+            memset(sfFlow->portTcpDst, 0, sizeof(uint64_t) * (SF_MAX_PORT+1));
+
+        if (sfFlow->portUdpSrc == NULL)
+            sfFlow->portUdpSrc = (uint64_t*)SnortAlloc(sizeof(uint64_t) * (SF_MAX_PORT+1));
+        else
+            memset(sfFlow->portUdpSrc, 0, sizeof(uint64_t) * (SF_MAX_PORT+1));
+
+        if (sfFlow->portUdpDst == NULL)
+            sfFlow->portUdpDst = (uint64_t*)SnortAlloc(sizeof(uint64_t) * (SF_MAX_PORT+1));
+        else
+            memset(sfFlow->portUdpDst, 0, sizeof(uint64_t) * (SF_MAX_PORT+1));
+
+        if (sfFlow->typeIcmp == NULL)
+            sfFlow->typeIcmp = (uint64_t *)SnortAlloc(sizeof(uint64_t) * 256);
+        else
+            memset(sfFlow->typeIcmp, 0, sizeof(uint64_t) * 256);
 
     sfFlow->pktTotal = 0;
     sfFlow->byteTotal = 0;
@@ -135,16 +148,12 @@ int InitFlowStats(SFFLOW *sfFlow)
 
 int InitFlowIPStats(SFFLOW *sfFlow)
 {
-    static char first = 1;
-
-    if (first)
+    if (sfFlow->ipMap == NULL)
     {
         sfFlow->ipMap = sfxhash_new(1021, sizeof(sfSFSKey), sizeof(sfSFSValue),
                 perfmon_config->flowip_memcap, 1, NULL, NULL, 1);
         if(!sfFlow->ipMap)
             FatalError("Unable to allocate memory for FlowIP stats\n");
-
-        first = 0;
     }
     else
     {
@@ -191,7 +200,10 @@ void FreeFlowStats(SFFLOW *sfFlow)
         free(sfFlow->typeIcmp);
         sfFlow->typeIcmp = NULL;
     }
+}
 
+void FreeFlowIPStats(SFFLOW *sfFlow)
+{
     if (sfFlow->ipMap != NULL)
     {
         sfxhash_delete(sfFlow->ipMap);
@@ -310,6 +322,9 @@ static sfSFSValue *findFlowIPStats(SFFLOW *sfFlow, sfaddr_t* src_addr, sfaddr_t*
         IP_COPY_VALUE(key.ipB, src_addr);
         *swapped = 1;
     }
+
+    if (!sfFlow->ipMap)
+        return NULL;
 
     value = sfxhash_find(sfFlow->ipMap, &key);
     if (!value)
@@ -817,6 +832,9 @@ static void DisplayFlowIPStats(SFFLOW *sfFlow)
     char ipA[41], ipB[41];
     uint64_t total = 0;
 
+    if (!sfFlow->ipMap)
+        return;
+
     LogMessage("\n");
     LogMessage("\n");
     LogMessage("IP Flows (%d unique IP pairs)\n", sfxhash_count(sfFlow->ipMap));
@@ -844,6 +862,9 @@ static void WriteFlowIPStats(SFFLOW *sfFlow, FILE *fp)
     char ipA[41], ipB[41];
 
     if (!fp)
+        return;
+
+    if (!sfFlow->ipMap)
         return;
 
     fprintf(fp, "%u,%u\n", (uint32_t)time(NULL), sfxhash_count(sfFlow->ipMap));

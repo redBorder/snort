@@ -16,7 +16,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * Author: Steve Sturges
@@ -186,7 +186,7 @@ static int GetDynamicContents(void *r, int type, FPContentInfo **contents)
     int base64_buf_flag = 0;
     int mime_buf_flag = 0;
 
-    if ((r == NULL) || (contents == NULL))
+    if ((r == NULL) || (contents == NULL) || (!rule->initialized) || (rule->options == NULL))
         return -1;
 
     *contents = NULL;
@@ -318,6 +318,10 @@ static int GetDynamicPreprocOptFpContents(void *r, FPContentInfo **fp_contents)
         return -1;
 
     *fp_contents = NULL;
+
+    if (rule->options == NULL) {
+        return (-1);
+    }
 
     /* Get flow direction */
     for (i = 0, option = rule->options[i];
@@ -835,7 +839,7 @@ int RegisterOneRule(struct _SnortConfig *sc, Rule *rule, int registerRule)
     RuleOption *option;
     int fast_pattern = 0;
 
-    for (i=0;rule->options[i] != NULL; i++)
+    for (i=0; ((rule->options) && rule->options[i] != NULL); i++)
     {
         option = rule->options[i];
         switch (option->optionType)
@@ -987,6 +991,7 @@ int RegisterOneRule(struct _SnortConfig *sc, Rule *rule, int registerRule)
                 break;
 
             case OPTION_TYPE_BYTE_TEST:
+            case OPTION_TYPE_BYTE_MATH:
             case OPTION_TYPE_BYTE_JUMP:
                 {
                     ByteData *byte = option->option_u.byte;
@@ -1054,7 +1059,7 @@ int RegisterOneRule(struct _SnortConfig *sc, Rule *rule, int registerRule)
                     &FreeOneRule,
                     &GetDynamicPreprocOptFpContents) == -1)
         {
-            for (i = 0; rule->options[i] != NULL; i++)
+            for (i = 0; ((rule->options) && rule->options[i] != NULL); i++)
             {
                 option = rule->options[i];
                 switch (option->optionType)
@@ -1083,7 +1088,7 @@ static void FreeOneRule(void *data)
     int i;
     Rule *rule = (Rule *)data;
 
-    if (rule == NULL)
+    if (rule == NULL || (!rule->options))
         return;
 
     /* More than one rule may use the same rule option so make sure anything
@@ -1178,6 +1183,7 @@ static void FreeOneRule(void *data)
                     }
                 }
             case OPTION_TYPE_BYTE_TEST:
+            case OPTION_TYPE_BYTE_MATH:
             case OPTION_TYPE_BYTE_JUMP:
             case OPTION_TYPE_FILE_DATA:
             case OPTION_TYPE_PKT_DATA:
@@ -1228,7 +1234,7 @@ static int DumpRule(FILE *fp, Rule *rule)
     if (rule->info.priority != 0)
         fprintf(fp, "priority:%d; ", rule->info.priority);
 
-    for (i = 0; rule->options[i] != NULL; i++)
+    for (i = 0; ((rule->options) && rule->options[i] != NULL); i++)
     {
         if( rule->options[i]->optionType == OPTION_TYPE_FLOWBIT )
         {

@@ -1,5 +1,5 @@
 /****************************************************************************
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -38,10 +38,10 @@ static uint8_t imap_paf_id = 0;
 typedef struct _ImapDataInfo
 {
     int paren_cnt;        /* The open parentheses count in fetch */
-    char *next_letter;    /* The current command in fetch */
     bool found_len;
-    uint32_t length;
     bool esc_nxt_char;    /* true if the next charachter has been escaped */
+    char *next_letter;    /* The current command in fetch */
+    uint32_t length;
 } ImapDataInfo;
 
 
@@ -70,9 +70,9 @@ typedef struct _ImapPafData
 {
     MimeDataPafInfo mime_info;    /* Mime response information */
     ImapPafState imap_state;      /* The current IMAP paf stat */
+    bool end_of_data;
     ImapDataInfo imap_data_info;  /* Used for parsing data */
     ImapDataEnd data_end_state;
-    bool end_of_data;
 //    uint32_t length;            TODO -- parse and add literal length
 } ImapPafData;
 
@@ -538,13 +538,14 @@ static PAF_Status imap_paf_client(ImapPafData *pfdata,
  *    uint32_t len - length of payload data
  *    uint32_t flags- flags to check whether client or server
  *    uint32_t * fp- pointer to set flush point
+ *    uint32_t * fp_eoh - pointer to set header flush point
  *
  * Returns:
  *   PAF_Status - PAF_FLUSH if flush point found, PAF_SEARCH otherwise
  */
 
 static PAF_Status imap_paf(void* ssn, void** ps, const uint8_t* data,
-        uint32_t len, uint32_t flags, uint32_t* fp)
+        uint32_t len, uint64_t *flags, uint32_t* fp, uint32_t* fp_eoh)
 {
 
     ImapPafData *pfdata = *(ImapPafData **)ps;
@@ -555,7 +556,7 @@ static PAF_Status imap_paf(void* ssn, void** ps, const uint8_t* data,
         //if (_dpd.fileAPI->check_paf_abort(ssn))
           //  return PAF_ABORT;
 
-        pfdata = calloc(1, sizeof(*pfdata));
+        pfdata = _dpd.snortAlloc(1, sizeof(*pfdata), PP_IMAP, PP_MEM_CATEGORY_SESSION);
         if (pfdata == NULL)
         {
             return PAF_ABORT;
@@ -566,7 +567,7 @@ static PAF_Status imap_paf(void* ssn, void** ps, const uint8_t* data,
     }
 
 
-    if (flags & FLAG_FROM_SERVER)
+    if (*flags & FLAG_FROM_SERVER)
     {
         DEBUG_WRAP(DebugMessage(DEBUG_IMAP, "IMAP PAF: From server.\n"););
         return imap_paf_server(pfdata, data, len, fp);
@@ -591,6 +592,12 @@ bool is_data_end (void* ssn)
     return false;
 }
 
+void imap_paf_cleanup(void *pafData)
+{
+   if(pafData) {
+      _dpd.snortFree(pafData, sizeof(ImapPafData), PP_IMAP, PP_MEM_CATEGORY_SESSION);
+   }
+}
 
 #ifdef TARGET_BASED
 void register_imap_paf_service (struct _SnortConfig *sc, int16_t app, tSfPolicyId policy)
@@ -599,6 +606,7 @@ void register_imap_paf_service (struct _SnortConfig *sc, int16_t app, tSfPolicyI
     {
         imap_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, true, imap_paf, true);
         imap_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, false,imap_paf, true);
+        _dpd.streamAPI->register_paf_free(imap_paf_id, imap_paf_cleanup);
     }
 }
 #endif
@@ -610,5 +618,6 @@ void register_imap_paf_port(struct _SnortConfig *sc, unsigned int i, tSfPolicyId
     {
         imap_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, true, imap_paf, true);
         imap_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, false, imap_paf, true);
+        _dpd.streamAPI->register_paf_free(imap_paf_id, imap_paf_cleanup);
     }
 }

@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -59,8 +59,8 @@ typedef struct _RADIUS_HEADER {
 #pragma pack()
 
 static int radius_init(const InitServiceAPI * const init_api);
-MakeRNAServiceValidationPrototype(radius_validate);
-MakeRNAServiceValidationPrototype(radius_validate_accounting);
+static int radius_validate(ServiceValidationArgs* args);
+static int radius_validate_accounting(ServiceValidationArgs* args);
 
 static tRNAServiceElement svc_element =
 {
@@ -115,12 +115,15 @@ static int radius_init(const InitServiceAPI * const init_api)
     return 0;
 }
 
-MakeRNAServiceValidationPrototype(radius_validate)
+static int radius_validate(ServiceValidationArgs* args)
 {
     ServiceRADIUSData *rd;
-    const RADIUSHeader *hdr = (const RADIUSHeader *)data;
+    const RADIUSHeader *hdr = (const RADIUSHeader *)args->data;
     uint16_t len;
     int new_dir;
+    tAppIdData *flowp = args->flowp;
+    const int dir = args->dir;
+    uint16_t size = args->size;
 
     if (!size)
         goto inprocess;
@@ -148,12 +151,12 @@ MakeRNAServiceValidationPrototype(radius_validate)
             hdr->code == RADIUS_CODE_ACCESS_REJECT ||
             hdr->code == RADIUS_CODE_ACCESS_CHALLENGE)
         {
-            setAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED);
+            setAppIdFlag(flowp, APPID_SESSION_UDP_REVERSED);
             rd->state = RADIUS_STATE_RESPONSE;
             new_dir = APP_ID_FROM_RESPONDER;
         }
     }
-    else if (getAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED))
+    else if (getAppIdFlag(flowp, APPID_SESSION_UDP_REVERSED))
     {
         new_dir = (dir == APP_ID_FROM_RESPONDER) ? APP_ID_FROM_INITIATOR:APP_ID_FROM_RESPONDER;
     }
@@ -201,29 +204,34 @@ MakeRNAServiceValidationPrototype(radius_validate)
         goto fail;
     }
 inprocess:
-    radius_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+    radius_service_mod.api->service_inprocess(flowp, args->pkt, dir, &svc_element, NULL);
     return SERVICE_INPROCESS;
 
 success:
-    radius_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
-                                        APP_ID_RADIUS, NULL, NULL, NULL);
+    radius_service_mod.api->add_service(flowp, args->pkt, dir, &svc_element,
+                                        APP_ID_RADIUS, NULL, NULL, NULL, NULL);
     return SERVICE_SUCCESS;
 
 not_compatible:
-    radius_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element, radius_service_mod.flow_data_index, pConfig);
+    radius_service_mod.api->incompatible_data(flowp, args->pkt, dir, &svc_element,
+                                              radius_service_mod.flow_data_index, args->pConfig, NULL);
     return SERVICE_NOT_COMPATIBLE;
 
 fail:
-    radius_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, radius_service_mod.flow_data_index, pConfig);
+    radius_service_mod.api->fail_service(flowp, args->pkt, dir, &svc_element,
+                                         radius_service_mod.flow_data_index, args->pConfig, NULL);
     return SERVICE_NOMATCH;
 }
 
-MakeRNAServiceValidationPrototype(radius_validate_accounting)
+static int radius_validate_accounting(ServiceValidationArgs* args)
 {
     ServiceRADIUSData *rd;
-    const RADIUSHeader *hdr = (const RADIUSHeader *)data;
+    const RADIUSHeader *hdr = (const RADIUSHeader *)args->data;
     uint16_t len;
     int new_dir;
+    tAppIdData *flowp = args->flowp;
+    const int dir = args->dir;
+    uint16_t size = args->size;
 
     if (!size)
         goto inprocess;
@@ -249,12 +257,12 @@ MakeRNAServiceValidationPrototype(radius_validate_accounting)
     {
         if (hdr->code == RADIUS_CODE_ACCOUNTING_RESPONSE)
         {
-            setAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED);
+            setAppIdFlag(flowp, APPID_SESSION_UDP_REVERSED);
             rd->state = RADIUS_STATE_RESPONSE;
             new_dir = APP_ID_FROM_RESPONDER;
         }
     }
-    else if (getAppIdExtFlag(flowp, APPID_SESSION_UDP_REVERSED))
+    else if (getAppIdFlag(flowp, APPID_SESSION_UDP_REVERSED))
     {
         new_dir = (dir == APP_ID_FROM_RESPONDER) ? APP_ID_FROM_INITIATOR:APP_ID_FROM_RESPONDER;
     }
@@ -298,20 +306,22 @@ MakeRNAServiceValidationPrototype(radius_validate_accounting)
         goto fail;
     }
 inprocess:
-    radius_service_mod.api->service_inprocess(flowp, pkt, dir, &acct_svc_element);
+    radius_service_mod.api->service_inprocess(flowp, args->pkt, dir, &acct_svc_element, NULL);
     return SERVICE_INPROCESS;
 
 success:
-    radius_service_mod.api->add_service(flowp, pkt, dir, &acct_svc_element,
-                                        APP_ID_RADIUS_ACCT, NULL, NULL, NULL);
+    radius_service_mod.api->add_service(flowp, args->pkt, dir, &acct_svc_element,
+                                        APP_ID_RADIUS_ACCT, NULL, NULL, NULL, NULL);
     return SERVICE_SUCCESS;
 
 not_compatible:
-    radius_service_mod.api->incompatible_data(flowp, pkt, dir, &acct_svc_element, radius_service_mod.flow_data_index, pConfig);
+    radius_service_mod.api->incompatible_data(flowp, args->pkt, dir, &acct_svc_element,
+                                              radius_service_mod.flow_data_index, args->pConfig, NULL);
     return SERVICE_NOT_COMPATIBLE;
 
 fail:
-    radius_service_mod.api->fail_service(flowp, pkt, dir, &acct_svc_element, radius_service_mod.flow_data_index, pConfig);
+    radius_service_mod.api->fail_service(flowp, args->pkt, dir, &acct_svc_element,
+                                         radius_service_mod.flow_data_index, args->pConfig, NULL);
     return SERVICE_NOMATCH;
 }
 

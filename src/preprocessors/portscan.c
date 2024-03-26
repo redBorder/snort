@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -123,6 +123,12 @@
 #include "stream_api.h"
 #include "sfPolicyData.h"
 #include "sfPolicyUserData.h"
+#include "event_wrapper.h"
+
+#ifdef REG_TEST
+#include "reg_test.h"
+#endif
+
 
 # define CLEARED &cleared
 
@@ -315,15 +321,7 @@ void ps_cleanup(void)
 
 void ps_init_hash(unsigned long memcap)
 {
-    int rows = 0;
-    int factor = 0;
-#if SIZEOF_LONG_INT == 8
-    factor = 125;
-#else
-    factor = 250;
-#endif
-
-    rows = memcap/factor;
+    int rows = memcap/(sizeof(PS_HASH_KEY) + sizeof(PS_TRACKER));
 
     portscan_hash = sfxhash_new(rows, sizeof(PS_HASH_KEY), sizeof(PS_TRACKER),
                                 memcap, 1, ps_tracker_free, NULL, 1);
@@ -1067,7 +1065,14 @@ static int ps_tracker_update_ip(PS_PKT *ps_pkt, PS_TRACKER *scanner,
 
     if(p->iph)
     {
-        if(p->icmph)
+        /*
+         * If the packet is of icmp type 3(destination 
+         * unreachable), then unset the connection count so
+         * that the connection count will not be incremented for
+         * the reply packet and set the priority count.
+         */
+        if(p->icmph && p->icmph->type == ICMP_DEST_UNREACH &&
+            p->icmph->code == ICMP_PROT_UNREACH)
         {
             if(scanned)
             {
@@ -1080,11 +1085,22 @@ static int ps_tracker_update_ip(PS_PKT *ps_pkt, PS_TRACKER *scanner,
                 ps_proto_update(&scanner->proto,0,1,CLEARED,0,0);
                 scanner->priority_node = 1;
             }
+        }
+        else
+        {
+            if(scanned)
+            {
+                ps_proto_update(&scanned->proto,1,0,
+                                GET_SRC_IP(p),p->iph->ip_proto, packet_time());
+            }
 
-            return 0;
+            if(scanner)
+            {
+                ps_proto_update(&scanner->proto,1,0,
+                                GET_DST_IP(p),p->iph->ip_proto, packet_time());
+            }
         }
     }
-
     return 0;
 }
 
@@ -1245,54 +1261,273 @@ static int ps_tracker_update(PS_PKT *ps_pkt, PS_TRACKER *scanner,
     return 0;
 }
 
-static int ps_alert_one_to_one(PS_PROTO *scanner, PS_PROTO *scanned,
-        PS_ALERT_CONF *conf)
+static int ps_get_tcp_rule_action(int alert_type)
 {
+    int action = 0;
+    switch(alert_type)
+    {
+        case PS_ALERT_ONE_TO_ONE:
+            action = GetSnortEventAction(GENERATOR_PSNG,
+                    PSNG_TCP_PORTSCAN, 0, 0, 3, PSNG_TCP_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_ONE_TO_ONE_DECOY:
+            action = GetSnortEventAction(GENERATOR_PSNG,
+                    PSNG_TCP_DECOY_PORTSCAN,0,0,3,PSNG_TCP_DECOY_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_PORTSWEEP:
+           action = GetSnortEventAction(GENERATOR_PSNG,
+                   PSNG_TCP_PORTSWEEP, 0, 0, 3, PSNG_TCP_PORTSWEEP_STR);
+           break;
+
+        case PS_ALERT_DISTRIBUTED:
+            action = GetSnortEventAction(GENERATOR_PSNG,
+                    PSNG_TCP_DISTRIBUTED_PORTSCAN, 0, 0, 3,
+                    PSNG_TCP_DISTRIBUTED_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_ONE_TO_ONE_FILTERED:
+            action = GetSnortEventAction(GENERATOR_PSNG,
+                    PSNG_TCP_FILTERED_PORTSCAN,0,0,3,
+                    PSNG_TCP_FILTERED_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_ONE_TO_ONE_DECOY_FILTERED:
+            action = GetSnortEventAction(GENERATOR_PSNG,
+                    PSNG_TCP_FILTERED_DECOY_PORTSCAN, 0,0,3,
+                    PSNG_TCP_FILTERED_DECOY_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_PORTSWEEP_FILTERED:
+            action = GetSnortEventAction(GENERATOR_PSNG,
+                   PSNG_TCP_PORTSWEEP_FILTERED,0,0,3,
+                   PSNG_TCP_PORTSWEEP_FILTERED_STR);
+
+            break;
+        case PS_ALERT_DISTRIBUTED_FILTERED:
+            action = GetSnortEventAction(GENERATOR_PSNG,
+                    PSNG_TCP_FILTERED_DISTRIBUTED_PORTSCAN, 0, 0, 3,
+                    PSNG_TCP_FILTERED_DISTRIBUTED_PORTSCAN_STR);
+            break;
+
+    }
+    return action;
+}
+
+static int ps_get_udp_rule_action (int alert_type)
+{
+    int action = 0;;
+    switch(alert_type)
+    {
+        case PS_ALERT_ONE_TO_ONE:
+            action = GetSnortEventAction(GENERATOR_PSNG, PSNG_UDP_PORTSCAN, 0, 0, 3,
+                    PSNG_UDP_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_ONE_TO_ONE_DECOY:
+            action = GetSnortEventAction(GENERATOR_PSNG,PSNG_UDP_DECOY_PORTSCAN,
+                        0, 0, 3, PSNG_UDP_DECOY_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_PORTSWEEP:
+           action = GetSnortEventAction(GENERATOR_PSNG,PSNG_UDP_PORTSWEEP, 0, 0, 3,
+                    PSNG_UDP_PORTSWEEP_STR);
+            break;
+
+        case PS_ALERT_DISTRIBUTED:
+            action = GetSnortEventAction(GENERATOR_PSNG,PSNG_UDP_DISTRIBUTED_PORTSCAN,
+                    0, 0, 3, PSNG_UDP_DISTRIBUTED_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_ONE_TO_ONE_FILTERED:
+            action = GetSnortEventAction(GENERATOR_PSNG,PSNG_UDP_FILTERED_PORTSCAN,
+                     0, 0, 3, PSNG_UDP_FILTERED_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_ONE_TO_ONE_DECOY_FILTERED:
+            action = GetSnortEventAction(GENERATOR_PSNG,
+                        PSNG_UDP_FILTERED_DECOY_PORTSCAN,
+                        0, 0, 3, PSNG_UDP_FILTERED_DECOY_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_PORTSWEEP_FILTERED:
+           action = GetSnortEventAction(GENERATOR_PSNG,
+                            PSNG_UDP_PORTSWEEP_FILTERED,0, 0, 3,
+                            PSNG_UDP_PORTSWEEP_FILTERED_STR);
+            break;
+
+        case PS_ALERT_DISTRIBUTED_FILTERED:
+            action = GetSnortEventAction(GENERATOR_PSNG,
+                    PSNG_UDP_FILTERED_DISTRIBUTED_PORTSCAN, 0, 0, 3,
+                    PSNG_UDP_FILTERED_DISTRIBUTED_PORTSCAN_STR);
+            break;
+
+    }
+    return action;
+}
+
+static int ps_get_ip_rule_action(int alert_type)
+{
+    int action = 0;
+    switch (alert_type)
+    {
+        case PS_ALERT_ONE_TO_ONE:
+            action = GetSnortEventAction(GENERATOR_PSNG, PSNG_IP_PORTSCAN, 0, 0, 3,
+                    PSNG_IP_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_ONE_TO_ONE_DECOY:
+            action = GetSnortEventAction(GENERATOR_PSNG,PSNG_IP_DECOY_PORTSCAN,
+                            0, 0, 3, PSNG_IP_DECOY_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_PORTSWEEP:
+           action = GetSnortEventAction(GENERATOR_PSNG,PSNG_IP_PORTSWEEP, 0, 0, 3,
+                    PSNG_IP_PORTSWEEP_STR);
+            break;
+
+        case PS_ALERT_DISTRIBUTED:
+            action = GetSnortEventAction(GENERATOR_PSNG,
+                        PSNG_IP_DISTRIBUTED_PORTSCAN,
+                        0, 0, 3, PSNG_IP_DISTRIBUTED_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_ONE_TO_ONE_FILTERED:
+            action = GetSnortEventAction(GENERATOR_PSNG,
+                        PSNG_IP_FILTERED_PORTSCAN,
+                        0, 0, 3, PSNG_IP_FILTERED_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_ONE_TO_ONE_DECOY_FILTERED:
+            action = GetSnortEventAction(GENERATOR_PSNG,
+                        PSNG_IP_FILTERED_DECOY_PORTSCAN,
+                        0, 0, 3, PSNG_IP_FILTERED_DECOY_PORTSCAN_STR);
+            break;
+
+        case PS_ALERT_PORTSWEEP_FILTERED:
+           action = GetSnortEventAction(GENERATOR_PSNG,
+                        PSNG_IP_PORTSWEEP_FILTERED, 0, 0, 3,
+                        PSNG_IP_PORTSWEEP_FILTERED_STR);
+            break;
+
+        case PS_ALERT_DISTRIBUTED_FILTERED:
+            action = GetSnortEventAction(GENERATOR_PSNG,
+                    PSNG_IP_FILTERED_DISTRIBUTED_PORTSCAN, 0, 0, 3,
+                    PSNG_IP_FILTERED_DISTRIBUTED_PORTSCAN_STR);
+            break;
+    }
+    return action;
+}
+
+static int ps_get_icmp_rule_action(int alert_type)
+{
+    int action = 0;
+    switch(alert_type)
+    {
+        case PS_ALERT_PORTSWEEP:
+           action = GetSnortEventAction(GENERATOR_PSNG,
+                    PSNG_ICMP_PORTSWEEP, 0, 0, 3,
+                    PSNG_ICMP_PORTSWEEP_STR);
+            break;
+
+        case PS_ALERT_PORTSWEEP_FILTERED:
+           action = GetSnortEventAction(GENERATOR_PSNG,
+                    PSNG_ICMP_PORTSWEEP_FILTERED, 0, 0, 3,
+                    PSNG_ICMP_PORTSWEEP_FILTERED_STR);
+            break;
+    }
+    return action;
+}
+
+static int ps_get_rule_action (int proto, int alert_type)
+{
+    int action = 0;
+    switch (proto)
+    {
+        case PS_PROTO_TCP:
+            action = ps_get_tcp_rule_action(alert_type);
+            break;
+
+        case PS_PROTO_UDP:
+            action = ps_get_udp_rule_action(alert_type);
+            break;
+
+        case PS_PROTO_ICMP:
+            action = ps_get_icmp_rule_action(alert_type);
+            break;
+
+        case PS_PROTO_IP:
+            action = ps_get_ip_rule_action(alert_type);
+            break;
+    }
+    return action;
+}
+
+static int ps_alert_one_to_one(PS_PROTO *scanner, PS_PROTO *scanned,
+        PS_ALERT_CONF *conf, int proto)
+{
+    int action;
     if(!conf)
         return -1;
 
     /*
     **  Let's evaluate the scanned host.
     */
-    if(scanned && !scanned->alerts)
+
+    if(scanned)
     {
         if(scanned->priority_count >= conf->priority_count)
         {
-            if(scanned->u_ip_count < conf->u_ip_count &&
-               scanned->u_port_count >= conf->u_port_count)
+            action = ps_get_rule_action(proto, PS_ALERT_ONE_TO_ONE);
+            if ((action == RULE_TYPE__DROP) ||
+                (action == RULE_TYPE__SDROP) ||
+                (action == RULE_TYPE__REJECT) ||
+                (!scanned->alerts))
             {
-                if(scanner)
+                if(scanned->u_ip_count < conf->u_ip_count &&
+                    scanned->u_port_count >= conf->u_port_count)
                 {
-                    if(scanner->priority_count >= conf->priority_count)
+                    if(scanner)
+                    {
+                        if(scanner->priority_count >= conf->priority_count)
+                        {
+                            /*
+                             **  Now let's check to make sure this is one
+                             **  to one
+                             */
+                            scanned->alerts = PS_ALERT_ONE_TO_ONE;
+                            return 0;
+                        }
+                    }
+                    else
                     {
                         /*
-                        **  Now let's check to make sure this is one
-                        **  to one
-                        */
+                         **  If there is no scanner, then we do the best we can.
+                         */
                         scanned->alerts = PS_ALERT_ONE_TO_ONE;
                         return 0;
                     }
-                }
-                else
-                {
-                    /*
-                    **  If there is no scanner, then we do the best we can.
-                    */
-                    scanned->alerts = PS_ALERT_ONE_TO_ONE;
-                    return 0;
                 }
             }
         }
         if(scanned->connection_count >= conf->connection_count)
         {
-            if(conf->connection_count == 0)
-                return 0;
-
-            if(scanned->u_ip_count < conf->u_ip_count &&
-               scanned->u_port_count >= conf->u_port_count)
+            action = ps_get_rule_action(proto, PS_ALERT_ONE_TO_ONE_FILTERED);
+            if ((action == RULE_TYPE__DROP) ||
+                (action == RULE_TYPE__SDROP) ||
+                (action == RULE_TYPE__REJECT) ||
+                (!scanned->alerts))
             {
-                scanned->alerts = PS_ALERT_ONE_TO_ONE_FILTERED;
-                return 0;
+                if(conf->connection_count == 0)
+                    return 0;
+
+                if(scanned->u_ip_count < conf->u_ip_count &&
+                   scanned->u_port_count >= conf->u_port_count)
+                {
+                    scanned->alerts = PS_ALERT_ONE_TO_ONE_FILTERED;
+                    return 0;
+                }
             }
         }
     }
@@ -1302,32 +1537,48 @@ static int ps_alert_one_to_one(PS_PROTO *scanner, PS_PROTO *scanned,
 }
 
 static int ps_alert_one_to_one_decoy(PS_PROTO *scanner, PS_PROTO *scanned,
-        PS_ALERT_CONF *conf)
+        PS_ALERT_CONF *conf, int proto)
 {
+    int action;
     if(!conf)
         return -1;
 
-    if(scanned && !scanned->alerts)
+    if(scanned)
     {
         if(scanned->priority_count >= conf->priority_count)
         {
-            if(scanned->u_ip_count >= conf->u_ip_count &&
-               scanned->u_port_count >= conf->u_port_count)
+            action = ps_get_rule_action(proto, PS_ALERT_ONE_TO_ONE_DECOY);
+            if ((action == RULE_TYPE__DROP) ||
+                (action == RULE_TYPE__SDROP) ||
+                (action == RULE_TYPE__REJECT) ||
+                (!scanned->alerts))
             {
-                scanned->alerts = PS_ALERT_ONE_TO_ONE_DECOY;
-                return 0;
+                if(scanned->u_ip_count >= conf->u_ip_count &&
+                   scanned->u_port_count >= conf->u_port_count)
+                {
+                    scanned->alerts = PS_ALERT_ONE_TO_ONE_DECOY;
+                    return 0;
+                }
             }
         }
         if(scanned->connection_count >= conf->connection_count)
         {
-            if(conf->connection_count == 0)
-                return 0;
-
-            if(scanned->u_ip_count >= conf->u_ip_count &&
-               scanned->u_port_count >= conf->u_port_count)
+            action = ps_get_rule_action(proto, PS_ALERT_ONE_TO_ONE_DECOY_FILTERED);
+            if ((action == RULE_TYPE__DROP) ||
+                (action == RULE_TYPE__SDROP) ||
+                (action == RULE_TYPE__REJECT) ||
+                (!scanned->alerts))
             {
-                scanned->alerts = PS_ALERT_ONE_TO_ONE_DECOY_FILTERED;
-                return 0;
+
+                if(conf->connection_count == 0)
+                    return 0;
+
+                if(scanned->u_ip_count >= conf->u_ip_count &&
+                   scanned->u_port_count >= conf->u_port_count)
+                {
+                    scanned->alerts = PS_ALERT_ONE_TO_ONE_DECOY_FILTERED;
+                    return 0;
+                }
             }
         }
     }
@@ -1336,32 +1587,48 @@ static int ps_alert_one_to_one_decoy(PS_PROTO *scanner, PS_PROTO *scanned,
 }
 
 static int ps_alert_many_to_one(PS_PROTO *scanner, PS_PROTO *scanned,
-        PS_ALERT_CONF *conf)
+        PS_ALERT_CONF *conf, int proto)
 {
+    int action;
+
     if(!conf)
         return -1;
 
-    if(scanned && !scanned->alerts)
+    if(scanned)
     {
         if(scanned->priority_count >= conf->priority_count)
         {
-            if(scanned->u_ip_count <= conf->u_ip_count &&
-               scanned->u_port_count >= conf->u_port_count)
+            action = ps_get_rule_action(proto, PS_ALERT_DISTRIBUTED);
+            if ((action == RULE_TYPE__DROP) ||
+                (action == RULE_TYPE__SDROP) ||
+                (action == RULE_TYPE__REJECT) ||
+                (!scanned->alerts))
             {
-                scanned->alerts = PS_ALERT_DISTRIBUTED;
-                return 0;
+                if(scanned->u_ip_count >= conf->u_ip_count &&
+                   scanned->u_port_count <= conf->u_port_count)
+                {
+                    scanned->alerts = PS_ALERT_DISTRIBUTED;
+                    return 0;
+                }
             }
         }
         if(scanned->connection_count >= conf->connection_count)
         {
             if(conf->connection_count == 0)
                 return 0;
-
-            if(scanned->u_ip_count <= conf->u_ip_count &&
-               scanned->u_port_count >= conf->u_port_count)
+ 
+            action = ps_get_rule_action(proto, PS_ALERT_DISTRIBUTED_FILTERED);
+            if ((action == RULE_TYPE__DROP) ||
+                (action == RULE_TYPE__SDROP) ||
+                (action == RULE_TYPE__REJECT) ||
+                (!scanned->alerts))
             {
-                scanned->alerts = PS_ALERT_DISTRIBUTED_FILTERED;
-                return 0;
+                if(scanned->u_ip_count >= conf->u_ip_count &&
+                   scanned->u_port_count <= conf->u_port_count)
+                {
+                    scanned->alerts = PS_ALERT_DISTRIBUTED_FILTERED;
+                    return 0;
+                }
             }
         }
     }
@@ -1370,32 +1637,48 @@ static int ps_alert_many_to_one(PS_PROTO *scanner, PS_PROTO *scanned,
 }
 
 static int ps_alert_one_to_many(PS_PROTO *scanner, PS_PROTO *scanned,
-        PS_ALERT_CONF *conf)
+        PS_ALERT_CONF *conf, int proto)
 {
+    int action;
+
     if(!conf)
         return -1;
 
-    if(scanner && !scanner->alerts)
+    if(scanner)
     {
         if(scanner->priority_count >= conf->priority_count)
         {
-            if(scanner->u_ip_count >= conf->u_ip_count &&
-               scanner->u_port_count <= conf->u_port_count)
+            action = ps_get_rule_action(proto, PS_ALERT_PORTSWEEP);
+            if ((action == RULE_TYPE__DROP) ||
+                (action == RULE_TYPE__SDROP) ||
+                (action == RULE_TYPE__REJECT) ||
+                (!scanner->alerts))
             {
-                scanner->alerts = PS_ALERT_PORTSWEEP;
-                return 1;
+                if(scanner->u_ip_count >= conf->u_ip_count &&
+                   scanner->u_port_count <= conf->u_port_count)
+                {
+                    scanner->alerts = PS_ALERT_PORTSWEEP;
+                    return 1;
+                }
             }
         }
         if(scanner->connection_count >= conf->connection_count)
         {
             if(conf->connection_count == 0)
                 return 0;
-
-            if(scanner->u_ip_count >= conf->u_ip_count &&
-               scanner->u_port_count <= conf->u_port_count)
+ 
+            action = ps_get_rule_action(proto, PS_ALERT_PORTSWEEP);
+            if ((action == RULE_TYPE__DROP) ||
+                (action == RULE_TYPE__SDROP) ||
+                (action == RULE_TYPE__REJECT) ||
+                (!scanner->alerts))
             {
-                scanner->alerts = PS_ALERT_PORTSWEEP_FILTERED;
-                return 1;
+                if(scanner->u_ip_count >= conf->u_ip_count &&
+                   scanner->u_port_count <= conf->u_port_count)
+                {
+                    scanner->alerts = PS_ALERT_PORTSWEEP_FILTERED;
+                    return 1;
+                }
             }
         }
     }
@@ -1448,25 +1731,25 @@ static int ps_alert_tcp(PS_PROTO *scanner, PS_PROTO *scanned)
     **  Do detection on the different portscan types.
     */
     if((portscan_eval_config->detect_scan_type & PS_TYPE_PORTSCAN) &&
-        ps_alert_one_to_one(scanner, scanned, one_to_one))
+        ps_alert_one_to_one(scanner, scanned, one_to_one, PS_PROTO_TCP))
     {
         return 0;
     }
 
     if((portscan_eval_config->detect_scan_type & PS_TYPE_DECOYSCAN) &&
-        ps_alert_one_to_one_decoy(scanner, scanned, one_to_one_decoy))
+        ps_alert_one_to_one_decoy(scanner, scanned, one_to_one_decoy, PS_PROTO_TCP))
     {
         return 0;
     }
 
     if((portscan_eval_config->detect_scan_type & PS_TYPE_PORTSWEEP) &&
-        ps_alert_one_to_many(scanner, scanned, one_to_many))
+        ps_alert_one_to_many(scanner, scanned, one_to_many, PS_PROTO_TCP))
     {
         return 0;
     }
 
     if((portscan_eval_config->detect_scan_type & PS_TYPE_DISTPORTSCAN) &&
-        ps_alert_many_to_one(scanner, scanned, many_to_one))
+        ps_alert_many_to_one(scanner, scanned, many_to_one, PS_PROTO_TCP))
     {
         return 0;
     }
@@ -1519,25 +1802,25 @@ static int ps_alert_ip(PS_PROTO *scanner, PS_PROTO *scanned)
     **  Do detection on the different portscan types.
     */
     if((portscan_eval_config->detect_scan_type & PS_TYPE_PORTSCAN) &&
-        ps_alert_one_to_one(scanner, scanned, one_to_one))
+        ps_alert_one_to_one(scanner, scanned, one_to_one, PS_PROTO_IP))
     {
         return 0;
     }
 
     if((portscan_eval_config->detect_scan_type & PS_TYPE_DECOYSCAN) &&
-        ps_alert_one_to_one_decoy(scanner, scanned, one_to_one_decoy))
+        ps_alert_one_to_one_decoy(scanner, scanned, one_to_one_decoy, PS_PROTO_IP))
     {
         return 0;
     }
 
     if((portscan_eval_config->detect_scan_type & PS_TYPE_PORTSWEEP) &&
-        ps_alert_one_to_many(scanner, scanned, one_to_many))
+        ps_alert_one_to_many(scanner, scanned, one_to_many, PS_PROTO_IP))
     {
         return 0;
     }
 
     if((portscan_eval_config->detect_scan_type & PS_TYPE_DISTPORTSCAN) &&
-        ps_alert_many_to_one(scanner, scanned, many_to_one))
+        ps_alert_many_to_one(scanner, scanned, many_to_one, PS_PROTO_IP))
     {
         return 0;
     }
@@ -1590,25 +1873,25 @@ static int ps_alert_udp(PS_PROTO *scanner, PS_PROTO *scanned)
     **  Do detection on the different portscan types.
     */
     if((portscan_eval_config->detect_scan_type & PS_TYPE_PORTSCAN) &&
-        ps_alert_one_to_one(scanner, scanned, one_to_one))
+        ps_alert_one_to_one(scanner, scanned, one_to_one, PS_PROTO_UDP))
     {
         return 0;
     }
 
     if((portscan_eval_config->detect_scan_type & PS_TYPE_DECOYSCAN) &&
-        ps_alert_one_to_one_decoy(scanner, scanned, one_to_one_decoy))
+        ps_alert_one_to_one_decoy(scanner, scanned, one_to_one_decoy, PS_PROTO_UDP))
     {
         return 0;
     }
 
     if((portscan_eval_config->detect_scan_type & PS_TYPE_PORTSWEEP) &&
-        ps_alert_one_to_many(scanner, scanned, one_to_many))
+        ps_alert_one_to_many(scanner, scanned, one_to_many, PS_PROTO_UDP))
     {
         return 0;
     }
 
     if((portscan_eval_config->detect_scan_type & PS_TYPE_DISTPORTSCAN) &&
-        ps_alert_many_to_one(scanner, scanned, many_to_one))
+        ps_alert_many_to_one(scanner, scanned, many_to_one, PS_PROTO_UDP))
     {
         return 0;
     }
@@ -1649,7 +1932,7 @@ static int ps_alert_icmp(PS_PROTO *scanner, PS_PROTO *scanned)
     **  Do detection on the different portscan types.
     */
     if((portscan_eval_config->detect_scan_type & PS_TYPE_PORTSWEEP) &&
-        ps_alert_one_to_many(scanner, scanned, one_to_many))
+        ps_alert_one_to_many(scanner, scanned, one_to_many, PS_PROTO_ICMP))
     {
         return 0;
     }
@@ -1860,3 +2143,29 @@ int ps_get_protocols(struct _SnortConfig *sc, tSfPolicyId policyId)
 
     return pPolicyConfig->detect_scans;
 }
+
+#ifdef SNORT_RELOAD
+bool ps_reload_adjust(unsigned long memcap, unsigned max_work)
+{
+    int ret = sfxhash_change_memcap(portscan_hash, memcap, &max_work);
+#ifdef REG_TEST
+    if (REG_TEST_FLAG_PORTSCAN_RELOAD & getRegTestFlags() && ret == SFXHASH_OK)
+    {
+        printf("portscanhash memused:%lu\n",portscan_hash->mc.memused);
+        printf("portscanhash memcap:%lu\n",portscan_hash->mc.memcap);
+    }
+#endif
+    return ret == SFXHASH_OK;
+}
+
+unsigned int ps_hash_overhead_bytes()
+{
+    if(portscan_hash)
+    {
+        return portscan_hash->overhead_bytes;
+    }
+    return 0;
+}
+#endif
+
+
