@@ -20,17 +20,17 @@
 
 %if %{openappid}
 Name: %{realname}-openappid
-Version: 2.9.20
+Version: %{__version}
 Summary: An open source Network Intrusion Detection System (NIDS) with open AppId support
 Conflicts: %{realname}
 %else
 Name: %{realname}
-Version: 2.9.20
+Version: %{__version}
 Summary: An open source Network Intrusion Detection System (NIDS)
 Conflicts: %{realname}-openappid
 %endif
 Epoch: 1
-Release: %{release}
+Release: %{release}%{?dist}
 Group: Applications/Internet
 License: GPL
 Url: http://www.snort.org/
@@ -39,7 +39,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 Packager: Official Snort.org %{for_distro}
 Vendor: %{vendor}
-BuildRequires: autoconf, automake, pcre-devel, libpcap-devel, libdnet-devel, libs3-devel, libxml2-devel, libtirpc-devel
+BuildRequires: autoconf, automake, pcre-devel, libpcap-devel, libdnet-devel, libs3-devel, libxml2-devel, libtirpc-devel, daq, daq-devel, daq-modules, flex, bison, libtool, GeoIP-devel
 
 %description
 Snort is an open source network intrusion detection system, capable of
@@ -60,19 +60,19 @@ information on snort features and configuration.
 
 %prep
 %setup -q -n %{realname}-%{version}
+autoreconf -i
 
 %build
-CFLAGS="$RPM_OPT_FLAGS"
+export CFLAGS="$RPM_OPT_FLAGS -I/usr/include/tirpc"
 export AM_CFLAGS="-g -O2"
 SNORT_BASE_CONFIG="--prefix=%{_prefix} --sbindir=%{_sbindir} --exec-prefix=%{_prefix} --with-libpcap-includes=/usr/include \
                    --with-libpcap-libraries=/usr/lib --with-libpfring-includes=/usr/include \
                    --with-libpfring-libraries=/usr/lib --disable-open-appid --enable-perfprofiling --enable-normalizer \
                    --enable-mpls --enable-targetbased --enable-ppm --enable-active-response --enable-reload \
-                   --enable-react --enable-flexresp3 --with-daq-libraries=/usr/local/lib \
+                   --enable-react --enable-flexresp3 --with-daq-libraries=/usr/lib64 \
                    --with-daq-includes=/usr/local/include --enable-control-socket --enable-gdb \
                    --enable-reputationgeoip --enable-shared-rep --enable-extradata-file \
                    --enable-file-inspect --with-libs3-includes=/usr/include --with-libs3-libraries=/usr/lib64 --enable-remote-file-s3"
-
 ./configure $SNORT_BASE_CONFIG %{?EnableOpenAppId}
 make
 
@@ -107,10 +107,10 @@ InstallSnort() {
    %__install -p -m 0644 snort.8 $RPM_BUILD_ROOT%{_mandir}/man8
    %__rm -rf $RPM_BUILD_ROOT%{_mandir}/man8/snort.8.gz
    %__gzip $RPM_BUILD_ROOT%{_mandir}/man8/snort.8
-   %__install -p -m 0755 rpm/snortd $RPM_BUILD_ROOT%{_initrddir}
-   %__install -p -m 0644 rpm/snort.sysconfig $RPM_BUILD_ROOT%{_sysconfdir}/sysconfig/%{realname}
-   %__install -p -m 0644 rpm/snort.logrotate $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d/snort
-   %__install -p -m 0644 rpm/snortd.service $RPM_BUILD_ROOT/usr/lib/systemd/system/snortd.service
+   %__install -p -m 0755 packaging/rpm/snortd $RPM_BUILD_ROOT%{_initrddir}
+   %__install -p -m 0644 packaging/rpm/snort.sysconfig $RPM_BUILD_ROOT%{_sysconfdir}/sysconfig/%{realname}
+   %__install -p -m 0644 packaging/rpm/snort.logrotate $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d/snort
+   %__install -p -m 0644 packaging/rpm/snortd.service $RPM_BUILD_ROOT/usr/lib/systemd/system/snortd.service
    find doc -maxdepth 1 -type f -not -name 'Makefile*' -exec %__install -p -m 0644 {} $RPM_BUILD_ROOT%{_docdir}/%{realname}-%{version} \;
    
    %__rm -f $RPM_BUILD_ROOT%{_docdir}/%{realname}-%{version}/Makefile.*

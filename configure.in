@@ -1892,7 +1892,6 @@ src/preprocessors/Stream6/Makefile \
 src/parser/Makefile \
 src/target-based/Makefile \
 doc/Makefile \
-rpm/Makefile \
 preproc_rules/Makefile \
 m4/Makefile \
 etc/Makefile \
