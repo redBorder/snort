@@ -1,7 +1,7 @@
 /*
  **
  **
- **  Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ **  Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  **  Copyright (C) 2012-2013 Sourcefire, Inc.
  **
  **  This program is free software; you can redistribute it and/or modify
@@ -38,6 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "sf_sechash.h"
+#include "memory_stats.h"
 
 #include "util.h"
 #include "file_capture.h"
@@ -139,31 +140,53 @@ void file_signature_sha256(FileContext* context, uint8_t* file_data,
     {
     case SNORT_FILE_START:
         if (!context->file_signature_context)
-            context->file_signature_context = SnortAlloc(sizeof(SHA256CONTEXT));
+            context->file_signature_context = SnortPreprocAlloc(1, sizeof(SHA256CONTEXT), PP_FILE, PP_MEM_CATEGORY_SESSION);
+
         SHA256INIT((SHA256CONTEXT *)context->file_signature_context);
         SHA256UPDATE((SHA256CONTEXT *)context->file_signature_context, file_data, data_size);
+        if(context->file_state.sig_state == FILE_SIG_FLUSH)
+        {
+            static uint8_t file_signature_context_backup[sizeof(SHA256CONTEXT)];
+            context->sha256 = SnortPreprocAlloc(1, SHA256_HASH_SIZE, PP_FILE, PP_MEM_CATEGORY_SESSION);
+            memcpy(file_signature_context_backup, context->file_signature_context, sizeof(SHA256CONTEXT));
+
+            SHA256FINAL(context->sha256, (SHA256CONTEXT *)context->file_signature_context);
+            memcpy(context->file_signature_context, file_signature_context_backup, sizeof(SHA256CONTEXT));
+        }
         break;
     case SNORT_FILE_MIDDLE:
         if (!context->file_signature_context)
-            context->file_signature_context = SnortAlloc(sizeof(SHA256CONTEXT));
+            context->file_signature_context = SnortPreprocAlloc(1, sizeof(SHA256CONTEXT), PP_FILE, PP_MEM_CATEGORY_SESSION);
         SHA256UPDATE((SHA256CONTEXT *)context->file_signature_context, file_data, data_size);
+        if(context->file_state.sig_state == FILE_SIG_FLUSH)
+        {
+            static uint8_t file_signature_context_backup[sizeof(SHA256CONTEXT)];
+            if(!context->sha256)
+                context->sha256 = SnortPreprocAlloc(1, SHA256_HASH_SIZE, PP_FILE, PP_MEM_CATEGORY_SESSION);
+            memcpy(file_signature_context_backup, context->file_signature_context, sizeof(SHA256CONTEXT));
+
+            SHA256FINAL(context->sha256, (SHA256CONTEXT *)context->file_signature_context);
+            memcpy(context->file_signature_context, file_signature_context_backup, sizeof(SHA256CONTEXT));
+        }
         break;
     case SNORT_FILE_END:
         if (!context->file_signature_context)
-            context->file_signature_context = SnortAlloc(sizeof(SHA256CONTEXT));
+            context->file_signature_context = SnortPreprocAlloc(1, sizeof(SHA256CONTEXT), PP_FILE, PP_MEM_CATEGORY_SESSION);
         if (context->processed_bytes == 0)
             SHA256INIT((SHA256CONTEXT *)context->file_signature_context);
         SHA256UPDATE((SHA256CONTEXT *)context->file_signature_context, file_data, data_size);
-        context->sha256 = SnortAlloc(SHA256_HASH_SIZE);
+        if(!context->sha256)
+            context->sha256 = SnortPreprocAlloc(1, SHA256_HASH_SIZE, PP_FILE, PP_MEM_CATEGORY_SESSION);
         SHA256FINAL(context->sha256, (SHA256CONTEXT *)context->file_signature_context);
         context->file_state.sig_state = FILE_SIG_DONE;
         break;
     case SNORT_FILE_FULL:
         if (!context->file_signature_context)
-            context->file_signature_context = SnortAlloc(sizeof (SHA256CONTEXT));
+            context->file_signature_context = SnortPreprocAlloc(1, sizeof(SHA256CONTEXT), PP_FILE, PP_MEM_CATEGORY_SESSION);
         SHA256INIT((SHA256CONTEXT *)context->file_signature_context);
         SHA256UPDATE((SHA256CONTEXT *)context->file_signature_context, file_data, data_size);
-        context->sha256 = SnortAlloc(SHA256_HASH_SIZE);
+        if(!context->sha256)
+            context->sha256 = SnortPreprocAlloc(1, SHA256_HASH_SIZE, PP_FILE, PP_MEM_CATEGORY_SESSION);
         SHA256FINAL(context->sha256, (SHA256CONTEXT *)context->file_signature_context);
         context->file_state.sig_state = FILE_SIG_DONE;
         break;
@@ -176,26 +199,20 @@ void file_signature_sha256(FileContext* context, uint8_t* file_data,
 
 FileContext *file_context_create(void)
 {
-    FileContext *context = (FileContext *)SnortAlloc(sizeof(*context));
+    FileContext *context = (FileContext *)SnortPreprocAlloc(1, sizeof(*context), PP_FILE, PP_MEM_CATEGORY_SESSION);
     return (context);
 }
 
 static inline void cleanDynamicContext (FileContext *context)
 {
     if (context->file_signature_context)
-        free(context->file_signature_context);
+        SnortPreprocFree(context->file_signature_context, sizeof(SHA256CONTEXT), PP_FILE, PP_MEM_CATEGORY_SESSION);
     if(context->sha256)
-        free(context->sha256);
+        SnortPreprocFree(context->sha256, SHA256_HASH_SIZE, PP_FILE, PP_MEM_CATEGORY_SESSION);
     if(context->file_capture)
         file_capture_stop(context);
     if(context->file_name && context->file_name_saved)
-        free(context->file_name);
-#ifdef HAVE_EXTRADATA_FILE
-    if (context->file_ftp_user)
-        free(context->file_ftp_user);
-    if (context->file_smb_user_id)
-        free(context->file_smb_user_id);
-#endif
+        SnortPreprocFree(context->file_name, context->file_name_size, PP_FILE, PP_MEM_CATEGORY_SESSION);
 }
 
 void file_context_reset(FileContext *context)
@@ -208,10 +225,10 @@ void file_context_reset(FileContext *context)
 void file_context_free(void *ctx)
 {
     FileContext *context = (FileContext *)ctx;
-    if (!context)
+    if (!context || context->attached_file_entry)
         return;
     cleanDynamicContext(context);
-    free(context);
+    SnortPreprocFree(context, sizeof(FileContext), PP_FILE, PP_MEM_CATEGORY_SESSION);
 }
 
 /*File properties*/
@@ -221,12 +238,15 @@ void file_name_set (FileContext *context, uint8_t *file_name, uint32_t name_size
 {
     uint8_t *name = file_name;
     if (!context)
+    {
+        FILE_ERROR("Failed to set file name: no context");
         return;
+    }
     if (save_in_context)
     {
         if (context->file_name && context->file_name_saved)
-            free(context->file_name);
-        name = SnortAlloc(name_size);
+            SnortPreprocFree(context->file_name, sizeof(name_size), PP_FILE, PP_MEM_CATEGORY_SESSION);
+        name = SnortPreprocAlloc(1, name_size, PP_FILE, PP_MEM_CATEGORY_SESSION);
         memcpy(name, file_name, name_size);
         context->file_name_saved = true;
     }
@@ -241,222 +261,35 @@ void file_name_set (FileContext *context, uint8_t *file_name, uint32_t name_size
 int file_name_get (FileContext *context, uint8_t **file_name, uint32_t *name_size)
 {
     if (!context)
+    {
+        FILE_ERROR("Failed to fetch file name: no context");
         return 0;
+    }
     if (file_name)
         *file_name = context->file_name;
     else
+    {
+        FILE_ERROR("Failed to fetch file name: name parameter NULL");
         return 0;
+    }
     if (name_size)
         *name_size = context->file_name_size;
     else
+    {
+        FILE_ERROR("Failed to fetch file name: size parameter NULL");
         return 0;
+    }
+    FILE_DEBUG("File name fetched from context: %s, size %d",(char*)(*file_name),*name_size);
     return 1;
 }
-
-#ifdef HAVE_EXTRADATA_FILE
-void file_hostname_set (FileContext *context, uint8_t *file_hostname, uint32_t hostname_size)
-{
-    if (!context)
-        return;
-    context->hostname = file_hostname;
-    context->hostname_size = hostname_size;
-}
-
-int file_hostname_get (FileContext *context, uint8_t **file_hostname, uint32_t *hostname_size)
-{
-    if (!context)
-        return 0;
-    if (file_hostname)
-        *file_hostname = context->hostname;
-    else
-        return 0;
-    if (hostname_size)
-        *hostname_size = context->hostname_size;
-    else
-        return 0;
-    return 1;
-}
-
-void file_mailfrom_set (FileContext *context, uint8_t *file_mailfrom, uint32_t file_mailfrom_size)
-{
-    if (!context)
-        return;
-    context->file_mailfrom = file_mailfrom;
-    context->file_mailfrom_size = file_mailfrom_size;
-}
-
-int file_mailfrom_get (FileContext *context, uint8_t **file_mailfrom, uint32_t *file_mailfrom_size)
-{
-    if (!context)
-        return 0;
-    if (file_mailfrom)
-        *file_mailfrom = context->file_mailfrom;
-    else
-        return 0;
-    if (file_mailfrom_size)
-        *file_mailfrom_size = context->file_mailfrom_size;
-    else
-        return 0;
-    return 1;
-}
-
-void file_rcptto_set (FileContext *context, uint8_t *file_rcptto, uint32_t file_rcptto_size)
-{
-    if (!context)
-        return;
-    context->file_rcptto = file_rcptto;
-    context->file_rcptto_size = file_rcptto_size;
-}
-
-int file_rcptto_get (FileContext *context, uint8_t **file_rcptto, uint32_t *file_rcptto_size)
-{
-    if (!context)
-        return 0;
-    if (file_rcptto)
-        *file_rcptto = context->file_rcptto;
-    else
-        return 0;
-    if (file_rcptto_size)
-        *file_rcptto_size = context->file_rcptto_size;
-    else
-        return 0;
-    return 1;
-}
-
-void file_headers_set (FileContext *context, uint8_t *file_headers, uint32_t file_headers_size)
-{
-    if (!context)
-        return;
-    context->file_headers = file_headers;
-    context->file_headers_size = file_headers_size;
-}
-
-int file_headers_get (FileContext *context, uint8_t **file_headers, uint32_t *file_headers_size)
-{
-    if (!context)
-        return 0;
-    if (file_headers)
-        *file_headers = context->file_headers;
-    else
-        return 0;
-    if (file_headers_size)
-        *file_headers_size = context->file_headers_size;
-    else
-        return 0;
-    return 1;
-}
-
-void file_ftp_user_set (FileContext *context, uint8_t *ftp_user, uint32_t ftp_user_size)
-{
-    if (!context)
-        return;
-    if (context->file_ftp_user)
-        free(context->file_ftp_user);
-
-    context->file_ftp_user = (uint8_t *)SnortStrdup((const char *)ftp_user);
-
-    if (context->file_ftp_user)
-        context->file_ftp_user_size = ftp_user_size;
-}
-
-int file_ftp_user_get (FileContext *context, uint8_t **file_ftp_user, uint32_t *file_ftp_user_size)
-{
-    if (!context)
-    {
-        return 0;
-    }
-
-    if (file_ftp_user)
-    {
-        *file_ftp_user = context->file_ftp_user;
-    }
-    else
-    {
-        return 0;
-    }
-
-    if (file_ftp_user_size)
-    {
-        *file_ftp_user_size = context->file_ftp_user_size;
-    }
-    else
-    {
-        return 0;
-    }
-
-    return 1;
-}
-
-void file_smb_user_id_set (FileContext *context, uint8_t *smb_user_id, uint32_t smb_user_id_size)
-{
-    if (!context)
-        return;
-    if (context->file_smb_user_id)
-        free(context->file_smb_user_id);
-
-    context->file_smb_user_id = SnortAlloc(smb_user_id_size);
-
-    if (context->file_smb_user_id)
-    {
-        memcpy(context->file_smb_user_id,smb_user_id,smb_user_id_size);
-        context->file_smb_user_id_size = smb_user_id_size;
-    }
-}
-
-int file_smb_user_id_get (FileContext *context, uint8_t **file_smb_user_id, uint32_t *file_smb_user_id_size)
-{
-    if (!context)
-    {
-        return 0;
-    }
-
-    if (file_smb_user_id)
-    {
-        *file_smb_user_id = context->file_smb_user_id;
-    }
-    else
-    {
-        return 0;
-    }
-
-    if (file_smb_user_id_size)
-    {
-        *file_smb_user_id_size = context->file_smb_user_id_size;
-    }
-    else
-    {
-        return 0;
-    }
-
-    return 1;
-}
-
-void file_smb_is_upload_set (FileContext *context, uint8_t is_upload)
-{
-    if (!context)
-        return;
-
-    context->file_smb_is_upload_valid = 1;
-    context->file_smb_is_upload = is_upload;
-}
-
-int file_smb_is_upload_get (FileContext *context, uint8_t *is_upload)
-{
-    if (!context)
-        return 0;
-
-    if (!context->file_smb_is_upload_valid)
-        return 0;
-
-    *is_upload = context->file_smb_is_upload;
-    return 1;
-}
-#endif
 
 void file_size_set (FileContext *context, uint64_t file_size)
 {
     if (!context)
+    {
+        FILE_ERROR("Failed to set file size: no context");
         return;
+    }
     context->file_size = file_size;
 
 }
@@ -464,7 +297,11 @@ void file_size_set (FileContext *context, uint64_t file_size)
 uint64_t file_size_get (FileContext *context)
 {
     if (!context)
+    {
+        FILE_ERROR("Failed to fetch file size: no context");
         return 0;
+    }
+    FILE_DEBUG("File size fetched from context: %d",context->file_size);
     return (context->file_size);
 }
 

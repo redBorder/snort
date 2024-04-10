@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -239,6 +239,39 @@ bool TextLog_Print (TextLog* this, const char* fmt, ...)
         return FALSE;
     }
     this->pos += len;
+    return TRUE;
+}
+
+/*-------------------------------------------------------------------
+ * TextLog_PrintUnicode: append formatted string to buffer
+ *-------------------------------------------------------------------
+ */
+bool TextLog_PrintUnicode(TextLog* this, uint8_t *buffer, uint32_t length, uint8_t is_little_endian)
+{
+    uint32_t out_len = length/2 + 1, i, j;
+    wchar_t *outbuf = (wchar_t *)malloc(out_len*sizeof(wchar_t));
+
+    if (!outbuf)
+    {
+        FatalError("TextLog_PrintUnicode: Failed to allocate memory for outbuf\n");
+        return FALSE;
+    }
+
+    for(i = 0,j = 0; i<length; i+=2,j++)
+    {
+        unsigned short value = 0;
+        if(is_little_endian)
+           value = *((uint8_t *)(buffer + i)) + ((*(uint8_t *)(buffer + i + 1)) << 8);
+        else
+           value = ((*(uint8_t *)(buffer + i)) << 8) + *((uint8_t *)(buffer + i + 1));
+
+        if(0 == value)
+            break;
+        outbuf[j] = value;
+    }
+    outbuf[j] = 0;
+    fprintf(this->file, "%ls", outbuf);
+    free(outbuf);
     return TRUE;
 }
 

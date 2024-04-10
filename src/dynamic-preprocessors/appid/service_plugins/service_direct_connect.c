@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -47,7 +47,7 @@ typedef struct _SERVICE_DATA
 } tServiceData;
 
 static int direct_connect_init(const InitServiceAPI * const init_api);
-MakeRNAServiceValidationPrototype(direct_connect_validate);
+static int direct_connect_validate(ServiceValidationArgs* args);
 static int validateDirectConnectTcp(const uint8_t *data, uint16_t size, const int dir, 
         tAppIdData *flowp, const SFSnortPacket *pkt, tServiceData *serviceData,
         const struct appIdConfig_ *pConfig);
@@ -117,15 +117,16 @@ static int direct_connect_init(const InitServiceAPI * const init_api)
 }
 
 
-/*static int direct_connect_validate(const uint8_t *data, uint16_t size, const int dir,  */
-/*        tAppIdData *flowp, const SFSnortPacket *pkt, struct _Detector *userdata) */
-MakeRNAServiceValidationPrototype(direct_connect_validate)
+static int direct_connect_validate(ServiceValidationArgs* args)
 {
     tServiceData *fd;
+    tAppIdData *flowp = args->flowp;
+    const uint8_t *data = args->data;
+    uint16_t size = args->size;
 
     if (!size)
     {
-        directconnect_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+        directconnect_service_mod.api->service_inprocess(flowp, args->pkt, args->dir, &svc_element, NULL);
         return SERVICE_INPROCESS;
     }
 
@@ -143,9 +144,9 @@ MakeRNAServiceValidationPrototype(direct_connect_validate)
     }
 
     if (flowp->proto == IPPROTO_TCP)
-        return validateDirectConnectTcp(data, size, dir, flowp, pkt, fd, pConfig);
+        return validateDirectConnectTcp(data, size, args->dir, flowp, args->pkt, fd, args->pConfig);
     else 
-        return validateDirectConnectUdp(data, size, dir, flowp, pkt, fd, pConfig);
+        return validateDirectConnectUdp(data, size, args->dir, flowp, args->pkt, fd, args->pConfig);
 }
 
 static int validateDirectConnectTcp(const uint8_t *data, uint16_t size, const int dir, 
@@ -239,7 +240,7 @@ inprocess:
     if (serviceData->packetCount >= MAX_PACKET_INSPECTION_COUNT)
         goto fail;
 
-    directconnect_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+    directconnect_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element, NULL);
     return SERVICE_INPROCESS;
 
 success:
@@ -250,11 +251,11 @@ success:
     }
 
     directconnect_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
-                                      APP_ID_DIRECT_CONNECT, NULL, NULL, NULL);
+                                      APP_ID_DIRECT_CONNECT, NULL, NULL, NULL, NULL);
     return SERVICE_SUCCESS;
 
 fail:
-    directconnect_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, directconnect_service_mod.flow_data_index, pConfig);
+    directconnect_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, directconnect_service_mod.flow_data_index, pConfig, NULL);
     return SERVICE_NOMATCH;
 }
 
@@ -291,7 +292,7 @@ inprocess:
     if (serviceData->packetCount >= MAX_PACKET_INSPECTION_COUNT)
         goto fail;
 
-    directconnect_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+    directconnect_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element, NULL);
     return SERVICE_INPROCESS;
 
 success:
@@ -303,11 +304,11 @@ success:
 
 reportSuccess:
     directconnect_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
-                                      APP_ID_DIRECT_CONNECT, NULL, NULL, NULL);
+                                      APP_ID_DIRECT_CONNECT, NULL, NULL, NULL, NULL);
     return SERVICE_SUCCESS;
 
 fail:
-    directconnect_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, directconnect_service_mod.flow_data_index, pConfig);
+    directconnect_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, directconnect_service_mod.flow_data_index, pConfig, NULL);
     return SERVICE_NOMATCH;
 
 }

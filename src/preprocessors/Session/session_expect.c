@@ -1,7 +1,7 @@
 /* $Id$ */
 
 /*
- ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ ** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2005-2013 Sourcefire, Inc.
  ** AUTHOR: Steven Sturges
  **
@@ -99,6 +99,9 @@ typedef struct _ExpectHashKey
     uint16_t port1;
     uint16_t port2;
     uint32_t protocol;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+    uint32_t carrierid;
+#endif
 } ExpectHashKey;
 
 typedef struct _ExpectNode
@@ -258,6 +261,9 @@ int StreamExpectAddChannelPreassignCallback(const Packet *ctrlPkt, sfaddr_t* cli
         hashKey.port1 = cliPort;
         sfaddr_copy_to_raw(&hashKey.ip2, srvIP);
         hashKey.port2 = srvPort;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+        hashKey.carrierid = GET_OUTER_IPH_PROTOID(ctrlPkt, pkth); 
+#endif
         reversed_key = 0;
     }
     else
@@ -266,6 +272,9 @@ int StreamExpectAddChannelPreassignCallback(const Packet *ctrlPkt, sfaddr_t* cli
         hashKey.port1 = srvPort;
         sfaddr_copy_to_raw(&hashKey.ip2, cliIP);
         hashKey.port2 = cliPort;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+        hashKey.carrierid = GET_OUTER_IPH_PROTOID(ctrlPkt, pkth); 
+#endif
         reversed_key = 1;
         DEBUG_WRAP(DebugMessage(DEBUG_STREAM, "reversed\n"););
     }
@@ -425,6 +434,7 @@ int StreamExpectAddChannelPreassignCallback(const Packet *ctrlPkt, sfaddr_t* cli
         data->preprocId = preprocId;
         data->next = NULL;
         data_list = malloc( sizeof( *data_list ) );
+
         if( !data_list )
         {
             free( data );
@@ -457,10 +467,17 @@ int StreamExpectAddChannelPreassignCallback(const Packet *ctrlPkt, sfaddr_t* cli
                     "Adding expected to DAQ\n"););
         // when adding expected channel send expected flow parameters to the DAQ
         // for forwarding to firmware...
-        if( cliPort == UNKNOWN_PORT )
-           DAQ_Add_Dynamic_Protocol_Channel( ctrlPkt, cliIP, cliPort, srvIP, srvPort, protocol );
-        else
-           DAQ_Add_Dynamic_Protocol_Channel( ctrlPkt, srvIP, srvPort, cliIP, cliPort, protocol );
+        {
+            DAQ_DC_Params params;
+
+            memset(&params, 0, sizeof(params));
+            params.flags = 0;
+            params.timeout_ms = 1 * 1000; // 1 second
+            if( cliPort == UNKNOWN_PORT )
+               DAQ_Add_Dynamic_Protocol_Channel( ctrlPkt, cliIP, cliPort, srvIP, srvPort, protocol, &params );
+            else
+               DAQ_Add_Dynamic_Protocol_Channel( ctrlPkt, srvIP, srvPort, cliIP, cliPort, protocol, &params );
+        }
 #endif
 
     }
@@ -601,8 +618,13 @@ int StreamExpectIsExpected(Packet *p, SFXHASH_NODE **expected_hash_node)
 
         sfip_ntop(srcIP, src_ip, sizeof(src_ip));
         sfip_ntop(dstIP, dst_ip, sizeof(dst_ip));
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+        DebugMessage(DEBUG_STREAM, "Checking isExpected %s-%u -> %s-%u %u %u\n", src_ip,
+                p->sp, dst_ip, p->dp, GET_IPH_PROTO(p), GET_OUTER_IPH_PROTOID(p, pkth));
+#else
         DebugMessage(DEBUG_STREAM, "Checking isExpected %s-%u -> %s-%u %u\n", src_ip,
                 p->sp, dst_ip, p->dp, GET_IPH_PROTO(p));
+#endif
     }
 #endif
 
@@ -615,6 +637,9 @@ int StreamExpectIsExpected(Packet *p, SFXHASH_NODE **expected_hash_node)
         hashKey.port2 = 0;
         port1 = 0;
         port2 = p->sp;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+        hashKey.carrierid = GET_OUTER_IPH_PROTOID(p, pkth);
+#endif
         reversed_key = 1;
         DEBUG_WRAP(DebugMessage(DEBUG_STREAM, "reversed\n"););
     }
@@ -626,6 +651,9 @@ int StreamExpectIsExpected(Packet *p, SFXHASH_NODE **expected_hash_node)
         hashKey.port2 = p->dp;
         port1 = p->sp;
         port2 = 0;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+        hashKey.carrierid = GET_OUTER_IPH_PROTOID(p, pkth);
+#endif
         reversed_key = 0;
     }
     hashKey.protocol = (uint32_t)GET_IPH_PROTO(p);
@@ -736,6 +764,7 @@ char StreamExpectProcessNode(Packet *p, SessionControlBlock* lws, SFXHASH_NODE *
         lws->ha_flags |= HA_FLAG_MODIFIED;
 #endif
         session_api->set_application_protocol_id( lws, node->appId );
+        p->application_protocol_ordinal = node->appId;
     }
 #endif
 
@@ -797,19 +826,22 @@ char StreamExpectCheck(Packet *p, SessionControlBlock* lws)
 
 void StreamExpectInit (uint32_t max)
 {
-    // number of entries * overhead per entry
-    max *= (sizeof(SFXHASH_NODE) + sizeof(long) +
-            sizeof(ExpectHashKey) + sizeof(ExpectNode));
-
-    // add in fixed cost of hash table
-    max += (sizeof(SFXHASH_NODE**) * EXPECT_HASH_SIZE) + sizeof(long);
-
-    channelHash = sfxhash_new(
-            EXPECT_HASH_SIZE, sizeof(ExpectHashKey),
-            sizeof(ExpectNode), max, 1, freeHashNode, freeHashNode, 1);
-
     if (!channelHash)
-        FatalError("Failed to create the expected channel hash table.\n");
+    {
+        // number of entries * overhead per entry
+        max *= (sizeof(SFXHASH_NODE) + sizeof(long) +
+                sizeof(ExpectHashKey) + sizeof(ExpectNode));
+
+        // add in fixed cost of hash table
+        max += (sizeof(SFXHASH_NODE**) * EXPECT_HASH_SIZE) + sizeof(long);
+
+        channelHash = sfxhash_new(
+                EXPECT_HASH_SIZE, sizeof(ExpectHashKey),
+                sizeof(ExpectNode), max, 1, freeHashNode, freeHashNode, 1);
+
+        if (!channelHash)
+            FatalError("Failed to create the expected channel hash table.\n");
+    }
 
     memset(&zeroed, 0, sizeof(zeroed));
 }

@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 1998-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -183,60 +183,138 @@ static inline void sfip_node_freelist ( sfip_node_t *root )
     }
 }
 
+sfip_node_t* MergeLists(sfip_node_t *list1, sfip_node_t* list2, uint16_t list1_len, uint16_t list2_len, uint16_t *merge_len)
+{
+    SFIP_RET ret = SFIP_SUCCESS;
+    sfip_node_t* listHead = NULL, *merge_list = NULL, *tmp = NULL, *node = NULL;
+    uint16_t num_nodes = 0;
+
+    if(!list1 && !list2)
+    {
+        *merge_len = 0;
+        return NULL;
+    }
+    if (list1 == NULL)
+    {
+        *merge_len = list2_len;
+        return list2;
+    }
+    if (list2 == NULL)
+    {
+        *merge_len = list1_len;
+        return list1;
+    }
+
+    /*Both lists are sorted and not NULL. If list1 or list2 contains "any", free the other list*/
+    if(list1->flags & SFIP_ANY)
+    {
+        *merge_len = list1_len;
+        while(list2)
+        {
+            tmp = list2->next;
+            sfip_node_free(list2);
+            list2 = tmp;
+        }
+        return list1;
+    }
+
+    if(list2->flags & SFIP_ANY)
+    {
+        *merge_len = list2_len;
+        while(list1)
+        {
+            tmp = list1->next;
+            sfip_node_free(list1);
+            list1 = tmp;
+        }
+        return list2;
+    }
+
+    /*Iterate till one of the list is NULL. Append each node to merge_list*/
+    while (list1 && list2)
+    {
+        ret = sfip_cidr_compare(list1->ip, list2->ip);
+        if(ret == SFIP_LESSER)
+        {
+            node = list1;
+            list1 = list1->next;
+            list1_len--;
+        }
+        else if(ret == SFIP_GREATER)
+        {
+            node = list2;
+            list2 = list2->next;
+            list2_len--;
+        }
+        else if(ret == SFIP_EQUAL)
+        {
+            node = list1;
+            list1 = list1->next;
+            /*Free the duplicate node*/
+            tmp = list2->next;
+            sfip_node_free(list2);
+            list2 = tmp;
+
+            list1_len--;
+            list2_len--;
+        }
+
+        if(!merge_list)
+        {
+            merge_list = node;
+            listHead = node;
+        }
+        else
+        {
+            merge_list->next = node;
+            merge_list = merge_list->next;
+        }
+        num_nodes++;
+    }
+
+    /*list2 is NULL. Append list1*/
+    if(list1 != NULL)
+    {
+        merge_list->next = list1;
+        num_nodes += list1_len;
+    }
+    /*list1 is NULL. Append list2*/
+    if(list2 != NULL)
+    {
+        merge_list->next = list2;
+        num_nodes += list2_len;
+    }
+
+    *merge_len = num_nodes;
+    return listHead;
+}
+
 /* Deep copy of src added to dst */
-/* Ordering is not necessarily preserved */
+/*src is sorted. Iterate over every node in dst and do sfvar_add_node*/
 SFIP_RET sfvar_add(sfip_var_t *dst, sfip_var_t *src)
 {
-    sfip_node_t *oldhead, *oldneg, *idx;
     sfip_var_t *copiedvar;
 
     if(!dst || !src) return SFIP_ARG_ERR;
-
-    oldhead = dst->head;
-    oldneg = dst->neg_head;
 
     if((copiedvar = sfvar_deep_copy(src)) == NULL)
     {
         return SFIP_ALLOC_ERR;
     }
 
-    dst->head = copiedvar->head;
-    dst->neg_head = copiedvar->neg_head;
+    dst->head = MergeLists(dst->head, copiedvar->head, dst->head_count, copiedvar->head_count, &dst->head_count);
+    dst->neg_head = MergeLists(dst->neg_head, copiedvar->neg_head, dst->neg_head_count, copiedvar->neg_head_count, &dst->neg_head_count);
 
     free(copiedvar);
-
-    if(dst->head)
-    {
-        for(idx = dst->head; idx->next; idx = idx->next)
-            ;
-
-        idx->next = oldhead;
-    }
-    else
-    {
-        dst->head = oldhead;
-    }
-
-    if(dst->neg_head)
-    {
-        for(idx = dst->neg_head; idx->next; idx = idx->next)
-            ;
-
-        idx->next = oldneg;
-    }
-    else
-    {
-        dst->neg_head = oldneg;
-    }
 
     return SFIP_SUCCESS;
 }
 
 SFIP_RET sfvar_add_node(sfip_var_t *var, sfip_node_t *node, int negated)
 {
-    sfip_node_t *p;
-    sfip_node_t *swp;
+    sfip_node_t *p, *swp, *tmp;
     sfip_node_t **head;
+    uint16_t *count;
 
     if(!var || !node) return SFIP_ARG_ERR;
 
@@ -245,25 +323,70 @@ SFIP_RET sfvar_add_node(sfip_var_t *var, sfip_node_t *node, int negated)
      * the list, regardless of the mode (list or table). */
 
     if(negated)
+    {
         head = &var->neg_head;
+        count = &var->neg_head_count;
+    }
     else
+    {
         head = &var->head;
+        count = &var->head_count;
+    }
 
 
     if(!(*head))
     {
         *head = node;
+        ++*count;
+        return SFIP_SUCCESS;
+    }
+
+    /*If head node is any, do not add anything else*/
+    if((*head)->flags & SFIP_ANY)
+    {
+        sfip_node_free(node);
         return SFIP_SUCCESS;
     }
 
     /* "Anys" should always be inserted first */
     /* Otherwise, check if this IP is less than the head's IP */
-    if((node->flags & SFIP_ANY) ||
-       (sfip_compare(&node->ip->addr, &(*head)->ip->addr) == SFIP_LESSER))
+    SFIP_RET node_cmp_ret = SFIP_SUCCESS;
+    if(node->flags & SFIP_ANY)
     {
-        node->next = *head;
-        *head = node;
-        return SFIP_SUCCESS;
+        if((*head)->flags & SFIP_ANY)
+        {
+            sfip_node_free(node);
+            return SFIP_SUCCESS;
+        }
+        else
+        {
+            /*Free the list when adding any*/
+            while(*head)
+            {
+                tmp = (*head)->next;
+                sfip_node_free(*head);
+                *head = tmp;
+            }
+            *head = node;
+            *count = 1;
+            return SFIP_SUCCESS;
+        }
+    }
+    else
+    {
+        node_cmp_ret = sfip_cidr_compare(node->ip, (*head)->ip);
+        if(node_cmp_ret == SFIP_EQUAL)
+        {
+            sfip_node_free(node);
+            return SFIP_SUCCESS;
+        }
+        else if(node_cmp_ret == SFIP_LESSER)
+        {
+            node->next = *head;
+            *head = node;
+            ++*count;
+            return SFIP_SUCCESS;
+        }
     }
 
     /* If we're here, the head node was lesser than the new node */
@@ -272,23 +395,32 @@ SFIP_RET sfvar_add_node(sfip_var_t *var, sfip_node_t *node, int negated)
     if(!(*head)->next)
     {
         (*head)->next = node;
+        ++*count;
         return SFIP_SUCCESS;
     }
 
     /* Insertion sort */
     for(p = *head; p->next; p=p->next)
     {
-        if(sfip_compare(&node->ip->addr, &p->next->ip->addr) == SFIP_LESSER)
+        node_cmp_ret = sfip_cidr_compare(node->ip, p->next->ip);
+        if(node_cmp_ret == SFIP_EQUAL)
+        {
+            sfip_node_free(node);
+            return SFIP_SUCCESS;
+        }
+        else if(node_cmp_ret == SFIP_LESSER)
         {
             swp = p->next;
             p->next = node;
             node->next = swp;
+            ++*count;
 
             return SFIP_SUCCESS;
         }
     }
 
     p->next = node;
+    ++*count;
 
     return SFIP_SUCCESS;
 
@@ -298,57 +430,19 @@ SFIP_RET sfvar_add_node(sfip_var_t *var, sfip_node_t *node, int negated)
 
 static SFIP_RET sfvar_list_compare(sfip_node_t *list1, sfip_node_t *list2)
 {
-    int total1 = 0;
-    int total2 = 0;
-    char *usage;
-    sfip_node_t *tmp;
+    sfip_node_t *tmp, *tmp2;
 
     if ((list1 == NULL) && (list2 == NULL))
         return SFIP_EQUAL;
 
-    /* Check the ip lists for count mismatch */
-    for (tmp = list1; tmp != NULL; tmp = tmp->next)
-        total1++;
-    for (tmp = list2; tmp != NULL; tmp = tmp->next)
-        total2++;
-    if (total1 != total2)
-        return SFIP_FAILURE;
-
-    /* Walk first list.  For each node, check if there is an equal
-     * counterpart in the second list.  This method breaks down of there are
-     * duplicated nodes.  For instance, if one = {a, b} and two = {a, a}.
-     * Therefore, need additional data structure[s] ('usage') to check off
-     * which nodes have been accounted for already.
-     *
-     * Also, the lists are not necessarily ordered, so comparing
-     * node-for-node won't work */
-
-    /* Lists are of equal size */
-    usage = (char*)SnortAlloc(total1);
-
-    for (tmp = list1; tmp != NULL; tmp = tmp->next)
+    /* Lists are ordered and of equal size */
+    for (tmp = list1, tmp2 = list2; (tmp != NULL) && (tmp2 != NULL); tmp = tmp->next, tmp2 = tmp2->next)
     {
-        int i, match = 0;
-        sfip_node_t *tmp2;
-
-        for (tmp2 = list2, i = 0; tmp2 != NULL; tmp2 = tmp2->next, i++)
+        if ((sfip_cidr_compare(tmp->ip, tmp2->ip) != SFIP_EQUAL))
         {
-            if ((sfip_compare(&tmp->ip->addr, &tmp2->ip->addr) == SFIP_EQUAL) && !usage[i])
-            {
-                match = 1;
-                usage[i] = 1;
-                break;
-            }
-        }
-
-        if(!match)
-        {
-            free(usage);
             return SFIP_FAILURE;
         }
     }
-
-    free(usage);
     return SFIP_EQUAL;
 }
 
@@ -366,7 +460,13 @@ SFIP_RET sfvar_compare(const sfip_var_t *one, const sfip_var_t *two)
     if (sfvar_is_alias(one, two))
         return SFIP_EQUAL;
 
+    if(one->head_count != two->head_count)
+        return SFIP_FAILURE;
+
     if (sfvar_list_compare(one->head, two->head) == SFIP_FAILURE)
+        return SFIP_FAILURE;
+
+    if(one->neg_head_count != two->neg_head_count)
         return SFIP_FAILURE;
 
     if (sfvar_list_compare(one->neg_head, two->neg_head) == SFIP_FAILURE)
@@ -422,6 +522,7 @@ static void _negate_lists(sfip_var_t *var)
 {
     sfip_node_t *node;
     sfip_node_t *temp;
+    uint16_t temp_count;
 
     for(node = var->head; node; node=node->next)
         _negate_node(node);
@@ -433,6 +534,11 @@ static void _negate_lists(sfip_var_t *var)
     temp = var->head;
     var->head = var->neg_head;
     var->neg_head = temp;
+
+    /*Swap the counts*/
+    temp_count = var->neg_head_count;
+    var->neg_head_count = var->head_count;
+    var->head_count = temp_count;
 }
 
 SFIP_RET sfvar_parse_iplist(vartable_t *table, sfip_var_t *var,
@@ -833,6 +939,8 @@ sfip_var_t *sfvar_deep_copy(const sfip_var_t *var)
     ret->mode = var->mode;
     ret->head = _sfvar_deep_copy_list(var->head);
     ret->neg_head = _sfvar_deep_copy_list(var->neg_head);
+    ret->head_count = var->head_count;
+    ret->neg_head_count = var->neg_head_count;
 
     return ret;
 }

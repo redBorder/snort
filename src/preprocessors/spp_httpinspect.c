@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -55,6 +55,7 @@
 #include "snort_debug.h"
 #include "util.h"
 #include "parser.h"
+#include "memory_stats.h"
 
 #include "hi_ui_config.h"
 #include "hi_ui_server_lookup.h"
@@ -65,6 +66,12 @@
 #include "hi_util_xmalloc.h"
 #include "hi_cmd_lookup.h"
 #include "hi_paf.h"
+#include "h2_paf.h"
+
+#ifdef DUMP_BUFFER
+#include "hi_buffer_dump.h"
+#endif
+
 #include "file_decomp.h"
 
 #include "snort.h"
@@ -83,6 +90,14 @@
 #include "mempool.h"
 #include "file_api.h"
 #include "sf_email_attach_decode.h"
+
+#ifdef SNORT_RELOAD
+#include "reload.h"
+#include "file_mime_process.h"
+#ifdef REG_TEST
+#include "reg_test.h"
+#endif
+#endif
 
 #if defined(FEAT_OPEN_APPID)
 #include "spp_stream6.h"
@@ -123,10 +138,15 @@ tSfPolicyUserContextId hi_config = NULL;
 #ifdef TARGET_BASED
 /* Store the protocol id received from the stream reassembler */
 int16_t hi_app_protocol_id;
+int16_t h2_app_protocol_id;
 #endif
 
 #ifdef PERF_PROFILING
 PreprocStats hiPerfStats;
+PreprocStats hi2PerfStats;
+PreprocStats hi2InitPerfStats;
+PreprocStats hi2PayloadPerfStats;
+PreprocStats hi2PseudoPerfStats;
 PreprocStats hiDetectPerfStats;
 int hiDetectCalled = 0;
 #endif
@@ -144,6 +164,10 @@ MemPool *mime_decode_mempool = NULL;
 MemPool *mime_log_mempool = NULL;
 int hex_lookup[256];
 int valid_lookup[256];
+
+char** xffFields = NULL;
+static char** oldXffFields = NULL;
+
 /*
 ** Prototypes
 */
@@ -165,10 +189,28 @@ static void HttpInspectRegisterRuleOptions(struct _SnortConfig *);
 static void HttpInspectRegisterXtraDataFuncs(HTTPINSPECT_GLOBAL_CONF *);
 static inline void InitLookupTables(void);
 #ifdef TARGET_BASED
-static void HttpInspectAddServicesOfInterest(struct _SnortConfig *, tSfPolicyId);
+static void HttpInspectAddServicesOfInterest(struct _SnortConfig *, HTTPINSPECT_GLOBAL_CONF *, tSfPolicyId);
 #endif
 
 #ifdef SNORT_RELOAD
+static int HttpMempoolFreeUsedBucket(MemPool *memory_pool);
+static unsigned HttpMempoolAdjust(MemPool *memory_pool, unsigned httpMaxWork);
+static bool HttpGzipReloadAdjust(bool idle, tSfPolicyId raPolicyId, void* userData);
+static bool HttpFdReloadAdjust(bool idle, tSfPolicyId raPolicyId, void* userData);
+static bool HttpMempoolReloadAdjust(bool idle, tSfPolicyId raPolicyId, void* userData);
+static bool HttpMimeReloadAdjust(bool idle, tSfPolicyId raPolicyId, void* userData);
+static bool HttpLogReloadAdjust(bool idle, tSfPolicyId raPolicyId, void* userData);
+#ifdef REG_TEST
+static void display_http_mempool(MemPool *mempool, const char* old_new, const char *pool_type);
+static int HttpInspectUnlimitedDecompressIterate(void *data);
+static int HttpInspectUnlimitedDecompress(struct _SnortConfig *sc, tSfPolicyUserContextId config, tSfPolicyId policyId, void *pData);
+static void display_gzip_fd_config_changes(HTTPINSPECT_GLOBAL_CONF* configOld, HTTPINSPECT_GLOBAL_CONF* configNew,
+                                           bool old_gzip, bool new_gzip, bool old_fd, bool new_fd, bool old_ud, bool new_ud);
+#endif
+static void update_gzip_mempool(bool old_gzip, bool new_gzip, uint32_t max_sessions);
+static void update_fd_mempool(bool old_fd, bool new_fd, uint32_t max_sessions);
+static void update_gzip_fd_mempools(HTTPINSPECT_GLOBAL_CONF* configNew, bool old_gzip, bool new_gzip, bool old_fd, bool new_fd);
+static void update_http_mempool(uint32_t new_memcap, uint32_t old_memcap);
 static void HttpInspectReloadGlobal(struct _SnortConfig *, char *, void **);
 static void HttpInspectReload(struct _SnortConfig *, char *, void **);
 static int HttpInspectReloadVerify(struct _SnortConfig *, void *);
@@ -239,6 +281,152 @@ static void HttpInspect(Packet *p, void *context)
     return;
 }
 
+
+size_t hi_get_free_mempool(MemPool *mempool)
+{
+    if (mempool)
+        return mempool->max_memory - mempool->used_memory;
+    return 0;
+}
+
+size_t hi_get_used_mempool(MemPool *mempool)
+{
+    if (mempool)
+        return mempool->used_memory;
+    return 0;
+}
+
+size_t hi_get_max_mempool(MemPool *mempool)
+{   
+    if (mempool)
+        return mempool->max_memory;
+    return 0;
+}
+
+int HttpPrintMemStats(FILE *fd, char* buffer, PreprocMemInfo *meminfo)
+{   
+    time_t curr_time = time(NULL);
+    int len = 0;
+    // Adding stats to be printed , place holder 
+    if (fd)
+    {
+        len = fprintf(fd, ",%lu,%lu,%lu,%lu,%lu,%lu"
+               ",%zu,%zu,%zu"
+               ",%zu,%zu,%zu"
+               ",%zu,%zu,%zu"
+               ",%zu,%zu,%zu"
+               ",%lu,%u,%u"
+               ",%lu,%u,%u"
+               ",%lu,%u,%u"
+               , hi_stats.session_count
+               , hi_stats.post
+               , hi_stats.get
+               , hi_stats.post_params
+               , hi_stats.req_headers
+               , hi_stats.resp_headers
+               , hi_get_free_mempool(http_mempool)
+               , hi_get_used_mempool(http_mempool)
+               , hi_get_max_mempool(http_mempool)
+               , hi_get_free_mempool(mime_decode_mempool)
+               , hi_get_used_mempool(mime_decode_mempool)
+               , hi_get_max_mempool(mime_decode_mempool)
+               , hi_get_free_mempool(hi_gzip_mempool)
+               , hi_get_used_mempool(hi_gzip_mempool)
+               , hi_get_max_mempool(hi_gzip_mempool)
+               , hi_get_free_mempool(mime_log_mempool)
+               , hi_get_used_mempool(mime_log_mempool)
+               , hi_get_max_mempool(mime_log_mempool)
+               , meminfo[PP_MEM_CATEGORY_SESSION].used_memory
+               , meminfo[PP_MEM_CATEGORY_SESSION].num_of_alloc
+               , meminfo[PP_MEM_CATEGORY_SESSION].num_of_free
+               , meminfo[PP_MEM_CATEGORY_CONFIG].used_memory
+               , meminfo[PP_MEM_CATEGORY_CONFIG].num_of_alloc
+               , meminfo[PP_MEM_CATEGORY_CONFIG].num_of_free
+               , meminfo[PP_MEM_CATEGORY_MEMPOOL].used_memory
+               , meminfo[PP_MEM_CATEGORY_MEMPOOL].num_of_alloc
+               , meminfo[PP_MEM_CATEGORY_MEMPOOL].num_of_free
+               ); 
+        return len;
+    }
+
+    if (buffer)
+    {
+        len = snprintf(buffer, CS_STATS_BUF_SIZE, "Memory Statistics of httpinspect on: %s\n"
+             " Http Inspect Statistics\n"
+             "    Current active session                      : %lu\n"
+             "    No of POST methods encountered              : %lu\n"
+             "    No of GET methods encountered               : %lu\n"
+             "    No of successfully extract post params      : %lu\n"
+             "    No of successfully extract request params   : %lu\n"
+             "    No of successfully extract response params  : %lu\n"
+             "\n  Http Memory Pool:\n"
+             "       Free Memory:        %14zu bytes\n"
+             "       Used Memory:        %14zu bytes\n"
+             "       Max Memory :        %14zu bytes\n"
+             "\n  Mime Decode Memory Pool:\n"
+             "       Free Memory:        %14zu bytes\n"
+             "       Used Memory:        %14zu bytes\n"
+             "       Max Memory :        %14zu bytes\n"
+             "\n  Http gzip Memory Pool:\n"
+             "       Free Memory:        %14zu bytes\n"
+             "       Used Memory:        %14zu bytes\n"
+             "       Max Memory :        %14zu bytes\n"
+             "\n  Http Mime log Memory Pool:\n"
+             "       Free Memory:        %14zu bytes\n"
+             "       Used Memory:        %14zu bytes\n"
+             "       Max Memory :        %14zu bytes\n"
+             , ctime(&curr_time)
+             , hi_stats.session_count
+             , hi_stats.post
+             , hi_stats.get
+             , hi_stats.post_params
+             , hi_stats.req_headers
+             , hi_stats.resp_headers
+             , hi_get_free_mempool(http_mempool)
+             , hi_get_used_mempool(http_mempool)
+             , hi_get_max_mempool(http_mempool)
+             , hi_get_free_mempool(mime_decode_mempool)
+             , hi_get_used_mempool(mime_decode_mempool)
+             , hi_get_max_mempool(mime_decode_mempool)
+             , hi_get_free_mempool(hi_gzip_mempool)
+             , hi_get_used_mempool(hi_gzip_mempool)
+             , hi_get_max_mempool(hi_gzip_mempool)
+             , hi_get_free_mempool(mime_log_mempool)
+             , hi_get_used_mempool(mime_log_mempool)
+             , hi_get_max_mempool(mime_log_mempool)
+             );
+    
+    } else {
+
+        LogMessage(" Memory Statistics of Http Inspect on: %s\n ",ctime(&curr_time));
+        LogMessage("    Current active session          : %lu\n", hi_stats.session_count);
+        LogMessage("    No of POST methods encountered  : %lu\n", hi_stats.post);
+        LogMessage("    No of GET methods encountered   : %lu\n", hi_stats.get);
+        LogMessage("    No of successfully extract post params      : %lu\n", hi_stats.post_params);
+        LogMessage("    No of successfully extract request params   : %lu\n", hi_stats.req_headers);
+        LogMessage("    No of successfully extract response params  : %lu\n", hi_stats.resp_headers);
+        LogMessage(" Http Memory Pool       :\n");
+        LogMessage("      Free Memory:    %14zu bytes\n", hi_get_free_mempool(http_mempool));
+        LogMessage("      Used Memory:    %14zu bytes\n", hi_get_used_mempool(http_mempool));
+        LogMessage("      Max Memory :    %14zu bytes\n", hi_get_max_mempool(http_mempool));
+        LogMessage(" Mime Decode Memory Pool   :\n");
+        LogMessage("      Free Memory:    %14zu bytes\n", hi_get_free_mempool(mime_decode_mempool));
+        LogMessage("      Used Memory:    %14zu bytes\n", hi_get_used_mempool(mime_decode_mempool));
+        LogMessage("      Max Memory :    %14zu bytes\n", hi_get_max_mempool(mime_decode_mempool));
+        LogMessage(" Http Gzip Memory Pool     :\n");
+        LogMessage("      Free Memory:    %14zu bytes\n", hi_get_free_mempool(hi_gzip_mempool));
+        LogMessage("      Used Memory:    %14zu bytes\n", hi_get_used_mempool(hi_gzip_mempool));
+        LogMessage("      Max Memory :    %14zu bytes\n", hi_get_max_mempool(hi_gzip_mempool));
+        LogMessage(" Http Mime log Memory Pool :\n");
+        LogMessage("      Free Memory:    %14zu bytes\n", hi_get_free_mempool(mime_log_mempool));
+        LogMessage("      Used Memory:    %14zu bytes\n", hi_get_used_mempool(mime_log_mempool));
+        LogMessage("      Max Memory :    %14zu bytes\n", hi_get_max_mempool(mime_log_mempool));
+  
+    }
+ 
+       return len;
+}
+
 static void HttpInspectDropStats(int exiting)
 {
     if(!hi_stats.total)
@@ -296,7 +484,19 @@ static void HttpInspectDropStats(int exiting)
     LogMessage("    Gzip Compressed Data Processed:       %-10.2f\n", (double)hi_stats.compr_bytes_read);
     LogMessage("    Gzip Decompressed Data Processed:     %-10.2f\n", (double)hi_stats.decompr_bytes_read);
     }
+    LogMessage("    Http/2 Rebuilt Packets:               %-10I64u\n", hi_stats.h2_rebuilt_packets);
     LogMessage("    Total packets processed:              %-10I64u\n", hi_stats.total);
+    LogMessage("    Non-mempool session memory:           %-10I64u\n", hi_stats.mem_used + 
+                                                       (hi_paf_get_size() * hi_stats.session_count));
+    LogMessage("    http_mempool used:                    %-10I64u\n",
+                                                       http_mempool ? http_mempool->used_memory:0);
+    LogMessage("    hi_gzip_mempool used:                    %-10I64u\n",
+                                                       hi_gzip_mempool ? hi_gzip_mempool->used_memory:0);
+    LogMessage("    mime_decode_mempool used:                    %-10I64u\n",
+                                                       mime_decode_mempool ? mime_decode_mempool->used_memory:0);
+    LogMessage("    mime_log_mempool used:                    %-10I64u\n",
+                                                       mime_log_mempool ? mime_log_mempool->used_memory:0);
+    LogMessage("    Current active session:               %-10I64u\n", hi_stats.session_count);
 #else
     LogMessage("    POST methods:                         "FMTu64("-10")"\n", hi_stats.post);
     LogMessage("    GET methods:                          "FMTu64("-10")"\n", hi_stats.get);
@@ -346,7 +546,19 @@ static void HttpInspectDropStats(int exiting)
     LogMessage("    Gzip Compressed Data Processed:       %-10.2f\n", (double)hi_stats.compr_bytes_read);
     LogMessage("    Gzip Decompressed Data Processed:     %-10.2f\n", (double)hi_stats.decompr_bytes_read);
     }
+    LogMessage("    Http/2 Rebuilt Packets:               "FMTu64("-10")"\n", hi_stats.h2_rebuilt_packets);
     LogMessage("    Total packets processed:              "FMTu64("-10")"\n", hi_stats.total);
+    LogMessage("    Non-mempool session memory:           "FMTu64("-10")"\n", hi_stats.mem_used + 
+                                                       (hi_paf_get_size() * hi_stats.session_count));
+    LogMessage("    http_mempool used:                    "FMTu64("-10")"\n",
+                                                       http_mempool ? http_mempool->used_memory:0);
+    LogMessage("    hi_gzip_mempool used:                 "FMTu64("-10")"\n",
+                                                       hi_gzip_mempool ? hi_gzip_mempool->used_memory:0);
+    LogMessage("    mime_decode_mempool used:             "FMTu64("-10")"\n",
+                                                       mime_decode_mempool ? mime_decode_mempool->used_memory:0);
+    LogMessage("    mime_log_mempool used:                "FMTu64("-10")"\n",
+                                                       mime_log_mempool ? mime_log_mempool->used_memory:0);
+    LogMessage("    Current active session:               "FMTu64("-10")"\n", hi_stats.session_count);
 #endif
 }
 
@@ -358,17 +570,20 @@ static void HttpInspectCleanExit(int signal, void *data)
 
     HI_SearchFree();
 
+    oldXffFields = xffFields;
     HttpInspectFreeConfigs(hi_config);
 
     if (mempool_destroy(hi_gzip_mempool) == 0)
     {
-        free(hi_gzip_mempool);
+        SnortPreprocFree(hi_gzip_mempool, sizeof(MemPool), PP_HTTPINSPECT, 
+             PP_MEM_CATEGORY_MEMPOOL);
         hi_gzip_mempool = NULL;
     }
 
     if (mempool_destroy(http_mempool) == 0)
     {
-        free(http_mempool);
+        SnortPreprocFree(http_mempool, sizeof(MemPool), PP_HTTPINSPECT, 
+             PP_MEM_CATEGORY_MEMPOOL);
         http_mempool = NULL;
     }
     if (mempool_destroy(mime_decode_mempool) == 0)
@@ -472,6 +687,13 @@ static void CheckMemcap(HTTPINSPECT_GLOBAL_CONF *pPolicyConfig,
     }
 }
 
+#ifdef REG_TEST
+static inline void PrintHTTPSize(void)
+{
+    LogMessage("\nHTTP Session Size: %lu\n", (long unsigned int)sizeof(HttpSessionData));
+}
+#endif
+
 /*
  **  NAME
  **    HttpInspectInit::
@@ -501,20 +723,36 @@ static void HttpInspectInit(struct _SnortConfig *sc, char *args)
     int  iErrStrLen = ERRSTRLEN;
     int  iRet;
     char *pcToken;
+    char *saveptr;
     HTTPINSPECT_GLOBAL_CONF *pPolicyConfig = NULL;
     tSfPolicyId policy_id = getParserPolicy(sc);
 
     ErrorString[0] = '\0';
 
+#ifdef REG_TEST
+    PrintHTTPSize();
+#endif
+
     if ((args == NULL) || (strlen(args) == 0))
         ParseError("No arguments to HttpInspect configuration.");
 
     /* Find out what is getting configured */
-    pcToken = strtok(args, CONF_SEPARATORS);
+    pcToken = strtok_r(args, CONF_SEPARATORS, &saveptr);
     if (pcToken == NULL)
     {
         FatalError("%s(%d)strtok returned NULL when it should not.",
                    __FILE__, __LINE__);
+    }
+
+    if (!xffFields)
+    {
+        xffFields = SnortPreprocAlloc(1, HTTP_MAX_XFF_FIELDS * sizeof(char *), 
+                         PP_HTTPINSPECT, PP_MEM_CATEGORY_CONFIG);
+        if (xffFields == NULL)
+        {
+            FatalError("http_inspect: %s(%d) failed to allocate memory for XFF fields\n", 
+                       __FILE__, __LINE__);
+        }
     }
 
     if (hi_config == NULL)
@@ -535,14 +773,19 @@ static void HttpInspectInit(struct _SnortConfig *sc, char *args)
 
 #ifdef PERF_PROFILING
         RegisterPreprocessorProfile("httpinspect", &hiPerfStats, 0, &totalPerfStats, NULL);
+        RegisterPreprocessorProfile("http2inspect", &hi2PerfStats, 0, &totalPerfStats, NULL);
+        RegisterPreprocessorProfile("h2_init", &hi2InitPerfStats, 1, &hi2PerfStats, NULL);
+        RegisterPreprocessorProfile("h2_payload", &hi2PayloadPerfStats, 1, &hi2PerfStats, NULL);
+        RegisterPreprocessorProfile("h2_pseudo", &hi2PseudoPerfStats, 1, &hi2PerfStats, NULL);
 #endif
 
 #ifdef TARGET_BASED
         /* Find and cache protocol ID for packet comparison */
         hi_app_protocol_id = AddProtocolReference("http");
-
+        h2_app_protocol_id = AddProtocolReference("http2");
         // register with session to handle applications
         session_api->register_service_handler( PP_HTTPINSPECT, hi_app_protocol_id );
+        session_api->register_service_handler( PP_HTTPINSPECT, h2_app_protocol_id);
 
 #endif
         hi_paf_init(0);  // FIXTHIS is cap needed?
@@ -568,7 +811,10 @@ static void HttpInspectInit(struct _SnortConfig *sc, char *args)
 
         HttpInspectRegisterRuleOptions(sc);
 
-        pPolicyConfig = (HTTPINSPECT_GLOBAL_CONF *)SnortAlloc(sizeof(HTTPINSPECT_GLOBAL_CONF));
+        pPolicyConfig = (HTTPINSPECT_GLOBAL_CONF *) SnortPreprocAlloc(1, 
+                                                         sizeof(HTTPINSPECT_GLOBAL_CONF), 
+                                                         PP_HTTPINSPECT, 
+                                                         PP_MEM_CATEGORY_CONFIG);
         if (!pPolicyConfig)
         {
              ParseError("HTTP INSPECT preprocessor: memory allocate failed.\n");
@@ -580,8 +826,7 @@ static void HttpInspectInit(struct _SnortConfig *sc, char *args)
                                                  ErrorString, iErrStrLen);
         if (iRet == 0)
         {
-            iRet = ProcessGlobalConf(pPolicyConfig,
-                                     ErrorString, iErrStrLen);
+            iRet = ProcessGlobalConf(pPolicyConfig, ErrorString, iErrStrLen, &saveptr);
 
             if (iRet == 0)
             {
@@ -606,7 +851,7 @@ static void HttpInspectInit(struct _SnortConfig *sc, char *args)
                 ParseError("Invalid http inspect token: %s.", pcToken);
         }
 
-        iRet = ProcessUniqueServerConf(sc, pPolicyConfig, ErrorString, iErrStrLen);
+        iRet = ProcessUniqueServerConf(sc, pPolicyConfig, ErrorString, iErrStrLen, &saveptr);
     }
 
 
@@ -675,6 +920,8 @@ static void HttpInspectInit(struct _SnortConfig *sc, char *args)
 */
 void SetupHttpInspect(void)
 {
+RegisterMemoryStatsFunction(PP_HTTPINSPECT, HttpPrintMemStats);
+
 #ifndef SNORT_RELOAD
     RegisterPreprocessor(GLOBAL_KEYWORD, HttpInspectInit);
     RegisterPreprocessor(SERVER_KEYWORD, HttpInspectInit);
@@ -684,6 +931,9 @@ void SetupHttpInspect(void)
                          HttpInspectReloadSwapFree);
     RegisterPreprocessor(SERVER_KEYWORD, HttpInspectInit,
                          HttpInspectReload, NULL, NULL, NULL);
+#endif
+#ifdef DUMP_BUFFER
+    RegisterBufferTracer(getHTTPDumpBuffers, HTTP_BUFFER_DUMP_FUNC);
 #endif
     InitLookupTables();
     InitJSNormLookupTable();
@@ -714,11 +964,11 @@ static void HttpInspectRegisterXtraDataFuncs(HTTPINSPECT_GLOBAL_CONF *pPolicyCon
 
 }
 
-static void updateConfigFromFileProcessing (HTTPINSPECT_GLOBAL_CONF *pPolicyConfig)
+static void updateConfigFromFileProcessing (struct _SnortConfig *sc, HTTPINSPECT_GLOBAL_CONF *pPolicyConfig)
 {
     HTTPINSPECT_CONF *ServerConf = pPolicyConfig->global_server;
     /*Either one is unlimited*/
-    int64_t fileDepth = file_api->get_max_file_depth();
+    int64_t fileDepth = file_api->get_max_file_depth(sc, true);
 
     /*Config file policy*/
     if (fileDepth > -1)
@@ -726,9 +976,6 @@ static void updateConfigFromFileProcessing (HTTPINSPECT_GLOBAL_CONF *pPolicyConf
         ServerConf->inspect_response = 1;
         ServerConf->extract_gzip = 1;
         ServerConf->log_uri = 1;
-#ifdef HAVE_EXTRADATA_FILE
-        ServerConf->log_hostname = 1;
-#endif
         ServerConf->unlimited_decompress = 1;
         pPolicyConfig->mime_conf.log_filename = 1;
         ServerConf->file_policy = 1;
@@ -776,9 +1023,9 @@ static int HttpInspectVerifyPolicy(struct _SnortConfig *sc, tSfPolicyUserContext
     }
 
 #ifdef TARGET_BASED
-    HttpInspectAddServicesOfInterest(sc, policyId);
+    HttpInspectAddServicesOfInterest(sc, pPolicyConfig, policyId);
 #endif
-    updateConfigFromFileProcessing(pPolicyConfig);
+    updateConfigFromFileProcessing(sc, pPolicyConfig);
     HttpInspectAddPortsOfInterest(sc, pPolicyConfig, policyId);
 #if defined(FEAT_OPEN_APPID)
     if (IsAnybodyRegisteredForHttpHeader())
@@ -807,7 +1054,7 @@ static void HttpInspectAddPortsOfInterest(struct _SnortConfig *sc, HTTPINSPECT_G
     hi_ui_server_iterate(sc, config->server_lookup, addServerConfPortsToStream);
 }
 
-/**Add server ports from http_inspect preprocessor from snort.comf file to pass through
+/**Add server ports from http_inspect preprocessor from snort.conf file to pass through
  * port filtering.
  */
 static void addServerConfPortsToStream(struct _SnortConfig *sc, void *pData)
@@ -823,7 +1070,7 @@ static void addServerConfPortsToStream(struct _SnortConfig *sc, void *pData)
             {
                 bool client = (pConf->client_flow_depth > -1);
                 bool server = (pConf->server_extract_size > -1);
-                int64_t fileDepth = file_api->get_max_file_depth();
+                int64_t fileDepth = file_api->get_max_file_depth(sc, true);
 
                 //Add port the port
                 stream_api->set_port_filter_status(sc, IPPROTO_TCP,
@@ -838,9 +1085,21 @@ static void addServerConfPortsToStream(struct _SnortConfig *sc, void *pData)
                 // has a flow depth enabled (per direction).  still, if eg
                 // all server_flow_depths are -1, we will only enable client.
                 if (fileDepth > 0)
+                {
                     hi_paf_register_port(sc, (uint16_t)i, client, server, httpCurrentPolicy, true);
+#ifdef HAVE_LIBNGHTTP2
+                    if (pConf->h2_mode)
+                        h2_paf_register_port(sc, (uint16_t)i, client, server, httpCurrentPolicy, true);
+#endif /* HAVE_LIBNGHTTP2 */
+                }
                 else
+                {
                     hi_paf_register_port(sc, (uint16_t)i, client, server, httpCurrentPolicy, false);
+#ifdef HAVE_LIBNGHTTP2
+                    if (pConf->h2_mode)
+                        h2_paf_register_port(sc, (uint16_t)i, client, server, httpCurrentPolicy, false);
+#endif /* HAVE_LIBNGHTTP2 */
+                }
             }
         }
     }
@@ -850,18 +1109,50 @@ static void addServerConfPortsToStream(struct _SnortConfig *sc, void *pData)
 /**
  * @param service ordinal number of service.
  */
-static void HttpInspectAddServicesOfInterest(struct _SnortConfig *sc, tSfPolicyId policy_id)
+static void HttpInspectAddServicesOfInterest(struct _SnortConfig *sc, HTTPINSPECT_GLOBAL_CONF *config, tSfPolicyId policy_id)
 {
+    if ((config == NULL) || (!config->global_server))
+        return;
+
     /* Add ordinal number for the service into stream5 */
     if (hi_app_protocol_id != SFTARGET_UNKNOWN_PROTOCOL)
     {
         stream_api->set_service_filter_status(sc, hi_app_protocol_id, PORT_MONITOR_SESSION, policy_id, 1);
 
-        if (file_api->get_max_file_depth() > 0)
+        if (file_api->get_max_file_depth(sc, true) > 0)
+        {
             hi_paf_register_service(sc, hi_app_protocol_id, true, true, policy_id, true);
+#ifdef HAVE_LIBNGHTTP2
+            if (config->global_server->h2_mode)
+                h2_paf_register_service(sc, hi_app_protocol_id, true, true, policy_id, true);
+#endif
+        }
         else
+        {
             hi_paf_register_service(sc, hi_app_protocol_id, true, true, policy_id, false);
+#ifdef HAVE_LIBNGHTTP2
+            if (config->global_server->h2_mode)
+                h2_paf_register_service(sc, hi_app_protocol_id, true, true, policy_id, false);
+#endif
+        }
     }
+
+/*
+#ifdef HAVE_LIBNGHTTP2
+    if ((config == NULL) || (!config->global_server))
+        return;
+
+    if ((h2_app_protocol_id != SFTARGET_UNKNOWN_PROTOCOL) && (config->global_server->h2_mode))
+    {
+        stream_api->set_service_filter_status(sc, h2_app_protocol_id, PORT_MONITOR_SESSION, policy_id, 1);
+
+        if (file_api->get_max_file_depth() > 0)
+            h2_paf_register_service(sc, h2_app_protocol_id, true, true, policy_id, true);
+        else
+            h2_paf_register_service(sc, h2_app_protocol_id, true, true, policy_id, false);
+    }
+
+#endif */ /* HAVE_LIBNGHTTP2 */
 }
 #endif
 
@@ -883,7 +1174,9 @@ static int HttpEncodeInit(struct _SnortConfig *sc, char *name, char *parameters,
     unsigned pos;
     HttpEncodeData *idx= NULL;
 
-    idx = (HttpEncodeData *) SnortAlloc(sizeof(HttpEncodeData));
+    idx = (HttpEncodeData *) SnortPreprocAlloc(1, sizeof(HttpEncodeData), PP_HTTPINSPECT, 
+                                  PP_MEM_CATEGORY_CONFIG);
+    hi_stats.mem_used += sizeof(HttpEncodeData);
 
     if(idx == NULL)
     {
@@ -1060,7 +1353,9 @@ static void HttpEncodeCleanup(void *dataPtr)
     HttpEncodeData *idx = dataPtr;
     if (idx)
     {
-        free(idx);
+        SnortPreprocFree(idx, sizeof(HttpEncodeData), PP_HTTPINSPECT, 
+             PP_MEM_CATEGORY_SESSION);
+        hi_stats.mem_used -= sizeof(HttpEncodeData);
     }
 }
 
@@ -1265,7 +1560,9 @@ static int ProcessGzipAndFDMemPools( struct _SnortConfig *sc,
 
         if( have_gzip )
         {
-            hi_gzip_mempool = (MemPool *)SnortAlloc(sizeof(MemPool));
+            hi_gzip_mempool = (MemPool *)SnortPreprocAlloc(1, sizeof(MemPool), 
+                                              PP_HTTPINSPECT, 
+                                              PP_MEM_CATEGORY_MEMPOOL);
 
             if( (hi_gzip_mempool == 0) ||
                 (mempool_init(hi_gzip_mempool, max_sessions,
@@ -1287,7 +1584,7 @@ static int CheckFilePolicyConfig(
 {
     HTTPINSPECT_GLOBAL_CONF *context = (HTTPINSPECT_GLOBAL_CONF*)pData;
 
-    context->decode_conf.file_depth = file_api->get_max_file_depth();
+    context->decode_conf.file_depth = file_api->get_max_file_depth(sc, true);
     if (context->decode_conf.file_depth > -1)
         context->mime_conf.log_filename = 1;
     updateMaxDepth(context->decode_conf.file_depth, &context->decode_conf.max_depth);
@@ -1335,7 +1632,8 @@ static int HttpInspectCheckConfig(struct _SnortConfig *sc)
 
         max_sessions_logged = defaultConfig->memcap / (MAX_URI_EXTRACTED + MAX_HOSTNAME);
 
-        http_mempool = (MemPool *)SnortAlloc(sizeof(MemPool));
+        http_mempool = (MemPool *)SnortPreprocAlloc(1, sizeof(MemPool), PP_HTTPINSPECT, 
+                                       PP_MEM_CATEGORY_MEMPOOL); 
         if (mempool_init(http_mempool, max_sessions_logged, (MAX_URI_EXTRACTED + MAX_HOSTNAME)) != 0)
         {
             FatalError("http_inspect:  Could not allocate HTTP mempool.\n");
@@ -1380,6 +1678,20 @@ static int HttpInspectFreeConfigPolicy(tSfPolicyUserContextId config,tSfPolicyId
 
 static void HttpInspectFreeConfigs(tSfPolicyUserContextId config)
 {
+    int i;
+
+    if(oldXffFields)
+    {
+        for (i = 0; (i < HTTP_MAX_XFF_FIELDS) && (oldXffFields[i]); i++)
+        {
+            free(oldXffFields[i]);
+            oldXffFields[i] = NULL;
+        }
+
+        SnortPreprocFree(oldXffFields, HTTP_MAX_XFF_FIELDS * sizeof(char *),
+             PP_HTTPINSPECT, PP_MEM_CATEGORY_CONFIG);
+        oldXffFields = NULL;
+    }
 
     if (config == NULL)
         return;
@@ -1401,18 +1713,20 @@ static void HttpInspectFreeConfig(HTTPINSPECT_GLOBAL_CONF *config)
     if (config->global_server != NULL)
     {
         int i;
-        for( i=0; i<HI_UI_CONFIG_MAX_XFF_FIELD_NAMES; i++ )
-             if( config->global_server->xff_headers[i] != NULL )
-             {
-                  free(  config->global_server->xff_headers[i] );
-                  config->global_server->xff_headers[i] = NULL;
-             }
+        for( i=0; i<HTTP_MAX_XFF_FIELDS; i++ )
+            if( config->global_server->xff_headers[i] != NULL )
+            {
+                free(  config->global_server->xff_headers[i] ); 
+                config->global_server->xff_headers[i] = NULL;
+            }
 
         http_cmd_lookup_cleanup(&(config->global_server->cmd_lookup));
-        free(config->global_server);
+        SnortPreprocFree(config->global_server, sizeof(HTTPINSPECT_CONF), PP_HTTPINSPECT, 
+             PP_MEM_CATEGORY_CONFIG);
     }
 
-    free(config);
+    SnortPreprocFree(config, sizeof(HTTPINSPECT_GLOBAL_CONF), 
+         PP_HTTPINSPECT, PP_MEM_CATEGORY_CONFIG);
 }
 
 #ifdef SNORT_RELOAD
@@ -1423,6 +1737,7 @@ static void _HttpInspectReload(struct _SnortConfig *sc, tSfPolicyUserContextId h
     int  iRet;
     HTTPINSPECT_GLOBAL_CONF *pPolicyConfig = NULL;
     char *pcToken;
+    char *saveptr;
     tSfPolicyId policy_id = getParserPolicy(sc);
 
     ErrorString[0] = '\0';
@@ -1431,11 +1746,23 @@ static void _HttpInspectReload(struct _SnortConfig *sc, tSfPolicyUserContextId h
         ParseError("No arguments to HttpInspect configuration.");
 
     /* Find out what is getting configured */
-    pcToken = strtok(args, CONF_SEPARATORS);
+    pcToken = strtok_r(args, CONF_SEPARATORS, &saveptr);
     if (pcToken == NULL)
     {
         FatalError("%s(%d)strtok returned NULL when it should not.",
                    __FILE__, __LINE__);
+    }
+
+    if (!oldXffFields)
+    {
+        oldXffFields = xffFields;
+        xffFields = SnortPreprocAlloc(1, HTTP_MAX_XFF_FIELDS * sizeof(char *), 
+                          PP_HTTPINSPECT, PP_MEM_CATEGORY_CONFIG);
+        if (xffFields == NULL)
+        {
+            FatalError("http_inspect: %s(%d) failed to allocate memory for XFF fields\n", 
+                       __FILE__, __LINE__);
+        }
     }
 
     /*
@@ -1454,7 +1781,10 @@ static void _HttpInspectReload(struct _SnortConfig *sc, tSfPolicyUserContextId h
 
         HttpInspectRegisterRuleOptions(sc);
 
-        pPolicyConfig = (HTTPINSPECT_GLOBAL_CONF *)SnortAlloc(sizeof(HTTPINSPECT_GLOBAL_CONF));
+        pPolicyConfig = (HTTPINSPECT_GLOBAL_CONF *) SnortPreprocAlloc(1, 
+                                                         sizeof(HTTPINSPECT_GLOBAL_CONF), 
+                                                         PP_HTTPINSPECT,
+                                                         PP_MEM_CATEGORY_CONFIG);
         if (!pPolicyConfig)
         {
              ParseError("HTTP INSPECT preprocessor: memory allocate failed.\n");
@@ -1464,8 +1794,7 @@ static void _HttpInspectReload(struct _SnortConfig *sc, tSfPolicyUserContextId h
                                                  ErrorString, iErrStrLen);
         if (iRet == 0)
         {
-            iRet = ProcessGlobalConf(pPolicyConfig,
-                                     ErrorString, iErrStrLen);
+            iRet = ProcessGlobalConf(pPolicyConfig, ErrorString, iErrStrLen, &saveptr);
 
             if (iRet == 0)
             {
@@ -1491,7 +1820,7 @@ static void _HttpInspectReload(struct _SnortConfig *sc, tSfPolicyUserContextId h
                 ParseError("Invalid http inspect token: %s.", pcToken);
         }
 
-        iRet = ProcessUniqueServerConf(sc, pPolicyConfig, ErrorString, iErrStrLen);
+        iRet = ProcessUniqueServerConf(sc, pPolicyConfig, ErrorString, iErrStrLen, &saveptr);
     }
 
     if (iRet)
@@ -1557,12 +1886,125 @@ static void HttpInspectReload(struct _SnortConfig *sc, char *args, void **new_co
     _HttpInspectReload(sc, hi_swap_config, args);
 }
 
+static int HttpMempoolFreeUsedBucket(MemPool *memory_pool)
+{
+    MemBucket *lru_bucket = NULL;
+
+    lru_bucket = mempool_get_lru_bucket(memory_pool);
+    if(lru_bucket)
+    {
+        session_api->set_application_data(lru_bucket->scbPtr, PP_HTTPINSPECT, NULL, NULL);
+        return 1;
+    }
+    return 0;
+}
+
+static unsigned HttpMempoolAdjust(MemPool *memory_pool, unsigned httpMaxWork)
+{
+    int retVal;
+
+    /* deleting MemBucket from free list in HTTP Mempool */
+    httpMaxWork = mempool_prune_freelist(memory_pool, memory_pool->max_memory, httpMaxWork);
+
+    for( ; httpMaxWork && ((memory_pool->used_memory + memory_pool->free_memory) > memory_pool->max_memory); httpMaxWork--)
+    {
+        /* deleting least recently used MemBucket from Used list in HTTP Mempool */
+        retVal = HttpMempoolFreeUsedBucket(memory_pool);
+        if(!retVal)
+           break;
+    }
+
+    return httpMaxWork;
+}
+
+static bool HttpGzipReloadAdjust(bool idle, tSfPolicyId raPolicyId, void* userData)
+{
+    unsigned initialMaxWork = idle ? 512 : 5;
+    unsigned maxWork;
+
+    maxWork = HttpMempoolAdjust(hi_gzip_mempool, initialMaxWork);
+    /* This check will be true, when the gzip_mempool is disabled and mempool cleaning is also completed  */
+    if( hi_gzip_mempool->used_memory + hi_gzip_mempool->free_memory == 0 )
+    {
+        SnortPreprocFree(hi_gzip_mempool, sizeof(MemPool), PP_HTTPINSPECT,
+             PP_MEM_CATEGORY_MEMPOOL);
+        hi_gzip_mempool = NULL;
+		return true;
+    }
+
+    return (maxWork == initialMaxWork) ? true : false;
+}
+
+static bool HttpFdReloadAdjust(bool idle, tSfPolicyId raPolicyId, void* userData)
+{
+    unsigned initialMaxWork = idle ? 512 : 5;
+    unsigned maxWork;
+
+    maxWork = HttpMempoolAdjust(hi_fd_conf.fd_MemPool, initialMaxWork);
+    /* This check will be true, when the fd_mempool is disabled and mempool cleaning is also completed  */
+    if( hi_fd_conf.fd_MemPool->used_memory + hi_fd_conf.fd_MemPool->free_memory == 0 )
+    {
+        SnortPreprocFree(hi_fd_conf.fd_MemPool, hi_fd_conf.Max_Memory, PP_HTTPINSPECT, 
+             PP_MEM_CATEGORY_MEMPOOL);
+        hi_fd_conf.fd_MemPool = NULL;
+		return true;
+    }
+
+    return (maxWork == initialMaxWork) ? true : false;
+}
+
+static bool HttpMempoolReloadAdjust(bool idle, tSfPolicyId raPolicyId, void* userData)
+{
+    unsigned initialMaxWork = idle ? 512 : 5;
+    unsigned maxWork;
+
+    /* If new memcap is less than old configured memcap, need to adjust HTTP Mempool.
+     * In order to adjust to new max_memory of http mempool, delete buckets from free list.
+     * After deleting buckets from free list, still new max_memory is less than old value , delete buckets
+     * (least recently used i.e head node of used list )from used list till total memory reaches to new max_memory.
+     */
+    maxWork = HttpMempoolAdjust(http_mempool, initialMaxWork);
+
+    return (maxWork == initialMaxWork) ? true : false;
+}
+
+static bool HttpMimeReloadAdjust(bool idle, tSfPolicyId raPolicyId, void* userData)
+{
+    unsigned initialMaxWork = idle ? 512 : 5;
+    unsigned maxWork;
+
+    /* If new max_mime_mem is less than old configured max_mime_mem, need to adjust HTTP Mime Mempool.
+     * In order to adjust to new max_memory of mime mempool, delete buckets from free list.
+     * After deleting buckets from free list, still new max_memory is less than old value , delete buckets
+     * (least recently used i.e head node of used list )from used list till total memory reaches to new max_memory.
+     */
+    maxWork = HttpMempoolAdjust(mime_decode_mempool, initialMaxWork);
+
+    return (maxWork == initialMaxWork) ? true : false;
+}
+
+static bool HttpLogReloadAdjust(bool idle, tSfPolicyId raPolicyId, void* userData)
+{
+    unsigned initialMaxWork = idle ? 512 : 5;
+    unsigned maxWork;
+
+    /* If new memcap is less than old configured memcap, need to adjust HTTP Log Mempool.
+     * In order to adjust to new max_memory of log mempool, delete buckets from free list.
+     * After deleting buckets from free list, still new max_memory is less than old value , delete buckets
+     * (least recently used i.e head node of used list )from used list till total memory reaches to new max_memory.
+     */
+    maxWork = HttpMempoolAdjust(mime_log_mempool, initialMaxWork);
+
+    return (maxWork == initialMaxWork) ? true : false;
+}
+
 static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
 {
     tSfPolicyUserContextId hi_swap_config = (tSfPolicyUserContextId)swap_config;
     HTTPINSPECT_GLOBAL_CONF *defaultConfig;
     HTTPINSPECT_GLOBAL_CONF *defaultSwapConfig;
     bool swap_gzip, swap_fd, curr_gzip, curr_fd;
+    tSfPolicyId policy_id = 0;
 
     if (hi_swap_config == NULL)
         return 0;
@@ -1579,70 +2021,63 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
     curr_gzip = (hi_gzip_mempool != NULL);
     curr_fd = (hi_fd_conf.fd_MemPool != NULL);
 
+    policy_id = getParserPolicy(sc);
+
+    LogMessage("HTTPInspect: gzip old=%s, fd old=%s\n", curr_gzip ? "true": "false", curr_fd ? "true": "false");
     if( curr_gzip || curr_fd )
     {
-        if (defaultSwapConfig == NULL)
-        {
-            WarningMessage("http_inspect:  Changing gzip parameters requires "
-                    "a restart.\n");
-            return -1;
-        }
-
-        if (defaultSwapConfig->max_gzip_mem != defaultConfig->max_gzip_mem)
-        {
-            WarningMessage("http_inspect:  Changing max_gzip_mem requires "
-                    "a restart.\n");
-            return -1;
-        }
-
-        if (defaultSwapConfig->compr_depth != defaultConfig->compr_depth)
-        {
-            WarningMessage("http_inspect:  Changing compress_depth requires "
-                    "a restart.\n");
-            return -1;
-        }
-
-        if (defaultSwapConfig->decompr_depth != defaultConfig->decompr_depth)
-        {
-            WarningMessage("http_inspect:  Changing decompress_depth requires "
-                    "a restart.\n");
-            return -1;
-        }
-
         /* Look for the case where the current and swap configs have differing gzip & fd options. */
         swap_fd = (sfPolicyUserDataIterate(sc, hi_swap_config, HttpInspectFileDecomp) != 0);
         swap_gzip = (sfPolicyUserDataIterate(sc, hi_swap_config, HttpInspectExtractGzip) != 0);
 
-        if( (curr_gzip && !curr_fd && swap_fd) ||
-            (curr_fd && !curr_gzip && swap_gzip) ||
-            (curr_gzip && curr_fd && (swap_fd != swap_gzip)) )
+        LogMessage("HTTPInspect: gzip new=%s, fd new=%s\n", swap_gzip ? "true": "false", swap_fd ? "true": "false");
+        if(defaultSwapConfig)
         {
-            WarningMessage("http_inspect:  Changing decompression options requires "
-                    "a restart.\n");
-            return -1;
+             LogMessage("HTTPInspect: old gzip memcap=%u, new gzip memcap=%u\n", defaultConfig->max_gzip_mem, defaultSwapConfig->max_gzip_mem);
+             if(curr_gzip)
+                 LogMessage("HTTPInspect: HTTP-GZIP-MEMPOOL used=%zu, free=%zu, max=%zu, obj_size=%zu\n",
+                         hi_gzip_mempool->used_memory, hi_gzip_mempool->free_memory, hi_gzip_mempool->max_memory, hi_gzip_mempool->obj_size);
+             if(curr_fd)
+                 LogMessage("HTTPInspect: HTTP-FD-MEMPOOL used=%zu, free=%zu, max=%zu, obj_size=%zu\n",
+                         hi_fd_conf.fd_MemPool->used_memory, hi_fd_conf.fd_MemPool->free_memory, hi_fd_conf.fd_MemPool->max_memory, hi_fd_conf.fd_MemPool->obj_size);
+             if(defaultSwapConfig->max_gzip_mem < defaultConfig->max_gzip_mem)
+             {
+                  /* Change in max_gzip_mem value changes the number of max_sessions of hi_gzip_mempool and max_gzip_sessions.
+                     This value also changes  max_memory and max_sessions of hi_fd_conf.fd_Mempool.
+                     So registering here to adjust these mempools when max_gzip_mem cahnges.
+                   */
+                   if( curr_gzip && curr_fd && swap_gzip && swap_fd )
+                   {
+                        ReloadAdjustRegister(sc, "HTTP-GZIP-MEMPOOL", policy_id, &HttpGzipReloadAdjust, NULL, NULL);
+                        ReloadAdjustRegister(sc, "HTTP-FD-MEMPOOL", policy_id, &HttpFdReloadAdjust, NULL, NULL);
+                   }
+                   if( curr_gzip && !curr_fd && swap_gzip)
+                        ReloadAdjustRegister(sc, "HTTP-GZIP-MEMPOOL", policy_id, &HttpGzipReloadAdjust, NULL, NULL);
+                   if( !curr_gzip && curr_fd && swap_fd)
+                        ReloadAdjustRegister(sc, "HTTP-FD-MEMPOOL", policy_id, &HttpFdReloadAdjust, NULL, NULL);
+             }
+             if(curr_gzip && !swap_gzip)
+                 ReloadAdjustRegister(sc, "HTTP-GZIP-MEMPOOL", policy_id, &HttpGzipReloadAdjust, NULL, NULL);
+             if(curr_fd && !swap_fd)
+                 ReloadAdjustRegister(sc, "HTTP-FD-MEMPOOL", policy_id, &HttpFdReloadAdjust, NULL, NULL);
         }
     }
     else if (defaultSwapConfig != NULL)
     {
-        if( ProcessGzipAndFDMemPools( sc, hi_swap_config, defaultSwapConfig ) != 0 )
-            return( -1 );
+        ProcessGzipAndFDMemPools( sc, hi_swap_config, defaultSwapConfig );
     }
 
     if (http_mempool != NULL)
     {
-        if (defaultSwapConfig == NULL)
+        if (defaultSwapConfig != NULL)
         {
-            WarningMessage("http_inspect:  Changing HTTP memcap requires a restart.\n");
-            return -1;
-        }
-
-        if (defaultSwapConfig->memcap != defaultConfig->memcap)
-        {
-            WarningMessage("http_inspect:  Changing memcap requires a restart.\n");
-            return -1;
+            LogMessage("HTTPInspect: HTTP-MEMPOOL old memcap=%d, new_memcap=%d, used=%zu, free=%zu, max=%zu, obj_size=%zu\n",
+                    defaultConfig->memcap, defaultSwapConfig->memcap, http_mempool->used_memory, http_mempool->free_memory, http_mempool->max_memory, http_mempool->obj_size);
+             if (defaultSwapConfig->memcap < defaultConfig->memcap)
+                  ReloadAdjustRegister(sc, "HTTP-MEMPOOL", policy_id, &HttpMempoolReloadAdjust, NULL, NULL);
         }
     }
-    else 
+    else
     {
         if (sfPolicyUserDataIterate(sc, hi_swap_config, HttpInspectExtractUriHost) != 0)
         {
@@ -1658,7 +2093,8 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
 
             max_sessions_logged = defaultSwapConfig->memcap / (MAX_URI_EXTRACTED + MAX_HOSTNAME);
 
-            http_mempool = (MemPool *)SnortAlloc(sizeof(MemPool));
+            http_mempool = (MemPool *) SnortPreprocAlloc(1, sizeof(MemPool), PP_HTTPINSPECT, 
+                                            PP_MEM_CATEGORY_MEMPOOL); 
 
             if (mempool_init(http_mempool, max_sessions_logged,(MAX_URI_EXTRACTED + MAX_HOSTNAME)) != 0)
             {
@@ -1669,18 +2105,21 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
     }
     if (mime_decode_mempool != NULL)
     {
-        if (defaultSwapConfig == NULL)
-        {
-            WarningMessage("http_inspect:  Changing HTTP decode requires a restart.\n");
-            return -1;
-        }
         if (sfPolicyUserDataIterate (sc, hi_swap_config, CheckFilePolicyConfig))
             return -1;
-        if(file_api->is_decoding_conf_changed(&(defaultSwapConfig->decode_conf),
-                &(defaultConfig->decode_conf), "HTTP"))
+
+        /* If max_mime_mem changes, mime mempool need to be adjusted bcz mempool max_memory will be changed.
+         * Registering here to adjust Mime memory Pool when max_mime_mem changes.
+         */
+        if(defaultSwapConfig)
         {
-            return -1;
+            LogMessage("HTTPInspect: HTTP-MIME-MEMPOOL old memcap=%d, new_memcap=%d, used=%zu, free=%zu, max=%zu, obj_size=%zu\n",
+                    defaultConfig->decode_conf.max_mime_mem, defaultSwapConfig->decode_conf.max_mime_mem, mime_decode_mempool->used_memory,
+                    mime_decode_mempool->free_memory, mime_decode_mempool->max_memory, mime_decode_mempool->obj_size);
+             if( defaultSwapConfig->decode_conf.max_mime_mem  < defaultConfig->decode_conf.max_mime_mem )
+                  ReloadAdjustRegister(sc, "HTTP-MIME-MEMPOOL", policy_id, &HttpMimeReloadAdjust, NULL, NULL);
         }
+
     }
     else
     {
@@ -1699,17 +2138,17 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
     }
     if (mime_log_mempool != NULL)
     {
-            if (defaultSwapConfig == NULL)
-            {
-                WarningMessage("http_inspect:  Changing MIME conf memcap requires restart.\n");
-                return -1;
-            }
-
-            if (defaultSwapConfig->mime_conf.memcap != defaultConfig->mime_conf.memcap)
-            {
-                WarningMessage("http_inspect:  Changing MIME conf memcap requires a restart.\n");
-                return -1;
-            }
+       if(defaultSwapConfig)
+       {
+            /* If memcap of HTTP mIme changes, log mempool need to be adjusted bcz mempool max_mempory will be changed.
+              * Registering here to adjust Log memory Pool when memcap changes.
+              */
+            LogMessage("HTTPInspect: HTTP-LOG-MEMPOOL old memcap=%d, new_memcap=%d, used=%zu, free=%zu, max=%zu, obj_size=%zu\n",
+                    defaultConfig->mime_conf.memcap, defaultSwapConfig->mime_conf.memcap, mime_log_mempool->used_memory, mime_log_mempool->free_memory,
+                    mime_log_mempool->max_memory, mime_log_mempool->obj_size);
+            if (defaultSwapConfig->mime_conf.memcap < defaultConfig->mime_conf.memcap)
+                 ReloadAdjustRegister(sc, "HTTP-LOG-MEMPOOL", policy_id, &HttpLogReloadAdjust, NULL, NULL);
+       }
 
     }
     else
@@ -1731,13 +2170,263 @@ static int HttpInspectReloadVerify(struct _SnortConfig *sc, void *swap_config)
     return 0;
 }
 
+#ifdef REG_TEST
+static void display_http_mempool(MemPool *mempool, const char* old_new, const char *pool_type)
+{
+    if(mempool)
+    {
+        printf("\n========== START# %s HTTP %s_mempool VALUES ==============================\n", old_new, pool_type);
+        printf("%s_mempool object size: %s VALUE # %zu \n",pool_type, old_new, mempool->obj_size);
+        printf("%s_mempool max memory : %s VALUE # %zu \n",pool_type, old_new, mempool->max_memory);
+        if(mempool->obj_size)
+            printf("%s_mempool total number of buckets: %s VALUE # %u \n",pool_type, old_new,(unsigned)(mempool->max_memory / mempool->obj_size));
+        printf("========== END# %s HTTP %s_mempool VALUES ==============================\n", old_new, pool_type);
+        fflush(stdout);
+    }
+}
+#endif
+
+static void update_gzip_mempool(bool old_gzip, bool new_gzip, uint32_t max_sessions)
+{
+     if(old_gzip && !new_gzip)
+     {
+         if(hi_gzip_mempool)
+            hi_gzip_mempool->max_memory = 0;
+     }
+     else
+     {  
+         if(hi_gzip_mempool)
+         {
+              hi_gzip_mempool->max_memory = (max_sessions * sizeof( DECOMPRESS_STATE ) );
+              hi_gzip_mempool->obj_size = sizeof(DECOMPRESS_STATE);
+         }
+     }
+}
+static void update_fd_mempool(bool old_fd, bool new_fd, uint32_t max_sessions)
+{
+     if(old_fd && !new_fd)
+     {
+          if(hi_fd_conf.fd_MemPool)
+          {
+              hi_fd_conf.Max_Memory = 0;
+              hi_fd_conf.fd_MemPool->max_memory = 0;
+          }
+     }
+     else
+     {
+          if(hi_fd_conf.fd_MemPool)
+          {
+               hi_fd_conf.Max_Memory = (max_sessions * sizeof( fd_session_t ));
+               hi_fd_conf.fd_MemPool->max_memory = (max_sessions * sizeof( fd_session_t ));
+               hi_fd_conf.fd_MemPool->obj_size = sizeof( fd_session_t );
+          }
+     }
+}
+static void update_gzip_fd_mempools(HTTPINSPECT_GLOBAL_CONF* configNew,
+            bool old_gzip, bool new_gzip, bool old_fd, bool new_fd)
+{
+    uint32_t max_sessions = 0;
+    uint32_t block_size = 0;
+
+    if( old_fd || old_gzip )
+    {
+         if( new_fd )
+              block_size += sizeof( fd_session_t );
+         if( new_gzip )
+              block_size += sizeof( DECOMPRESS_STATE );
+
+         if( block_size > configNew->max_gzip_mem )
+               FatalError("http_inspect: Error setting the \"max_gzip_mem\" \n");
+
+         if(block_size)
+            max_sessions = configNew->max_gzip_mem / block_size;
+         configNew->max_gzip_sessions = max_sessions;
+
+         update_fd_mempool(old_fd, new_fd, max_sessions);
+         update_gzip_mempool(old_gzip, new_gzip, max_sessions);
+    }
+
+}
+
+static void update_http_mempool(uint32_t new_memcap, uint32_t old_memcap)
+{
+    uint32_t max_sessions_logged = 0;
+    size_t obj_size = 0;
+
+    obj_size = (MAX_URI_EXTRACTED + MAX_HOSTNAME);
+
+    if(obj_size)
+        max_sessions_logged = new_memcap / obj_size;
+
+#ifdef REG_TEST
+    if(REG_TEST_EMAIL_FLAG_HTTP_MEMPOOL_ADJUST & getRegTestFlagsForEmail())
+    {
+        printf("\nhttp memcap value is #(OLD VALUE) %u \n", old_memcap);
+        display_http_mempool(http_mempool, "OLD", "http");
+        printf("\nSetting memcap to new value # (NEW VALUE )%u\n",new_memcap);
+    }
+#endif
+
+    http_mempool->max_memory = max_sessions_logged * obj_size;
+    http_mempool->obj_size = obj_size;
+
+#ifdef REG_TEST
+    if(REG_TEST_EMAIL_FLAG_HTTP_MEMPOOL_ADJUST & getRegTestFlagsForEmail())
+        display_http_mempool(http_mempool, "NEW", "http");
+#endif
+}
+
+#ifdef REG_TEST
+static int HttpInspectUnlimitedDecompressIterate(void *data)
+{
+    HTTPINSPECT_CONF *server = (HTTPINSPECT_CONF *)data;
+
+    if (server == NULL)
+        return 0;
+
+    if (server->unlimited_decompress)
+        return 1;
+
+    return 0;
+}
+
+static int HttpInspectUnlimitedDecompress(struct _SnortConfig *sc,
+           tSfPolicyUserContextId config,
+           tSfPolicyId policyId, void *pData)
+{
+    HTTPINSPECT_GLOBAL_CONF *context = (HTTPINSPECT_GLOBAL_CONF *)pData;
+
+    if (pData == NULL)
+        return 0;
+
+    if(context->disabled)
+        return 0;
+
+    if ((context->global_server != NULL) && context->global_server->unlimited_decompress)
+        return 1;
+
+    if (context->server_lookup != NULL)
+    {
+        if (sfrt_iterate2(context->server_lookup, HttpInspectUnlimitedDecompressIterate) != 0)
+            return 1;
+    }
+    return 0;
+}
+static void display_gzip_fd_config_changes(HTTPINSPECT_GLOBAL_CONF* configOld, HTTPINSPECT_GLOBAL_CONF* configNew,
+                                           bool old_gzip, bool new_gzip, bool old_fd, bool new_fd, bool old_ud, bool new_ud)
+{
+    if(configOld->max_gzip_mem  != configNew->max_gzip_mem )
+    {
+         printf("\nmax_gzip_mem value is # %u",configOld->max_gzip_mem);
+         printf("\nSetting max_gzip_value to new value # ( NEW VALUE ) %u\n", configNew->max_gzip_mem);
+    }
+    if(configOld->compr_depth != configNew->compr_depth)
+    {
+         printf("\nHttp Global Compression Depth is # OLD VALUE # %u",configOld->compr_depth);
+         printf("\nSetting Http Global Compression depth to # NEW VALUE # %u\n", configNew->compr_depth);
+    }
+    if(configOld->decompr_depth != configNew->decompr_depth)
+    {
+         printf("\nHttp Global Decompression Depth is # OLD VALUE # %u",configOld->decompr_depth);
+         printf("\nSetting Http Global Decompression depth to # NEW VALUE # %u\n", configNew->decompr_depth);
+    }
+    if( old_gzip != new_gzip )
+    {
+         printf("\nExtract GZIP is Enabled # OLD VALUE # %s",configOld->global_server->extract_gzip ? "YES" : "NO");
+         printf("\n[Setting] Extract GZIP is Enabled # NEW VALUE # %s\n",configNew->global_server->extract_gzip ? "YES" : "NO");
+    }
+    if( old_fd != new_fd )
+    {
+         printf("\nFile Decompression modes # OLD VALUE # %lu",configOld->global_server->file_decomp_modes);
+         printf("\nSetting File decompression modes to # NEW VALUE # %lu\n",configNew->global_server->file_decomp_modes);
+    }
+    if( old_ud != new_ud )
+    {
+         printf("\nUnlimited Decompression Enabled # OLD VALUE # %s",configOld->global_server->unlimited_decompress ? "YES" : "NO");
+         printf("\n[Setting] Unlimited Decompression Enabled# NEW VALUE # %s\n",configNew->global_server->unlimited_decompress ? "YES" : "NO");
+    }
+}
+#endif
+
 static void * HttpInspectReloadSwap(struct _SnortConfig *sc, void *swap_config)
 {
     tSfPolicyUserContextId hi_swap_config = (tSfPolicyUserContextId)swap_config;
     tSfPolicyUserContextId old_config = hi_config;
+    HTTPINSPECT_GLOBAL_CONF *configNew = NULL, *configOld = NULL;
+    bool old_fd, old_gzip, new_fd, new_gzip;
+#ifdef REG_TEST
+    bool old_ud, new_ud;
+#endif
 
     if (hi_swap_config == NULL)
         return NULL;
+
+    configNew = (HTTPINSPECT_GLOBAL_CONF *)sfPolicyUserDataGetDefault(hi_swap_config);
+    configOld = (HTTPINSPECT_GLOBAL_CONF *)sfPolicyUserDataGetDefault(old_config);
+
+    old_fd = (sfPolicyUserDataIterate(sc, old_config, HttpInspectFileDecomp) != 0);
+    old_gzip = (sfPolicyUserDataIterate(sc, old_config, HttpInspectExtractGzip) != 0);
+
+    new_fd = (sfPolicyUserDataIterate(sc, hi_swap_config, HttpInspectFileDecomp) != 0);
+    new_gzip = (sfPolicyUserDataIterate(sc, hi_swap_config, HttpInspectExtractGzip) != 0);
+
+
+    if( configNew && configOld)
+    {
+         if(hi_gzip_mempool || hi_fd_conf.fd_MemPool)
+         {
+#ifdef REG_TEST
+              if( (REG_TEST_EMAIL_FLAG_GZIP_MEMPOOL_ADJUST & getRegTestFlagsForEmail() ) ||
+                  (REG_TEST_EMAIL_FLAG_FD_MEMPOOL_ADJUST & getRegTestFlagsForEmail()) )
+              {
+                    old_ud = (sfPolicyUserDataIterate(sc, old_config, HttpInspectUnlimitedDecompress) != 0);
+                    new_ud = (sfPolicyUserDataIterate(sc, hi_swap_config, HttpInspectUnlimitedDecompress) != 0);
+                    display_gzip_fd_config_changes(configOld, configNew, old_gzip, new_gzip, old_fd, new_fd, old_ud, new_ud);
+              }
+#endif
+              if((configOld->max_gzip_mem  != configNew->max_gzip_mem) ||
+                 (old_gzip != new_gzip) ||
+                 (old_fd != new_fd) )
+              {
+                   update_gzip_fd_mempools(configNew, old_gzip, new_gzip, old_fd, new_fd);
+              }
+
+         }
+         if(http_mempool)
+         {
+              if(configOld->memcap != configNew->memcap)
+              {
+                   update_http_mempool(configNew->memcap, configOld->memcap);
+              }
+         }
+         if(mime_decode_mempool)
+         {
+              if( (configOld->decode_conf.max_mime_mem != configNew->decode_conf.max_mime_mem) ||
+                  (configOld->decode_conf.max_depth != configNew->decode_conf.max_depth) )
+              {
+#ifdef REG_TEST
+                  displayMimeMempool(mime_decode_mempool,&(configOld->decode_conf), &(configNew->decode_conf));
+#endif
+                  /* Update the mime_decode_mempool with new max_memmory and object size when max_mime_mem changes. */
+                  update_mime_mempool(mime_decode_mempool, configNew->decode_conf.max_mime_mem, configNew->decode_conf.max_depth);
+             }
+         }
+         if(mime_log_mempool)
+         {
+              if(configOld->mime_conf.memcap != configNew->mime_conf.memcap )
+              {
+#ifdef REG_TEST
+                  displayLogMempool(mime_log_mempool, configOld->mime_conf.memcap, configNew->mime_conf.memcap);
+#endif
+                  /* Update the mime_log_mempool with new max_memory and objest size when memcap changes. */
+                  update_log_mempool(mime_log_mempool, configNew->mime_conf.memcap, 0);
+              }
+          }
+#ifdef REG_TEST
+          displayDecodeDepth(&(configOld->decode_conf), &(configNew->decode_conf));
+#endif
+
+    }
 
     hi_config = hi_swap_config;
 

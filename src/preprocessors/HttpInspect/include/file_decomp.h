@@ -2,7 +2,7 @@
 /*
 ** file_decomp.h
 **
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License Version 2 as
@@ -28,6 +28,7 @@
 
 //#include <stdint.h>
 #include <string.h>
+#include "sf_types.h"
 #include "mempool.h"
 
 /* File_Decomp global typedefs (used in child objects) */
@@ -278,7 +279,7 @@ fd_status_t File_Decomp_CleanExit();
 
 fd_status_t File_Decomp_Config( fd_config_p_t ConfigPtr );
 
-fd_session_p_t File_Decomp_New();
+fd_session_p_t File_Decomp_New(void* ssnptr);
 
 fd_status_t File_Decomp_Init( fd_session_p_t SessionPtr );
 

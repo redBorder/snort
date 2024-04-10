@@ -1,5 +1,5 @@
 /****************************************************************************
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -44,7 +44,6 @@ typedef struct _FileCache
     uint32_t cleanup_files;
     FileCacheStatus status;
     uint64_t file_segment_memcap;
-    uint64_t max_file_depth;
 } FileCache;
 
 typedef struct _FileSegment
@@ -70,11 +69,12 @@ typedef struct _FileEntry
 {
     FileContext *context;
     uint8_t *file_name;
-    uint32_t file_name_size;
     uint64_t offset;
     FileSegment *segments;
     uint64_t file_size;
     FileCache *file_cache;
+    uint32_t file_name_size;
+    bool file_resume_check;
 } FileEntry;
 
 /* Create file cache to store file segments and track file
@@ -89,9 +89,13 @@ void file_cache_free(FileCache *fileCache);
 /* Get the status of file cache*/
 FileCacheStatus *file_cache_status(FileCache *fileCache);
 
+bool file_cache_shrink_to_memcap(FileCache *fileCache, uint8_t *pWork);
+void file_cache_set_memcap(FileCache *fileCache, uint64_t memcap);
+
 /* Add/update a file entry in the file cache*/
 void *file_cache_update_entry (FileCache *fileCache, void* p, uint64_t file_id,
-        uint8_t *file_name, uint32_t file_name_size, uint64_t file_size);
+        uint8_t *file_name, uint32_t file_name_size, uint64_t file_size, bool reset, 
+        bool no_update_size);
 
 /* Process file segments with offset specified. If file segment is out of order,
  * it will be put into the file seglist. Otherwise, it will be processed.

@@ -1,5 +1,5 @@
 /****************************************************************************
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -40,6 +40,9 @@
 #include "sip_utils.h"
 #include "sf_ip.h"
 
+#ifdef DUMP_BUFFER
+#include "sip_buffer_dump.h"
+#endif
 
 #define MAX_NUM_32BIT  2147483647
 
@@ -382,7 +385,7 @@ static int sip_startline_parse(SIPMsg *msg, const char *buff, char *end, char **
 		    msg->status_code =  (uint16_t)statusCode;
 		DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Status code: %d \n", msg->status_code));
 
-	}
+        }
 	else  /* This might be a request*/
 	{
 		char *space;
@@ -404,6 +407,10 @@ static int sip_startline_parse(SIPMsg *msg, const char *buff, char *end, char **
 		msg->methodLen = length;
 		DEBUG_WRAP(DebugMessage(DEBUG_SIP, "method: %.*s\n", msg->methodLen, msg->method));
 
+#ifdef DUMP_BUFFER
+                dumpBuffer(METHOD_DUMP,msg->method,msg->methodLen);
+#endif
+
 		method = SIP_FindMethod (sip_eval_config->methods, msg->method, msg->methodLen);
 		if (method)
 		{
@@ -419,6 +426,11 @@ static int sip_startline_parse(SIPMsg *msg, const char *buff, char *end, char **
 		if (space == NULL)
 			return SIP_FAILURE;
 		msg->uriLen = space - msg->uri;
+
+#ifdef DUMP_BUFFER
+                dumpBuffer(URI_DUMP,msg->uri,msg->uriLen);
+#endif
+
 		DEBUG_WRAP(DebugMessage(DEBUG_SIP, "uri: %.*s, length: %u\n", msg->uriLen, msg->uri, msg->uriLen));
 		if(0 == msg->uriLen)
 			ALERT(SIP_EVENT_EMPTY_REQUEST_URI,SIP_EVENT_EMPTY_REQUEST_URI_STR)
@@ -536,7 +548,9 @@ static int sip_body_parse(SIPMsg *msg, const char *buff, char *end, char **bodyE
     msg->body_data = (uint8_t *)buff;
 
     // Create a media session
-    msg->mediaSession = (SIP_MediaSession *)calloc(1, sizeof(SIP_MediaSession));
+    msg->mediaSession = (SIP_MediaSession *)_dpd.snortAlloc(1,
+                                                sizeof(SIP_MediaSession),
+                                                PP_SIP, PP_MEM_CATEGORY_SESSION);
     if (NULL == msg->mediaSession)
     	return SIP_FAILURE;
     start = (char *) buff;
@@ -679,6 +693,10 @@ static int sip_parse_via(SIPMsg *msg, const char *start, const char *end)
 	msg->viaLen = msg->viaLen + length;
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Via length: %d\n", msg->viaLen););
 
+#ifdef DUMP_BUFFER
+        dumpBuffer(VIA_DUMP,start,msg->viaLen);
+#endif
+
 	return SIP_PARSE_SUCCESS;
 }
 /********************************************************************
@@ -710,6 +728,9 @@ static int sip_parse_from(SIPMsg *msg, const char *start, const char *end)
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "From length: %d , content: %.*s\n",
 			msg->fromLen, msg->fromLen, msg->from););
 
+#ifdef DUMP_BUFFER
+        dumpBuffer(FROM_DUMP,msg->from,msg->fromLen);
+#endif
 
 	/*Get the from tag*/
 	msg->fromTagLen = 0;
@@ -727,6 +748,9 @@ static int sip_parse_from(SIPMsg *msg, const char *start, const char *end)
 		buff = memchr(buff + 1, ';', msg->fromLen);
 	}
 
+#ifdef DUMP_BUFFER
+        dumpBuffer(FROM_TAG_DUMP,msg->from_tag,msg->fromTagLen);
+#endif
 	userStart = memchr(msg->from, ':', msg->fromLen);
 	userEnd = memchr(msg->from, '>', msg->fromLen);
     if (userStart && userEnd && (userEnd > userStart))
@@ -741,6 +765,10 @@ static int sip_parse_from(SIPMsg *msg, const char *start, const char *end)
 	    msg->userName = NULL;
 	    msg->userNameLen = 0;
     }
+
+#ifdef DUMP_BUFFER
+        dumpBuffer(USER_NAME_DUMP,msg->userName,msg->userNameLen);
+#endif
 
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "From tag length: %d , hash: %u, content: %.*s\n",
 			msg->fromTagLen, msg->dlgID.fromTagHash, msg->fromTagLen, msg->from_tag););
@@ -773,6 +801,10 @@ static int sip_parse_to(SIPMsg *msg, const char *start, const char *end)
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "To length: %d , content: %.*s\n",
 			msg->toLen, msg->toLen, msg->to););
 
+#ifdef DUMP_BUFFER
+        dumpBuffer(TO_DUMP,msg->to,msg->toLen);
+#endif
+
 	/*Processing tag information*/
 	msg->toTagLen = 0;
 
@@ -788,6 +820,10 @@ static int sip_parse_to(SIPMsg *msg, const char *start, const char *end)
 		}
 		buff = memchr(buff + 1, ';', msg->toLen);
 	}
+
+#ifdef DUMP_BUFFER
+        dumpBuffer(TO_TAG_DUMP,msg->to_tag,msg->toTagLen);
+#endif
 
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "To tag length: %d , Hash: %u, content: %.*s\n",
 			msg->toTagLen, msg->dlgID.toTagHash, msg->toTagLen, msg->to_tag););
@@ -848,6 +884,11 @@ static int sip_parse_call_id(SIPMsg *msg, const char *start, const char *end)
 	}
 
 	msg->callIdLen = end - start;
+
+#ifdef DUMP_BUFFER
+        dumpBuffer(CALL_ID_DUMP,msg->call_id, length);
+#endif
+
 	msg->dlgID.callIdHash =  strToHash(msg->call_id, length);
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Call-Id length: %d, Hash: %u\n",
         msg->callIdLen, msg->dlgID.callIdHash););
@@ -876,6 +917,10 @@ static int sip_parse_user_agent(SIPMsg *msg, const char *start, const char *end)
 	msg->userAgent = (char *)start;
 	msg->userAgentLen = end - start;
 
+#ifdef DUMP_BUFFER
+        dumpBuffer(USER_AGENT_DUMP,msg->userAgent,msg->userAgentLen);
+#endif
+
 	return SIP_PARSE_SUCCESS;
 }
 /********************************************************************
@@ -898,6 +943,10 @@ static int sip_parse_server(SIPMsg *msg, const char *start, const char *end)
 
 	msg->server = (char *)start;
 	msg->serverLen = end - start;
+
+#ifdef DUMP_BUFFER
+        dumpBuffer(SERVER_DUMP,msg->server,msg->serverLen);
+#endif
 
 	return SIP_PARSE_SUCCESS;
 }
@@ -933,6 +982,10 @@ static int sip_parse_cseq(SIPMsg *msg, const char *start, const char *end)
 	}
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "CSeq number: %d, CSeqName: %.*s\n",
 			                msg->cseqnum, msg->cseqNameLen, msg->cseqName););
+
+#ifdef DUMP_BUFFER
+        dumpBuffer(CSEQ_NAME_DUMP,msg->cseqName,msg->cseqNameLen);
+#endif
 
 	if (NULL == method)
 	{
@@ -977,6 +1030,11 @@ static int sip_parse_contact(SIPMsg *msg, const char *start, const char *end)
 	msg->contact = (char *) start;
 	msg->contactLen = msg->contactLen + length;
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Contact length: %d\n", msg->contactLen););
+
+#ifdef DUMP_BUFFER
+        dumpBuffer(CONTACT_DUMP,msg->contact,msg->contactLen);
+#endif
+
 	return SIP_PARSE_SUCCESS;
 }
 
@@ -1210,7 +1268,8 @@ static int sip_parse_sdp_m(SIPMsg *msg, const char *start, const char *end)
 	spaceIndex = memchr(start, ' ', length); // first space
 	if ((NULL == spaceIndex)||(spaceIndex == end))
 		return SIP_PARSE_ERROR;
-	mdata = (SIP_MediaData *) calloc(1, sizeof(SIP_MediaData));
+	mdata = (SIP_MediaData *) _dpd.snortAlloc(1, sizeof(SIP_MediaData),
+                                                  PP_SIP, PP_MEM_CATEGORY_SESSION);
 
 	if (NULL == mdata)
 		return SIP_PARSE_ERROR;
@@ -1223,9 +1282,11 @@ static int sip_parse_sdp_m(SIPMsg *msg, const char *start, const char *end)
     mdata->maddress = msg->mediaSession->maddress_default;
     msg->mediaSession->medias = mdata;
     DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Media IP: %s, Media port %u, number of media: %d\n",
-    		sfip_to_str(&mdata->maddress), mdata->mport, mdata->numPort););
+                sfip_to_str(&mdata->maddress), mdata->mport, mdata->numPort););
 	return SIP_PARSE_SUCCESS;
 }
+
+
 /********************************************************************
  * Function: sip_parse()
  *
@@ -1246,6 +1307,10 @@ int sip_parse(SIPMsg *msg, const char *buff, char *end)
 	char *start;
 	int status;
 
+#ifdef DUMP_BUFFER
+        dumpBufferInit();
+#endif
+
 	/*Initialize key values*/
 	msg->methodFlag = SIP_METHOD_NULL;
 	msg->status_code = 0;
@@ -1256,6 +1321,7 @@ int sip_parse(SIPMsg *msg, const char *buff, char *end)
 	DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Start parsing...\n"));
 
 	msg->header = (uint8_t *) buff;
+
 	status = sip_startline_parse(msg, start, end, &nextIndex);
 
 	if(SIP_FAILURE == status )
@@ -1269,7 +1335,11 @@ int sip_parse(SIPMsg *msg, const char *buff, char *end)
 	status = sip_headers_parse(msg, start, end, &nextIndex);
 	msg->headerLen =  nextIndex - buff;
 
-	if(SIP_FAILURE == status )
+#ifdef DUMP_BUFFER
+        dumpBuffer(HEADER_DUMP, (const char *) msg->header, msg->headerLen);
+#endif
+
+        if(SIP_FAILURE == status )
 	{
 		DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Header parsing failed...\n"));
 	}
@@ -1290,8 +1360,12 @@ int sip_parse(SIPMsg *msg, const char *buff, char *end)
 
 	if (msg->content_len < msg->bodyLen)
 	    status = sip_body_parse(msg, start, start + msg->content_len, &nextIndex);
-	else
+        else
 		status = sip_body_parse(msg, start, end, &nextIndex);
+
+#ifdef DUMP_BUFFER
+        dumpBuffer(BODY_DUMP, (const char *) msg->body_data,msg->bodyLen);
+#endif
 
 	if(SIP_FAILURE == status )
 	{
@@ -1367,11 +1441,12 @@ void sip_freeMediaSession (SIP_MediaSession *mediaSession)
 		DEBUG_WRAP(DebugMessage(DEBUG_SIP, "Clear media ip: %s, port: %d, number of port: %d\n",
 				sfip_to_str(&curNode->maddress), curNode->mport, curNode->numPort ));
 		nextNode = curNode->nextM;
-		free(curNode);
+		_dpd.snortFree(curNode, sizeof(SIP_MediaData), PP_SIP, PP_MEM_CATEGORY_SESSION);
 		curNode = nextNode;
 	}
 	if (NULL != mediaSession)
-	  free (mediaSession);
+	    _dpd.snortFree(mediaSession, sizeof(SIP_MediaSession), PP_SIP,
+                           PP_MEM_CATEGORY_SESSION);
 }
 /********************************************************************
  * Function: sip_freeMediaList

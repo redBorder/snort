@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2009-2013 Sourcefire, Inc.
 **
 **
@@ -199,6 +199,7 @@ int ParseSSNGroups(char *filename, struct _SDFConfig *config)
                 "for SSN groups.\n");
 
         fclose(ssn_file);
+        free(contents);
         return -1;
     }
 
@@ -208,7 +209,8 @@ int ParseSSNGroups(char *filename, struct _SDFConfig *config)
         _dpd.logMsg("Sensitive Data preprocessor: Failed read contents of "
                 "SSN groups file \"%s\".\n", filename);
 
-        fclose(ssn_file);
+        free(contents);
+	fclose(ssn_file);
         return -1;
     }
 

@@ -26,7 +26,7 @@ nodist_libsf_appid_preproc_la_SOURCES = \
 libsf_appid_preproc_la_LIBADD = $(LUA_LIBS)
 endif
 
-libsf_appid_preproc_la_CFLAGS = -DDYNAMIC_PREPROC_CONTEXT -DSTATIC=static $(LUA_CFLAGS)
+libsf_appid_preproc_la_CFLAGS = -DDYNAMIC_PREPROC_CONTEXT -DSTATIC=static -DINLINE=inline $(LUA_CFLAGS)
 
 libsf_appid_preproc_la_SOURCES = $(APPID_SOURCES)
 

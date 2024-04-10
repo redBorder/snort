@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -23,7 +23,9 @@
 #define _SERVICE_STATE_H_
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <ipv6_port.h>
+#include <string.h>
 
 /**Service state stored in hosttracker for maintaining service matching states.
  */
@@ -37,15 +39,6 @@ typedef enum
      */
     SERVICE_ID_VALID,
 
-    /**match based on source or destination port in first packet in flow.
-     */
-    SERVICE_ID_PORT,
-
-    /**match based on pattern in first response from server or client in
-     * case of client_services.
-     */
-    SERVICE_ID_PATTERN,
-
     /**match based on round-robin through tcpServiceList or UdpServiceList. RNA walks
      * the list from first element to last. In a detector declares a flow incompatible
      * or the flow closes earlier than expected by detector, then the next detector is
@@ -53,7 +46,33 @@ typedef enum
      */
     SERVICE_ID_BRUTE_FORCE,
 
+    /**if brute-force failed after a complete walk of the list,
+     * we stop searching and move into this state.
+     */
+    SERVICE_ID_BRUTE_FORCE_FAILED,
+
 } SERVICE_ID_STATE;
+
+/* Service state stored per flow, which acts based on global SERVICE_ID_STATE
+ * at the beginning of the flow, then independently do service discovery, and
+ * synchronize findings at the end of service discovery by the flow.
+ */
+typedef enum
+{
+    /* First attempt in search of service. */
+    SERVICE_ID_START = 0,
+
+    /* Match based on source or destination port in first packet in flow. */
+    SERVICE_ID_PORT,
+
+    /* Match based on pattern in first response from server or
+     * client in case of client_services. */
+    SERVICE_ID_PATTERN,
+
+    /* Flow is in this state after we retrieve all port/pattern candidates. */
+    SERVICE_ID_PENDING,
+
+} FLOW_SERVICE_ID_STATE;
 
 #define DETECTOR_TYPE_PASSIVE   0
 #define DETECTOR_TYPE_DECODER   0
@@ -63,7 +82,10 @@ typedef enum
 #define DETECTOR_TYPE_CONFLICT  4
 #define DETECTOR_TYPE_PATTERN   5
 
-/**Service state saved in hosttracker, for identifying a service across multiple flow instances.
+/**We will NOT hold onto pointers to host tracker entries (because they could be pruned).
+ * When a session starts discovery, it retrieves the last-known id_state at the beginning of the session,
+ * does independent service discovery, and
+ * reconciles any changes back to the entry once a service determination is made.
  */
 struct RNAServiceElement;
 struct _SERVICE_MATCH;
@@ -88,38 +110,43 @@ typedef struct _APP_ID_SERVICE_ID_STATE
      */
     sfaddr_t last_invalid_client;
 
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)   
+    uint16_t asId;
+#endif
+
     /** Count for number of unknown sessions saved
      */
     unsigned unknowns_logged;
     time_t reset_time;
 
-    /**List of ServiceMatch nodes which are sorted in order of pattern match. The list is contructed
-     * once on first packet from server and then used for subsequent flows. This saves repeat pattern
-     * matching, but has the disadvantage of making one flow match dependent on first instance of the
-     * same flow.
-     */
-    struct _SERVICE_MATCH *serviceList;
-    struct _SERVICE_MATCH *currentService;
-
-    /** Is this entry currently being used in an active session? */
-    bool searching;
-
 } AppIdServiceIDState;
 
 typedef struct
 {
-    uint16_t port;
-    uint16_t proto;
-    uint32_t ip;
-    uint32_t level;
+    uint16_t  port;
+    uint16_t  proto;
+    uint32_t  ip;
+    uint32_t  level;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)   
+    uint16_t  asId;      
+#endif
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+    uint32_t cid;
+#endif
 } AppIdServiceStateKey4;
 
 typedef struct
 {
-    uint16_t port;
-    uint16_t proto;
-    uint8_t ip[16];
-    uint32_t level;
+    uint16_t  port;
+    uint16_t  proto;
+    uint8_t   ip[16];
+    uint32_t  level;
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)   
+    uint16_t  asId;    
+#endif
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+    uint32_t cid;
+#endif
 } AppIdServiceStateKey6;
 
 typedef union
@@ -128,11 +155,36 @@ typedef union
     AppIdServiceStateKey6 key6;
 } AppIdServiceStateKey;
 
+bool AppIdServiceStateReloadAdjust(bool idle, unsigned long memcap);
 int AppIdServiceStateInit(unsigned long memcap);
 void AppIdServiceStateCleanup(void);
+#if !defined(SFLINUX) && defined(DAQ_CAPA_CARRIER_ID)
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+void AppIdRemoveServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port, 
+        uint32_t level, uint16_t asId, uint32_t cid);
+AppIdServiceIDState* AppIdGetServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port,
+        uint32_t level, uint16_t asId, uint32_t cid);
+AppIdServiceIDState* AppIdAddServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port,
+        uint32_t level, uint16_t asId, uint32_t cid);
+#else
+void AppIdRemoveServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port, uint32_t level, uint32_t cid);
+AppIdServiceIDState* AppIdGetServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port, uint32_t level, uint32_t cid);
+AppIdServiceIDState* AppIdAddServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port, uint32_t level, uint32_t cid);
+#endif
+#else /* No carrier id */
+#if !defined(SFLINUX) && defined(DAQ_CAPA_VRF)
+void AppIdRemoveServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port,
+        uint32_t level, uint16_t asId);
+AppIdServiceIDState* AppIdGetServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port,
+        uint32_t level, uint16_t asId);
+AppIdServiceIDState* AppIdAddServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port,
+        uint32_t level, uint16_t asId);
+#else
 void AppIdRemoveServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port, uint32_t level);
 AppIdServiceIDState* AppIdGetServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port, uint32_t level);
 AppIdServiceIDState* AppIdAddServiceIDState(sfaddr_t *ip, uint16_t proto, uint16_t port, uint32_t level);
+#endif
+#endif
 void AppIdServiceStateDumpStats(void);
 
 #endif

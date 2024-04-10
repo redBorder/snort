@@ -1,7 +1,7 @@
 /* $Id$ */
 /*
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 **    Dan Roelker <droelker@sourcefire.com>
 **    Marc Norton <mnorton@sourcefire.com>
@@ -54,6 +54,7 @@
 #include "session_api.h"
 #include "session_common.h"
 #include "stream_api.h"
+#include "snort_stream_udp.h"
 #include "active.h"
 #include "signature.h"
 #include "ipv6_port.h"
@@ -80,6 +81,7 @@ PreprocStats detectPerfStats;
 #include "sfPolicy.h"
 
 /* #define ITERATIVE_ENGINE */
+
 
 OptTreeNode *otn_tmp = NULL;       /* OptTreeNode temp ptr */
 
@@ -115,6 +117,10 @@ static void DispatchPreprocessors( Packet *p, tSfPolicyId policy_id, SnortPolicy
     PreprocEnableMask pps_enabled_foo;
     bool alerts_processed = false;
 
+#if defined(DAQ_VERSION) && DAQ_VERSION > 9
+    uint64_t start=0, end=0;
+#endif
+ 
     // No expected sessions yet.
     p->expectedSession = NULL;
 
@@ -138,7 +144,22 @@ static void DispatchPreprocessors( Packet *p, tSfPolicyId policy_id, SnortPolicy
             break;
 
         if ( preprocHandlesProto( p, ppn ) && IsPreprocessorEnabled( p, ppn->preproc_bit ) )
+        {
+#if defined(DAQ_VERSION) && DAQ_VERSION > 9
+            if (p->pkth && (p->pkth->flags & DAQ_PKT_FLAG_DEBUG_ON))
+            {
+                get_clockticks(start);
+                ppn->func( p, ppn->context );
+                get_clockticks(end);
+                print_flow(p,NULL,ppn->preproc_id,start,end);
+            }
+            else
+                ppn->func( p, ppn->context );
+#else
             ppn->func( p, ppn->context );
+#endif 
+        }
+
 
         if( !alerts_processed && ( p->ips_os_selected || ppn->preproc_id == PP_FW_RULE_ENGINE ) )
             alerts_processed = processDecoderAlertsActionQ( p );
@@ -150,6 +171,13 @@ static void DispatchPreprocessors( Packet *p, tSfPolicyId policy_id, SnortPolicy
         {
             EnablePreprocessors( p, scb->enabled_pps );
             pps_enabled_foo = scb->enabled_pps;
+        }
+ 
+        if( ( ppn->preproc_id == PP_FW_RULE_ENGINE ) && 
+            ( ( IPH_IS_VALID( p ) ) && ( GET_IPH_PROTO( p ) == IPPROTO_UDP ) ) && 
+            ( session_api->protocol_tracking_enabled( SESSION_PROTO_UDP ) ) ) 
+        {
+            InspectPortFilterUdp( p );
         }
 
     } while ( ( p->cur_pp != NULL ) && !( p->packet_flags & PKT_PASS_RULE ) );
@@ -167,7 +195,19 @@ static void DispatchPreprocessors( Packet *p, tSfPolicyId policy_id, SnortPolicy
 int Preprocess(Packet * p)
 {
     int retval = 0;
-    tSfPolicyId policy_id = getNapRuntimePolicy();
+    int detect_retval = 0;
+    tSfPolicyId policy_id;
+
+   /* NAP runtime policy may have been updated during decode, 
+    * but preprocess needs default nap policy for session
+    * preprocessor selection, hence use default policy when
+    * called without session pointer set.
+    */
+    if( !p->ssnptr )
+        policy_id = getDefaultPolicy();
+    else
+        policy_id = getNapRuntimePolicy();
+
     SnortPolicy *policy = snort_conf->targeted_policies[policy_id];
 #ifdef PPM_MGR
     uint64_t pktcnt=0;
@@ -198,7 +238,7 @@ int Preprocess(Packet * p)
     }
 #endif
 
-    // If the packet has errors, we won't analyze it.
+    // If the packet has errors or syn over rate, we won't analyze it.
     if ( p->error_flags )
     {
         // process any decoder alerts now that policy has been selected...
@@ -211,6 +251,8 @@ int Preprocess(Packet * p)
 
         if ( p->error_flags & PKT_ERR_BAD_TTL )
             pc.bad_ttl++;
+        else if( p->error_flags & PKT_ERR_SYN_RL_DROP )
+            pc.syn_rate_limit_drops++;
         else
             pc.invalid_checksums++;
     }
@@ -238,20 +280,62 @@ int Preprocess(Packet * p)
         // ok, dispatch all preprocs enabled for this packet/session
         DispatchPreprocessors( p, policy_id, policy );
 
-        if ( do_detect )
-            Detect(p);
+        if ( do_detect ) 
+        {
+            detect_retval = Detect(p);
+        }
     }
 
     check_tags_flag = 1;
 
+#ifdef DUMP_BUFFER
+    dumped_state = false;
+#endif
+
     PREPROC_PROFILE_START(eventqPerfStats);
     retval = SnortEventqLog(snort_conf->event_queue, p);
+
+#ifdef DUMP_BUFFER
+
+    /* dump_alert_only makes sure that bufferdump happens only when a rule is
+    triggered.
+
+    dumped_state avoids repetition of buffer dump for a packet that has an
+    alert, when --buffer-dump is given as command line option.
+
+    When --buffer-dump is given as command line option, BufferDump output
+    plugin is called for each packet. bdfptr will be NULL for all other output
+    plugins.
+    */
+
+    if (!dump_alert_only && !dumped_state)
+    {
+         OutputFuncNode *idx = LogList;
+
+         while (idx != NULL)
+         {
+             if (idx->bdfptr != NULL)
+                 idx->bdfptr(p, NULL , idx->arg, NULL);
+
+             idx = idx->next;
+         }
+     }
+#endif
+
     SnortEventqReset();
     PREPROC_PROFILE_END(eventqPerfStats);
 
     /* Check for normally closed session */
     if( session_api )
         session_api->check_session_closed(p);
+
+    if( session_api && p->ssnptr &&
+      ( session_api->get_session_flags(p->ssnptr) & SSNFLAG_FREE_APP_DATA) )
+    {
+        SessionControlBlock *scb = ( SessionControlBlock * ) p->ssnptr;
+        session_api->free_application_data(scb);
+        scb->ha_state.session_flags &= ~SSNFLAG_FREE_APP_DATA;
+    }
 
     /*
     ** By checking tagging here, we make sure that we log the
@@ -284,6 +368,9 @@ int Preprocess(Packet * p)
             LogMessage("PPM: Process-EndPkt[%u]\n\n",(unsigned)pktcnt);
         }
 #endif
+       // When detection is required to happen and it is skipped , then only we will print the trace. 
+        if (do_detect && (!detect_retval)) 
+            PPM_LATENCY_TRACE();
 
         PPM_PKT_LOG(p);
     }
@@ -343,10 +430,17 @@ static int CheckTagging(Packet *p)
 static void updateEventAppName (Packet *p, OptTreeNode *otn, Event *event)
 {
     const char *appName;
+    size_t appNameLen;
     AppIdOptionData *app_data = (AppIdOptionData*)otn->ds_list[PLUGIN_APPID];
 
     if (app_data && (app_data->matched_appid) && (appName = appIdApi.getApplicationName(app_data->matched_appid)))
-        memcpy(event->app_name, appName, sizeof(event->app_name));
+    {
+        appNameLen = strlen(appName);
+        if (appNameLen >= sizeof(event->app_name))
+            appNameLen = sizeof(event->app_name) - 1;
+        memcpy(event->app_name, appName, appNameLen);
+        event->app_name[appNameLen] = '\0';
+    }
     else if (p->ssnptr)
     {
         //log most specific appid when rule didn't have any appId
@@ -366,7 +460,11 @@ static void updateEventAppName (Packet *p, OptTreeNode *otn, Event *event)
 
         if ((pickedProtoId) && (appName = appIdApi.getApplicationName(pickedProtoId)))
         {
-            memcpy(event->app_name, appName, sizeof(event->app_name));
+            appNameLen = strlen(appName);
+            if (appNameLen >= sizeof(event->app_name))
+                appNameLen = sizeof(event->app_name) - 1;
+            memcpy(event->app_name, appName, appNameLen);
+            event->app_name[appNameLen] = '\0';
         }
         else
         {
@@ -497,11 +595,21 @@ int Detect(Packet * p)
     int detected = 0;
     PROFILE_VARS;
 
+#if defined(DAQ_VERSION) && DAQ_VERSION > 9
+    uint64_t start = 0, end = 0;
+#endif
+
     if ((p == NULL) || !IPH_IS_VALID(p))
     {
         return 0;
     }
-
+    
+    if (stream_api && stream_api->is_session_http2(p->ssnptr) 
+        && !(p->packet_flags & PKT_REBUILT_STREAM)
+        && !(p->packet_flags & PKT_PDU_TAIL)) 
+    {
+        return 0;
+    }
 
     if (!snort_conf->ip_proto_array[GET_IPH_PROTO(p)])
     {
@@ -554,7 +662,20 @@ int Detect(Packet * p)
     **  that we can do IP checks.
     */
     PREPROC_PROFILE_START(detectPerfStats);
+ #if defined(DAQ_VERSION) && DAQ_VERSION > 9
+    if (p->pkth && (p->pkth->flags & DAQ_PKT_FLAG_DEBUG_ON))
+    {
+        get_clockticks(start);
+        detected = fpEvalPacket(p);
+        get_clockticks(end);
+        print_flow(p,"DETECTION",0,start,end);
+    }
+    else
+        detected = fpEvalPacket(p);
+ #else
     detected = fpEvalPacket(p);
+#endif
+
     PREPROC_PROFILE_END(detectPerfStats);
 
     return detected;
@@ -1140,41 +1261,6 @@ int PassAction(void)
     return 1;
 }
 
-int ActivateAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
-{
-    DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
-                   "        <!!> Activating and generating alert! \"%s\"\n",
-                   otn->sigInfo.message););
-#if defined(FEAT_OPEN_APPID)
-    updateEventAppName (p, otn, event);
-#endif /* defined(FEAT_OPEN_APPID) */
-    CallAlertFuncs(p, otn->sigInfo.message, rtn->listhead, event);
-
-    if (otn->OTN_activation_ptr == NULL)
-    {
-        LogMessage("WARNING: an activation rule with no "
-                "dynamic rules matched.\n");
-        return 0;
-    }
-
-    otn->OTN_activation_ptr->active_flag = 1;
-    otn->OTN_activation_ptr->countdown =
-        otn->OTN_activation_ptr->activation_counter;
-
-    otn->RTN_activation_ptr->active_flag = 1;
-    otn->RTN_activation_ptr->countdown +=
-        otn->OTN_activation_ptr->activation_counter;
-
-    snort_conf->active_dynamic_nodes++;
-    DEBUG_WRAP(DebugMessage(DEBUG_DETECT,"   => Finishing activation packet!\n"););
-
-    CallLogFuncs(p, otn->sigInfo.message, rtn->listhead, event);
-    DEBUG_WRAP(DebugMessage(DEBUG_DETECT,
-                "   => Activation packet finished, returning!\n"););
-
-    return 1;
-}
-
 int AlertAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
 {
     if (!rtn)
@@ -1238,6 +1324,10 @@ int DropAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
                 "\"%s\"\n", otn->sigInfo.message););
 
             Active_DropSession(p);
+            if (pkt_trace_enabled)
+                addPktTraceData(VERDICT_REASON_SNORT, snprintf(trace_line, MAX_TRACE_LINE,
+                    "Snort: gid %u, sid %u, midstream %s\n", otn->sigInfo.generator, otn->sigInfo.id, getPktTraceActMsg()));
+            else addPktTraceData(VERDICT_REASON_SNORT, 0);
             return 1;
         }
     }
@@ -1255,6 +1345,10 @@ int DropAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
 
     CallLogFuncs(p, otn->sigInfo.message, rtn->listhead, event);
 
+    if (pkt_trace_enabled)
+        addPktTraceData(VERDICT_REASON_SNORT, snprintf(trace_line, MAX_TRACE_LINE,
+            "Snort detect_drop: gid %u, sid %u, %s\n", otn->sigInfo.generator, otn->sigInfo.id, getPktTraceActMsg()));
+    else addPktTraceData(VERDICT_REASON_SNORT, 0);
     return 1;
 }
 
@@ -1266,35 +1360,10 @@ int SDropAction(Packet * p, OptTreeNode * otn, Event * event)
 
     // Let's silently drop the packet
     Active_DropSession(p);
-
-    return 1;
-}
-
-int DynamicAction(Packet * p, OptTreeNode * otn, RuleTreeNode * rtn, Event * event)
-{
-    DEBUG_WRAP(DebugMessage(DEBUG_DETECT, "   => Logging packet data and"
-                            " adjusting dynamic counts (%d/%d)...\n",
-                            rtn->countdown, otn->countdown););
-
-    CallLogFuncs(p, otn->sigInfo.message, rtn->listhead, event);
-
-    otn->countdown--;
-
-    if( otn->countdown <= 0 )
-    {
-        otn->active_flag = 0;
-        snort_conf->active_dynamic_nodes--;
-        DEBUG_WRAP(DebugMessage(DEBUG_DETECT, "   <!!> Shutting down dynamic OTN node\n"););
-    }
-
-    rtn->countdown--;
-
-    if( rtn->countdown <= 0 )
-    {
-        rtn->active_flag = 0;
-        DEBUG_WRAP(DebugMessage(DEBUG_DETECT, "   <!!> Shutting down dynamic RTN node\n"););
-    }
-
+    if (pkt_trace_enabled)
+        addPktTraceData(VERDICT_REASON_SNORT, snprintf(trace_line, MAX_TRACE_LINE,
+            "Snort detect_sdrop: gid %u, sid %u, %s\n", otn->sigInfo.generator, otn->sigInfo.id, getPktTraceActMsg()));
+    else addPktTraceData(VERDICT_REASON_SNORT, 0);
     return 1;
 }
 

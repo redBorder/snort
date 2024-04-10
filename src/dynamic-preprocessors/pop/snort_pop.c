@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -70,6 +70,10 @@
 #include "sf_types.h"
 #endif
 #include "pop_paf.h"
+
+#ifdef DUMP_BUFFER
+#include "pop_buffer_dump.h"
+#endif
 
 /**************************************************************************/
 
@@ -169,7 +173,8 @@ void POP_InitCmds(POPConfig *config)
         return;
 
     /* add one to CMD_LAST for NULL entry */
-    config->cmds = (POPToken *)calloc(CMD_LAST + 1, sizeof(POPToken));
+    config->cmds = (POPToken *)_dpd.snortAlloc(CMD_LAST + 1, sizeof(POPToken), PP_POP, 
+                                    PP_MEM_CATEGORY_CONFIG);
     if (config->cmds == NULL)
     {
         DynamicPreprocessorFatalMessage("%s(%d) => failed to allocate memory for pop "
@@ -192,7 +197,9 @@ void POP_InitCmds(POPConfig *config)
     }
 
     /* initialize memory for command searches */
-    config->cmd_search = (POPSearch *)calloc(CMD_LAST, sizeof(POPSearch));
+    config->cmd_search = (POPSearch *)_dpd.snortAlloc(CMD_LAST, sizeof(POPSearch), PP_POP,
+                                           PP_MEM_CATEGORY_CONFIG);
+    
     if (config->cmd_search == NULL)
     {
         DynamicPreprocessorFatalMessage("%s(%d) => failed to allocate memory for pop "
@@ -274,12 +281,14 @@ static POP * POP_GetNewSession(SFSnortPacket *p, tSfPolicyId policy_id)
 {
     POP *ssn;
     POPConfig *pPolicyConfig = NULL;
+    int ret = 0;
 
     pPolicyConfig = (POPConfig *)sfPolicyUserDataGetCurrent(pop_config);
 
     DEBUG_WRAP(DebugMessage(DEBUG_POP, "Creating new session data structure\n"););
 
-    ssn = (POP *)calloc(1, sizeof(POP));
+    ssn = (POP *)_dpd.snortAlloc(1, sizeof(POP), PP_POP,
+                      PP_MEM_CATEGORY_SESSION);
     if (ssn == NULL)
     {
         DynamicPreprocessorFatalMessage("Failed to allocate POP session data\n");
@@ -293,12 +302,21 @@ static POP * POP_GetNewSession(SFSnortPacket *p, tSfPolicyId policy_id)
     pop_ssn->mime_ssn.decode_conf = &(pop_eval_config->decode_conf);
     pop_ssn->mime_ssn.mime_mempool = pop_mime_mempool;
     pop_ssn->mime_ssn.log_mempool = pop_mempool;
-    //smtp_ssn->mime_ssn.mime_stats = &(smtp_stats.mime_stats);
+    pop_ssn->mime_ssn.mime_stats = &(pop_stats.mime_stats);
     pop_ssn->mime_ssn.methods = &(mime_methods);
 
-    if (_dpd.fileAPI->set_log_buffers(&(pop_ssn->mime_ssn.log_state), &(pPolicyConfig->log_config), pop_mempool) < 0)
+    if (( ret = _dpd.fileAPI->set_log_buffers(&(pop_ssn->mime_ssn.log_state), &(pPolicyConfig->log_config),pop_mempool, p->stream_session, PP_POP)) < 0)
     {
-        free(ssn);
+        if( ret == -1 )
+        {
+            if(pop_stats.log_memcap_exceeded % 10000 == 0)
+            {
+                _dpd.logMsg("WARNING: POP  memcap exceeded.\n");
+            }
+            pop_stats.log_memcap_exceeded++;
+        }
+        _dpd.snortFree(ssn, sizeof(*ssn), PP_POP,
+             PP_MEM_CATEGORY_SESSION);
         return NULL;
     }
 
@@ -335,6 +353,11 @@ static POP * POP_GetNewSession(SFSnortPacket *p, tSfPolicyId policy_id)
     ssn->config = pop_config;
     ssn->flow_id = 0;
     pPolicyConfig->ref_count++;
+    pop_stats.sessions++;
+    pop_stats.conc_sessions++;
+    pop_stats.cur_sessions++;
+    if(pop_stats.max_conc_sessions < pop_stats.conc_sessions)
+       pop_stats.max_conc_sessions = pop_stats.conc_sessions;
 
     return ssn;
 }
@@ -488,19 +511,26 @@ static void POP_SessionFree(void *session_data)
     if(pop->mime_ssn.decode_state != NULL)
     {
         mempool_free(pop_mime_mempool, pop->mime_ssn.decode_bkt);
-        free(pop->mime_ssn.decode_state);
+        _dpd.snortFree(pop->mime_ssn.decode_state, sizeof(Email_DecodeState),
+             PP_POP,PP_MEM_CATEGORY_SESSION);
     }
 
     if(pop->mime_ssn.log_state != NULL)
     {
         mempool_free(pop_mempool, pop->mime_ssn.log_state->log_hdrs_bkt);
-        free(pop->mime_ssn.log_state);
+        _dpd.snortFree(pop->mime_ssn.log_state, sizeof(MAIL_LogState), PP_POP,
+             PP_MEM_CATEGORY_SESSION);
+       
     }
 
     if ( ssl_cb )
         ssl_cb->session_free(pop->flow_id);
 
-    free(pop);
+    _dpd.snortFree(pop, sizeof(*pop), PP_POP, PP_MEM_CATEGORY_SESSION);
+    if(pop_stats.cur_sessions)    
+	pop_stats.cur_sessions--;
+    if(pop_stats.conc_sessions)
+       pop_stats.conc_sessions--;
 }
 
 static int POP_FreeConfigsPolicy(
@@ -537,18 +567,18 @@ void POP_FreeConfig(POPConfig *config)
         POPToken *tmp = config->cmds;
 
         for (; tmp->name != NULL; tmp++)
-            free(tmp->name);
+            _dpd.snortFree(tmp->name, sizeof(*(tmp->name)), PP_POP, PP_MEM_CATEGORY_CONFIG);
 
-        free(config->cmds);
+        _dpd.snortFree(config->cmds, sizeof(*(config->cmds)), PP_POP, PP_MEM_CATEGORY_CONFIG);
     }
 
     if (config->cmd_search_mpse != NULL)
         _dpd.searchAPI->search_instance_free(config->cmd_search_mpse);
 
     if (config->cmd_search != NULL)
-        free(config->cmd_search);
+        _dpd.snortFree(config->cmd_search, sizeof(*(config->cmd_search)), PP_POP, PP_MEM_CATEGORY_CONFIG);
 
-    free(config);
+    _dpd.snortFree(config, sizeof(*config), PP_POP, PP_MEM_CATEGORY_CONFIG);
 }
 
 
@@ -629,6 +659,9 @@ static const uint8_t * POP_HandleCommand(SFSnortPacket *p, const uint8_t *ptr, c
         const uint8_t *cmd_start = ptr + pop_search_info.index;
         const uint8_t *cmd_end = cmd_start + pop_search_info.length;
 
+#ifdef DUMP_BUFFER
+     dumpBuffer(POP_REQUEST_COMMAND_DUMP,ptr,(cmd_end-cmd_start));
+#endif
         /* move past spaces up until start of command */
         while ((tmp < cmd_start) && isspace((int)*tmp))
             tmp++;
@@ -650,24 +683,28 @@ static const uint8_t * POP_HandleCommand(SFSnortPacket *p, const uint8_t *ptr, c
     /* if command not found, alert and move on */
     if (!cmd_found)
     {
-        if (pop_ssn->state == STATE_UNKNOWN)
+#ifdef DUMP_BUFFER
+     dumpBuffer(POP_REQUEST_COMMAND_DUMP,ptr,(eolm-ptr));
+#endif
+        if (pop_ssn->state == STATE_UNKNOWN && 
+           ((pop_ssn->session_flags & POP_FLAG_CHECK_SSL) && 
+           (IsSSL(ptr, end - ptr, p->flags))))
         {
             DEBUG_WRAP(DebugMessage(DEBUG_POP, "Command not found, but state is "
                                                 "unknown - checking for SSL\n"););
 
             /* check for encrypted */
 
-            if ((pop_ssn->session_flags & POP_FLAG_CHECK_SSL) &&
-                        (IsSSL(ptr, end - ptr, p->flags)))
-            {
-                DEBUG_WRAP(DebugMessage(DEBUG_POP, "Packet is SSL encrypted\n"););
+            DEBUG_WRAP(DebugMessage(DEBUG_POP, "Packet is SSL encrypted\n"););
 
-                pop_ssn->state = STATE_TLS_DATA;
+            pop_ssn->state = STATE_TLS_DATA;
 
-                /* Ignore data */
-                return end;
-            }
-            else
+            /* Ignore data */
+            return end;
+        }
+        else
+        {
+            if (pop_ssn->state == STATE_UNKNOWN)
             {
                 DEBUG_WRAP(DebugMessage(DEBUG_POP, "Not SSL - try data state\n"););
                 /* don't check for ssl again in this packet */
@@ -675,15 +712,12 @@ static const uint8_t * POP_HandleCommand(SFSnortPacket *p, const uint8_t *ptr, c
                     pop_ssn->session_flags &= ~POP_FLAG_CHECK_SSL;
 
                 pop_ssn->state = STATE_DATA;
-                //pop_ssn->data_state = STATE_DATA_UNKNOWN;
-
+                POP_GenerateAlert(POP_UNKNOWN_CMD, "%s", POP_UNKNOWN_CMD_STR);
+                DEBUG_WRAP(DebugMessage(DEBUG_POP, "Unknown POP command found\n"););
                 return ptr;
             }
-        }
-        else
-        {
             POP_GenerateAlert(POP_UNKNOWN_CMD, "%s", POP_UNKNOWN_CMD_STR);
-            DEBUG_WRAP(DebugMessage(DEBUG_POP, "No known command found\n"););
+            DEBUG_WRAP(DebugMessage(DEBUG_POP, "Unknown POP command found\n"););
             return eol;
         }
     }
@@ -734,6 +768,11 @@ static void POP_ProcessClientPacket(SFSnortPacket *p)
     const uint8_t *ptr = p->payload;
     const uint8_t *end = p->payload + p->payload_size;
 
+#ifdef DUMP_BUFFER
+    dumpBuffer(POP_REQUEST_PAYLOAD_DUMP,p->payload,p->payload_size);
+#endif
+
+
     ptr = POP_HandleCommand(p, ptr, end);
 
 
@@ -758,13 +797,17 @@ static void POP_ProcessServerPacket(SFSnortPacket *p)
     ptr = p->payload;
     end = p->payload + p->payload_size;
 
+#ifdef DUMP_BUFFER
+    dumpBuffer(POP_RESPONSE_PAYLOAD_DUMP,p->payload,p->payload_size);
+#endif
+
     while (ptr < end)
     {
         if(pop_ssn->state == STATE_DATA)
         {
             DEBUG_WRAP(DebugMessage(DEBUG_POP, "DATA STATE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"););
             //ptr = POP_HandleData(p, ptr, end);
-            ptr = _dpd.fileAPI->process_mime_data(p, ptr, end, &(pop_ssn->mime_ssn), 0, true);
+            ptr = _dpd.fileAPI->process_mime_data(p, ptr, end, &(pop_ssn->mime_ssn), 0, true, "POP", PP_POP);
             continue;
         }
         POP_GetEOL(ptr, end, &eol, &eolm);
@@ -777,9 +820,14 @@ static void POP_ProcessServerPacket(SFSnortPacket *p)
             (pop_resp_search_mpse, (const char *)ptr,
              resp_line_len, 1, POP_SearchStrFound);
 
+
         if (resp_found > 0)
         {
             const uint8_t *cmd_start = ptr + pop_search_info.index;
+
+#ifdef DUMP_BUFFER
+    dumpBuffer(POP_RESPONSE_STATUS_DUMP,ptr,(eolm-ptr));
+#endif
             switch (pop_search_info.id)
             {
                 case RESP_OK:
@@ -800,6 +848,9 @@ static void POP_ProcessServerPacket(SFSnortPacket *p)
         }
         else
         {
+#ifdef DUMP_BUFFER
+    dumpBuffer(POP_RESPONSE_STATUS_DUMP,ptr, (eolm-ptr));
+#endif
             DEBUG_WRAP(DebugMessage(DEBUG_POP, "Server response not found - see if it's SSL data\n"););
 
             if ((pop_ssn->session_flags & POP_FLAG_CHECK_SSL) &&
@@ -921,7 +972,9 @@ void SnortPOP(SFSnortPacket *p)
     ssl_callback_interface_t *ssl_cb = (ssl_callback_interface_t *)_dpd.getSSLCallback();
 
     PROFILE_VARS;
-
+#ifdef DUMP_BUFFER
+    dumpBufferInit();
+#endif
 
     pop_ssn = (POP *)_dpd.sessionAPI->get_application_data(p->stream_session, PP_POP);
     if (pop_ssn != NULL)
@@ -949,6 +1002,9 @@ void SnortPOP(SFSnortPacket *p)
         /* This packet should be a tls client hello */
         if (pop_ssn->state == STATE_TLS_CLIENT_PEND)
         {
+#ifdef DUMP_BUFFER
+    dumpBuffer(POP_STATE_TLS_CLIENT_PEND_DUMP,p->payload,p->payload_size);
+#endif
             if (IsTlsClientHello(p->payload, p->payload + p->payload_size))
             {
                 DEBUG_WRAP(DebugMessage(DEBUG_POP,
@@ -968,6 +1024,9 @@ void SnortPOP(SFSnortPacket *p)
         if ((pop_ssn->state == STATE_TLS_DATA)
                 || (pop_ssn->state == STATE_TLS_SERVER_PEND))
         {
+#ifdef DUMP_BUFFER
+    dumpBuffer(POP_STATE_TLS_DATA_DUMP,p->payload,p->payload_size);
+#endif
             if( _dpd.streamAPI->is_session_decrypted(p->stream_session))
             {
                 pop_ssn->state = STATE_COMMAND;
@@ -995,6 +1054,9 @@ void SnortPOP(SFSnortPacket *p)
 #endif
         if (pop_ssn->state == STATE_TLS_SERVER_PEND)
         {
+#ifdef DUMP_BUFFER
+    dumpBuffer(POP_STATE_TLS_SERVER_PEND_DUMP,p->payload,p->payload_size);
+#endif
             if( _dpd.streamAPI->is_session_decrypted(p->stream_session))
             {
                 pop_ssn->state = STATE_COMMAND;
@@ -1015,6 +1077,9 @@ void SnortPOP(SFSnortPacket *p)
 
         if (pop_ssn->state == STATE_TLS_DATA)
         {
+#ifdef DUMP_BUFFER
+    dumpBuffer(POP_STATE_TLS_DATA_DUMP,p->payload,p->payload_size);
+#endif
             if( _dpd.streamAPI->is_session_decrypted(p->stream_session))
             {
                 pop_ssn->state = STATE_COMMAND;

@@ -1,5 +1,5 @@
 /****************************************************************************
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -29,6 +29,7 @@
 #include "snort_pop.h"
 #include "pop_config.h"
 #include "file_api.h"
+#include "pop_util.h"
 
 static uint8_t pop_paf_id = 0;
 
@@ -66,8 +67,8 @@ typedef struct _PopPafParseCmd
 typedef struct _PopPafData
 {
     PopExpectedResp pop_state;   /* The current POP PAF state. */
-    PopPafParseCmd cmd_state;    /* all of the command parsing data */
     DataEndState end_state;   /* Current termination sequence state */
+    PopPafParseCmd cmd_state;    /* all of the command parsing data */
     MimeDataPafInfo data_info;   /* Mime Information */
     bool cmd_continued;          /* data continued from previous packet? */
     bool end_of_data;
@@ -421,13 +422,14 @@ static PAF_Status pop_paf_client(void *ssn, PopPafData *pfdata,
      uint32_t - length of payload data
      uint32_t - flags to check whether client or server
      uint32_t * - pointer to set flush point
+     uint32_t * - pointer to set header flush point
 
    Returns:
     PAF_Status - PAF_FLUSH if flush point found, PAF_SEARCH otherwise
 */
 
 static PAF_Status pop_paf(void* ssn, void** ps, const uint8_t* data,
-        uint32_t len, uint32_t flags, uint32_t* fp)
+        uint32_t len, uint64_t *flags, uint32_t* fp, uint32_t* fp_eoh)
 {
 
     PopPafData *pfdata = *(PopPafData **)ps;
@@ -437,7 +439,8 @@ static PAF_Status pop_paf(void* ssn, void** ps, const uint8_t* data,
         if (_dpd.fileAPI->check_paf_abort(ssn))
             return PAF_ABORT;
         
-        pfdata = calloc(1, sizeof(*pfdata));
+        pfdata = _dpd.snortAlloc(1, sizeof(*pfdata), PP_POP, 0);
+        
         if (pfdata == NULL)
         {
             return PAF_ABORT;
@@ -448,7 +451,7 @@ static PAF_Status pop_paf(void* ssn, void** ps, const uint8_t* data,
     }
 
 
-    if (flags & FLAG_FROM_SERVER)
+    if (*flags & FLAG_FROM_SERVER)
     {
        DEBUG_WRAP(DebugMessage(DEBUG_POP, "PAF: From server.\n"););
         return pop_paf_server(pfdata, data, len, fp);
@@ -473,6 +476,13 @@ bool is_data_end (void* ssn)
     return false;
 }
 
+void pop_paf_cleanup(void *pafData)
+{
+   if (pafData) {
+      _dpd.snortFree(pafData, sizeof(PopPafData), PP_POP, 0);
+   }
+}
+
 #ifdef TARGET_BASED
 void register_pop_paf_service (struct _SnortConfig *sc, int16_t app, tSfPolicyId policy)
 {
@@ -480,6 +490,7 @@ void register_pop_paf_service (struct _SnortConfig *sc, int16_t app, tSfPolicyId
     {
        pop_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, true, pop_paf, true);
        pop_paf_id = _dpd.streamAPI->register_paf_service(sc, policy, app, false,pop_paf, true);
+       _dpd.streamAPI->register_paf_free(pop_paf_id, pop_paf_cleanup);
     }
 }
 #endif
@@ -491,5 +502,6 @@ void register_pop_paf_port(struct _SnortConfig *sc, unsigned int i, tSfPolicyId 
     {
         pop_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, true, pop_paf, true);
         pop_paf_id = _dpd.streamAPI->register_paf_port(sc, policy, (uint16_t)i, false, pop_paf, true);
+	_dpd.streamAPI->register_paf_free(pop_paf_id, pop_paf_cleanup);
     }
 }

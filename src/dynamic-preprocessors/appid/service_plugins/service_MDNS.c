@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -110,7 +110,7 @@ typedef struct
 
 static int MDNS_init(const InitServiceAPI * const init_api);
 static int ReferencePointer(const char *start_ptr,const char **resp_endptr,   int *start_index , uint16_t data_size, uint8_t *user_name_len , unsigned offset, const tAppIdConfig *pConfig);
-MakeRNAServiceValidationPrototype(MDNS_validate);
+static int MDNS_validate(ServiceValidationArgs* args);
 static int mdnsMatcherCreate(tAppIdConfig *pConfig);
 static void mdnsMatcherDestroy(tAppIdConfig *pConfig);
 static unsigned mdnsMatchListCreate(const char *data, uint16_t dataSize, const tAppIdConfig *pConfig);
@@ -394,10 +394,14 @@ static int  MDNSUserAnalyser(tAppIdData *flowp, const SFSnortPacket *pkt, uint16
 }
 
 
-MakeRNAServiceValidationPrototype(MDNS_validate)
+static int MDNS_validate(ServiceValidationArgs* args)
 {
     ServiceMDNSData *fd;
     int ret_val;
+    tAppIdData *flowp = args->flowp;
+    const uint8_t *data = args->data;
+    SFSnortPacket *pkt = args->pkt; 
+    uint16_t size = args->size;
 
     fd = mdns_service_mod.api->data_get(flowp, mdns_service_mod.flow_data_index);
     if (!fd)
@@ -415,13 +419,13 @@ MakeRNAServiceValidationPrototype(MDNS_validate)
 
     if(pkt->dst_port == MDNS_PORT || pkt->src_port == MDNS_PORT )
     {
-        ret_val = MDNS_validate_reply(data, size );
+        ret_val = MDNS_validate_reply(data, size);
         if (ret_val == 1)
         {
-            if (appidStaticConfig.mdns_user_reporting)
+            if (appidStaticConfig->mdns_user_reporting)
             {
-                ret_val = MDNSUserAnalyser(flowp, pkt , size, pConfig);
-                mdnsMatchListDestroy(pConfig);
+                ret_val = MDNSUserAnalyser(flowp, pkt , size, args->pConfig);
+                mdnsMatchListDestroy(args->pConfig);
                 goto success;
             }
             goto success;
@@ -435,12 +439,13 @@ MakeRNAServiceValidationPrototype(MDNS_validate)
 
 
 success:
-    mdns_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
-                                      APP_ID_MDNS, NULL, NULL, NULL);
+    mdns_service_mod.api->add_service(flowp, pkt, args->dir, &svc_element,
+                                      APP_ID_MDNS, NULL, NULL, NULL, NULL);
     return SERVICE_SUCCESS;
 
 fail:
-    mdns_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, mdns_service_mod.flow_data_index, pConfig);
+    mdns_service_mod.api->fail_service(flowp, pkt, args->dir, &svc_element,
+                                       mdns_service_mod.flow_data_index, args->pConfig, NULL);
     return SERVICE_NOMATCH;
 }
 

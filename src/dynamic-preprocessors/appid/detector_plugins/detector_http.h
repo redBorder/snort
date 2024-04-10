@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -119,14 +119,52 @@ typedef struct _HEADER_MATCHED_PATTERNS
 } HeaderMatchedPatterns;
 #endif
 
+typedef struct _MatchedCHPAction {
+    CHPAction *mpattern;
+    int index;
+    struct _MatchedCHPAction *next;
+} MatchedCHPAction;
+
+// This is an array element for the dynamically growing tally below
+typedef struct _CHPMatchCandidate {
+    CHPApp *chpapp;
+    int key_pattern_length_sum;
+    int key_pattern_countdown;
+} CHPMatchCandidate;
+
+// This is a structure which will grow using realloc as needed to keep all candidates
+typedef struct _CHPMatchTally {
+    int allocated_elements;
+    int in_use_elements;
+    CHPMatchCandidate item[0];
+} CHPMatchTally;
+
 int getAppidByViaPattern(const u_int8_t *data, unsigned size, char **version, const tDetectorHttpConfig *pHttpConfig);
 int getHTTPHeaderLocation(const uint8_t *data, unsigned size, HttpId id, int *start, int *end, HeaderMatchedPatterns *hmp,
                           const tDetectorHttpConfig *pHttpConfig);
-tAppId scanCHP (PatternType ptype, char *buf, int buf_size,
-                char **version, char **user, char **new_url, char **new_cookie,
+
+static inline void FreeMatchedCHPActions(MatchedCHPAction *ma)
+{
+    MatchedCHPAction *tmp;
+
+    while(ma)
+    {
+        tmp = ma;
+        ma = ma->next;
+        free(tmp);
+    }
+}
+
+void httpGetNewOffsetsFromPacket(SFSnortPacket *pkt, httpSession *hsession, tAppIdConfig *pConfig);
+
+int scanKeyCHP (PatternType ptype, char *buf, int buf_size,
+                CHPMatchTally **ppTally, MatchedCHPAction **ppmatches, const tDetectorHttpConfig *pHttpConfig);
+
+tAppId scanCHP (PatternType ptype, char *buf, int buf_size, MatchedCHPAction *mp,
+                char **version, char **user, char **new_field,
                 int *total_found, httpSession *hsession, SFSnortPacket *p, const tDetectorHttpConfig *pHttpConfig);
-tAppId getAppIdFromUrl(char *host, char *url, char **version, 
-                       char *referer, tAppId *clientAppId, tAppId *serviceAppId, 
+tAppId getAppIdFromUrl(char *host, char *url, char **version,
+                       char *referer, tAppId *clientAppId, tAppId *serviceAppId,
                        tAppId *payloadAppId, tAppId *referredPayloadAppId, unsigned from_rtmp,
                        const tDetectorHttpConfig *pHttpConfig);
 tAppId getAppidByContentType(const uint8_t *data, int size, const tDetectorHttpConfig *pHttpConfig);

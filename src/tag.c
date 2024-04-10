@@ -1,6 +1,6 @@
 /*
 ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 **               Chris Green <cmg@sourcefire.com>
 **
@@ -274,25 +274,28 @@ void TagCacheReset(void)
  */
 static void PrintTagNode(TagNode *np)
 {
+    char sipstr[INET6_ADDRSTRLEN];
+    char dipstr[INET6_ADDRSTRLEN];
+
     if(!DebugThis(DEBUG_FLOW))
     {
         return;
     }
+
+    sfip_raw_ntop(AF_INET6, &np->key.sip, sipstr, sizeof(sipstr));
+    sfip_raw_ntop(AF_INET6, &np->key.dip, dipstr, sizeof(dipstr));
 
     printf("+--------------------------------------------------------------\n");
     printf("| Ssn Counts: %d, Host Counts: %d\n",
            ssn_tag_cache_ptr->count,
            host_tag_cache_ptr->count);
 
-    printf("| (%u) %s:%d -> ",
-            np->proto,
-           inet_ntoa(&np->key.sip), np->key.sp
-        );
-
-    printf("%s:%d Metric: %u "
+    printf("| (%u) %s:%d -> %s:%d Metric: %u "
            "LastAccess: %u, event_id: %u mode: %u event_time.tv_sec: %"PRIu64"\n"
            "| Packets: %d, Bytes: %d, Seconds: %d\n",
-           inet_ntoa(&np->key.dip), np->key.dp,
+           np->proto,
+           sipstr, np->key.sp,
+           dipstr, np->key.dp,
            np->metric,
            np->last_access,
            np->event_id,

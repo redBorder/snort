@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -42,10 +42,10 @@
 #include "client_app_api.h"
 #include "client_app_base.h"
 
-#include "client_app_smtp.h"
 #include "client_app_msn.h"
 #include "client_app_aim.h"
 #include "client_app_ym.h"
+#include "detector_cip.h"
 #include "detector_sip.h"
 #include "luaDetectorModule.h"
 #include "luaDetectorApi.h"
@@ -95,7 +95,8 @@ static InitClientAppAPI client_init_api =
     .RegisterPattern = &CClientAppRegisterPattern,
     .RegisterPatternEx = &LuaClientAppRegisterPattern,
     .RegisterPatternNoCase = &CClientAppRegisterPatternNoCase,
-    .RegisterAppId = &appSetClientValidator
+    .RegisterAppId = &appSetClientValidator,
+    .RegisterDetectorCallback = &appSetClientDetectorCallback,
 };
 
 static CleanClientAppAPI clean_api =
@@ -115,11 +116,10 @@ extern tRNAClientAppModule tns_client_mod;
 extern tRNAClientAppModule vnc_client_mod;
 extern tRNAClientAppModule pattern_udp_client_mod;
 extern tRNAClientAppModule pattern_tcp_client_mod;
-
+extern tRNAClientAppModule http_client_mod;
 
 static tRNAClientAppModule *static_client_list[] =
 {
-    &smtp_client_mod,
     &msn_client_mod,
     &aim_client_mod,
     &ym_client_mod,
@@ -135,7 +135,10 @@ static tRNAClientAppModule *static_client_list[] =
     &pattern_udp_client_mod,
     &pattern_tcp_client_mod,
     &dns_udp_client_mod,
-    &dns_tcp_client_mod
+    &dns_tcp_client_mod,
+    &http_client_mod,
+    &cip_client_mod,
+    &enip_client_mod
 };
 
 /*static const char * const MODULE_NAME = "ClientApp"; */
@@ -158,7 +161,7 @@ RNAClientAppModuleConfig *getClientAppModuleConfig(const char *moduleName, tClie
     return mod_config;
 }
 
-const tRNAClientAppModule *ClientAppGetClientAppModule(RNAClientAppFCN fcn, struct _Detector *userdata,
+tRNAClientAppModule *ClientAppGetClientAppModule(RNAClientAppFCN fcn, struct _Detector *userdata,
                                                       tClientAppConfig *pClientAppConfig)
 {
     RNAClientAppRecord *li;
@@ -613,7 +616,7 @@ void UnconfigureClientApp(tAppIdConfig *pConfig)
  *
  * @param args
  */
-void ClientAppInit(tAppIdConfig *pConfig)
+void ClientAppInit(tAppidStaticConfig* appidSC, tAppIdConfig *pConfig)
 {
     RNAClientAppRecord *li;
 
@@ -624,10 +627,10 @@ void ClientAppInit(tAppIdConfig *pConfig)
     DisplayClientAppConfig(&pConfig->clientAppConfig);
 
     if (pConfig->clientAppConfig.enabled)
-     {
+    {
         client_init_api.debug = app_id_debug;
         client_init_api.pAppidConfig = pConfig;
-        client_init_api.instance_id = appidStaticConfig.instance_id;
+        client_init_api.instance_id = appidSC->instance_id;
 
         for (li = pConfig->clientAppConfig.tcp_client_app_list; li; li = li->next)
             initialize_module(li, &pConfig->clientAppConfig);
@@ -674,7 +677,7 @@ static ClientAppMatch *match_free_list;
  */
 void CleanupClientApp(tAppIdConfig *pConfig)
 {
-#ifdef RNA_FULL_CLEANUP
+#ifdef APPID_FULL_CLEANUP
     ClientAppMatch *match;
     tClientPatternData *pd;
     RNAClientAppRecord *li;
@@ -778,8 +781,11 @@ static int pattern_match(void* id, void *unused_tree, int index, void* data, voi
     return 0;
 }
 
-void AppIdAddClientApp(tAppIdData *flowp, tAppId service_id, tAppId id, const char *version)
+void AppIdAddClientApp(SFSnortPacket *p, int direction, const tAppIdConfig *pConfig, tAppIdData *flowp, tAppId service_id, tAppId id, const char *version)
 {
+    tAppId tmpAppId = flowp->clientAppId;
+    tAppId tmpServiceAppId = flowp->clientServiceAppId;
+
     if (version)
     {
         if (flowp->clientVersion)
@@ -800,10 +806,16 @@ void AppIdAddClientApp(tAppIdData *flowp, tAppId service_id, tAppId id, const ch
         }
     }
 
-    setAppIdExtFlag(flowp, APPID_SESSION_CLIENT_DETECTED);
+    setAppIdFlag(flowp, APPID_SESSION_CLIENT_DETECTED);
     flowp->clientServiceAppId = service_id;
     flowp->clientAppId = id;
     checkSandboxDetection(id);
+
+    if (id > APP_ID_NONE && tmpAppId != id)
+        CheckDetectorCallback(p, flowp, (APPID_SESSION_DIRECTION) direction, id, pConfig);
+
+    if (service_id > APP_ID_NONE && tmpServiceAppId != service_id)
+        CheckDetectorCallback(p, flowp, (APPID_SESSION_DIRECTION) direction, service_id, pConfig);
 }
 
 static void AppIdAddClientAppInfo(tAppIdData *flowp, const char *info)
@@ -965,24 +977,6 @@ static void ClientAppID(SFSnortPacket *p, const int dir, tAppIdData *flowp, cons
     }
     FreeClientPatternList(&match_list);
 
-    if (sflist_count(flowp->candidate_client_list) == 0)
-    {
-        client = NULL;
-        switch (p->dst_port)
-        {
-            case 465:
-                if (getAppIdExtFlag(flowp, APPID_SESSION_DECRYPTED))
-                    client = &smtp_client_mod;
-                break;
-            default:
-                break;
-        }
-        if (client != NULL)
-        {
-            sflist_add_tail(flowp->candidate_client_list, (void*)client);
-            flowp->num_candidate_clients_tried++;
-        }
-    }
 }
 
 int AppIdDiscoverClientApp(SFSnortPacket *p, int direction, tAppIdData *rnaData, const tAppIdConfig *pConfig)
@@ -993,10 +987,10 @@ int AppIdDiscoverClientApp(SFSnortPacket *p, int direction, tAppIdData *rnaData,
     if (direction == APP_ID_FROM_INITIATOR)
     {
         /* get out if we've already tried to validate a client app */
-        if (!getAppIdExtFlag(rnaData, APPID_SESSION_CLIENT_DETECTED))
+        if (!getAppIdFlag(rnaData, APPID_SESSION_CLIENT_DETECTED))
             ClientAppID(p, direction, rnaData, pConfig);
     }
-    else if (rnaData->rnaServiceState != RNA_STATE_STATEFUL && getAppIdExtFlag(rnaData, APPID_SESSION_CLIENT_GETS_SERVER_PACKETS))
+    else if (rnaData->rnaServiceState != RNA_STATE_STATEFUL && getAppIdFlag(rnaData, APPID_SESSION_CLIENT_GETS_SERVER_PACKETS))
         ClientAppID(p, direction, rnaData, pConfig);
 
     return APPID_SESSION_SUCCESS;

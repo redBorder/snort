@@ -1,7 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2005-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -327,6 +327,10 @@ static void React_GetPage (struct _SnortConfig *sc)
         FatalError("react: %s(%d) can't stat react page file '%s'.\n",
             file_name, file_line, sc->react_page);
 
+    if ( fs.st_size < 2 )
+        FatalError("react: react page %s size is not adequate.\n",
+            sc->react_page);
+
     s_page = SnortAlloc(fs.st_size+1);
     fd = fopen(sc->react_page, "r");
 
@@ -342,6 +346,7 @@ static void React_GetPage (struct _SnortConfig *sc)
             file_name, file_line, sc->react_page);
 
     s_page[n] = '\0';
+
     msg = strstr(s_page, MSG_KEY);
     if ( msg ) strncpy(msg, "%s", 2);
 
@@ -447,6 +452,16 @@ static int React_Queue (Packet* p, void* pv)
         Active_QueueResponse(React_Send, rd);
 
     Active_DropSession(p);
+    if (pkt_trace_enabled)
+    {
+        if (rd && rd->otn)
+            addPktTraceData(VERDICT_REASON_REACT, snprintf(trace_line, MAX_TRACE_LINE,
+                "Snort React: web page %s, gid %u, sid %u, %s\n", Active_IsRSTCandidate(p)? "is sent" : "isn't sent",
+                rd->otn->sigInfo.generator, rd->otn->sigInfo.id, getPktTraceActMsg()));
+        else addPktTraceData(VERDICT_REASON_REACT, snprintf(trace_line, MAX_TRACE_LINE,
+                "Snort React: web page %s, %s\n", Active_IsRSTCandidate(p)? "is sent" : "isn't sent", getPktTraceActMsg()));
+    }
+    else addPktTraceData(VERDICT_REASON_REACT, 0);
 
     PREPROC_PROFILE_END(reactPerfStats);
     return 0;

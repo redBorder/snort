@@ -3,7 +3,7 @@
  **
  **  snort_dump_packets.c
  **
- **  Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ **  Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  **  Copyright (C) 2002-2013 Sourcefire, Inc.
  **  Author(s):  Ron Dempster <rdempster@sourcefire.com>
  **
@@ -46,7 +46,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
-
+#include <stdint.h>
 #include "sfcontrol.h"
 
 #ifndef PATH_MAX
@@ -83,7 +83,7 @@ static int SendMessage(int socket_fd, const CSMessage *msg, uint32_t len)
 
     do
     {
-        numsent = write(socket_fd, (*(uint8_t **)&msg) + total, total_len - total);
+        numsent = write(socket_fd, ((unsigned char *)msg) + total, total_len - total);
         if (!numsent)
             return 0;
         else if (numsent > 0)
@@ -121,7 +121,7 @@ static int ReadResponse(int socket_fd, CSMessageHeader *hdr)
 
     do
     {
-        numread = read(socket_fd, (*(uint8_t **)&hdr) + total, sizeof(*hdr) - total);
+        numread = read(socket_fd, ((unsigned char *)hdr) + total, sizeof(*hdr) - total);
         if (!numread)
             return 0;
         else if (numread > 0)

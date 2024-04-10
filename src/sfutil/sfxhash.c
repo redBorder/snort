@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -315,6 +315,7 @@ void sfxhash_delete_free_list(SFXHASH *t)
 
     t->fhead = NULL;
     t->ftail = NULL;
+    t->anr_count = 0;
 }
 
 /*!
@@ -423,6 +424,7 @@ void sfxhash_save_free_node( SFXHASH *t, SFXHASH_NODE * hnode )
         t->fhead    = hnode;
         t->ftail    = hnode;
     }
+    t->anr_count++;
 }
 
 /**Get a previously freed node for reuse.
@@ -433,14 +435,15 @@ SFXHASH_NODE * sfxhash_get_free_node( SFXHASH *t )
     SFXHASH_NODE * node = t->fhead;
 
     /* Remove A Node from the Free Node List - remove the head node */
-    if( t->fhead  )
+    if( node  )
     {
-        t->fhead = t->fhead->gnext;
+        t->fhead = node->gnext;
         if( t->fhead )
             t->fhead->gprev = 0;
 
         if( t->ftail  == node ) /* no more nodes - clear the tail */
             t->ftail  =  0;
+        t->anr_count--;
     }
 
     return node;
@@ -754,6 +757,8 @@ static int sfxhash_add_ex( SFXHASH * t, const void * key, void* data , void **da
 
     /* Track # active nodes */
     t->count++;
+
+    t->cnode = hnode;
 
     return SFXHASH_OK;
 }
@@ -1091,6 +1096,67 @@ int sfxhash_free_node( SFXHASH * t, SFXHASH_NODE * hnode)
     return SFXHASH_OK;
 }
 
+/*
+ *  Unlink and free an ANR node or the oldest node, if ANR is empty
+ *  behavior is undefined if t->usrfree is set
+ */
+int sfxhash_free_anr_lru( SFXHASH * t )
+{
+    if (!t)
+        return SFXHASH_ERR;
+    if (t->fhead)
+    {
+        SFXHASH_NODE* fn = sfxhash_get_free_node(t);
+        if (fn)
+        {
+            s_free(t, fn);
+            return SFXHASH_OK;
+        }
+    }
+    if (t->gtail)
+    {
+        if (SFXHASH_OK == sfxhash_free_node(t, t->gtail))
+        {
+            if (t->fhead)
+            {
+                SFXHASH_NODE* fn = sfxhash_get_free_node(t);
+                if (fn)
+                {
+                    s_free(t, fn);
+                    return SFXHASH_OK;
+                }
+            }
+            //sfxhash_free_node calls s_free for us
+            //when these conditions are met so we should
+            //return SFXHASH_OK
+            else if (!t->recycle_nodes)
+            {
+                return SFXHASH_OK;
+            }
+        }
+    }
+    return SFXHASH_ERR;
+}
+
+/*
+ *  Unlink and free an ANR node
+ */
+int sfxhash_free_anr( SFXHASH * t )
+{
+    if (!t)
+        return SFXHASH_ERR;
+    if (t->fhead)
+    {
+        SFXHASH_NODE* fn = sfxhash_get_free_node(t);
+        if (fn)
+        {
+            s_free(t, fn);
+            return SFXHASH_OK;
+        }
+    }
+    return SFXHASH_ERR;
+}
+
 /*!
  * Remove a Key + Data Pair from the table.
  *
@@ -1262,12 +1328,74 @@ unsigned sfxhash_calc_maxmem(unsigned num_entries, unsigned entry_cost)
 }
 
 /*
+ * Try to decrease the memcap
+ *      First decrease memcap, then delete free list, then kick out lru nodes
+ *  Behavior is undefined when t->usrfree is set
+ *
+ * @param t             SFXHASH table pointer
+ * @param new_memcap    the new desired memcap
+ * @param max_work      the maximum amount of work for the function to do (0 = do all available work)
+ *
+ * @return SFXHASH_OK           when memcap is successfully decreased
+ * @return SFXHASH_PENDING      when more work needs to be done
+ * @return SFXHASH_NOMEM        when there isn't enough memory in the hash table
+ * #return SFXHASH_ERR          when an error has occurred
+ */
+int sfxhash_change_memcap( SFXHASH * t, unsigned long new_memcap, unsigned *max_work )
+{
+    unsigned work = 0;
+
+    if (!t)
+        return SFXHASH_ERR;
+
+    if (new_memcap == t->mc.memcap)
+    {
+        return SFXHASH_OK;
+    }
+
+    if (new_memcap > t->mc.memcap)
+    {
+        t->mc.memcap = new_memcap;
+        return SFXHASH_OK;
+    }
+
+    //memcap decreased
+
+    if (new_memcap < t->overhead_bytes)
+        return SFXHASH_ERR;
+
+    while (new_memcap < t->mc.memused
+            && (work < *max_work || *max_work == 0)
+            && sfxhash_free_anr_lru(t) == SFXHASH_OK)
+        work++;
+
+    if (work == *max_work && new_memcap < t->mc.memused)
+    {
+	*max_work -= work;
+        return SFXHASH_PENDING;
+    }
+
+	*max_work -= work;
+
+    //else mem decrased or we ran out of work (no more nodes to free)
+
+    //we ran out of nodes to free and there still isnt enough memory
+    //or (we have undefined behavior: t->usrfree is set and sfxhash_free_anr_lru is returning SFXHASH_ERR)
+    if (new_memcap < t->mc.memused)
+        return SFXHASH_NOMEM;
+
+    t->mc.memcap = new_memcap;
+
+    return SFXHASH_OK;
+}
+
+/*
  * -----------------------------------------------------------------------------------------
  *   Test Driver for Hashing
  * -----------------------------------------------------------------------------------------
  */
-#ifdef SFXHASH_MAIN
 
+#ifdef SFXHASH_MAIN
 
 /*
    This is called when the user releases a node or kills the table

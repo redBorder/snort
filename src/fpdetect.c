@@ -3,7 +3,7 @@
 **
 **  fpdetect.c
 **
-**  Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+**  Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 **  Copyright (C) 2002-2013 Sourcefire, Inc.
 **  Author(s):  Dan Roelker <droelker@sourcefire.com>
 **              Marc Norton <mnorton@sourcefire.com>
@@ -247,6 +247,12 @@ int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
             (rtn->type == RULE_TYPE__REJECT))
         {
             Active_DropSession(p);
+            if (pkt_trace_enabled)
+            {
+                addPktTraceData(VERDICT_REASON_SNORT, snprintf(trace_line, MAX_TRACE_LINE,
+                    "Snort fpdetect: gid %u, sid %u, %s\n", otn->sigInfo.generator, otn->sigInfo.id, getPktTraceActMsg()));
+            }
+            else addPktTraceData(VERDICT_REASON_SNORT, 0);
         }
         fpLogOther(p, otn, rtn->type);
         return 1;
@@ -304,6 +310,12 @@ int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
              (action == RULE_TYPE__REJECT) )
         {
             Active_DropSession(p);
+            if (pkt_trace_enabled)
+            {
+                addPktTraceData(VERDICT_REASON_SNORT, snprintf(trace_line, MAX_TRACE_LINE,
+                    "Snort fpdetect_filter: gid %u, sid %u, %s\n", otn->sigInfo.generator, otn->sigInfo.id, getPktTraceActMsg()));
+            }
+            else addPktTraceData(VERDICT_REASON_SNORT, 0);
         }
         pc.event_limit++;
         fpLogOther(p, otn, action);
@@ -340,18 +352,8 @@ int fpLogEvent(RuleTreeNode *rtn, OptTreeNode *otn, Packet *p)
             SetTags(p, otn, rtn, event_id);
             break;
 
-        case RULE_TYPE__ACTIVATE:
-            ActivateAction(p, otn, rtn, &otn->event_data);
-            SetTags(p, otn, rtn, event_id);
-            break;
-
         case RULE_TYPE__ALERT:
             AlertAction(p, otn, rtn, &otn->event_data);
-            SetTags(p, otn, rtn, event_id);
-            break;
-
-        case RULE_TYPE__DYNAMIC:
-            DynamicAction(p, otn, rtn, &otn->event_data);
             SetTags(p, otn, rtn, event_id);
             break;
 
@@ -513,20 +515,6 @@ int fpEvalRTN(RuleTreeNode *rtn, Packet *p, int check_ports)
 
     /* TODO: maybe add a port test here ... */
 
-    if (rtn->type == RULE_TYPE__DYNAMIC)
-    {
-        if (!snort_conf->active_dynamic_nodes)
-        {
-            PREPROC_PROFILE_END(ruleRTNEvalPerfStats);
-            return 0;
-        }
-
-        if(rtn->active_flag == 0)
-        {
-            PREPROC_PROFILE_END(ruleRTNEvalPerfStats);
-            return 0;
-        }
-    }
 
     DEBUG_WRAP(DebugMessage(DEBUG_DETECT, "[*] Rule Head %d\n",
                 rtn->head_node_number);)
@@ -632,6 +620,7 @@ static int rule_tree_match( void * id, void *tree, int index, void * data, void 
     eval_data.pmd = pmd;
     eval_data.flowbit_failed = 0;
     eval_data.flowbit_noalert = 0;
+    eval_data.detection_filter_count = 0;
 
     PREPROC_PROFILE_START(rulePerfStats);
 
@@ -1090,12 +1079,12 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
 {
     void * so;
     int start_state;
-    const uint8_t *tmp_payload;
-    uint16_t tmp_dsize;
-    IPHdr *tmp_iph;
-    IP6Hdr *tmp_ip6h;
-    IP4Hdr *tmp_ip4h;
-    IPH_API *tmp_api;
+    const uint8_t *tmp_payload = NULL;
+    uint16_t tmp_dsize = 0;
+    IPHdr *tmp_iph = NULL;
+    IP6Hdr *tmp_ip6h = NULL;
+    IP4Hdr *tmp_ip4h = NULL;
+    IPH_API *tmp_api = NULL;
     char repeat = 0;
     FastPatternConfig *fp = snort_conf->fast_pattern_config;
     PROFILE_VARS;
@@ -1107,7 +1096,7 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
         tmp_ip4h = (void *)p->ip4h;
         tmp_payload = p->data;
         tmp_dsize = p->dsize;
-	 tmp_api = p->iph_api;
+        tmp_api = p->iph_api;
 
         /* Set the packet payload pointers to that of IP,
          ** since this is an IP rule. */
@@ -1119,7 +1108,7 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
             p->ip4h = &p->outer_ip4h;
             p->data = p->outer_ip_data;
             p->dsize = p->outer_ip_dsize;
-	     p->iph_api = p->outer_iph_api;
+            p->iph_api = p->outer_iph_api;
             p->packet_flags |= PKT_IP_RULE;
             repeat = 2;
         }
@@ -1353,6 +1342,7 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
             eval_data.pmd = NULL;
             eval_data.flowbit_failed = 0;
             eval_data.flowbit_noalert = 0;
+            eval_data.detection_filter_count = 0;
 
             PREPROC_PROFILE_START(ncrulePerfStats);
             rval = detection_option_tree_evaluate(port_group->pgNonContentTree, &eval_data);
@@ -1381,7 +1371,7 @@ static inline int fpEvalHeaderSW(PORT_GROUP *port_group, Packet *p,
             p->ip4h = &p->inner_ip4h;
             p->data = p->ip_data;
             p->dsize = p->ip_dsize;
-	     p->iph_api = tmp_api;
+            p->iph_api = tmp_api;
             p->packet_flags |= PKT_IP_RULE_2ND | PKT_IP_RULE;
             repeat--;
         }
@@ -1402,7 +1392,7 @@ fp_eval_header_sw_reset_ip:
         p->ip4h = tmp_ip4h;
         p->data = tmp_payload;
         p->dsize = tmp_dsize;
-	 p->iph_api = tmp_api;
+        p->iph_api = tmp_api;
         p->packet_flags &= ~(PKT_IP_RULE| PKT_IP_RULE_2ND);
     }
 

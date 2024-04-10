@@ -23,9 +23,16 @@ endif
 
 libsf_ssl_preproc_la_SOURCES = \
 ssl_setup.c \
-ssl_setup.h 
+ssl_setup.h
+
+if BUILD_BUFFER_DUMP
+libsf_ssl_preproc_la_SOURCES += \
+ssl_buffer_dump.c \
+ssl_buffer_dump.h
+endif
 
 EXTRA_DIST = \
+sf_ssl.vcxproj \
 sf_ssl.dsp
 
 all-local: $(LTLIBRARIES)

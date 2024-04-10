@@ -1,5 +1,5 @@
 /****************************************************************************
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2011-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -160,6 +160,5 @@ DEBUG_WRAP(void ReputationPrintRepInfo(IPrepInfo * repInfo, uint8_t *base);)
 #ifdef REPUTATION_GEOIP
 void initGeoFilesWithManifiest(struct _SnortConfig *,void *config);
 #endif
-
 
 #endif

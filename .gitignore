@@ -27,7 +27,6 @@
 # temp files
 *~ 
 
-Makefile
 config.h
 config.log
 config.status
@@ -46,3 +45,7 @@ stamp-h1
 /tools/u2spewfoo/u2spewfoo
 /tools/u2spewfoo/u2spewfoo-u2spewfoo.o
 autom4te.cache
+
+#RPM
+pkgs
+SOURCES

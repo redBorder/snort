@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -77,7 +77,7 @@ typedef struct _FLAP_HEADER
 #pragma pack()
 
 static int flap_init(const InitServiceAPI * const init_api);
-MakeRNAServiceValidationPrototype(flap_validate);
+static int flap_validate(ServiceValidationArgs* args);
 
 static tRNAServiceElement svc_element =
 {
@@ -122,17 +122,20 @@ static int flap_init(const InitServiceAPI * const init_api)
     return 0;
 }
 
-MakeRNAServiceValidationPrototype(flap_validate)
+static int flap_validate(ServiceValidationArgs* args)
 {
     ServiceFLAPData *sf;
-    const FLAPHeader *hdr = (const FLAPHeader *)data;
+    const uint8_t *data = args->data;
+    const FLAPHeader *hdr = (const FLAPHeader *)args->data;
     const FLAPFNAC *ff;
     const FLAPTLV *tlv;
+    tAppIdData *flowp = args->flowp;
+    uint16_t size = args->size;
     uint16_t len;
 
     if (!size)
         goto inprocess;
-    if (dir != APP_ID_FROM_RESPONDER)
+    if (args->dir != APP_ID_FROM_RESPONDER)
         goto inprocess;
 
     sf = flap_service_mod.api->data_get(flowp, flap_service_mod.flow_data_index);
@@ -211,16 +214,17 @@ MakeRNAServiceValidationPrototype(flap_validate)
     }
 
 fail:
-    flap_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, flap_service_mod.flow_data_index, pConfig);
+    flap_service_mod.api->fail_service(flowp, args->pkt, args->dir, &svc_element,
+                                       flap_service_mod.flow_data_index, args->pConfig, NULL);
     return SERVICE_NOMATCH;
 
 success:
-    flap_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
-                                      APP_ID_AOL_INSTANT_MESSENGER, NULL, NULL, NULL);
+    flap_service_mod.api->add_service(flowp, args->pkt, args->dir, &svc_element,
+                                      APP_ID_AOL_INSTANT_MESSENGER, NULL, NULL, NULL, NULL);
     return SERVICE_SUCCESS;
 
 inprocess:
-    flap_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+    flap_service_mod.api->service_inprocess(flowp, args->pkt, args->dir, &svc_element, NULL);
     return SERVICE_INPROCESS;
 }
 

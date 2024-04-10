@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -31,17 +31,18 @@
 #define MAX_USERNAME_SIZE   64
 #define MAX_URL_SIZE    65535
 
+// These values are used in Lua code as raw numbers. Do NOT reassign new values.
 typedef enum
 {
-    SINGLE,
-    SKYPE_URL,
-    SKYPE_VERSION,
-    BT_ANNOUNCE,
-    BT_OTHER,
+    SINGLE = 0,
+    SKYPE_URL = 1,
+    SKYPE_VERSION = 2,
+    BT_ANNOUNCE = 3,
+    BT_OTHER = 4,
+    USER_AGENT_HEADER = 5
 /*  HOST_HEADER,
     CONTENT_TYPE_HEADER,
-    SERVER_HEADER, */
-    USER_AGENT_HEADER
+    SERVER_HEADER */
 } DHPSequence;
 
 
@@ -92,10 +93,12 @@ typedef struct DetectorAppUrlListStruct
     size_t                  allocatedCount;
 } DetectorAppUrlList;
 
+// These values are used in Lua code as raw numbers. Do NOT reassign new values.
 #define APP_TYPE_SERVICE    0x1
 #define APP_TYPE_CLIENT     0x2
 #define APP_TYPE_PAYLOAD    0x4
 
+// These values are used in Lua code as raw numbers. Do NOT reassign new values.
 typedef enum {
     NO_ACTION,                              //0
     COLLECT_VERSION,                        //1
@@ -112,9 +115,11 @@ typedef enum {
     HOLD_FLOW,                              //12
     GET_OFFSETS_FROM_REBUILT,               //13
     SEARCH_UNSUPPORTED,                     //14
-    MAX_ACTION_TYPE = SEARCH_UNSUPPORTED,    
+    DEFER_TO_SIMPLE_DETECT,                 //15
+    MAX_ACTION_TYPE = DEFER_TO_SIMPLE_DETECT,
 } ActionType;
 
+// These values are used in Lua code as raw numbers. Do NOT reassign new values.
 typedef enum {
     // Request-side headers
     AGENT_PT,          // 0
@@ -128,26 +133,47 @@ typedef enum {
     LOCATION_PT,       // 7
     BODY_PT,           // 8
     MAX_PATTERN_TYPE = BODY_PT,
+    MAX_KEY_PATTERN = URI_PT,
 } PatternType;
 
+#define CHP_APPID_BITS_FOR_INSTANCE  7
+#define CHP_APPID_INSTANCE_MAX (1 << CHP_APPID_BITS_FOR_INSTANCE)
+#define CHP_APPIDINSTANCE_TO_ID(_appIdInstance) \
+        (_appIdInstance >> CHP_APPID_BITS_FOR_INSTANCE)
+#define CHP_APPIDINSTANCE_TO_INSTANCE(_appIdInstance) \
+        (_appIdInstance & (CHP_APPID_INSTANCE_MAX-1))
+/*
+  NOTE: The following structures have a field called appIdInstance.
+    The low-order CHP_APPID_BITS_FOR_INSTANCE bits of appIdInstance field are used
+    for the instance value while the remaining bits are used for the appId, shifted left
+    that same number of bits. The legacy value for older apis is generated with the
+    macro below.
+*/
+#define CHP_APPID_SINGLE_INSTANCE(_appId) \
+        ((_appId << CHP_APPID_BITS_FOR_INSTANCE) + (CHP_APPID_INSTANCE_MAX-1))
+
+typedef struct _CHPApp {
+    tAppId appIdInstance; // * see note above
+    unsigned app_type_flags;
+    int num_matches;
+    int num_scans;
+    int key_pattern_count;
+    int key_pattern_length_sum;
+    int ptype_scan_counts[NUMBER_OF_PTYPES];
+    int ptype_req_counts[NUMBER_OF_PTYPES];
+} CHPApp;
+
 typedef struct _CHPAction {
-    tAppId appId;
+    tAppId appIdInstance; // * see note above
+    uint precedence; // order of creation
     int key_pattern;
     PatternType ptype;
     int psize;
     char *pattern;
     ActionType action;
     char *action_data;
+    CHPApp *chpapp;
 } CHPAction;
-
-typedef struct _CHPApp {
-    tAppId appId;
-    unsigned app_type_flags;
-    int num_matches;
-    int num_scans;
-    int ptype_scan_counts[NUMBER_OF_PTYPES];
-    int ptype_req_counts[NUMBER_OF_PTYPES];
-} CHPApp;    
 
 typedef struct _CHPListElement
 {
@@ -204,6 +230,7 @@ struct DetectorHttpConfig
     void *RTMPHostUrlMatcher;
     void *header_matcher;
     void *content_type_matcher;
+    void *field_matcher;
 
     // CHP matchers
     // TODO: Is there a need for these variables? They just point to the pointers in the

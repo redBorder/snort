@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -141,6 +141,10 @@ void ps_tracker_print(PS_TRACKER *tracker);
 
 int ps_get_protocols(struct _SnortConfig *sc, tSfPolicyId policyId);
 void ps_init_hash(unsigned long);
+#ifdef SNORT_RELOAD
+bool ps_reload_adjust(unsigned long memcap, unsigned max_work);
+unsigned int ps_hash_overhead_bytes();
+#endif
 
 #endif
 

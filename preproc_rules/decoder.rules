@@ -77,6 +77,7 @@ alert ( msg:"DECODE_IPV6_BAD_OPT_LEN"; sid:295; gid:116; rev:1; metadata:rule-ty
 alert ( msg:"DECODE_IPV6_UNORDERED_EXTENSIONS"; sid:296; gid:116; rev:1; metadata:rule-type decode; classtype:protocol-command-decode; )
 alert ( msg:"DECODE_GTP_MULTIPLE_ENCAPSULATION"; sid:297; gid:116; rev:1; metadata:rule-type decode; classtype:protocol-command-decode; )
 alert ( msg:"DECODE_GTP_BAD_LEN_STR"; sid:298; gid:116; rev:1; metadata:rule-type decode; classtype:protocol-command-decode; )
+alert ( msg:"DECODE_DECODING_DEPTH_EXCEEDED"; sid:300; gid:116; rev:1; metadata:rule-type decode; classtype:protocol-command-decode; )
 alert ( msg:"DECODE_BAD_MPLS"; sid:170; gid:116; rev:1; metadata:rule-type decode; classtype:protocol-command-decode; )
 alert ( msg:"DECODE_BAD_MPLS_LABEL0"; sid:171; gid:116; rev:1; metadata:rule-type decode; classtype:protocol-command-decode; )
 alert ( msg:"DECODE_BAD_MPLS_LABEL1"; sid:172; gid:116; rev:1; metadata:rule-type decode; classtype:protocol-command-decode; )

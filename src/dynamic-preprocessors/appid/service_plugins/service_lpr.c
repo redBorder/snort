@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -64,7 +64,7 @@ typedef struct _SERVICE_LPR_DATA
 } ServiceLPRData;
 
 static int lpr_init(const InitServiceAPI * const init_api);
-MakeRNAServiceValidationPrototype(lpr_validate);
+static int lpr_validate(ServiceValidationArgs* args);
 
 static tRNAServiceElement svc_element =
 {
@@ -103,10 +103,14 @@ static int lpr_init(const InitServiceAPI * const init_api)
     return 0;
 }
 
-MakeRNAServiceValidationPrototype(lpr_validate)
+static int lpr_validate(ServiceValidationArgs* args)
 {
     ServiceLPRData *ld;
     int i;
+    tAppIdData *flowp = args->flowp;
+    const uint8_t *data = args->data;
+    const int dir = args->dir;
+    uint16_t size = args->size;
 
     if (!size) goto inprocess;
 
@@ -214,20 +218,22 @@ MakeRNAServiceValidationPrototype(lpr_validate)
         goto bail;
     }
 inprocess:
-    lpr_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+    lpr_service_mod.api->service_inprocess(flowp, args->pkt, dir, &svc_element, NULL);
     return SERVICE_INPROCESS;
 
 success:
-    lpr_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
-                                     APP_ID_PRINTSRV, NULL, NULL, NULL);
+    lpr_service_mod.api->add_service(flowp, args->pkt, dir, &svc_element,
+                                     APP_ID_PRINTSRV, NULL, NULL, NULL, NULL);
     return SERVICE_SUCCESS;
 
 fail:
-    lpr_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, lpr_service_mod.flow_data_index, pConfig);
+    lpr_service_mod.api->fail_service(flowp, args->pkt, dir, &svc_element,
+                                      lpr_service_mod.flow_data_index, args->pConfig, NULL);
     return SERVICE_NOMATCH;
 
 bail:
-    lpr_service_mod.api->incompatible_data(flowp, pkt, dir, &svc_element, lpr_service_mod.flow_data_index, pConfig);
+    lpr_service_mod.api->incompatible_data(flowp, args->pkt, dir, &svc_element,
+                                           lpr_service_mod.flow_data_index, args->pConfig, NULL);
     return SERVICE_NOT_COMPATIBLE;
 }
 

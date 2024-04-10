@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -150,7 +150,7 @@ static Detector_Pattern client_patterns[] =
 };
 
 static int krb_server_init(const InitServiceAPI * const init_api);
-MakeRNAServiceValidationPrototype(krb_server_validate);
+static int krb_server_validate(ServiceValidationArgs* args);
 
 static tRNAServiceElement svc_element =
 {
@@ -280,7 +280,7 @@ static int krb_server_init(const InitServiceAPI * const init_api)
 #define ERROR_MSG_TYPE      0x1e
 
 static KRB_RETCODE krb_walk_client_packet(KRBState *krbs, const uint8_t *s, const uint8_t *end,
-                                          tAppIdData *flowp, SFSnortPacket *pkt)
+                                           tAppIdData *flowp, SFSnortPacket *pkt, int dir, const tAppIdConfig *pConfig)
 {
     static const uint8_t KRB_CLIENT_VERSION[] = "\x0a1\x003\x002\x001";
     static const uint8_t KRB_CLIENT_TYPE[] = "\x0a2\x003\x002\x001";
@@ -403,7 +403,7 @@ static KRB_RETCODE krb_walk_client_packet(KRBState *krbs, const uint8_t *s, cons
 #endif
                         if (!krbs->added)
                         {
-                            client_app_mod.api->add_app(flowp, APP_ID_KERBEROS, APP_ID_KERBEROS, krbs->ver);
+                            client_app_mod.api->add_app(pkt, dir, pConfig, flowp, APP_ID_KERBEROS, APP_ID_KERBEROS, krbs->ver);
                             krbs->added = 1;
                         }
                         krbs->state = KRB_STATE_APP;
@@ -923,11 +923,11 @@ static KRB_RETCODE krb_walk_server_packet(KRBState *krbs, const uint8_t *s, cons
 #endif
         if (krbs->flags & KRB_FLAG_SERVICE_DETECTED)
         {
-            if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED) && pkt)
+            if (!getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED) && pkt)
             {
                 service_mod.api->add_service(flowp, pkt, dir, &svc_element, APP_ID_KERBEROS,
-                        NULL, krbs->ver, NULL);
-                setAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED);
+                        NULL, krbs->ver, NULL, NULL);
+                setAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED);
             }
 
         }
@@ -1003,18 +1003,18 @@ static CLIENT_APP_RETCODE krb_client_validate(const uint8_t *data, uint16_t size
     {
         fd->need_continue = 1;
         fd->set_flags = 1;
-        setAppIdExtFlag(flowp, APPID_SESSION_CLIENT_GETS_SERVER_PACKETS);
+        setAppIdFlag(flowp, APPID_SESSION_CLIENT_GETS_SERVER_PACKETS);
     }
 
     if (dir == APP_ID_FROM_INITIATOR)
     {
-        if (krb_walk_client_packet(&fd->clnt_state, s, end, flowp, pkt) == KRB_FAILED)
+        if (krb_walk_client_packet(&fd->clnt_state, s, end, flowp, pkt, dir, pConfig) == KRB_FAILED)
         {
 #ifdef DEBUG_KERBEROS
             _dpd.debugMsg(DEBUG_LOG,"%p Failed\n",flowp);
 #endif
-            setAppIdExtFlag(flowp, APPID_SESSION_CLIENT_DETECTED);
-            clearAppIdExtFlag(flowp, APPID_SESSION_CLIENT_GETS_SERVER_PACKETS);
+            setAppIdFlag(flowp, APPID_SESSION_CLIENT_DETECTED);
+            clearAppIdFlag(flowp, APPID_SESSION_CLIENT_GETS_SERVER_PACKETS);
             return CLIENT_APP_SUCCESS;
         }
     }
@@ -1023,16 +1023,21 @@ static CLIENT_APP_RETCODE krb_client_validate(const uint8_t *data, uint16_t size
 #ifdef DEBUG_KERBEROS
         _dpd.debugMsg(DEBUG_LOG,"%p Server Failed\n",flowp);
 #endif
-        clearAppIdExtFlag(flowp, APPID_SESSION_CLIENT_GETS_SERVER_PACKETS);
+        clearAppIdFlag(flowp, APPID_SESSION_CLIENT_GETS_SERVER_PACKETS);
     }
     return CLIENT_APP_INPROCESS;
 }
 
-MakeRNAServiceValidationPrototype(krb_server_validate)
+static int krb_server_validate(ServiceValidationArgs* args)
 {
+    DetectorData *fd;
+    tAppIdData *flowp = args->flowp;
+    const uint8_t *data = args->data;
+    SFSnortPacket *pkt = args->pkt; 
+    const int dir = args->dir;
+    uint16_t size = args->size;
     const uint8_t *s = data;
     const uint8_t *end = (data + size);
-    DetectorData *fd;
 
 #ifdef DEBUG_KERBEROS
     _dpd.debugMsg(DEBUG_LOG, "%p Processing %u %u->%u %u %d", flowp, flowp->proto, pkt->src_port,
@@ -1076,11 +1081,11 @@ MakeRNAServiceValidationPrototype(krb_server_validate)
     }
 
     if (fd->need_continue)
-        setAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
+        setAppIdFlag(flowp, APPID_SESSION_CONTINUE);
     else
     {
-        clearAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
-        if (getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
+        clearAppIdFlag(flowp, APPID_SESSION_CONTINUE);
+        if (getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
             return SERVICE_SUCCESS;
     }
 
@@ -1089,17 +1094,18 @@ MakeRNAServiceValidationPrototype(krb_server_validate)
 #ifdef DEBUG_KERBEROS
         _dpd.debugMsg(DEBUG_LOG,"%p Failed\n",flowp);
 #endif
-        if (!getAppIdExtFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
+        if (!getAppIdFlag(flowp, APPID_SESSION_SERVICE_DETECTED))
         {
-            service_mod.api->fail_service(flowp, pkt, dir, &svc_element, service_mod.flow_data_index, pConfig);
+            service_mod.api->fail_service(flowp, pkt, dir, &svc_element,
+                                          service_mod.flow_data_index, args->pConfig, NULL);
             return SERVICE_NOMATCH;
         }
-        clearAppIdExtFlag(flowp, APPID_SESSION_CONTINUE);
+        clearAppIdFlag(flowp, APPID_SESSION_CONTINUE);
         return SERVICE_SUCCESS;
     }
 
 inprocess:
-    service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+    service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element, NULL);
     return SERVICE_INPROCESS;
 
 }

@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -103,98 +103,6 @@ void luaErrorHandler(lua_State *l, lua_Debug *ar)
      }
 }
 #endif
-
-static lua_State *createLuaState()
-{
-    lua_State *myLuaState = NULL;
-
-    /*Design: Whether to make all detectors share the lua_State or not?
-     * Separate lua_State creates isolated environment for each detector. There
-     * is no name collision or any side effects due to garbage collection. Runtime
-     * memory overhead should be bearable.
-     *
-     * Shared lua_State saves on memory since each Lua library is loaded just once.
-     */
-    myLuaState = lua_open();   /* opens Lua */
-    luaL_openlibs(myLuaState);
-
-#ifdef HAVE_LIBLUAJIT
-    /*linked in during compilation */
-    luaopen_jit(myLuaState);
-
-    {
-        static unsigned once = 0;
-        if (!once)
-        {
-            lua_getfield(myLuaState, LUA_REGISTRYINDEX, "_LOADED");
-            lua_getfield(myLuaState, -1, "jit");  /* Get jit.* module table. */
-            lua_getfield (myLuaState, -1, "version");
-            if (lua_isstring(myLuaState, -1))
-                DEBUG_WRAP(DebugMessage(DEBUG_APPID, "LuaJIT: Version %s\n", lua_tostring(myLuaState, -1)););
-            lua_pop(myLuaState, 1);
-            once = 1;
-        }
-    }
-
-#endif  /*HAVE_LIBLUAJIT */
-
-    Detector_register(myLuaState);
-    lua_pop(myLuaState, 1); /*After detector register the methods are still on the stack, remove them. */
-
-    DetectorFlow_register(myLuaState);
-    lua_pop(myLuaState, 1);
-
-#if 0
-#ifdef LUA_DETECTOR_DEBUG
-    lua_sethook(myLuaState,&luaErrorHandler,LUA_MASKCALL | LUA_MASKRET,0);
-#endif
-#endif
-
-    /*The garbage-collector pause controls how long the collector waits before */
-    /*starting a new cycle. Larger values make the collector less aggressive. */
-    /*Values smaller than 100 mean the collector will not wait to start a new */
-    /*cycle. A value of 200 means that the collector waits for the total memory */
-    /*in use to double before starting a new cycle. */
-
-    lua_gc(myLuaState, LUA_GCSETPAUSE,100);
-
-    /*The step multiplier controls the relative speed of the collector relative */
-    /*to memory allocation. Larger values make the collector more aggressive */
-    /*but also increase the size of each incremental step. Values smaller than */
-    /*100 make the collector too slow and can result in the collector never */
-    /*finishing a cycle. The default, 200, means that the collector runs at */
-    /*"twice" the speed of memory allocation. */
-
-    lua_gc(myLuaState, LUA_GCSETSTEPMUL,200);
-
-    /*set lua library paths */
-    {
-        char newLuaPath[PATH_MAX];
-        lua_getglobal( myLuaState, "package" );
-        lua_getfield( myLuaState, -1, "path" );
-        const char * curLuaPath = lua_tostring(myLuaState, -1); 
-        if (curLuaPath && (strlen(curLuaPath)))
-        {
-            snprintf(newLuaPath, PATH_MAX-1, "%s;%s/odp/libs/?.lua;%s/custom/libs/?.lua", 
-                    curLuaPath,
-                    appidStaticConfig.app_id_detector_path, 
-                    appidStaticConfig.app_id_detector_path);
-        }
-        else
-        {
-            snprintf(newLuaPath, PATH_MAX-1, "%s/odp/libs/?.lua;%s/custom/libs/?.lua", 
-                    appidStaticConfig.app_id_detector_path, 
-                    appidStaticConfig.app_id_detector_path);
-        }
-
-        lua_pop( myLuaState, 1 ); 
-        lua_pushstring( myLuaState, newLuaPath); 
-        lua_setfield( myLuaState, -2, "path" ); 
-        lua_pop( myLuaState, 1 ); 
-    }
-
-    return myLuaState;
-}
 
 /**reads packageInfo defined inside lua detector.
  */
@@ -509,121 +417,6 @@ static inline void setLuaTrackerSize(
     lua_pop(L, 1);
 }
 
-static void luaCustomLoad(
-        char *detectorName,
-        char *validator,
-        unsigned int validatorLen,
-        unsigned char * const digest,
-        tAppIdConfig *pConfig,
-        bool isCustom
-        )
-{
-    lua_State *myLuaState = createLuaState();
-    SFGHASH_NODE *node;
-    Detector *detector;
-    tRNAClientAppModule *cam = NULL;
-
-    if (myLuaState == NULL)
-    {
-        _dpd.errMsg( "can not create new luaState");
-        free(validator);
-        return;
-    }
-
-    /*Load function works the same with Lua and Luac file. */
-    if (luaL_loadbuffer(myLuaState, validator, validatorLen, "")  || lua_pcall(myLuaState, 0, 0, 0))
-    {
-        _dpd.errMsg("cannot run validator %s, error: %s\n",detectorName, lua_tostring(myLuaState, -1));
-        lua_close(myLuaState);
-        free(validator);
-        return;
-    }
-
-    detector = createDetector(myLuaState, detectorName);
-    if (!detector)
-    {
-        _dpd.errMsg("cannot allocate detector %s\n",detectorName);
-        lua_close(myLuaState);
-        free(validator);
-        return;
-    }
-
-    getDetectorPackageInfo(myLuaState, detector, 0);
-
-    detector->validatorBuffer = validator;
-    /*detector->detector_version = version; */
-    detector->isActive = 1;
-    detector->pAppidNewConfig = detector->pAppidActiveConfig = detector->pAppidOldConfig = pConfig;
-    detector->isCustom = isCustom;
-
-    if (detector->packageInfo.server.initFunctionName)
-    {
-        /*add to active service list */
-        detector->server.serviceModule.next = pConfig->serviceConfig.active_service_list;
-        pConfig->serviceConfig.active_service_list = &detector->server.serviceModule;
-
-        detector->server.serviceId = APP_ID_UNKNOWN;
-        
-        /*create a ServiceElement */
-        if (checkServiceElement(detector))
-        {
-            detector->server.pServiceElement->validate = validateAnyService;
-            detector->server.pServiceElement->userdata = detector;
-
-            detector->server.pServiceElement->detectorType = DETECTOR_TYPE_DECODER;
-        }
-    }
-    else
-    {
-        detector->client.appFpId = APP_ID_UNKNOWN;
-        cam = &detector->client.appModule;
-        cam->name = detector->packageInfo.name;
-        cam->proto = detector->packageInfo.proto;
-        cam->validate = validateAnyClientApp;
-        cam->minimum_matches = detector->packageInfo.client.minMatches;
-        cam->userData = detector;
-        cam->api = getClientApi();
-    }
-
-    node = sfghash_find_node(allocatedDetectorList, detectorName);
-    if (node)
-    {
-        detector->next = node->data;
-        node->data = detector;
-    }
-    else if (sfghash_add(allocatedDetectorList, detectorName, detector))
-    {
-        _dpd.errMsg( "Failed to add to list.");
-        freeDetector(detector);
-        lua_close(myLuaState);
-        return;
-    }
-    memcpy(detector->digest, digest, sizeof(detector->digest));
-
-#ifdef PERF_PROFILING
-    if (!(detector->pPerfStats = calloc(1, sizeof(*detector->pPerfStats))))
-    {
-        _dpd.errMsg("cannot allocate perStats %s\n",detectorName);
-        freeDetector(detector);
-        lua_close(myLuaState);
-        return;
-    }
-
-    if (isCustom)
-    {
-        _dpd.addPreprocProfileFunc(detector->name, detector->pPerfStats, 3, &luaCustomPerfStats, (PreprocStatsNodeFreeFunc)free);
-    }
-    else
-    {
-        _dpd.addPreprocProfileFunc(detector->name, detector->pPerfStats, 3, &luaCiscoPerfStats, (PreprocStatsNodeFreeFunc)free);
-    }
-#endif /*PERF_PROFILING */
-
-    _dpd.debugMsg(DEBUG_LOG,"Loaded detector %s\n",detectorName);
-
-    gNumDetectors++;
-}
-
 /**Initializes Lua modules. Open lua and if available LuaJIT libraries, and registers all API modules.
  *
  * @return void
@@ -661,16 +454,19 @@ static inline uint32_t calculateLuaTrackerSize(u_int64_t rnaMemory, uint32_t num
     return (numTrackers > LUA_TRACKERS_MAX)? LUA_TRACKERS_MAX: numTrackers;
 }
 
-void loadCustomLuaModules(char *path, tAppIdConfig *pConfig, bool isCustom)
+static void loadCustomLuaModules(tAppidStaticConfig* appidSC, char *path, tAppIdConfig *pConfig, bool isCustom)
 {
-    Detector *detector;
+    Detector *detector, *newDetector;
     int rval;
     glob_t globs;
     char pattern[PATH_MAX];
     unsigned n;
     FILE *file;
-    uint8_t *validatorBuffer;
+    char *validatorBuffer;
     int validatorBufferLen;
+    SFGHASH_NODE *node;
+    tRNAClientAppModule *cam = NULL;
+    lua_State *myLuaState;
 
     //snprintf(pattern, sizeof(pattern), "%s/????????-????-????-????-????????????", path);
     snprintf(pattern, sizeof(pattern), "%s/*", path);
@@ -710,17 +506,20 @@ void loadCustomLuaModules(char *path, tAppIdConfig *pConfig, bool isCustom)
         if (fseek(file, 0, SEEK_END))
         {
             _dpd.errMsg("Unable to seek lua detector '%s'\n",globs.gl_pathv[n]);
+            fclose(file);
             continue;
         }
         validatorBufferLen = ftell(file);
         if (validatorBufferLen == -1)
         {
             _dpd.errMsg("Unable to return offset on lua detector '%s'\n",globs.gl_pathv[n]);
+            fclose(file);
             continue;
         }
         if (fseek(file, 0, SEEK_SET))
         {
             _dpd.errMsg("Unable to seek lua detector '%s'\n",globs.gl_pathv[n]);
+            fclose(file);
             continue;
         }
 
@@ -733,6 +532,7 @@ void loadCustomLuaModules(char *path, tAppIdConfig *pConfig, bool isCustom)
         {
             _dpd.errMsg("Failed to read lua detector %s\n",globs.gl_pathv[n]);
             free(validatorBuffer);
+            fclose(file);
             continue;
         }
 
@@ -751,12 +551,207 @@ void loadCustomLuaModules(char *path, tAppIdConfig *pConfig, bool isCustom)
             {
                 detector->isActive = 1;
                 detector->pAppidNewConfig = pConfig;
-		        free(validatorBuffer);
+                free(validatorBuffer);
                 goto next;
             }
         }
 
-        luaCustomLoad(detectorName, (char *)validatorBuffer, validatorBufferLen, digest, pConfig, isCustom);
+        myLuaState = NULL;
+
+        /*Design: Whether to make all detectors share the lua_State or not?
+         * Separate lua_State creates isolated environment for each detector. There
+         * is no name collision or any side effects due to garbage collection. Runtime
+         * memory overhead should be bearable.
+         *
+         * Shared lua_State saves on memory since each Lua library is loaded just once.
+         */
+        myLuaState = lua_open();   /* opens Lua */
+
+        if (myLuaState == NULL)
+        {
+           _dpd.errMsg("Failed to open lua for lua detector %s\n",globs.gl_pathv[n]);
+            free(validatorBuffer);
+            globfree(&globs);
+            fclose(file);
+            return; 
+        }
+
+        luaL_openlibs(myLuaState);
+
+#ifdef HAVE_LIBLUAJIT
+        /*linked in during compilation */
+        luaopen_jit(myLuaState);
+
+        {
+            static unsigned once = 0;
+            if (!once)
+            {
+                lua_getfield(myLuaState, LUA_REGISTRYINDEX, "_LOADED");
+                lua_getfield(myLuaState, -1, "jit");  /* Get jit.* module table. */
+                lua_getfield (myLuaState, -1, "version");
+                if (lua_isstring(myLuaState, -1))
+                    DEBUG_WRAP(DebugMessage(DEBUG_APPID, "LuaJIT: Version %s\n", lua_tostring(myLuaState, -1)););
+                lua_pop(myLuaState, 1);
+                once = 1;
+            }
+        }
+
+#endif  /*HAVE_LIBLUAJIT */
+
+        Detector_register(myLuaState);
+        lua_pop(myLuaState, 1); /*After detector register the methods are still on the stack, remove them. */
+
+        DetectorFlow_register(myLuaState);
+        lua_pop(myLuaState, 1);
+
+#if 0
+    #ifdef LUA_DETECTOR_DEBUG
+        lua_sethook(myLuaState,&luaErrorHandler,LUA_MASKCALL | LUA_MASKRET,0);
+    #endif
+#endif
+
+        /*The garbage-collector pause controls how long the collector waits before */
+        /*starting a new cycle. Larger values make the collector less aggressive. */
+        /*Values smaller than 100 mean the collector will not wait to start a new */
+        /*cycle. A value of 200 means that the collector waits for the total memory */
+        /*in use to double before starting a new cycle. */
+
+        lua_gc(myLuaState, LUA_GCSETPAUSE,100);
+
+        /*The step multiplier controls the relative speed of the collector relative */
+        /*to memory allocation. Larger values make the collector more aggressive */
+        /*but also increase the size of each incremental step. Values smaller than */
+        /*100 make the collector too slow and can result in the collector never */
+        /*finishing a cycle. The default, 200, means that the collector runs at */
+        /*"twice" the speed of memory allocation. */
+
+        lua_gc(myLuaState, LUA_GCSETSTEPMUL,200);
+
+        /*set lua library paths */
+        {
+            char newLuaPath[PATH_MAX];
+            lua_getglobal( myLuaState, "package" );
+            lua_getfield( myLuaState, -1, "path" );
+            const char * curLuaPath = lua_tostring(myLuaState, -1);
+            if (curLuaPath && (strlen(curLuaPath)))
+            {
+                snprintf(newLuaPath, PATH_MAX-1, "%s;%s/odp/libs/?.lua;%s/custom/libs/?.lua",
+                        curLuaPath,
+                        appidSC->app_id_detector_path,
+                        appidSC->app_id_detector_path);
+            }
+            else
+            {
+                snprintf(newLuaPath, PATH_MAX-1, "%s/odp/libs/?.lua;%s/custom/libs/?.lua",
+                        appidSC->app_id_detector_path,
+                        appidSC->app_id_detector_path);
+            }
+
+            lua_pop( myLuaState, 1 );
+            lua_pushstring( myLuaState, newLuaPath);
+            lua_setfield( myLuaState, -2, "path" );
+            lua_pop( myLuaState, 1 );
+        }
+
+        /*Load function works the same with Lua and Luac file. */
+        if (luaL_loadbuffer(myLuaState, (const char *)validatorBuffer, validatorBufferLen, "")  || lua_pcall(myLuaState, 0, 0, 0))
+        {
+            _dpd.errMsg("cannot run validator %s, error: %s\n",detectorName, lua_tostring(myLuaState, -1));
+            lua_close(myLuaState);
+            free(validatorBuffer);
+            fclose(file);
+            continue;
+        }
+
+        newDetector = createDetector(myLuaState, detectorName);
+        if (!newDetector)
+        {
+            _dpd.errMsg("cannot allocate detector %s\n",detectorName);
+            lua_close(myLuaState);
+            free(validatorBuffer);
+            globfree(&globs);
+            fclose(file);
+            return;
+        }
+
+        getDetectorPackageInfo(myLuaState, newDetector, 0);
+
+        newDetector->validatorBuffer = validatorBuffer;
+        /*newDetector->detector_version = version; */
+        newDetector->isActive = 1;
+        newDetector->pAppidNewConfig = newDetector->pAppidActiveConfig = newDetector->pAppidOldConfig = pConfig;
+        newDetector->isCustom = isCustom;
+
+        if (newDetector->packageInfo.server.initFunctionName)
+        {
+            /*add to active service list */
+            newDetector->server.serviceModule.next = pConfig->serviceConfig.active_service_list;
+            pConfig->serviceConfig.active_service_list = &newDetector->server.serviceModule;
+
+            newDetector->server.serviceId = APP_ID_UNKNOWN;
+            
+            /*create a ServiceElement */
+            if (checkServiceElement(newDetector))
+            {
+                newDetector->server.pServiceElement->validate = validateAnyService;
+                newDetector->server.pServiceElement->userdata = newDetector;
+
+                newDetector->server.pServiceElement->detectorType = DETECTOR_TYPE_DECODER;
+            }
+        }
+        else
+        {
+            newDetector->client.appFpId = APP_ID_UNKNOWN;
+            cam = &newDetector->client.appModule;
+            cam->name = newDetector->packageInfo.name;
+            cam->proto = newDetector->packageInfo.proto;
+            cam->validate = validateAnyClientApp;
+            cam->minimum_matches = newDetector->packageInfo.client.minMatches;
+            cam->userData = newDetector;
+            cam->api = getClientApi();
+        }
+
+        node = sfghash_find_node(allocatedDetectorList, detectorName);
+        if (node)
+        {
+            newDetector->next = node->data;
+            node->data = newDetector;
+        }
+        else if (sfghash_add(allocatedDetectorList, detectorName, newDetector))
+        {
+            _dpd.errMsg( "Failed to add to list.");
+            freeDetector(newDetector);
+            lua_close(myLuaState);
+            globfree(&globs);
+            fclose(file);
+            return;
+        }
+        memcpy(newDetector->digest, digest, sizeof(newDetector->digest));
+
+#ifdef PERF_PROFILING
+        if (!(newDetector->pPerfStats = calloc(1, sizeof(*newDetector->pPerfStats))))
+        {
+            _dpd.errMsg("cannot allocate perStats %s\n",detectorName);
+            freeDetector(newDetector);
+            lua_close(myLuaState);
+            globfree(&globs);
+            fclose(file);
+            return;
+        }
+
+        if (isCustom)
+        {
+            _dpd.addPreprocProfileFunc(newDetector->name, newDetector->pPerfStats, 3, &luaCustomPerfStats, (PreprocStatsNodeFreeFunc)free);
+        }
+        else
+        {
+            _dpd.addPreprocProfileFunc(newDetector->name, newDetector->pPerfStats, 3, &luaCiscoPerfStats, (PreprocStatsNodeFreeFunc)free);
+        }
+#endif /*PERF_PROFILING */
+
+        _dpd.debugMsg(DEBUG_LOG,"Loaded detector %s\n",detectorName);
+
+        gNumDetectors++;
 
 next:
         fclose(file);
@@ -797,7 +792,7 @@ void FinalizeLuaModules(tAppIdConfig *pConfig)
     luaDetectorsSetTrackerSize();
 }
 
-void LoadLuaModules(tAppIdConfig *pConfig)
+void LoadLuaModules(tAppidStaticConfig* appidSC, tAppIdConfig *pConfig)
 {
     char path[PATH_MAX];
     Detector *detector;
@@ -818,10 +813,10 @@ void LoadLuaModules(tAppIdConfig *pConfig)
         }
     }
 
-    snprintf(path, sizeof(path), "%s/odp/lua", appidStaticConfig.app_id_detector_path);
-    loadCustomLuaModules(path, pConfig, 0);
-    snprintf(path, sizeof(path), "%s/custom/lua", appidStaticConfig.app_id_detector_path);
-    loadCustomLuaModules(path, pConfig, 1);
+    snprintf(path, sizeof(path), "%s/odp/lua", appidSC->app_id_detector_path);
+    loadCustomLuaModules(appidSC, path, pConfig, 0);
+    snprintf(path, sizeof(path), "%s/custom/lua", appidSC->app_id_detector_path);
+    loadCustomLuaModules(appidSC, path, pConfig, 1);
     // luaDetectorsCleanInactive();
 }
 
@@ -981,7 +976,11 @@ void UnloadLuaModules(tAppIdConfig *pConfig)
         for (detector = detector_list; detector; detector = detector->next)
         {
             if (detector->wasActive && detector->client.appFpId)
+            {
+                pthread_mutex_lock(&detector->luaReloadMutex);
                 luaClientFini(detector);
+                pthread_mutex_unlock(&detector->luaReloadMutex);
+            }
             detector->wasActive = 0;
 
             // Detector cleanup is done. Move pAppidOldConfig to the current
@@ -1013,7 +1012,9 @@ void luaModuleInitAllServices(void)
         {
             if (detector->isActive && detector->packageInfo.server.initFunctionName)
             {
+                pthread_mutex_lock(&detector->luaReloadMutex);
                 luaServerInit(detector->myLuaState, detector);
+                pthread_mutex_unlock(&detector->luaReloadMutex);
             }
         }
     }
@@ -1041,7 +1042,9 @@ void luaModuleInitAllClients(void)
         {
             if (detector->isActive && detector->packageInfo.client.initFunctionName)
             {
+                pthread_mutex_lock(&detector->luaReloadMutex);
                 luaClientInit(&detector->client.appModule);
+                pthread_mutex_unlock(&detector->luaReloadMutex);
             }
         }
     }

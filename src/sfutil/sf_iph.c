@@ -1,7 +1,7 @@
 /* $Id$ */
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -27,6 +27,7 @@
 #endif
 
 #include "decode.h"
+#include "reg_test.h"
 
 #define FAILURE -1
 #define SUCCESS 0
@@ -435,7 +436,7 @@ void sfiph_build(Packet *p, const void *hdr, int family)
     {
         hdr4 = (IPHdr*)hdr;
 
-        /* The struct Snort uses is identical to the actual IP6 struct,
+        /* The struct Snort uses is identical to the actual IP4 struct,
          * with the exception of the IP addresses. Copy over everything but
          * the IPs */
         memcpy(&p->inner_ip4h, hdr4, sizeof(IPHdr) - 8);
@@ -483,6 +484,16 @@ void sfiph_build(Packet *p, const void *hdr, int family)
         p->actual_ip_len = ntohs(p->inner_ip6h.len) + IP6_HDR_LEN;
         p->ip6h = &p->inner_ip6h;
     }
+#ifdef REG_TEST
+    if (rt_ip_increment)
+    {
+        uint32_t* addr;
+        addr = sfaddr_get_ip4_ptr(&p->inner_ips.ip_src);
+        *addr = htonl(ntohl(*addr) + rt_ip_increment);
+        addr = sfaddr_get_ip4_ptr(&p->inner_ips.ip_dst);
+        *addr = htonl(ntohl(*addr) + rt_ip_increment);
+    }
+#endif
 }
 
 void sfiph_orig_build(Packet *p, const void *hdr, int family)

@@ -2,7 +2,7 @@
  **
  **  sfcontrol.c
  **
- **  Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ **  Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  **  Copyright (C) 2002-2013 Sourcefire, Inc.
  **  Author(s):  Ron Dempster <rdempster@sourcefire.com>
  **
@@ -25,6 +25,7 @@
  **  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  **
  */
+#define _GNU_SOURCE
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -36,6 +37,9 @@
 #include "snort.h"
 #include "sfcontrol_funcs.h"
 #include "sfcontrol.h"
+#ifdef REG_TEST
+#include "reg_test.h"
+#endif
 
 #ifdef CONTROL_SOCKET
 
@@ -110,6 +114,7 @@ typedef struct _THREAD_ELEMENT
 {
     struct _THREAD_ELEMENT *next;
     int socket_fd;
+    pthread_t tid;
     volatile int stop_processing;
 } ThreadElement;
 
@@ -167,7 +172,7 @@ static void SendResponse(ThreadElement *t, const CSResponseMessage *resp, uint32
 
     do
     {
-        numsent = write(t->socket_fd, (*(uint8_t **)&resp) + total, total_len - total);
+        numsent = write(t->socket_fd, ((unsigned char *)resp) + total, total_len - total);
         if (!numsent)
             return;
         else if (numsent > 0)
@@ -199,7 +204,7 @@ static int ReadHeader(ThreadElement *t, CSMessageHeader *hdr)
 
     do
     {
-        numread = read(t->socket_fd, (*(uint8_t **)&hdr) + total, sizeof(*hdr) - total);
+        numread = read(t->socket_fd, ((unsigned char *)hdr) + total, sizeof(*hdr) - total);
         if (!numread)
             return 0;
         else if (numread > 0)
@@ -250,7 +255,7 @@ static int SendResponseSeparateData(ThreadElement *t, const CSResponseMessageHea
     total = 0;
     do
     {
-        numsent = write(t->socket_fd, (*(uint8_t **)&resp) + total, total_len - total);
+        numsent = write(t->socket_fd, ((unsigned char *)resp) + total, total_len - total);
         if (!numsent)
             return -1;
         else if (numsent > 0)
@@ -451,6 +456,21 @@ static void *ControlSocketProcessThread(void *arg)
                         work_queue = handler;
                     s_work_to_do++;
                     pthread_mutex_unlock(&work_mutex);
+#ifdef REG_TEST
+                    if (REG_TEST_FLAG_SESSION_FORCE_RELOAD & getRegTestFlags())
+                    {
+                        char responseTempStr[] = "--== Reloading Snort: new config ready ==--";
+                        memset(response.msg, 0, sizeof(response.msg));
+                        len = snprintf(response.msg, sizeof(response.msg), "%s", responseTempStr);
+                        response.hdr.type = htons(CS_HEADER_DATA);
+                        response.msg_hdr.code = 0;
+                        len = strlen(response.msg);
+                        response.msg_hdr.length = htons(len);
+                        len += sizeof(response.msg_hdr);
+                        response.hdr.length = htonl(len);
+                        SendResponse(t, &response, len);
+                    }
+#endif
                     DEBUG_WRAP( DebugMessage(DEBUG_CONTROL, "Control Socket %d: Waiting for ibcontrol\n", t->socket_fd););
                     while (!handler->handled && !t->stop_processing)
                         usleep(100000);
@@ -465,6 +485,21 @@ static void *ControlSocketProcessThread(void *arg)
                             DEBUG_WRAP( DebugMessage(DEBUG_CONTROL, "Control Socket %d: ibcontrol failed %d\n", t->socket_fd, handler->ib_rval););
                             goto next;
                         }
+#ifdef REG_TEST
+                        else if (REG_TEST_FLAG_SESSION_FORCE_RELOAD & getRegTestFlags())
+                        {
+                            char responseStr[] = "--== Reloading Snort: config swap completed ==--";
+                            memset(response.msg, 0, sizeof(response.msg));
+                            len = snprintf(response.msg, sizeof(response.msg), "%s", responseStr);
+                            response.hdr.type = htons(CS_CONFIG_SWAP);
+                            response.msg_hdr.code = 0;
+                            len = strlen(response.msg);
+                            response.msg_hdr.length = htons(len);
+                            len += sizeof(response.msg_hdr);
+                            response.hdr.length = htonl(len);
+                            SendResponse(t, &response, len);
+                        }
+#endif
                     }
                     else
                     {
@@ -551,14 +586,12 @@ done:;
 static void *ControlSocketThread(void *arg)
 {
     ThreadElement *t;
-    ThreadElement **it;
     fd_set rfds;
     int rval;
     struct timeval to;
     int socket;
     struct sockaddr_un sunaddr;
     socklen_t addrlen = sizeof(sunaddr);
-    pthread_t tid;
 
     if (config_unix_socket < 0)
     {
@@ -599,24 +632,16 @@ static void *ControlSocketThread(void *arg)
                 pthread_mutex_lock(&thread_mutex);
                 t->next = thread_list;
                 thread_list = t;
-                pthread_mutex_unlock(&thread_mutex);
-                if ((rval = pthread_create(&tid, NULL, &ControlSocketProcessThread, (void *)t)) != 0)
+                if ((rval = pthread_create(&t->tid, NULL, &ControlSocketProcessThread, (void *)t)) != 0)
                 {
-                    pthread_mutex_lock(&thread_mutex);
-                    for (it=&thread_list; *it; it=&(*it)->next)
-                    {
-                        if (t == *it)
-                        {
-                            *it = t->next;
-                            close(t->socket_fd);
-                            free(t);
-                            break;
-                        }
-                    }
+                    thread_list = thread_list->next;
+                    close(t->socket_fd);
+                    free(t);
                     pthread_mutex_unlock(&thread_mutex);
                     ErrorMessage("Control Socket: Unable to create a processing thread: %s", strerror(rval));
                     goto bail;
                 }
+                pthread_mutex_unlock(&thread_mutex);
             }
         }
         else if (rval < 0)
@@ -728,10 +753,11 @@ void ControlSocketInit(void)
 
 void ControlSocketCleanUp(void)
 {
-    ThreadElement *t;
+    ThreadElement *t,*it;
     int rval;
     int done = 0;
     int i;
+    int counter = 0;
 
     if (p_thread_id != NULL)
     {
@@ -757,10 +783,38 @@ void ControlSocketCleanUp(void)
     {
         pthread_mutex_lock(&thread_mutex);
         done = thread_list ? 0:1;
+#ifdef HAVE_PTHREAD_TRYJOIN_NP
+        if(!done)
+        {
+           t = thread_list;
+           while (t)
+           {
+              if (pthread_tryjoin_np(t->tid,NULL) == 0)
+              {
+                  it = t;
+                  t = t->next;
+                  if(thread_list == it)
+                     thread_list = t;
+                  free(it);
+              }
+              else
+                 t=t->next;
+           }
+        }
+        done = thread_list ? 0:1;
+#endif
         pthread_mutex_unlock(&thread_mutex);
         if (!done)
+        {
+            ++counter;
             usleep(100000);
+        }
+        if(counter >= 100)
+           break;
     } while (!done);
+
+    if(!done)
+       ErrorMessage("Control Socket threads did not clearly exit within stipulated time\n");
 
     pthread_mutex_lock(&work_mutex);
     if (work_queue)

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2002-2013 Sourcefire, Inc.
  * Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
  * Author: Adam Keeton
@@ -25,10 +25,11 @@
 #include "config.h"
 #endif
 
+#include <stdio.h>
+
 #ifndef WIN32
 #include <ctype.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 #include <errno.h>
 
@@ -347,81 +348,7 @@ static void extradata_dump(u2record *record) {
             printf("IPv6 Destination Address: %s\n",
                     ip6buf);
             break;
-#ifdef HAVE_EXTRADATA_FILE
-        case EVENT_INFO_FILE_SHA256:
-            data = record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData);
-            printf("\n\tSHA256: ");
-            for(i=0; i < len; i++) {
-                if(iscntrl(data[i]))
-                    printf("%02x", '.');
-                else
-                    printf("%02x", data[i]);
-            }
-            printf("\n");
-            break;
-        case EVENT_INFO_FILE_SIZE:
-            printf("\n\tFile Size: %.*s\n", len,
-                   record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
-            break;
-        case EVENT_INFO_FILE_NAME:
-            printf("\n\tFile Name: %.*s\n", len,
-                   record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
-            break;
-        case EVENT_INFO_FILE_HOSTNAME:
-            printf("\n\tFile Hostname: ");
-            data = record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData);
-            for(i=0; i < len; i++)
-            {
-                if(iscntrl(data[i]))
-                    printf("%c",'.');
-                else
-                    printf("%c",data[i]);
-            }
-            printf("\n");
-            break;
-        case EVENT_INFO_FILE_MAILFROM:
-            printf("\n\tFile Mail From: %.*s\n", len,
-                   record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
-            break;
-        case EVENT_INFO_FILE_RCPTTO:
-            printf("\n\tFile Mail To: %.*s\n",
-                len, record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
-            break;
-        case EVENT_INFO_FILE_EMAIL_HDRS:
-            printf("\n\n\t==== File Email Headers ====\n");
-            printf("%.*s", len,
-                   record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
-            printf("\t== End File Email Headers ==\n");
-            break;
-        case EVENT_INFO_FILE_FTP_USER:
-            printf("\n\tFTP User: %.*s\n", len,
-                   record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData));
-            break;
-        case EVENT_INFO_FILE_SMB_USER_ID:
-            {
-                printf("\n\tSMB UID: ");
-                if (len == 2) {
-                    const uint16_t u_id = ntohs(*(uint16_t *)(record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData)));
-                    printf("%u\n", u_id);
-                }
-                else if (len == 4) {
-                    const uint32_t u_id = ntohl(*(uint32_t *)(record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData)));
-                    printf("%lu\n", u_id);
-                }
 
-            }
-            break;
-        case EVENT_INFO_FILE_SMB_IS_UPLOAD:
-            printf("\n\tSMB is upload: ");
-            {
-                const uint8_t upload = ntohs(*(uint8_t *)(record->data + sizeof(Unified2ExtraDataHdr) + sizeof(SerialUnified2ExtraData)));
-                if (upload == 0)
-                    printf("False\n");
-                else
-                    printf("True\n");
-            }
-            break;
-#endif
         default :
             break;
     }
@@ -756,16 +683,6 @@ static void appid_dump(u2record *record) {
 }
 
 #endif /* defined(FEAT_OPEN_APPID) */
-static inline void print_uuid (const char* label, uint8_t* data)
-{
-#ifdef HAVE_LIBUUID
-    char buf[37];
-    uuid_unparse(data, buf);
-    printf("%s: %s\n", label, buf);
-#else
-    printf("%s: %.*s\n", label, 16, data);
-#endif
-}
 
 #define LOG_CHARS 16
 

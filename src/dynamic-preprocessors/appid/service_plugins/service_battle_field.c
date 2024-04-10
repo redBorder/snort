@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -47,7 +47,7 @@ typedef struct _SERVICE_DATA
 } tServiceData;
 
 static int battle_field_init(const InitServiceAPI * const init_api);
-MakeRNAServiceValidationPrototype(battle_field_validate);
+static int battle_field_validate(ServiceValidationArgs* args);
 
 static tRNAServiceElement svc_element =
 {
@@ -110,11 +110,13 @@ static int battle_field_init(const InitServiceAPI * const init_api)
 }
 
 
-/*static int battle_field_validate(const uint8_t *data, uint16_t size, const int dir,  */
-/*        FLOW *flowp, const SFSnortPacket *pkt, struct _Detector *userdata) */
-MakeRNAServiceValidationPrototype(battle_field_validate)
+static int battle_field_validate(ServiceValidationArgs* args)
 {
     tServiceData *fd;
+    tAppIdData *flowp = args->flowp;
+    const uint8_t *data = args->data;
+    SFSnortPacket *pkt = args->pkt; 
+    uint16_t size = args->size;
 
     if (!size)
     {
@@ -193,7 +195,9 @@ MakeRNAServiceValidationPrototype(battle_field_validate)
     }
 
     
-    battlefield_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, battlefield_service_mod.flow_data_index, pConfig);
+    battlefield_service_mod.api->fail_service(flowp, pkt, args->dir, &svc_element,
+                                              battlefield_service_mod.flow_data_index,
+                                              args->pConfig, NULL);
     return SERVICE_NOMATCH;
 
 inprocess:
@@ -201,22 +205,24 @@ inprocess:
     if (fd->packetCount >= MAX_PACKET_INSPECTION_COUNT)
         goto fail;
 inprocess_nofd:
-    battlefield_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+    battlefield_service_mod.api->service_inprocess(flowp, pkt, args->dir, &svc_element, NULL);
     return SERVICE_INPROCESS;
 
 success:
-    if (dir != APP_ID_FROM_RESPONDER)
+    if (args->dir != APP_ID_FROM_RESPONDER)
     {
         fd->state = CONN_STATE_SERVICE_DETECTED;
         goto inprocess;
     }
 
-    battlefield_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
-                                      APP_ID_BATTLEFIELD, NULL, NULL, NULL);
+    battlefield_service_mod.api->add_service(flowp, pkt, args->dir, &svc_element,
+                                      APP_ID_BATTLEFIELD, NULL, NULL, NULL, NULL);
     return SERVICE_SUCCESS;
 
 fail:
-    battlefield_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, battlefield_service_mod.flow_data_index, pConfig);
+    battlefield_service_mod.api->fail_service(flowp, pkt, args->dir, &svc_element,
+                                              battlefield_service_mod.flow_data_index,
+                                              args->pConfig, NULL);
     return SERVICE_NOMATCH;
 
 }

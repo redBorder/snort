@@ -3,7 +3,7 @@
 **
 ** perf.h
 **
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2002-2013 Sourcefire, Inc.
 ** Dan Roelker <droelker@sourcefire.com>
 **
@@ -104,6 +104,19 @@ extern SFFLOW sfFlow;
 extern SFEVENT sfEvent;
 extern SFPERF* perfmon_config;
 extern int perfmon_rotate_perf_file;
+#ifdef SNORT_RELOAD
+    typedef enum {
+        PERF_NOT_RELOADING,
+        PERF_RELOAD,
+        PERF_RELOAD_VERIFY,
+        PERF_RELOAD_SWAP,
+        PERF_RELOAD_SWAP_FREE,
+        PERF_RELOAD_ADUST
+    } PERFRELOAD_STATUS;
+
+    extern PERFRELOAD_STATUS perfmon_reload_status;
+#endif
+
 
 void sfInitPerformanceStatistics(SFPERF *);
 FILE * sfOpenBaseStatsFile(const char *);
@@ -119,6 +132,7 @@ void sfPerformanceStatsOOB(SFPERF *, time_t);
 void sfPerfStatsSummary(SFPERF *);
 void SetSampleTime(SFPERF *, Packet *);
 void InitPerfStats(SFPERF *sfPerf);
+void syncAllStats(SFPERF *sfPerf, SFPERF *);
 
 static inline void SetRotatePerfFileFlag(void)
 {

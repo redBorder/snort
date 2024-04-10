@@ -1,5 +1,5 @@
 /*
- ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ ** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2002-2013 Sourcefire, Inc.
  ** Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
  **
@@ -126,7 +126,7 @@ typedef struct _Unified2IDSEventIPv6
     uint16_t vlanId;
     uint16_t pad2;/*could be IPS Policy local id to support local sensor alerts*/
 #if defined(FEAT_OPEN_APPID)
-    char     app_name[16];
+    char     app_name[MAX_EVENT_APPNAME_LEN];
 #endif /* defined(FEAT_OPEN_APPID) */
 } Unified2IDSEventIPv6;
 
@@ -193,19 +193,7 @@ typedef enum _EventInfoEnum
     EVENT_INFO_HTTP_HOSTNAME,
     EVENT_INFO_IPV6_SRC,
     EVENT_INFO_IPV6_DST,
-    EVENT_INFO_JSNORM_DATA,
-#ifdef HAVE_EXTRADATA_FILE
-    EVENT_INFO_FILE_SHA256,     /* 14 */
-    EVENT_INFO_FILE_SIZE,       /* 15 */
-    EVENT_INFO_FILE_NAME,       /* 16 */
-    EVENT_INFO_FILE_HOSTNAME,   /* 17 */
-    EVENT_INFO_FILE_MAILFROM,   /* 18 */
-    EVENT_INFO_FILE_RCPTTO,     /* 19 */
-    EVENT_INFO_FILE_EMAIL_HDRS, /* 20 */
-    EVENT_INFO_FILE_FTP_USER,   /* 21 */
-    EVENT_INFO_FILE_SMB_USER_ID, /* 22 */
-    EVENT_INFO_FILE_SMB_IS_UPLOAD, /* 23 */
-#endif
+    EVENT_INFO_JSNORM_DATA
 }EventInfoEnum;
 
 typedef enum _EventDataType

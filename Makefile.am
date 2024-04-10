@@ -1,10 +1,10 @@
 ## $Id$
 AUTOMAKE_OPTIONS=foreign no-dependencies
-SUBDIRS = src doc etc templates rpm m4 preproc_rules tools
+SUBDIRS = src doc etc templates m4 preproc_rules tools
 
 INCLUDES = @INCLUDES@
 
-EXTRA_DIST = ChangeLog snort.8 LICENSE verstuff.pl RELEASE.NOTES snort.pc.in
+EXTRA_DIST = ChangeLog snort.8 LICENSE verstuff.pl RELEASE.NOTES snort.pc.in VERSION
 
 man_MANS = snort.8
 

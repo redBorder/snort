@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -69,10 +69,17 @@
 #include "sfsnprintfappend.h"
 #include "sf_iph.h"
 #include "session_api.h"
+#include "sfdaq.h"
 
 #include "portscan.h"
 
 #include "profiler.h"
+#include "reload.h"
+
+#ifdef REG_TEST
+#include "reg_test.h"
+#endif
+
 
 #define DELIMITERS " \t\n"
 #define TOKEN_ARG_BEGIN "{"
@@ -433,7 +440,35 @@ static int MakePortscanPkt(PS_PKT *ps_pkt, PS_PROTO *proto, int proto_type,
 
     if (p != g_tmp_pkt)
     {
+#if defined(HAVE_DAQ_ADDRESS_SPACE_ID) && defined(DAQ_VERSION) && DAQ_VERSION > 6
+      DAQ_PktHdr_t phdr;
+      memcpy(&phdr, &p->pkth, sizeof(*p->pkth));
+      if (p->pkth->flags & DAQ_PKT_FLAG_REAL_ADDRESSES)
+      {
+        phdr.flags &= ~(DAQ_PKT_FLAG_REAL_SIP_V6 | DAQ_PKT_FLAG_REAL_DIP_V6);
+        if (flags & ENC_FLAG_FWD)
+        {
+          phdr.flags |= phdr.flags & (DAQ_PKT_FLAG_REAL_SIP_V6 | DAQ_PKT_FLAG_REAL_DIP_V6);
+          phdr.real_sIP = p->pkth->real_sIP;
+          phdr.real_dIP = p->pkth->real_dIP;
+        }
+        else
+        {
+          if (p->pkth->flags & DAQ_PKT_FLAG_REAL_SIP_V6)
+            phdr.flags |= DAQ_PKT_FLAG_REAL_DIP_V6;
+          if (p->pkth->flags & DAQ_PKT_FLAG_REAL_DIP_V6)
+            phdr.flags |= DAQ_PKT_FLAG_REAL_SIP_V6;
+          phdr.real_sIP = p->pkth->real_dIP;
+          phdr.real_dIP = p->pkth->real_sIP;
+        }
+
+      }
+      Encode_Format_With_DAQ_Info(flags, p, g_tmp_pkt, PSEUDO_PKT_PS, &phdr, 0);
+#elif defined(HAVE_DAQ_ACQUIRE_WITH_META) && defined(DAQ_VERSION) && DAQ_VERSION > 6
+      Encode_Format_With_DAQ_Info(flags, p, g_tmp_pkt, PSEUDO_PKT_PS, 0);
+#else
         Encode_Format(flags, p, g_tmp_pkt, PSEUDO_PKT_PS);
+#endif
     }
 
     switch (proto_type)
@@ -1172,10 +1207,21 @@ static void ParseLogFile(struct _SnortConfig *sc, PortscanConfig *config, char *
     }
 }
 
+#ifdef REG_TEST
+static inline void PrintPORTSCANSize(void)
+{
+    LogMessage("\nPORTSCAN Session Size: %lu\n", (long unsigned int)sizeof(PS_TRACKER));
+}
+#endif
+
 static void PortscanInit(struct _SnortConfig *sc, char *args)
 {
     tSfPolicyId policy_id = getParserPolicy(sc);
     PortscanConfig *pPolicyConfig = NULL;
+
+#ifdef REG_TEST
+    PrintPORTSCANSize();
+#endif
 
     if (portscan_config == NULL)
     {
@@ -1524,34 +1570,46 @@ static void PortscanReload(struct _SnortConfig *sc, char *args, void **new_confi
     }
 }
 
+static bool PortscanReloadAdjust(bool idle, tSfPolicyId raPolicyId, void* userData)
+{
+    unsigned max_work = idle ? 512 : 32;
+    unsigned long memcap = *(unsigned long *)userData;
+    return ps_reload_adjust(memcap, max_work);
+}
+
 static int PortscanReloadVerify(struct _SnortConfig *sc, void *swap_config)
 {
     tSfPolicyUserContextId portscan_swap_config = (tSfPolicyUserContextId)swap_config;
+    static unsigned long new_memcap;
+    unsigned long old_memcap = ((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_config))->memcap;
+    new_memcap = ((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_swap_config))->memcap;
+    tSfPolicyId policy_id = getParserPolicy(sc);
+
     if ((portscan_swap_config == NULL) || (((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_swap_config)) == NULL) ||
         (portscan_config == NULL) || (((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_config)) == NULL))
     {
         return 0;
     }
 
-    if (((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_swap_config))->memcap != ((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_config))->memcap)
+    if (old_memcap != new_memcap)
     {
-        return -1;
-    }
-
-    if ((((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_swap_config))->logfile != NULL) &&
-        (((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_config))->logfile != NULL))
-    {
-        if (strcasecmp(((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_swap_config))->logfile,
-                       ((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_config))->logfile) != 0)
+#ifdef REG_TEST
+        if (REG_TEST_FLAG_PORTSCAN_RELOAD & getRegTestFlags())
         {
+            printf("portscan memcap old conf : %lu new conf : %lu\n",old_memcap,new_memcap);
+        }
+#endif
+        /* If memcap is less than  hash overhead bytes, restart is needed */
+        if( new_memcap > ps_hash_overhead_bytes())
+        {
+            ReloadAdjustRegister(sc, "PortscanReload", policy_id, &PortscanReloadAdjust, &new_memcap, NULL);
+        }
+        else
+        {
+            ErrorMessage("Portscan Reload: New memcap %lu s lower than  minimum memory needed for hash table %u, and it requires a restart.\n", new_memcap, ps_hash_overhead_bytes());
             return -1;
         }
     }
-    else if (((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_swap_config))->logfile != ((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_config))->logfile)
-    {
-        return -1;
-    }
-
     return 0;
 }
 
@@ -1559,12 +1617,52 @@ static void * PortscanReloadSwap(struct _SnortConfig *sc, void  *swap_config)
 {
     tSfPolicyUserContextId portscan_swap_config = (tSfPolicyUserContextId)swap_config;
     tSfPolicyUserContextId old_config = portscan_config;
+    bool log_file_swap = false;
 
     if (portscan_swap_config == NULL)
         return NULL;
 
-    portscan_config = portscan_swap_config;
+    if ((((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_swap_config))->logfile != NULL) &&
+        (((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_config))->logfile != NULL))
+    {
+        if (strcasecmp(((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_swap_config))->logfile,
+                       ((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_config))->logfile) != 0)
+        {
+            log_file_swap = true;
+        }
+    }
+    else if (((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_swap_config))->logfile != ((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_config))->logfile)
+    {
+        log_file_swap = true;
+    }
 
+    if(log_file_swap)
+    {
+        char *new_logfile = ((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_swap_config))->logfile;
+#ifdef REG_TEST
+        char *old_logfile = ((PortscanConfig *)sfPolicyUserDataGetDefault(portscan_config))->logfile;
+        if (REG_TEST_FLAG_PORTSCAN_RELOAD & getRegTestFlags())
+        {
+            printf("portscan Logfile  old: %s , new: %s \n", old_logfile?old_logfile:"NULL", new_logfile?new_logfile:"NULL");
+        }
+#endif
+        if(g_logfile)
+        {
+            fclose(g_logfile);
+            g_logfile = NULL;
+        }
+        if(new_logfile)
+        {
+            g_logfile = fopen(new_logfile, "a");
+            if (g_logfile == NULL)
+            {
+                FatalError("Portscan log file '%s' could not be opened: %s.\n",
+                        new_logfile, strerror(errno));
+            }
+        }
+    }
+
+    portscan_config = portscan_swap_config;
     return (void *)old_config;
 }
 

@@ -20,7 +20,14 @@ libsf_dns_preproc_la_SOURCES = \
 spp_dns.c \
 spp_dns.h
 
+if BUILD_BUFFER_DUMP
+libsf_dns_preproc_la_SOURCES += \
+dns_buffer_dump.c \
+dns_buffer_dump.h
+endif
+
 EXTRA_DIST = \
+sf_dns.vcxproj \
 sf_dns.dsp
 
 all-local: $(LTLIBRARIES)

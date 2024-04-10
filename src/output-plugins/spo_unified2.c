@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2007-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -632,6 +632,9 @@ static void _AlertIP6_v2(Packet *p, const char *msg, Unified2Config *config, Eve
     alertdata.signature_revision = htonl(event->sig_rev);
     alertdata.classification_id = htonl(event->classification);
     alertdata.priority_id = htonl(event->priority);
+#if defined(FEAT_OPEN_APPID)
+    memcpy(alertdata.app_name, event->app_name, sizeof(alertdata.app_name));
+#endif /* defined(FEAT_OPEN_APPID) */
 
     if(p)
     {
@@ -689,7 +692,11 @@ static void _AlertIP6_v2(Packet *p, const char *msg, Unified2Config *config, Eve
         Unified2RotateFile(config);
 
     hdr.length = htonl(sizeof(Unified2IDSEventIPv6));
+#if !defined(FEAT_OPEN_APPID)
     hdr.type = htonl(UNIFIED2_IDS_EVENT_IPV6_VLAN);
+#else
+    hdr.type = htonl(UNIFIED2_IDS_EVENT_APPID_IPV6);
+#endif
 
     if (SafeMemcpy(write_pkt_buffer_v2, &hdr, sizeof(Serial_Unified2_Header),
                    write_pkt_buffer_v2, write_pkt_end_v2) != SAFEMEM_SUCCESS)
@@ -889,7 +896,8 @@ static void Unified2LogAlert(Packet *p, const char *msg, void *arg, Event *event
             p->ssnptr, p, event->sig_generator, event->sig_id,
             event->event_id, event->ref_time.tv_sec);
 
-    if ( p->xtradata_mask )
+    if ( p->xtradata_mask && !(p->packet_flags & PKT_STREAM_INSERT) 
+        && !(p->packet_flags & PKT_REBUILT_STREAM) )
     {
         LogFunction *log_funcs;
         uint32_t max_count = stream_api->get_xtra_data_map(&log_funcs);
@@ -1023,6 +1031,17 @@ static void _Unified2LogPacketAlert(Packet *p, const char *msg,
     }
 
     Unified2Write(write_pkt_buffer, write_len, config);
+   
+    if ( p->xtradata_mask && (Active_GetDisposition() >= ACTIVE_DROP) )
+    {
+        LogFunction *log_funcs;
+        uint32_t max_count = stream_api->get_xtra_data_map(&log_funcs);
+
+        if ( max_count > 0 )
+            AlertExtraData(
+                p->ssnptr, config, log_funcs, max_count, p->xtradata_mask,
+                event->event_id, event->ref_time.tv_sec);
+    }
 }
 
 /**

@@ -1,7 +1,7 @@
 /* $Id */
 
 /*
- ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ ** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2013-2013 Sourcefire, Inc.
  **
  **
@@ -27,11 +27,6 @@
 #include "spp_file.h"
 #include <errno.h>
 
-#ifdef HAVE_S3FILE
-//#include "src/sfutil/sfxhash.h"
-#include <libs3.h>
-#endif
-
 /*
  * File preprocessor configurations
  * Author: Hui Cao
@@ -48,29 +43,8 @@
 #define FILE_INSPECT_CAPTURE_DISK        "capture_disk"
 #define FILE_INSPECT_CAPTURE_NETWORK     "capture_network"
 #define FILE_INSPECT_CAPTURE_QUEUE_SIZE  "capture_queue_size"
-#define FILE_INSPECT_DONT_SAVE_BLACKLIST "dont_save_blacklist"
 #define FILE_INSPECT_BLACKLIST           "blacklist"
 #define FILE_INSPECT_GREYLIST            "greylist"
-#define FILE_INSPECT_SEENLIST            "seenlist"
-#define FILE_INSPECT_SHA_CACHE_MIN_ROWS  "sha_cache_min_rows"
-#define FILE_INSPECT_SHA_CACHE_MAX_SIZE_M "sha_cache_max_size_m"
-
-#ifdef HAVE_MIME_DROP
-#define FILE_INSPECT_MAX_FILE_SIZE       "max_file_size"
-#define FILE_INSPECT_ENABLE_DROP         "enable_drop_on_byte_match"
-#define FILE_INSPECT_MIME_BLACKLIST      "file_capture_mime_blacklist"
-#endif
-
-#ifdef HAVE_S3FILE
-#define FILE_INSPECT_S3_BUCKET           "s3_bucket"
-#define FILE_INSPECT_S3_CLUSTER          "s3_cluster"
-#define FILE_INSPECT_S3_ACCESS_KEY       "s3_access_key"
-#define FILE_INSPECT_S3_SECRET_KEY       "s3_secret_key"
-#endif
-
-#ifdef HAVE_EXTRADATA_FILE
-#define FILE_INSPECT_TRACK_EXTRADATA     "track_extradata"
-#endif
 
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
 #define FILE_INSPECT_VERDICT_DELAY       "verdict_delay"
@@ -172,15 +146,13 @@ static int UpdatePathToFile(char *full_path_filename, unsigned int max_size,
  * Returns:
  *  None
  */
-int file_config_signature(char *filename, FileSigInfo *sig_info,
-        FileInspectConf *config, int allow_fatal)
+static void file_config_signature(char *filename, FileSigInfo *sig_info,
+        FileInspectConf *config)
 {
     FILE *fp = NULL;
     char linebuf[MAX_SIG_LINE_LENGTH];
     char full_path_filename[PATH_MAX+1];
     int line_number = 0;
-
-    void (*fatal_err_fn)(const char *,...) = allow_fatal ? FILE_FATAL_ERROR : _dpd.errMsg;
 
     /* check table first, create one if not exist*/
 
@@ -190,110 +162,9 @@ int file_config_signature(char *filename, FileSigInfo *sig_info,
     }
     if (config->sig_table == NULL)
     {
-        fatal_err_fn("%s(%d) Could not create file signature hash.\n",
+        FILE_FATAL_ERROR("%s(%d) Could not create file signature hash.\n",
                 *(_dpd.config_file), *(_dpd.config_line));
-        return -1;
     }
-
-    /* parse the file line by line, each signature one entry*/
-    _dpd.logMsg("File inspect: processing file %s\n", filename);
-
-    UpdatePathToFile(full_path_filename, PATH_MAX, filename);
-
-    if((fp = fopen(full_path_filename, "r")) == NULL)
-    {
-        char errBuf[STD_BUF];
-#ifdef WIN32
-        snprintf(errBuf, STD_BUF, "%s", strerror(errno));
-#else
-        strerror_r(errno, errBuf, STD_BUF);
-#endif
-        errBuf[STD_BUF-1] = '\0';
-        fatal_err_fn("%s(%d) => Unable to open signature file %s, "
-                "Error: %s\n",
-                *(_dpd.config_file), *(_dpd.config_line), filename, errBuf);
-        return -1;
-    }
-
-    while( fgets(linebuf, MAX_SIG_LINE_LENGTH, fp) )
-    {
-        char *cmt = NULL;
-        char *sha256;
-        FileSigInfo *old_info;
-
-        DEBUG_WRAP(DebugMessage(DEBUG_FILE, "File signatures: %s\n",linebuf ););
-
-        line_number++;
-
-        /* Remove comments */
-        if( (cmt = strchr(linebuf, '#')) )
-            *cmt = '\0';
-
-        /* Remove newline as well, prevent double newline in logging.*/
-        if( (cmt = strchr(linebuf, '\n')) )
-            *cmt = '\0';
-
-        if (!strlen(linebuf))
-            continue;
-
-        sha256 = malloc(SHA256_HASH_SIZE);
-
-        if (!sha256)
-        {
-            fatal_err_fn("%s(%d) => No memory for file: %s (%d), \n"
-                    "signature: %s\n",
-                    *(_dpd.config_file), *(_dpd.config_line),
-                    filename, line_number, linebuf);
-            return -1;
-        }
-
-        if (str_to_sha(linebuf, sha256, strlen(linebuf)) < 0)
-        {
-            fatal_err_fn("%s(%d) => signature format at file: %s (%d), \n"
-                    "signature: %s\n",
-                    *(_dpd.config_file), *(_dpd.config_line),
-                    filename, line_number, linebuf);
-            return -1;
-        }
-
-        old_info = (FileSigInfo *)sha_table_find(config->sig_table, sha256);
-
-        if (old_info)
-        {
-            free(sha256);
-            _dpd.errMsg("%s(%d) => signature redefined at file: %s (%d), \n"
-                    "signature: %s\n",
-                    *(_dpd.config_file), *(_dpd.config_line),
-                    filename, line_number, linebuf);
-        }
-        else
-        {
-            sha_table_add(config->sig_table, sha256, sig_info);
-        }
-    }
-    return 0;
-}
-
-/*
- * Load seen file list signature file
- *
- * Arguments:
- *  filename: file name string
- *  hashtable: Hash table to store results
- *
- * Returns:
- *  None
- *
- * TODO:
- *  Join with file_config_signature.
- */
-static void file_config_signature_sfxhash(char *filename, SFXHASH *hashtable)
-{
-    FILE *fp = NULL;
-    char linebuf[MAX_SIG_LINE_LENGTH];
-    char full_path_filename[PATH_MAX+1];
-    int line_number = 0;
-    int no_memory = 0;
 
     /* parse the file line by line, each signature one entry*/
     _dpd.logMsg("File inspect: processing file %s\n", filename);
@@ -319,13 +190,9 @@ static void file_config_signature_sfxhash(char *filename, SFXHASH *hashtable)
     {
         char *cmt = NULL;
         char *sha256;
+        FileSigInfo *old_info;
 
         DEBUG_WRAP(DebugMessage(DEBUG_FILE, "File signatures: %s\n",linebuf ););
-
-        if(no_memory)
-        {
-            break;
-        }
 
         line_number++;
 
@@ -340,7 +207,7 @@ static void file_config_signature_sfxhash(char *filename, SFXHASH *hashtable)
         if (!strlen(linebuf))
             continue;
 
-        sha256 = malloc(SHA256_HASH_SIZE);
+        sha256 = _dpd.snortAlloc(1, SHA256_HASH_SIZE, PP_FILE_INSPECT, PP_MEM_CATEGORY_CONFIG);
 
         if (!sha256)
         {
@@ -358,39 +225,22 @@ static void file_config_signature_sfxhash(char *filename, SFXHASH *hashtable)
                     filename, line_number, linebuf);
         }
 
-        const int rc = sfxhash_add(hashtable, sha256, NULL);
-        switch(rc) {
-        case SFXHASH_NOMEM:
-            _dpd.errMsg("%s(%d) => No memory to save signature at file %s (%d), \n"
-                    "signature: %s\n",
-                    *(_dpd.config_file), *(_dpd.config_line),
-                    filename, line_number, linebuf);
+        old_info = (FileSigInfo *)sha_table_find(config->sig_table, sha256);
 
-            no_memory = true;
-
-            break;
-
-        case SFXHASH_OK:
-            break;
-
-        case SFXHASH_INTABLE:
+        if (old_info)
+        {
+            _dpd.snortFree(sha256, SHA256_HASH_SIZE, PP_FILE_INSPECT, PP_MEM_CATEGORY_CONFIG);
             _dpd.errMsg("%s(%d) => signature redefined at file: %s (%d), \n"
                     "signature: %s\n",
                     *(_dpd.config_file), *(_dpd.config_line),
                     filename, line_number, linebuf);
-            sfxhash_remove(hashtable, sha256);
-            break;
-
-        default:
-            _dpd.errMsg("%s(%d) => sha_table_add return unknown error %d at"
-                    " file: %s (%d), \n"
-                    "signature: %s\n",
-                    *(_dpd.config_file), *(_dpd.config_line),
-                    rc,
-                    filename, line_number, linebuf);
-            break;
-        };
+        }
+        else
+        {
+            sha_table_add(config->sig_table, sha256, sig_info);
+        }
     }
+    fclose(fp);
 }
 
 /* Display the configuration for the File preprocessor.
@@ -428,71 +278,7 @@ static void DisplayFileConfig(FileInspectConf *config)
     _dpd.logMsg("    file sent to host: %s, port number: %d\n",
             config->hostname ? config->hostname:"DISABLED (Default)",
                     config->portno);
-#ifdef HAVE_EXTRADATA_FILE
-    _dpd.logMsg("    file extradata: %s\n",
-            config->file_extradata_enabled ? "ENABLED":"DISABLED (Default)");
-#endif
-#ifdef HAVE_S3FILE
-    _dpd.logMsg("    file -> S3: ENABLED\n");
-#endif
-#ifdef HAVE_MIME_DROP
-    _dpd.logMsg("    file MIME drop and max size drop: ENABLED\n");
-#endif
-}
-
-/* Creates a new hash table, memory limited, to store SHA signatures
- *
- * PARAMETERS:
- *   rows: Hashtable rows
- *   mem_m: Memory, in MB, that table can allocate
- *
- * RETURNS: New hashtable
- */
-static SFXHASH * hash_table_s3_cache_new(const int rows,const size_t mem_m)
-{
-    SFXHASH *hts3cache = NULL;
-    hts3cache = sfxhash_new(/*number of rows in hash table*/ rows,
-                            /*key size in bytes, same for all keys*/ SHA256_HASH_SIZE,
-                            /*datasize in bytes, zero indicates user manages data*/ 0,
-                            /*maximum memory to use in bytes*/ mem_m*1024*1024,
-                            /*Automatic Node Recovery boolean flag*/ 1,
-                            /*users Automatic Node Recovery memory release function*/ NULL,
-                            /* Auto free function */ NULL,
-                            /* Recycle nodes */ 1
-                            );
-    if (hts3cache == NULL)
-    {
-        _dpd.logMsg("File inspect: Failed to create s3 cache hash table \n");
-    }
-    return hts3cache;
-}
-
-int file_config_setup_seenlist(char *seenList,FileInspectConf *config,
-    int allow_fatal)
-{
-    void (*fatal_err_fn)(const char *,...) = allow_fatal ? FILE_FATAL_ERROR : _dpd.errMsg;
-
-    if(config->sha256_cache_table_maxmem_m > 0)
-    {
-        config->sha256_cache = hash_table_s3_cache_new(
-            config->sha256_cache_table_rows,
-            config->sha256_cache_table_maxmem_m);
-
-        if (NULL == config->sha256_cache)
-        {
-            fatal_err_fn("%s(%d) => Couldn't create sha256 cache. Please "
-                "decrease rows or increase maxmem?)\n",
-                *(_dpd.config_file), *(_dpd.config_line));
-            return -1;
-        }
-
-        if(seenList)
-        {
-            file_config_signature_sfxhash(seenList, config->sha256_cache);
-        }
-    }
-
-    return 0;
+    _dpd.logMsg("\n");
 }
 
 /* Parses and processes the configuration arguments
@@ -509,12 +295,12 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
     char* cur_sectionp = NULL;
     char* next_sectionp = NULL;
     char* argcpyp = NULL;
-    char* seenList = NULL;
+
+
     if (config == NULL)
         return;
 
     config->capture_disk_size = FILE_CAPTURE_DISK_SIZE_DEFAULT;
-    config->sha256_cache_table_rows = SHA256_CACHE_TABLE_ROWS_DEFAULT;
 
     /* Sanity check(s) */
     if (!argp)
@@ -561,12 +347,6 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
         {
             config->file_signature_enabled = true;
         }
-#ifdef HAVE_EXTRADATA_FILE
-        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_TRACK_EXTRADATA))
-        {
-            config->file_extradata_enabled = true;
-        }
-#endif
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_BLACKLIST))
         {
             cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
@@ -576,40 +356,7 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
                         *(_dpd.config_file), *(_dpd.config_line));
             }
 
-#ifdef CONTROL_SOCKET
-            config->blacklist_path = strdup(cur_tokenp);
-#endif
-
-            file_config_signature(cur_tokenp, &blackList, config, 
-                1 /* allow_fatal*/ );
-        }
-        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_SEENLIST))
-        {
-            /* Seenlist could be huge, so it's better to save it in memory
-             * controlled cache
-             */
-            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
-            if(cur_tokenp == NULL)
-            {
-                FILE_FATAL_ERROR("%s(%d) => Please specify list file!\n",
-                        *(_dpd.config_file), *(_dpd.config_line));
-            }
-
-            seenList = strdup(cur_tokenp);
-            if(!seenList)
-            {
-                FILE_FATAL_ERROR("%s(%d) => Couldn't strdup!\n",
-                        *(_dpd.config_file), *(_dpd.config_line));
-            }
-
-#ifdef CONTROL_SOCKET
-            config->seenlist_path = strdup(seenList);
-#endif
-
-        }
-        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_DONT_SAVE_BLACKLIST))
-        {
-            config->dont_save_blacklist = true;
+            file_config_signature(cur_tokenp, &blackList, config);
         }
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_GREYLIST))
         {
@@ -620,12 +367,7 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
                         *(_dpd.config_file), *(_dpd.config_line));
             }
 
-#ifdef CONTROL_SOCKET
-            config->greylist_path = strdup(cur_tokenp);
-#endif
-
-            file_config_signature(cur_tokenp, &greyList, config,
-                1 /* allow_fatal */ );
+            file_config_signature(cur_tokenp, &greyList, config);
         }
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_CAPTURE_MEMORY))
         {
@@ -698,65 +440,6 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
                     0, UINT32_MAX, &value);
             config->file_capture_queue_size = (uint32_t) value;
         }
-#ifdef HAVE_MIME_DROP
-        else if(!strcasecmp(cur_tokenp, FILE_INSPECT_MAX_FILE_SIZE))
-        {
-            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
-            _dpd.checkValueInRange(cur_tokenp, FILE_INSPECT_MAX_FILE_SIZE,
-                    0, UINT32_MAX, &value);
-            _dpd.logMsg("File inspect: File-Max-Size set\n");
-            config->mime.file_capture_max_file_size = (uint32_t) value;
-
-        }
-        else if(!strcasecmp(cur_tokenp, FILE_INSPECT_ENABLE_DROP))
-        {
-            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
-            _dpd.logMsg("File inspect: File-Drop enabled\n");
-            config->mime.file_capture_enable_drop = true;
-        }
-        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_MIME_BLACKLIST))
-        {
-            _dpd.logMsg("File inspect: loading mime blacklist into mem\n");
-            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
-            if(cur_tokenp == NULL)
-            {
-                FILE_FATAL_ERROR("%s(%d) => Please specify mime blacklist array!\n",
-                        *(_dpd.config_file), *(_dpd.config_line));
-            }
-            config->mime.file_capture_mime_blacklist = strdup(cur_tokenp);
-            _dpd.logMsg("File inspect: loaded mime blacklist into mem %s\n", config->mime.file_capture_mime_blacklist);
-        }
-#endif
-        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_SHA_CACHE_MIN_ROWS))
-        {
-            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
-            if( NULL == cur_tokenp )
-            {
-                FILE_FATAL_ERROR("%s(%d) => Please specify cache min rows!\n",
-                        *(_dpd.config_file), *(_dpd.config_line));
-            }
-            else
-            {
-                _dpd.checkValueInRange(cur_tokenp, FILE_INSPECT_SHA_CACHE_MIN_ROWS,
-                        1, SHA256_CACHE_TABLE_ROWS_MAX, &value);
-                config->sha256_cache_table_rows = (uint32_t) value;
-            }
-        }
-        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_SHA_CACHE_MAX_SIZE_M))
-        {
-            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
-            if( NULL == cur_tokenp )
-            {
-                FILE_FATAL_ERROR("%s(%d) => Please specify cache max memory size!\n",
-                        *(_dpd.config_file), *(_dpd.config_line));
-            }
-            else
-            {
-                _dpd.checkValueInRange(cur_tokenp, FILE_INSPECT_SHA_CACHE_MIN_ROWS,
-                        1, SHA256_CACHE_TABLE_MAXMEM_M_MAX, &value);
-                config->sha256_cache_table_maxmem_m = (uint32_t) value;
-            }
-        }
 #if defined(DEBUG_MSGS) || defined (REG_TEST)
         else if (!strcasecmp(cur_tokenp, FILE_INSPECT_VERDICT_DELAY))
         {
@@ -764,46 +447,6 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
             _dpd.checkValueInRange(cur_tokenp, FILE_INSPECT_VERDICT_DELAY,
                     0, UINT32_MAX, &value);
             config->verdict_delay = (uint32_t) value;
-        }
-#endif
-#if HAVE_S3FILE
-        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_S3_BUCKET) )
-        {
-            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
-            if( NULL == cur_tokenp )
-            {
-                FILE_FATAL_ERROR("%s(%d) => Please specify s3 bucket!\n");
-            }
-            config->s3.bucket = strdup(cur_tokenp);
-        }
-        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_S3_CLUSTER) )
-        {
-            config->file_capture_enabled = true;
-
-            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
-            if( NULL == cur_tokenp )
-            {
-                FILE_FATAL_ERROR("%s(%d) => Please specify s3 cluster!\n");
-            }
-            config->s3.cluster = strdup(cur_tokenp);
-        }
-        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_S3_ACCESS_KEY) )
-        {
-            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
-            if( NULL == cur_tokenp )
-            {
-                FILE_FATAL_ERROR("%s(%d) => Please specify s3 access_key!\n");
-            }
-            config->s3.access_key = strdup(cur_tokenp);
-        }
-        else if (!strcasecmp(cur_tokenp, FILE_INSPECT_S3_SECRET_KEY) )
-        {
-            cur_tokenp = strtok(NULL, FILE_CONF_VALUE_SEPERATORS);
-            if( NULL == cur_tokenp )
-            {
-                FILE_FATAL_ERROR("%s(%d) => Please specify s3 secret_key!\n");
-            }
-            config->s3.secret_key = strdup(cur_tokenp);
         }
 #endif
         else
@@ -823,13 +466,6 @@ void file_config_parse(FileInspectConf *config, const u_char* argp)
                 &next_sectionp);
         DEBUG_WRAP(DebugMessage(DEBUG_FILE, "Arguments token: %s\n",
                 cur_sectionp ););
-    }
-
-    file_config_setup_seenlist(seenList,config, 1 /* allow_fatal */);
-
-    if(seenList)
-    {
-        free(seenList);
     }
 
     DisplayFileConfig(config);
@@ -875,7 +511,6 @@ int file_config_compare(FileInspectConf* conf1 , FileInspectConf* conf2)
 
 void file_config_free(FileInspectConf* config)
 {
-
     if (config->capture_dir)
     {
         free(config->capture_dir);
@@ -893,62 +528,5 @@ void file_config_free(FileInspectConf* config)
         sha_table_delete(config->sig_table);
         config->sig_table  = NULL;
     }
-
-    if(config->sha256_cache)
-    {
-        sfxhash_delete(config->sha256_cache);
-        config->sha256_cache = NULL;
-    }
-#ifdef HAVE_MIME_DROP
-    if(config->mime.file_capture_mime_blacklist){
-        free(config->mime.file_capture_mime_blacklist);
-        config->mime.file_capture_mime_blacklist = NULL;
-    }
-#endif
-
-#if HAVE_S3FILE
-    if(config->s3.bucket)
-    {
-        free(config->s3.bucket);
-        config->s3.bucket = NULL;
-    }
-
-    if(config->s3.cluster)
-    {
-        free(config->s3.cluster);
-        config->s3.cluster = NULL;
-    }
-
-    if(config->s3.access_key)
-    {
-        free(config->s3.access_key);
-        config->s3.access_key = NULL;
-    }
-
-    if(config->s3.secret_key)
-    {
-        free(config->s3.secret_key);
-        config->s3.secret_key = NULL;
-    }
-#endif
-
-#ifdef CONTROL_SOCKET
-    if (config->blacklist_path)
-    {
-        free(config->blacklist_path);
-        config->blacklist_path = NULL;
-    }
-    if (config->greylist_path)
-    {
-        free(config->greylist_path);
-        config->greylist_path = NULL;
-    }
-    if (config->seenlist_path)
-    {
-        free(config->seenlist_path);
-        config->seenlist_path = NULL;
-    }
-
-#endif /* CONTROL_SOCKET */
 }
 

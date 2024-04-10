@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -31,7 +31,7 @@
 
 #define NNTP_PORT   119
 
-#define NNTP_COUNT_THRESHOLD 4
+#define NNTP_COUNT_THRESHOLD 2
 
 typedef enum
 {
@@ -63,7 +63,7 @@ typedef struct _SERVICE_NNTP_CODE
 #pragma pack()
 
 static int nntp_init(const InitServiceAPI * const init_api);
-MakeRNAServiceValidationPrototype(nntp_validate);
+static int nntp_validate(ServiceValidationArgs* args);
 
 static tRNAServiceElement svc_element =
 {
@@ -264,15 +264,18 @@ static int nntp_validate_data(const uint8_t *data, uint16_t *offset,
     return 0;
 }
 
-MakeRNAServiceValidationPrototype(nntp_validate)
+static int nntp_validate(ServiceValidationArgs* args)
 {
     ServiceNNTPData *nd;
     uint16_t offset;
     int code;
+    tAppIdData *flowp = args->flowp;
+    const uint8_t *data = args->data;
+    uint16_t size = args->size;
 
     if (!size)
         goto inprocess;
-    if (dir != APP_ID_FROM_RESPONDER)
+    if (args->dir != APP_ID_FROM_RESPONDER)
         goto inprocess;
 
     nd = nntp_service_mod.api->data_get(flowp, nntp_service_mod.flow_data_index);
@@ -347,16 +350,17 @@ MakeRNAServiceValidationPrototype(nntp_validate)
     }
 
 inprocess:
-    nntp_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+    nntp_service_mod.api->service_inprocess(flowp, args->pkt, args->dir, &svc_element, NULL);
     return SERVICE_INPROCESS;
 
 success:
-    nntp_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
-                                      APP_ID_NNTP, NULL, NULL, NULL);
+    nntp_service_mod.api->add_service(flowp, args->pkt, args->dir, &svc_element,
+                                      APP_ID_NNTP, NULL, NULL, NULL, NULL);
     return SERVICE_SUCCESS;
 
 fail:
-    nntp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, nntp_service_mod.flow_data_index, pConfig);
+    nntp_service_mod.api->fail_service(flowp, args->pkt, args->dir, &svc_element,
+                                       nntp_service_mod.flow_data_index, args->pConfig, NULL);
     return SERVICE_NOMATCH;
 }
 

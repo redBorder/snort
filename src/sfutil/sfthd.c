@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2003-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -690,14 +690,15 @@ static char * printIP(unsigned u )
 #endif
 
 int sfthd_test_rule(SFXHASH *rule_hash, THD_NODE *sfthd_node,
-                    sfaddr_t* sip, sfaddr_t* dip, long curtime)
+                    sfaddr_t* sip, sfaddr_t* dip, long curtime,
+                    detection_option_eval_data_t *eval_data)
 {
     int status;
 
     if ((rule_hash == NULL) || (sfthd_node == NULL))
         return 0;
 
-    status = sfthd_test_local(rule_hash, sfthd_node, sip, dip, curtime );
+    status = sfthd_test_local(rule_hash, sfthd_node, sip, dip, curtime, eval_data);
 
     return (status < -1) ? 1 : status;
 }
@@ -711,7 +712,7 @@ static inline int sfthd_test_suppress (
             || (IpAddrSetContains(sfthd_node->ip_address,sip) && IpAddrSetContains(sfthd_node->dst_ip_address,dip)))
         {
 #ifdef THD_DEBUG
-            printf("THD_DEBUG: SUPPRESS NODE, do not log events with this sIP->dIP combination\n");
+            printf("THD_DEBUG: SUPPRESS NODE, do not log events with this IP\n");
             fflush(stdout);
 #endif
             /* Don't log, and stop looking( event's to this address
@@ -910,7 +911,8 @@ int sfthd_test_local(
     THD_NODE   * sfthd_node,
     sfaddr_t*    sip,
     sfaddr_t*    dip,
-    time_t       curtime )
+    time_t       curtime,
+    detection_option_eval_data_t *eval_data)
 {
     THD_IP_NODE_KEY key;
     THD_IP_NODE     data,*sfthd_ip_node;
@@ -936,7 +938,6 @@ int sfthd_test_local(
         return 0;
     }
 
-
     /*
      *  Check for and test Suppression of this event to this IP
      */
@@ -952,9 +953,11 @@ int sfthd_test_local(
      *  Get The correct IP
      */
     if (sfthd_node->tracking == THD_TRK_SRC)
+    {
        ip = sip;
-    else
+    } else {
        ip = dip;
+    }
 
     /*
     *  Go on and do standard thresholding
@@ -966,7 +969,7 @@ int sfthd_test_local(
     key.thd_id = sfthd_node->thd_id;
 
     /* Set up a new data element */
-    data.count  = 1;
+    data.count  = 0;
     data.prev   = 0;
     data.tstart = data.tlast = curtime; /* Event time */
 
@@ -974,13 +977,24 @@ int sfthd_test_local(
      * Check for any Permanent sig_id objects for this gen_id  or add this one ...
      */
     status = sfxhash_add(local_hash, (void*)&key, &data);
-    if (status == SFXHASH_INTABLE)
+    if (status == SFXHASH_INTABLE || status == SFXHASH_OK)
     {
         /* Already in the table */
         sfthd_ip_node = local_hash->cnode->data;
 
         /* Increment the event count */
-        sfthd_ip_node->count++;
+        if(eval_data)
+        {
+             if(eval_data->detection_filter_count == 0)
+             {
+                 eval_data->detection_filter_count = 1;
+                 sfthd_ip_node->count++;
+             }
+        }
+        else
+        {
+            sfthd_ip_node->count++;
+        }
     }
     else if (status != SFXHASH_OK)
     {
@@ -988,12 +1002,16 @@ int sfthd_test_local(
         return 1; /*  check the next threshold object */
     }
     else
-    {
+    {  
         /* Was not in the table - it was added - work with our copy of the data */
         sfthd_ip_node = &data;
+        if(eval_data)
+        {
+            eval_data->detection_filter_count = 1;
+        }
     }
-
     return sfthd_test_non_suppress(sfthd_node, sfthd_ip_node, curtime);
+
 }
 
 /*
@@ -1033,7 +1051,6 @@ static inline int sfthd_test_global(
 #endif
         return 0;
     }
-
 
     /* Check for and test Suppression of this event to this IP */
     if( sfthd_node->type == THD_TYPE_SUPPRESS )
@@ -1211,7 +1228,7 @@ int sfthd_test_threshold(
         /*
          *   Test SUPPRESSION and THRESHOLDING
          */
-        status = sfthd_test_local(thd->ip_nodes, sfthd_node, sip, dip, curtime );
+        status = sfthd_test_local(thd->ip_nodes, sfthd_node, sip, dip, curtime, NULL);
 
         if( status < 0 ) /* -1 == Don't log and stop looking */
         {

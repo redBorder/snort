@@ -1,7 +1,7 @@
 /*
  * ftpp_si.h
  *
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2004-2013 Sourcefire, Inc.
  * Steven A. Sturges <ssturges@sourcefire.com>
  * Daniel J. Roelker <droelker@sourcefire.com>
@@ -137,6 +137,7 @@ typedef struct s_TELNET_SESSION
 typedef struct s_FTP_SESSION
 {
     FTP_TELNET_SESSION ft_ssn;
+    tSfPolicyId policy_id;
 
     /* The client construct contains all the info associated with a
      * client request. */
@@ -153,7 +154,6 @@ typedef struct s_FTP_SESSION
     FTP_SERVER_PROTO_CONF *server_conf;
 
     /* The global configuration for this session */
-    tSfPolicyId policy_id;
     tSfPolicyUserContextId global_conf;
 
     /* The data channel info */
@@ -165,30 +165,30 @@ typedef struct s_FTP_SESSION
     sfaddr_t      serverIP;
     uint16_t serverPort;
     uint32_t ftp_cmd_pipe_index;
-
-#ifdef HAVE_EXTRADATA_FILE
-    char *user;
-    int user_info; /* 0: unknown, >0: user_length */
-#endif
+    uint32_t rest_cmd_offset;
+    uint16_t control_clientPort;
+    uint16_t control_serverPort;
 
     /* A file is being transfered on ftp-data channel */
     char *filename;
     int file_xfer_info; /* -1: ignore, 0: unknown, >0: filename length */
-    unsigned char flags;
     bool data_xfer_dir;
 
     /* Command/data channel encryption */
     bool encr_state_chello;
+    unsigned char flags;
     int encr_state;
     uint32_t flow_id;
 
     /* Alertable event list */
     FTP_EVENTS event_list;
     void *datassn;
+    sfaddr_t      control_clientIP;
+    sfaddr_t      control_serverIP;
 
 } FTP_SESSION;
 
-#define FTP_FLG_MALWARE  (1<<0)
+#define FTP_FLG_MALWARE_ENABLED (1<<1)
 
 #ifdef TARGET_BASED
 
@@ -202,6 +202,7 @@ typedef struct s_FTP_DATA_SESSION
 {
     FTP_TELNET_SESSION ft_ssn;
     StreamSessionKey * ftp_key;
+    void* ftpssn;
     char *filename;
     int data_chan;
     int file_xfer_info;
@@ -210,12 +211,14 @@ typedef struct s_FTP_DATA_SESSION
     unsigned char mode;
     unsigned char flags;
     uint32_t flow_id;
+    uint32_t path_hash;
 } FTP_DATA_SESSION;
 
 #define FTPDATA_FLG_REASSEMBLY_SET  (1<<0)
 #define FTPDATA_FLG_FILENAME_SET    (1<<1)
 #define FTPDATA_FLG_STOP            (1<<2)
 #define FTPDATA_FLG_REST            (1<<3)
+#define FTPDATA_FLG_FLUSH           (1<<4)
 
 #endif
 

@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -40,7 +40,7 @@ typedef struct _FWDebugSessionConstraints
     uint8_t protocol;
 } FWDebugSessionConstraints;
 
-#define FW_DEBUG_SESSION_ID_SIZE    (39+1+5+5+39+1+5+1+3+1+1+1)
+#define FW_DEBUG_SESSION_ID_SIZE    (39+1+5+4+39+1+5+1+3+1+1+1+2+1+10+1+1+1+10+1)
 
 typedef struct _config_item
 {
@@ -50,6 +50,17 @@ typedef struct _config_item
 
 #define MAX_LINE    2048
 #define MAX_TOKS    256
+
+/* This structure should be same as struct define in util.h */
+typedef struct _ThrottleInfo
+{
+    time_t lastUpdate;
+    /*Within this duration (in seconds), maximal one distinct message is logged*/
+    uint32_t duration_to_log;
+    uint64_t count;
+    /*Till the message count reaches to count_to_log, maximal one distinct message is logged*/
+    uint64_t count_to_log;
+}ThrottleInfo;
 
 extern time_t packetTimeOffset;
 extern time_t packetTime;
@@ -67,5 +78,54 @@ static inline void SetPacketRealTime(time_t pktTime)
     }
     packetTime = pktTime + packetTimeOffset;
 }
+
+static inline void DumpHex(FILE *fp, const uint8_t *data, unsigned len)
+{
+    char str[18];
+    unsigned i;
+    unsigned pos;
+    char c;
+
+    for (i=0, pos=0; i<len; i++, pos++)
+    {
+        if (pos == 17)
+        {
+            str[pos] = 0;
+            fprintf(fp, "  %s\n", str);
+            pos = 0;
+        }
+        else if (pos == 8)
+        {
+            str[pos] = ' ';
+            pos++;
+            fprintf(fp, "%s", " ");
+        }
+        c = (char)data[i];
+        if (isprint(c) && !isspace(c))
+            str[pos] = c;
+        else
+            str[pos] = '.';
+        fprintf(fp, "%02X ", data[i]);
+    }
+    if (pos)
+    {
+        str[pos] = 0;
+        for (; pos < 17; pos++)
+        {
+            if (pos == 8)
+            {
+                str[pos] = ' ';
+                pos++;
+                fprintf(fp, "%s", "    ");
+            }
+            else
+            {
+                fprintf(fp, "%s", "   ");
+            }
+        }
+        fprintf(fp, "  %s\n", str);
+    }
+}
+
 #endif  /* __COMMON_UTIL_H__ */
 

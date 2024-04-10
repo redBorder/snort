@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -37,10 +37,10 @@
 #include "fw_appid.h"
 #include "limits.h"
 
-static int service_validate(const uint8_t *data, uint16_t size, const int dir,
-                     tAppIdData *flowp, SFSnortPacket *pkt, struct _Detector *userdata, const struct appIdConfig_ *pConfig);
+static int service_validate(ServiceValidationArgs* args);
 static int csdPatternTreeSearch(const uint8_t *data, uint16_t size, int protocol, SFSnortPacket *pkt,
-                         const tRNAServiceElement** serviceData, bool isClient, tAppIdConfig *pConfig);
+                                const tRNAServiceElement** serviceData, bool isClient,
+                                const tAppIdConfig *pConfig);
 static int pattern_service_init(const InitServiceAPI * const initServiceApi);
 static void pattern_service_clean(const CleanServiceAPI * const clean_api);
 static CLIENT_APP_RETCODE client_init(const InitClientAppAPI * const init_api, SF_LIST *config);
@@ -571,7 +571,8 @@ static int pattern_match(void* id, void *unused_tree, int index, void* data, voi
 }
 
 static int csdPatternTreeSearch(const uint8_t *data, uint16_t size, int protocol, SFSnortPacket *pkt,
-                         const tRNAServiceElement** serviceData, bool isClient, tAppIdConfig *pConfig)
+                                const tRNAServiceElement** serviceData, bool isClient,
+                                const tAppIdConfig *pConfig)
 {
     void *patternTree = NULL;
     PatternService *ps;
@@ -661,11 +662,15 @@ static int csdPatternTreeSearch(const uint8_t *data, uint16_t size, int protocol
     return ps->id;
 }
 
-static int service_validate(const uint8_t *data, uint16_t size, const int dir,
-                     tAppIdData *flowp, SFSnortPacket *pkt, struct _Detector *userdata, const struct appIdConfig_ *pConfig)
+static int service_validate(ServiceValidationArgs* args)
 {
     uint32_t id;
     const tRNAServiceElement *service = NULL;
+    tAppIdData *flowp = args->flowp;
+    const uint8_t *data = args->data;
+    SFSnortPacket *pkt = args->pkt; 
+    const int dir = args->dir;
+    uint16_t size = args->size;
 
     if (!data || !pattern_service_mod.api || !flowp || !pkt)
         return SERVICE_ENULL;
@@ -674,18 +679,20 @@ static int service_validate(const uint8_t *data, uint16_t size, const int dir,
     if (dir != APP_ID_FROM_RESPONDER)
         goto inprocess;
 
-    id = csdPatternTreeSearch(data, size, flowp->proto, pkt, &service, false, (struct appIdConfig_ *)pConfig);
+    id = csdPatternTreeSearch(data, size, flowp->proto, pkt, &service, false, args->pConfig);
     if (!id) goto fail;
 
-    pattern_service_mod.api->add_service(flowp, pkt, dir, &svc_element, id, NULL, NULL, NULL);
+    pattern_service_mod.api->add_service(flowp, pkt, dir, &svc_element, id, NULL, NULL, NULL, NULL);
     return SERVICE_SUCCESS;
 
 inprocess:
-    pattern_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+    pattern_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element, NULL);
     return SERVICE_INPROCESS;
 
 fail:
-    pattern_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, pattern_service_mod.flow_data_index, pConfig);
+    pattern_service_mod.api->fail_service(flowp, pkt, dir, &svc_element,
+                                          pattern_service_mod.flow_data_index,
+                                          args->pConfig, NULL);
     return SERVICE_NOMATCH;
 }
 
@@ -735,7 +742,7 @@ static CLIENT_APP_RETCODE client_validate(const uint8_t *data, uint16_t size, co
     id = csdPatternTreeSearch(data, size, flowp->proto, pkt, &service, true, (tAppIdConfig *)pConfig);
     if (!id) goto fail;
 
-    pattern_tcp_client_mod.api->add_app(flowp, id, id, NULL);
+    pattern_tcp_client_mod.api->add_app(pkt, dir, pConfig, flowp, id, id, NULL);
     return CLIENT_APP_SUCCESS;
 
 inprocess:

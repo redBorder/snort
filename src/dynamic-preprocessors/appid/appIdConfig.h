@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -82,46 +82,12 @@ typedef struct appidGenericConfigItem_
     void    *pData; ///< Module configuration data
 } tAppidGenericConfigItem;
 
-void appIdConfigParse(char *args);
-void appIdConfigDump(void);
-
-/**
- * \struct tAppidStaticConfig
- *
- * \brief AppId static configuration data structure
- *
- * Members of this data structure get populated during initialization and freed
- * during exit. They are not reloadable/reconfigurable.
- * Note: appid_tp_dir can be reconfigured but gets used by 3rd party reload. AppID
- * reload does not look at this variable.
- */
-struct AppidStaticConfig
+typedef enum
 {
-    unsigned    disable_safe_search;
-    const char *appid_thirdparty_dir;         /* directory where thirdparty modules are located.*/
-    char app_stats_filename[PATH_MAX];
-    unsigned long app_stats_period;
-    unsigned long app_stats_rollover_size;
-    unsigned long app_stats_rollover_time;
-    char app_id_detector_path[PATH_MAX];
-    unsigned long memcap;
-    int app_id_dump_ports;
-    int app_id_debug;
-    uint32_t instance_id;
-    char conf_file[PATH_MAX];
-    unsigned dns_host_reporting;
-    unsigned referred_appId_disabled;
-    unsigned rtmp_max_packets;
-    unsigned mdns_user_reporting;
-    unsigned ftp_userid_disabled;
-    unsigned chp_userid_disabled;
-    unsigned chp_body_collection_disabled;
-    unsigned chp_fflow_disabled;
-    unsigned chp_body_collection_max;
-    unsigned max_tp_flow_depth;
-    unsigned tp_allow_probes;
-};
-typedef struct AppidStaticConfig tAppidStaticConfig;
+    APPID_REQ_UNINITIALIZED = 0,
+    APPID_REQ_YES,
+    APPID_REQ_NO
+} tAppIdReq;
 
 /**
  * \typedef tAppIdConfig
@@ -140,7 +106,7 @@ typedef struct appIdConfig_
     NetworkSet  *net_list_by_zone[MAX_ZONES];    ///< list of networks we're analyzing
     tAppId      tcp_port_only[65536];       ///< Service IDs for port-only TCP services
     tAppId      udp_port_only[65536];       ///< Service IDs for port-only UDP services
-    tAppId      ip_protocol[255];           ///< Service IDs for non-TCP / UDP protocol services
+    tAppId      ip_protocol[256];           ///< Service IDs for non-TCP / UDP protocol services
 
     SF_LIST     client_app_args;            ///< List of Client App arguments
 
@@ -153,6 +119,8 @@ typedef struct appIdConfig_
 
     SFXHASH     *AF_indicators;             ///< App Forecasting list of "indicator apps"
     SFXHASH     *AF_actives;                ///< App Forecasting list of hosts to watch for "forecast apps"
+
+    sfaddr_t    *debugHostIp;
 
     struct _AppInfoTableEntry   *AppInfoList;
     struct _AppInfoTableEntry   *AppInfoTable[SF_APPID_MAX];
@@ -177,13 +145,89 @@ typedef struct appIdConfig_
     struct ClientPortPattern  *clientPortPattern;
 
     SF_LIST                 genericConfigList;      ///< List of tAppidGenericConfigItem structures
+
+    tAppIdReq isAppIdAlwaysRequired;
 } tAppIdConfig;
+
+#ifdef SIDE_CHANNEL
+typedef struct _AppIdSSConfig
+{
+#ifdef REG_TEST
+    char *startup_input_file;
+    char *runtime_output_file;
+#endif
+    bool use_side_channel;
+} AppIdSSConfig;
+#endif
+
+/**
+ * \struct tAppidStaticConfig
+ *
+ * \brief AppId static configuration data structure
+ *
+ * Members of this data structure get populated during initialization and freed
+ * during exit. They are not reloadable/reconfigurable.
+ * Note: appid_tp_dir can be reconfigured but gets used by 3rd party reload. AppID
+ * reload does not look at this variable.
+ */
+struct AppidStaticConfig
+{
+    unsigned    disable_safe_search;
+    const char *appid_thirdparty_dir;         /* directory where thirdparty modules are located.*/
+    char* tp_config_path;
+    char* app_stats_filename;
+    unsigned long app_stats_period;
+    unsigned long app_stats_rollover_size;
+    unsigned long app_stats_rollover_time;
+    char* app_id_detector_path;
+    unsigned long memcap;
+    int app_id_dump_ports;
+    int app_id_debug;
+    uint32_t instance_id;
+    char* conf_file;
+    unsigned dns_host_reporting;
+    unsigned referred_appId_disabled;
+    unsigned rtmp_max_packets;
+    unsigned mdns_user_reporting;
+    unsigned ftp_userid_disabled;
+    unsigned chp_userid_disabled;
+    unsigned chp_body_collection_disabled;
+    unsigned chp_fflow_disabled;
+    unsigned chp_body_collection_max;
+    unsigned max_tp_flow_depth;
+    unsigned tp_allow_probes;
+    unsigned host_port_app_cache_lookup_interval;
+    unsigned host_port_app_cache_lookup_range;
+    unsigned multipayload_max_packets;
+    unsigned http_tunnel_detect;
+    uint64_t max_bytes_before_service_fail;
+    uint16_t max_packet_before_service_fail;
+    uint16_t max_packet_service_fail_ignore_bytes;
+    bool http2_detection_enabled;    // internal HTTP/2 detection
+    bool is_host_port_app_cache_runtime;
+    bool check_host_port_app_cache;
+    bool check_host_cache_unknown_ssl;
+    bool recheck_for_unknown_appid;
+    bool send_state_sharing_updates;
+    bool allow_port_wildcard_host_cache;
+    bool recheck_for_portservice_appid;
+    tAppIdConfig* newAppIdConfig;    // Used only during reload
+#ifdef SIDE_CHANNEL
+    AppIdSSConfig *appId_ss_config;
+#endif
+#ifdef REG_TEST
+    bool appid_reg_test_mode;
+#endif
+};
+typedef struct AppidStaticConfig tAppidStaticConfig;
+
+void appIdConfigParse(tAppidStaticConfig* appidSC, char *args);
 
 
 /************************** GLOBAL VARIABLES **********************************/
 
 /// AppId static configuration data
-extern tAppidStaticConfig   appidStaticConfig;
+extern tAppidStaticConfig* appidStaticConfig;
 
 /**
  * \brief Pointer to AppId dynamic configuration data

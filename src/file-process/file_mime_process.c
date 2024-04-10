@@ -1,5 +1,5 @@
 /*
- ** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ ** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  ** Copyright (C) 2012-2013 Sourcefire, Inc.
  **
  ** This program is free software; you can redistribute it and/or modify
@@ -31,9 +31,6 @@
 #include "file_mail_common.h"
 #include "file_mime_process.h"
 #include "mempool.h"
-#ifdef HAVE_EXTRADATA_FILE
-#include "Unified2_common.h"
-#endif
 #include "file_api.h"
 #include "snort_bounds.h"
 #include "util.h"
@@ -41,7 +38,10 @@
 #include "decode.h"
 #include "detection_util.h"
 
+#include "memory_stats.h"
 #include "stream_api.h"
+#include "reg_test.h"
+#include <file_lib.h>
 #ifdef HAVE_STRINGS_H
 #include <strings.h>
 #endif
@@ -113,6 +113,7 @@ void *mime_hdr_search_mpse = NULL;
 MIMESearch mime_hdr_search[HDR_LAST];
 MIMESearch *mime_current_search = NULL;
 static const char *boundary_str = "boundary=";
+static char *preprocessor = NULL;
 
 /* Extract the filename from the header */
 static inline int extract_file_name(const char **start, int length, bool *disp_cont)
@@ -292,7 +293,7 @@ static void set_file_name_from_log(FILE_LogState *log_state, void *ssn)
  *         -1: fail
  *
  */
-int set_log_buffers(MAIL_LogState **log_state, MAIL_LogConfig *conf, void *mempool)
+int set_log_buffers(MAIL_LogState **log_state, MAIL_LogConfig *conf, void *mempool, void* scbPtr, uint32_t preproc_id)
 {
     MemPool *log_mempool = (MemPool *)mempool;
 
@@ -305,9 +306,10 @@ int set_log_buffers(MAIL_LogState **log_state, MAIL_LogConfig *conf, void *mempo
         if(bkt == NULL)
             return -1;
 
-        *log_state = (MAIL_LogState *)calloc(1, sizeof(MAIL_LogState));
+        *log_state = (MAIL_LogState *)SnortPreprocAlloc(1, sizeof(MAIL_LogState), preproc_id, 0);
         if((*log_state) != NULL)
         {
+            bkt->scbPtr = scbPtr;
             (*log_state)->log_hdrs_bkt = bkt;
             (*log_state)->log_depth = conf->email_hdrs_log_depth;
             (*log_state)->recipients = (uint8_t *)bkt->data;
@@ -325,14 +327,14 @@ int set_log_buffers(MAIL_LogState **log_state, MAIL_LogConfig *conf, void *mempo
         {
             /*free bkt if calloc fails*/
             mempool_free(log_mempool, bkt);
-            return -1;
+            return -2;
         }
 
     }
     return 0;
 }
 
-static void set_mime_buffers(MimeState *ssn)
+static void set_mime_buffers(MimeState *ssn, void* scbPtr, uint32_t preproc_id)
 {
     if ((ssn != NULL) && (ssn->decode_state == NULL))
     {
@@ -341,9 +343,10 @@ static void set_mime_buffers(MimeState *ssn)
 
         if (bkt != NULL)
         {
-            ssn->decode_state = calloc(1, sizeof(Email_DecodeState));
+            ssn->decode_state = SnortPreprocAlloc(1, sizeof(Email_DecodeState), preproc_id, 0);
             if((ssn->decode_state) != NULL )
             {
+                bkt->scbPtr = scbPtr;
                 ssn->decode_bkt = bkt;
                 SetEmailDecodeState((Email_DecodeState *)(ssn->decode_state), bkt->data, conf->max_depth,
                         conf->b64_depth, conf->qp_depth,
@@ -359,8 +362,12 @@ static void set_mime_buffers(MimeState *ssn)
         else
         {
             if (ssn->mime_stats)
+            {
+                if(((MimeStats *)ssn->mime_stats)->memcap_exceeded % 10000 == 0 && preprocessor )
+                    LogMessage("WARNING: %s max_mime_mem exceeded",preprocessor);
                 ((MimeStats *)ssn->mime_stats)->memcap_exceeded++;
-            DEBUG_WRAP(DebugMessage(DEBUG_FILE, "No memory available for decoding. Memcap exceeded \n"););
+            }
+            DEBUG_WRAP(DebugMessage(DEBUG_FILE, "No memory available for decoding. Memcap exceeded: %s preprocessor \n", preprocessor););
         }
     }
 }
@@ -385,7 +392,7 @@ void* init_mime_mempool(int max_mime_mem, int max_depth,
 
     max_sessions = max_mime_mem / ( 2 * encode_depth);
 
-    mime_mempool = (MemPool *)calloc(1, sizeof(MemPool));
+    mime_mempool = (MemPool *)SnortPreprocAlloc(1, sizeof(MemPool), PP_FILE, PP_MEM_CATEGORY_MEMPOOL);
 
     if ((!mime_mempool)||(mempool_init(mime_mempool, max_sessions,
             (2 * encode_depth)) != 0))
@@ -412,7 +419,7 @@ void* init_log_mempool(uint32_t email_hdrs_log_depth, uint32_t memcap,
 
     max_sessions_logged = memcap/max_bkt_size;
 
-    log_mempool = calloc(1, sizeof(*log_mempool));
+    log_mempool = (MemPool *)SnortPreprocAlloc(1, sizeof(*log_mempool), PP_FILE, PP_MEM_CATEGORY_MEMPOOL);
 
     if ((!log_mempool)||(mempool_init(log_mempool, max_sessions_logged,
             max_bkt_size) != 0))
@@ -548,12 +555,12 @@ static inline void process_decode_type(const char *start, int length, bool cnt_x
     return;
 }
 
-static inline void setup_decode(const char *data, int size, bool cnt_xf, MimeState *mime_ssn)
+static inline void setup_decode(const char *data, int size, bool cnt_xf, MimeState *mime_ssn, void* scbPtr, uint32_t preproc_id)
 {
     /* Check for Encoding Type */
     if( file_api->is_decoding_enabled(mime_ssn->decode_conf) && !mime_ssn->decode_conf->ignore_data)
     {
-        set_mime_buffers(mime_ssn);
+        set_mime_buffers(mime_ssn, scbPtr, preproc_id);
         if(mime_ssn->decode_state != NULL)
         {
             ResetBytesRead((Email_DecodeState *)(mime_ssn->decode_state));
@@ -575,7 +582,7 @@ static inline void setup_decode(const char *data, int size, bool cnt_xf, MimeSta
  * @return  i       index into p->payload where we stopped looking at data
  */
 static const uint8_t * process_mime_header(Packet *p, const uint8_t *ptr,
-        const uint8_t *data_end_marker, MimeState *mime_ssn)
+        const uint8_t *data_end_marker, MimeState *mime_ssn, uint32_t preproc_id)
 {
     const uint8_t *eol;
     const uint8_t *eolm;
@@ -618,10 +625,10 @@ static const uint8_t * process_mime_header(Packet *p, const uint8_t *ptr,
             /* no header seen */
             if (ptr == start_hdr)
             {
-                setup_decode((const char *)ptr, eolm  - (const uint8_t *)NULL, false, mime_ssn);
+                setup_decode((const char *)ptr, eolm  - (const uint8_t *)NULL, false, mime_ssn, p->ssnptr, preproc_id);
             }
 
-	    return eol;
+            return eol;
         }
 
         /* if we're not folding, see if we should interpret line as a data line
@@ -764,7 +771,7 @@ static const uint8_t * process_mime_header(Packet *p, const uint8_t *ptr,
         {
             if ((mime_ssn->data_state == STATE_MIME_HEADER) && !(mime_ssn->state_flags & MIME_FLAG_EMAIL_ATTACH))
             {
-                setup_decode((const char *)content_type_ptr, (eolm - content_type_ptr), false, mime_ssn );
+                setup_decode((const char *)content_type_ptr, (eolm - content_type_ptr), false, mime_ssn, p->ssnptr, preproc_id);
             }
 
             mime_ssn->state_flags &= ~MIME_FLAG_IN_CONTENT_TYPE;
@@ -773,7 +780,7 @@ static const uint8_t * process_mime_header(Packet *p, const uint8_t *ptr,
         else if ((mime_ssn->state_flags &
                 (MIME_FLAG_IN_CONT_TRANS_ENC | MIME_FLAG_FOLDING)) == MIME_FLAG_IN_CONT_TRANS_ENC)
         {
-            setup_decode((const char *)cont_trans_enc, (eolm - cont_trans_enc), true, mime_ssn );
+            setup_decode((const char *)cont_trans_enc, (eolm - cont_trans_enc), true, mime_ssn, p->ssnptr, preproc_id);
 
             mime_ssn->state_flags &= ~MIME_FLAG_IN_CONT_TRANS_ENC;
 
@@ -798,12 +805,12 @@ static const uint8_t * process_mime_header(Packet *p, const uint8_t *ptr,
             }
             else
             {
-		if ((mime_ssn->data_state == STATE_MIME_HEADER) && !(mime_ssn->state_flags & MIME_FLAG_EMAIL_ATTACH))
-		{
-		    // setting up decode assuming possible file data after content-disposition header
-	            setup_decode(NULL, eolm - (const uint8_t *)NULL, false, mime_ssn);
+                if ((mime_ssn->data_state == STATE_MIME_HEADER) && !(mime_ssn->state_flags & MIME_FLAG_EMAIL_ATTACH))
+                {
+                    // setting up decode assuming possible file data after content-disposition header
+                    setup_decode(NULL, eolm - (const uint8_t *)NULL, false, mime_ssn, p->ssnptr, preproc_id);
                 }
-		mime_ssn->state_flags &= ~MIME_FLAG_IN_CONT_DISP;
+                mime_ssn->state_flags &= ~MIME_FLAG_IN_CONT_DISP;
                 mime_ssn->state_flags &= ~MIME_FLAG_IN_CONT_DISP_CONT;
             }
 
@@ -811,11 +818,11 @@ static const uint8_t * process_mime_header(Packet *p, const uint8_t *ptr,
         }
         else
         {
-	    // unknown header
+            // unknown header
             if ((mime_ssn->data_state == STATE_MIME_HEADER) && !(mime_ssn->state_flags & MIME_FLAG_EMAIL_ATTACH))
             {
                 // setting up decode assuming possible file data after unknown header
-                setup_decode(NULL, eolm - (const uint8_t *)NULL, false, mime_ssn);
+                setup_decode(NULL, eolm - (const uint8_t *)NULL, false, mime_ssn, p->ssnptr, preproc_id);
             }
         }
 
@@ -941,88 +948,11 @@ static void reset_mime_state(MimeState *mime_ssn)
     ClearEmailDecodeState(decode_state);
 }
 
-#ifdef HAVE_EXTRADATA_FILE
-int GetSMTPMailFrom(MimeState *mime_ssn, uint8_t **buf, uint32_t *len, uint32_t *type)
-{
-    if (mime_ssn == NULL)
-        return 0;
-
-    if (mime_ssn->log_state && mime_ssn->log_state->snds_logged > 0)
-    {
-        *buf = mime_ssn->log_state->senders;
-        *len = mime_ssn->log_state->snds_logged;
-        *type = EVENT_INFO_FILE_MAILFROM;
-        return 1;
-    }
-
-    return 0;
-}
-
-int GetSMTPRcptTo(MimeState *mime_ssn, uint8_t **buf, uint32_t *len, uint32_t *type)
-{
-    if (mime_ssn == NULL)
-        return 0;
-
-    if (mime_ssn->log_state && mime_ssn->log_state->rcpts_logged > 0)
-    {
-        *buf = mime_ssn->log_state->recipients;
-        *len = mime_ssn->log_state->rcpts_logged;
-        *type = EVENT_INFO_FILE_RCPTTO;
-        return 1;
-    }
-
-    return 0;
-}
-
-int GetSMTPHeaders(MimeState *mime_ssn, uint8_t **buf, uint32_t *len, uint32_t *type)
-{
-    if (mime_ssn == NULL)
-        return 0;
-
-    if (mime_ssn->log_state && mime_ssn->log_state->hdrs_logged > 0)
-    {
-        *buf = mime_ssn->log_state->emailHdrs;
-        *len = mime_ssn->log_state->hdrs_logged;
-        *type = EVENT_INFO_FILE_EMAIL_HDRS;
-        return 1;
-    }
-
-    return 0;
-}
-
-static inline void setFileMailFrom(MimeState *mime_ssn, Packet *p)
-{
-    uint8_t *buf = NULL;
-    uint32_t len = 0;
-    uint32_t type = 0;
-    GetSMTPMailFrom(mime_ssn, &buf, &len, &type);
-    file_api->set_file_mailfrom (p->ssnptr, buf, len);
-}
-
-static inline void setFileRcptTo(MimeState *mime_ssn, Packet *p)
-{
-    uint8_t *buf = NULL;
-    uint32_t len = 0;
-    uint32_t type = 0;
-    GetSMTPRcptTo(mime_ssn, &buf, &len, &type);
-    file_api->set_file_rcptto (p->ssnptr, buf, len);
-}
-
-static inline void setFileHeaders(MimeState *mime_ssn, Packet *p)
-{
-    uint8_t *buf = NULL;
-    uint32_t len = 0;
-    uint32_t type = 0;
-    GetSMTPHeaders(mime_ssn, &buf, &len, &type);
-    file_api->set_file_headers (p->ssnptr, buf, len);
-}
-#endif
-
 /*
  * Assume PAF is enabled
  */
 const uint8_t * process_mime_data_paf(void *packet, const uint8_t *start, const uint8_t *end,
-        MimeState *mime_ssn, bool upload, FilePosition position)
+        MimeState *mime_ssn, bool upload, FilePosition position, uint32_t preproc_id)
 {
     Packet *p = (Packet *)packet;
     bool done_data = false;
@@ -1094,7 +1024,7 @@ const uint8_t * process_mime_data_paf(void *packet, const uint8_t *start, const 
         }
 #endif
 
-        start = process_mime_header(p, start, end, mime_ssn);
+        start = process_mime_header(p, start, end, mime_ssn, preproc_id);
         if (start == NULL)
             return NULL;
 
@@ -1115,7 +1045,7 @@ const uint8_t * process_mime_data_paf(void *packet, const uint8_t *start, const 
         {
         case STATE_MIME_HEADER:
             DEBUG_WRAP(DebugMessage(DEBUG_FILE, "MIME HEADER STATE ~~~~~~~~~~~~~~~~~~~~~~\n"););
-            start = process_mime_header(p, start, end, mime_ssn);
+            start = process_mime_header(p, start, end, mime_ssn, preproc_id);
             update_file_name(mime_ssn->log_state);
             break;
         case STATE_DATA_BODY:
@@ -1141,15 +1071,10 @@ const uint8_t * process_mime_data_paf(void *packet, const uint8_t *start, const 
         }
 
         if (file_api->file_process(p,(uint8_t *)ds->decodePtr,
-                (uint16_t)ds->decoded_bytes, position, upload, false)
+                (uint16_t)ds->decoded_bytes, position, upload, false, false)
                 && (isFileStart(position))&& mime_ssn->log_state)
         {
             set_file_name_from_log(&(mime_ssn->log_state->file_log), p->ssnptr);
-#ifdef HAVE_EXTRADATA_FILE
-            setFileMailFrom(mime_ssn, p);
-            setFileRcptTo(mime_ssn, p);
-            setFileHeaders(mime_ssn, p);
-#endif
         }
         if (mime_ssn->mime_stats)
             ((MimeStats *)mime_ssn->mime_stats)->decoded_bytes[ds->decode_type] += ds->decoded_bytes;
@@ -1174,18 +1099,20 @@ const uint8_t * process_mime_data_paf(void *packet, const uint8_t *start, const 
  * This should be called when mime data is available
  */
 const uint8_t * process_mime_data(void *packet, const uint8_t *start,
-        const uint8_t *data_end_marker, MimeState *mime_ssn, bool upload, bool paf_enabled)
+        const uint8_t *data_end_marker, MimeState *mime_ssn, bool upload, bool paf_enabled, char *preproc_name, uint32_t preproc_id)
 {
     const uint8_t *attach_start = start;
     const uint8_t *attach_end;
     Packet *p = (Packet *)packet;
     FilePosition position = SNORT_FILE_START;
+    preprocessor = preproc_name;
+    SAVE_DAQ_PKT_HDR(p);
 
     if (paf_enabled)
     {
        position = file_api->get_file_position(p);
        process_mime_data_paf(packet, attach_start, data_end_marker,
-                            mime_ssn, upload, position);
+                            mime_ssn, upload, position, preproc_id);
        return data_end_marker;
     }
 
@@ -1199,7 +1126,7 @@ const uint8_t * process_mime_data(void *packet, const uint8_t *start,
             attach_end = start;
             finalFilePosition(&position);
             process_mime_data_paf(packet, attach_start, attach_end,
-                    mime_ssn, upload, position);
+                    mime_ssn, upload, position, preproc_id);
             position = SNORT_FILE_START;
             attach_start = start + 1;
         }
@@ -1211,8 +1138,9 @@ const uint8_t * process_mime_data(void *packet, const uint8_t *start,
     {
         updateFilePosition(&position, file_api->get_file_processed_size(p->ssnptr));
         process_mime_data_paf(packet, attach_start, data_end_marker,
-                mime_ssn, upload, position);
+                mime_ssn, upload, position, preproc_id);
     }
+    preprocessor = 0;
 
     return data_end_marker;
 }
@@ -1266,15 +1194,16 @@ void free_mime_session(MimeState *mime_ssn)
     if(mime_ssn->decode_state != NULL)
     {
         mempool_free(mime_ssn->mime_mempool, mime_ssn->decode_bkt);
-        free(mime_ssn->decode_state);
+        SnortPreprocFree(mime_ssn->decode_state, sizeof(Email_DecodeState), PP_FILE, 
+                PP_MEM_CATEGORY_SESSION);
     }
     if(mime_ssn->log_state != NULL)
     {
         mempool_free(mime_ssn->log_mempool, mime_ssn->log_state->log_hdrs_bkt);
-        free(mime_ssn->log_state);
+        SnortPreprocFree(mime_ssn->log_state, sizeof(FILE_LogState), PP_FILE, PP_MEM_CATEGORY_SESSION);
     }
 
-    free(mime_ssn);
+    SnortPreprocFree(mime_ssn, sizeof(MimeState),  PP_FILE, PP_MEM_CATEGORY_SESSION);
 }
 
 /*
@@ -1488,3 +1417,131 @@ bool check_data_end(void *data_end_state,  uint8_t val)
     *((DataEndState *)data_end_state) = state;
     return 0;
 }
+
+#ifdef SNORT_RELOAD
+void update_mime_mempool(void *mempool, int new_max_memory, int encode_depth)
+{
+     size_t obj_size = 0;
+     unsigned num_objects = 0;
+     MemPool *memory_pool = (MemPool*)mempool;
+
+     if (encode_depth & 7)
+          encode_depth += (8 - (encode_depth & 7));
+
+     if(encode_depth)
+     {
+         obj_size = (2*encode_depth);
+         num_objects = new_max_memory / obj_size;
+     }
+
+#ifdef REG_TEST
+     if (REG_TEST_EMAIL_FLAG_MIME_MEMPOOL_ADJUST & getRegTestFlagsForEmail())
+     {
+         printf("\n========== START# NEW MIME MEMPOOL VALUES ==============================\n");
+         printf("Mime mempool object size: NEW VALUE # %zu \n", obj_size);
+         printf("Mime mempool max memory : NEW VALUE # (%u * %zu = %zu) \n", num_objects,obj_size,(num_objects * obj_size));
+         printf("Mime mempool total number of buckets: NEW VALUE # %u \n", num_objects);
+         printf("========== END# NEW MIME MEMPOOL VALUES ==============================\n");
+         fflush(stdout);
+     }
+#endif
+
+     mempool_setObjectSize(memory_pool, num_objects, obj_size );
+}
+
+void update_log_mempool(void *mempool, int new_max_memory , int email_hdrs_log_depth)
+{
+    size_t obj_size = 0;
+    unsigned num_objects = 0;
+    MemPool *memory_pool = (MemPool*)mempool;
+
+    if(email_hdrs_log_depth)
+    {
+         if (email_hdrs_log_depth & 7)
+               email_hdrs_log_depth += (8 - (email_hdrs_log_depth & 7));
+    }
+
+    obj_size = ((2* MAX_EMAIL) + MAX_FILE + email_hdrs_log_depth);
+    num_objects = new_max_memory / obj_size;
+
+#ifdef REG_TEST
+    if (REG_TEST_EMAIL_FLAG_LOG_MEMPOOL_ADJUST & getRegTestFlagsForEmail())
+    {
+         printf("\n========== START# NEW LOG MEMPOOL VALUES ==============================\n");
+         printf("Log mempool object size: NEW VALUE # %zu \n", obj_size);
+         printf("Log mempool max memory : NEW VALUE # (%u * %zu = %zu) \n",num_objects, obj_size, (num_objects * obj_size));
+         printf("Log mempool total number of buckets: NEW VALUE # %u \n",num_objects);
+         printf("========== END# NEW LOG MEMPOOL VALUES ==============================\n");
+        fflush(stdout);
+    }
+#endif
+
+    mempool_setObjectSize(memory_pool, num_objects, obj_size );
+}
+
+#ifdef REG_TEST
+void displayMimeMempool(void *mempool, DecodeConfig *decode_conf_old, DecodeConfig *decode_conf_new)
+{
+    MemPool *memory_pool = (MemPool*)mempool;
+
+    if (REG_TEST_EMAIL_FLAG_MIME_MEMPOOL_ADJUST & getRegTestFlagsForEmail())
+    {
+          printf("\nmax_mime_mem is : OLD VALUE # %u \n",decode_conf_old->max_mime_mem);
+          printf("max_depth is# OLD VALUE %u\n",decode_conf_old->max_depth);
+          printf("\n=========START# OLD MIME MEMPOOL VALUES ===============================\n");
+          printf("Mime mempool object size: OLD VALUE # %zu \n",memory_pool->obj_size);
+          printf("Mime mempool max memory : OLD VALUE # %zu \n",memory_pool->max_memory);
+          printf("Mime mempool total number of buckets: OLD VALUE # %u \n",mempool_numTotalBuckets(memory_pool));
+          printf("=========END# OLD MIME MEMPOOL VALUES ===================================== \n");
+          printf("\nSetting max_mime_mem to # ( NEW VALUE ) %u \n",decode_conf_new->max_mime_mem);
+          printf("Setting max_depth to # ( NEW VALUE )%u\n",decode_conf_new->max_depth);
+          fflush(stdout);
+    }
+}
+
+void displayLogMempool(void *mempool, unsigned memcap_old, unsigned memcap_new)
+{
+    MemPool *memory_pool = (MemPool*)mempool;
+
+    if (REG_TEST_EMAIL_FLAG_LOG_MEMPOOL_ADJUST & getRegTestFlagsForEmail())
+    {
+          printf("\nmemcap is : OLD VALUE # %u \n", memcap_old);
+          printf("\n=========START# OLD LOG MEMPOOL VALUES ==================================\n ");
+          printf("Log mempool object size: OLD VALUE # %zu \n",memory_pool->obj_size);
+          printf("Log mempool max memory : OLD VALUE # %zu \n",memory_pool->max_memory);
+          printf("Log mempool total number of buckets: OLD VALUE # %u \n",mempool_numTotalBuckets(memory_pool));
+          printf("=========END# OLD LOG MEMPOOL VALUES ================================== \n");
+          printf("\nSetting memcap to# (NEW VALUE ) %u \n", memcap_new);
+          fflush(stdout);
+    }
+}
+
+void displayDecodeDepth(DecodeConfig *decode_conf_old, DecodeConfig *decode_conf_new)
+{
+     if(REG_TEST_EMAIL_FLAG_DECODE_DEPTH_ADJUST & getRegTestFlagsForEmail())
+     {
+          if(decode_conf_old->b64_depth != decode_conf_new->b64_depth )
+          {
+               printf("\nBase64 decode depth: OLD VALUE # %d",decode_conf_old->b64_depth);
+               printf("\nSetting Base64 decoding depth to # (new value)%d \n\n", decode_conf_new->b64_depth);
+          }
+          if(decode_conf_old->qp_depth != decode_conf_new->qp_depth )
+          {
+               printf("\nQuoted-Printable decoding depth: OLD VALUE # %d",decode_conf_old->qp_depth);
+               printf("\nSetting Quoted-Printable decoding depth to # (new value)%d \n\n",decode_conf_new->qp_depth);
+          }
+          if(decode_conf_old->bitenc_depth != decode_conf_new->bitenc_depth )
+          {
+               printf("\nNon-encoded MIME extraction depth (bitec_depth): OLD VALUE # %d",decode_conf_old->bitenc_depth);
+               printf("\nSetting bitenc decoding depth to # (new value)%d \n\n", decode_conf_new->bitenc_depth);
+          }
+          if(decode_conf_old->uu_depth != decode_conf_new->uu_depth )
+          {
+               printf("\nUnix-to-Unix decoding depth: OLD VALUE # %d",decode_conf_old->uu_depth);
+               printf("\nSetting Unix-to-Unix decoding depth depth to # (new value)%d \n\n", decode_conf_new->uu_depth);
+          }
+     }
+}
+#endif
+
+#endif

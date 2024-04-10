@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+ * Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
  * Copyright (C) 2009-2013 Sourcefire, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1334,6 +1334,7 @@ static uint8_t * GetPayloadFromFile(char *payload_file, ob_size_t *payload_bytes
                 *payload_bytes + bytes + bytes);
         *payload_bytes += bytes;
     }
+    fclose(fp);
 
     *payload_bytes += bytes;
     if (*payload_bytes > OB_LENGTH_MAX)

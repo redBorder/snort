@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -45,7 +45,7 @@ typedef struct _SERVICE_RLOGIN_DATA
 } ServiceRLOGINData;
 
 static int rlogin_init(const InitServiceAPI * const init_api);
-MakeRNAServiceValidationPrototype(rlogin_validate);
+static int rlogin_validate(ServiceValidationArgs* args);
 
 static tRNAServiceElement svc_element =
 {
@@ -84,13 +84,17 @@ static int rlogin_init(const InitServiceAPI * const init_api)
     return 0;
 }
 
-MakeRNAServiceValidationPrototype(rlogin_validate)
+static int rlogin_validate(ServiceValidationArgs* args)
 {
     ServiceRLOGINData *rd;
+    tAppIdData *flowp = args->flowp;
+    SFSnortPacket *pkt = args->pkt; 
+    const uint8_t *data = args->data;
+    uint16_t size = args->size;
 
     if (!size)
         goto inprocess;
-    if (dir != APP_ID_FROM_RESPONDER)
+    if (args->dir != APP_ID_FROM_RESPONDER)
         goto inprocess;
 
     rd = rlogin_service_mod.api->data_get(flowp, rlogin_service_mod.flow_data_index);
@@ -143,16 +147,17 @@ MakeRNAServiceValidationPrototype(rlogin_validate)
     }
 
 inprocess:
-    rlogin_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+    rlogin_service_mod.api->service_inprocess(flowp, pkt, args->dir, &svc_element, NULL);
     return SERVICE_INPROCESS;
 
 success:
-    rlogin_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
-                                        APP_ID_RLOGIN, NULL, NULL, NULL);
+    rlogin_service_mod.api->add_service(flowp, pkt, args->dir, &svc_element,
+                                        APP_ID_RLOGIN, NULL, NULL, NULL, NULL);
     return SERVICE_SUCCESS;
 
 fail:
-    rlogin_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, rlogin_service_mod.flow_data_index, pConfig);
+    rlogin_service_mod.api->fail_service(flowp, pkt, args->dir, &svc_element,
+                                         rlogin_service_mod.flow_data_index, args->pConfig, NULL);
     return SERVICE_NOMATCH;
 }
 

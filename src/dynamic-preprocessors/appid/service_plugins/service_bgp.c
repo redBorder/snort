@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014-2015 Cisco and/or its affiliates. All rights reserved.
+** Copyright (C) 2014-2022 Cisco and/or its affiliates. All rights reserved.
 ** Copyright (C) 2005-2013 Sourcefire, Inc.
 **
 ** This program is free software; you can redistribute it and/or modify
@@ -91,7 +91,7 @@ typedef struct _SERVICE_BGP_V1_OPEN
 #pragma pack()
 
 static int bgp_init(const InitServiceAPI * const init_api);
-MakeRNAServiceValidationPrototype(bgp_validate);
+static int bgp_validate(ServiceValidationArgs* args);
 
 static tRNAServiceElement svc_element =
 {
@@ -137,15 +137,18 @@ static int bgp_init(const InitServiceAPI * const init_api)
     return 0;
 }
 
-MakeRNAServiceValidationPrototype(bgp_validate)
+static int bgp_validate(ServiceValidationArgs* args)
 {
     ServiceBGPData *bd;
     const ServiceBGPHeader *bh;
+    tAppIdData *flowp = args->flowp;
+    const uint8_t *data = args->data;
+    uint16_t size = args->size;
     uint16_t len;
 
     if (!size)
         goto inprocess;
-    if (dir != APP_ID_FROM_RESPONDER)
+    if (args->dir != APP_ID_FROM_RESPONDER)
         goto inprocess;
 
     if (size < sizeof(ServiceBGPHeader))
@@ -230,16 +233,17 @@ MakeRNAServiceValidationPrototype(bgp_validate)
     }
 
 inprocess:
-    bgp_service_mod.api->service_inprocess(flowp, pkt, dir, &svc_element);
+    bgp_service_mod.api->service_inprocess(flowp, args->pkt, args->dir, &svc_element, NULL);
     return SERVICE_INPROCESS;
 
 fail:
-    bgp_service_mod.api->fail_service(flowp, pkt, dir, &svc_element, bgp_service_mod.flow_data_index, pConfig);
+    bgp_service_mod.api->fail_service(flowp, args->pkt, args->dir, &svc_element,
+                                      bgp_service_mod.flow_data_index, args->pConfig, NULL);
     return SERVICE_NOMATCH;
 
 success:
-    bgp_service_mod.api->add_service(flowp, pkt, dir, &svc_element,
-                                     APP_ID_BGP, NULL, NULL, NULL);
+    bgp_service_mod.api->add_service(flowp, args->pkt, args->dir, &svc_element,
+                                     APP_ID_BGP, NULL, NULL, NULL, NULL);
     return SERVICE_SUCCESS;
 }
 
