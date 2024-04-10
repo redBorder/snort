@@ -27,7 +27,6 @@
 # temp files
 *~ 
 
-Makefile
 config.h
 config.log
 config.status
