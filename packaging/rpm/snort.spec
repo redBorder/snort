@@ -91,6 +91,8 @@ InstallSnort() {
    %__mkdir_p -p $RPM_BUILD_ROOT/usr/lib/systemd/system/
    %__install -p -m 0755 src/%{realname} $RPM_BUILD_ROOT%{_sbindir}/%{realname}
    %__install -p -m 0755 tools/control/snort_control $RPM_BUILD_ROOT%{_bindir}/snort_control
+   %__install -p -m 0755 tools/control/snort_control $RPM_BUILD_ROOT%{_bindir}/snort_control_reload
+   %__install -p -m 0755 tools/control/snort_control $RPM_BUILD_ROOT%{_bindir}/snort_iplist
    %__install -p -m 0755 tools/u2spewfoo/u2spewfoo $RPM_BUILD_ROOT%{_bindir}/u2spewfoo
    %__install -p -m 0755 tools/u2boat/u2boat $RPM_BUILD_ROOT%{_bindir}/u2boat
    %__mkdir_p -m 0755 $RPM_BUILD_ROOT%{_libdir}/%{realname}-%{version}_dynamicengine
@@ -208,6 +210,8 @@ systemctl daemon-reload
 %attr(0755,root,root) %{_sbindir}/%{name}
 %endif
 %attr(0755,root,root) %{_bindir}/snort_control
+%attr(0755,root,root) %{_bindir}/snort_control_reload
+%attr(0755,root,root) %{_bindir}/snort_iplist
 %attr(0755,root,root) %{_bindir}/u2spewfoo
 %attr(0755,root,root) %{_bindir}/u2boat
 %attr(0644,root,root) %{_mandir}/man8/snort.8.*
