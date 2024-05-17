@@ -11,7 +11,7 @@
 
 %define vendor Snort.org
 %define for_distro RPMs
-%define release 1
+%define release %{__release}
 %define realname snort
 
 %if %{openappid}
