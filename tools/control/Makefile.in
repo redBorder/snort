@@ -90,7 +90,8 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 bin_PROGRAMS = snort_control$(EXEEXT) \
-	snort_dump_packets_control$(EXEEXT)
+	snort_dump_packets_control$(EXEEXT) snort_iplist$(EXEEXT) \
+	snort_control_reload$(EXEEXT)
 subdir = tools/control
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.in
