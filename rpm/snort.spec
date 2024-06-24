@@ -226,7 +226,13 @@ InstallSnort() {
 # Don't do all this stuff if we are upgrading
 if [ $1 = 1 ] ; then
 	/usr/sbin/groupadd snort 2> /dev/null || true
-	/usr/sbin/useradd -M -d %{_var}/log/snort -s %{noShell} -c "Snort" -g snort snort 2>/dev/null || true
+  /usr/sbin/useradd -s /sbin/nologin \            # create user with nologin permissions
+                  -M \                            # without home directory
+                  -d /var/log/snort \             # with logs directory
+                  -c "Snort IDS/IPS User" \       # with log identifier
+                  -g snort \                      # associate to snort group
+                  snort \                         # username
+                  2>/dev/null || true             # command error supression
 fi
 
 %post
