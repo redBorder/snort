@@ -103,6 +103,11 @@ typedef struct s_TELNET_SESSION
 
     TELNET_EVENTS event_list;
 
+#ifdef HAVE_EXTRADATA_FILE
+    char *user;
+    int user_info; /* 0: unknown, >0: user_length */
+#endif
+
 } TELNET_SESSION;
 
 /*
@@ -165,6 +170,12 @@ typedef struct s_FTP_SESSION
     sfaddr_t      serverIP;
     uint16_t serverPort;
     uint32_t ftp_cmd_pipe_index;
+
+#ifdef HAVE_EXTRADATA_FILE
+    char *user;
+    int user_info; /* 0: unknown, >0: user_length */
+#endif
+
     uint32_t rest_cmd_offset;
     uint16_t control_clientPort;
     uint16_t control_serverPort;

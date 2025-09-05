@@ -39,7 +39,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 Packager: Official Snort.org %{for_distro}
 Vendor: %{vendor}
-BuildRequires: autoconf, automake, pcre-devel, libpcap-devel, libdnet-devel, libs3-devel, libxml2-devel, libtirpc-devel, daq, daq-devel, daq-modules, flex, bison, libtool, GeoIP-devel
+BuildRequires: autoconf, automake, pcre-devel, libpcap-devel, libdnet-devel, libs3-devel, libxml2-devel, libtirpc-devel, daq, daq-devel, daq-modules, flex, bison, libtool, GeoIP-devel, librdkafka-devel
 
 %description
 Snort is an open source network intrusion detection system, capable of

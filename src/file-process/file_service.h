@@ -51,6 +51,7 @@ void free_file_config(void*);
 /* Swap the new config with current config */
 void FileServiceInstall(void);
 
+void FileAPIPostInit(void);
 /* Close file API, this must be called when snort exits */
 void close_fileAPI(void);
 
