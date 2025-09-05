@@ -128,6 +128,13 @@ static void TelnetFreeSession(void *preproc_session)
         }
     }
 
+#ifdef HAVE_EXTRADATA_FILE
+    if (ssn->user)
+    {
+        free(ssn->user);
+    }
+#endif
+
     ftp_telnet_stats.telnet_sessions--;
     ftp_telnet_stats.heap_memory -= sizeof(TELNET_SESSION);
 

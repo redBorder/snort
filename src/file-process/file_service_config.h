@@ -58,6 +58,14 @@ struct _fileConfig* file_service_config_create(void);
  */
 int  file_sevice_config_verify(SnortConfig *old, SnortConfig *new);
 
+/* Force reconfigure file service
+ *
+ * Args:
+ *    true: reconfigure file service
+ *    false: no change
+ */
+void  file_sevice_reconfig_set(bool reconfigured);
+
 # endif /* ifdef SNORT_RELOAD */
 #endif /* #ifndef __FILE_SERVICE_CONFIG_H__ */
 
