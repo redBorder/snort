@@ -5616,6 +5616,8 @@ static void SnortUnprivilegedInit(void)
     // to /var/log/snort.  in this case they must override log path.
     PostConfigInitPlugins(snort_conf, snort_conf->plugin_post_config_funcs);
 
+    FileAPIPostInit();
+
 #ifdef SIDE_CHANNEL
     SideChannelPostInit();
 #endif

@@ -145,6 +145,9 @@
 /* Define to 1 if you have the `pfring' library (-lpfring). */
 #undef HAVE_LIBPFRING
 
+/* Define to 1 if you have the <libs3.h> header file. */
+#undef HAVE_LIBS3_H
+
 /* Define to 1 if you have the `rt' library (-lrt). */
 #undef HAVE_LIBRT
 

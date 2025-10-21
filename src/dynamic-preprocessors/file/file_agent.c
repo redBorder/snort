@@ -51,6 +51,7 @@
 #include "sfPolicy.h"
 
 int sockfd = 0;
+int using_s3 = 0;
 
 /*Use circular buffer to synchronize writer/reader threads*/
 static CircularBuffer* file_list;
@@ -82,8 +83,16 @@ typedef struct _FILE_MESSAGE_HEADER
 #define FILE_HEADER_VERSION   0x0001
 #define FILE_HEADER_DATA      0x0009
 
+#ifdef HAVE_S3FILE
+#define KAFKA_MESSAGE_LEN 1024
+#define S3_PATH "mdata/input"
+#endif
+
 static int file_agent_save_file (FileInfo *, char *);
 static int file_agent_send_file (FileInfo *);
+#ifdef HAVE_S3FILE
+static int file_agent_send_s3(const struct s3_info *,const FileInfo *);
+#endif
 static FileInfo* file_agent_get_file(void);
 static FileInfo *file_agent_finish_file(void);
 static File_Verdict file_agent_type_callback(void*, void*, uint32_t, bool,uint32_t);
@@ -167,7 +176,7 @@ static void file_agent_send_data(int socket_fd, const uint8_t *resp,
 
 /* Process all the files in the file queue*/
 static inline void file_agent_process_files(CircularBuffer *file_list,
-        char *capture_dir, char *hostname)
+        char *capture_dir, char *hostname, FileInspectConf* conf)
 {
     while (!cbuffer_is_empty(file_list))
     {
@@ -182,6 +191,12 @@ static inline void file_agent_process_files(CircularBuffer *file_list,
             /* Send to other host */
             if (hostname)
                 file_agent_send_file(file);
+#ifdef HAVE_S3FILE
+            /* Send to S3 */
+            if (conf->s3.cluster) {
+                file_agent_send_s3(&conf->s3,file);
+            }
+#endif
             /* Default, memory only */
         }
 
@@ -220,7 +235,7 @@ static void* FileCaptureThread(void *arg)
 
     while(1)
     {
-        file_agent_process_files(file_list, capture_dir, hostname);
+        file_agent_process_files(file_list, capture_dir, hostname, conf);
 
         if (stop_file_capturing)
             break;
@@ -261,11 +276,36 @@ void file_agent_init(struct _SnortConfig *sc, void *config)
         _dpd.fileAPI->enable_file_capture(sc, file_agent_signature_callback);
         file_capture_enabled = true;
     }
-
+#ifdef HAVE_EXTRADATA_FILE
+    if (conf->file_extradata_enabled)
+        _dpd.fileAPI->enable_file_extradata();
+#endif
     if (!sockfd && conf->hostname)
     {
         file_agent_init_socket(conf->hostname, conf->portno);
     }
+
+#ifdef HAVE_S3FILE
+    if( conf->s3.cluster && 
+        (conf->s3.bucket== NULL || conf->s3.access_key == NULL
+            || conf->s3.secret_key == NULL) ) {
+        FILE_FATAL_ERROR("%s(%d) S3 cluster specified but no %s specified",
+            conf->s3.bucket == NULL     ? "bucket" :
+            conf->s3.access_key == NULL ? "access key" : "secret key");
+    }
+
+    if ( conf->s3.cluster ) {
+        const S3Status init_rc = S3_initialize("s3", S3_INIT_ALL,
+            conf->s3.cluster);
+        if (init_rc != S3StatusOK) {
+            FILE_FATAL_ERROR("Can't initialize libs3: %s",
+                S3_get_status_name(init_rc));
+        }
+
+        using_s3 = 1;
+    }
+#endif
+
 }
 
 /* Add another thread for file capture to disk or network
@@ -584,6 +624,170 @@ static int file_agent_send_file(FileInfo *file)
     return 0;
 }
 
+#ifdef HAVE_S3FILE
+struct s3_transference {
+    S3Status status;
+    
+    uint8_t *cur_buf;
+    int cur_buf_size;
+    int cur_buf_remaining;
+
+    void *file_mem;
+    char err[4096];
+};
+
+static size_t min_size(size_t a,size_t b){
+    return a>b?b:a;
+}
+
+static void responseCompleteCallback(S3Status status,
+    const S3ErrorDetails *error,void *callbackData) {
+
+    struct s3_transference *transference = (struct s3_transference *)callbackData;
+    transference->status = status;
+
+    int len = 0;
+    if (error && error->message) {
+        len += snprintf(&(transference->err[len]), sizeof(transference->err) - len,
+                        "  Message: %s\n", error->message);
+    }
+    if (error && error->resource) {
+        len += snprintf(&(transference->err[len]), sizeof(transference->err) - len,
+                        "  Resource: %s\n", error->resource);
+    }
+    if (error && error->furtherDetails) {
+        len += snprintf(&(transference->err[len]), sizeof(transference->err) - len,
+                        "  Further Details: %s\n", error->furtherDetails);
+    }
+    if (error && error->extraDetailsCount) {
+        len += snprintf(&(transference->err[len]), sizeof(transference->err) - len,
+                        "%s", "  Extra Details:\n");
+        int i;
+        for (i = 0; i < error->extraDetailsCount; i++) {
+            len += snprintf(&(transference->err[len]), 
+                            sizeof(transference->err) - len, "    %s: %s\n", 
+                            error->extraDetails[i].name,
+                            error->extraDetails[i].value);
+        }
+    }
+
+}
+
+static int putObjectDataCallback(int bufferSize, char *buffer, 
+                                 void *callbackData) {
+    struct s3_transference *transference = callbackData;
+
+    if(!transference->cur_buf && transference->file_mem)
+    {
+        /* First call, need to load first file_mem */
+        transference->file_mem = _dpd.fileAPI->read_file(
+                        transference->file_mem, 
+                        &transference->cur_buf, &transference->cur_buf_size);
+        transference->cur_buf_remaining = transference->cur_buf_size;
+    }
+
+    if(!transference->cur_buf && !transference->file_mem)
+    {
+        /* Last call, returning 0 to indicate all data transferred */
+        return 0;
+    }
+
+    const size_t to_transfer = min_size(bufferSize,
+                                              transference->cur_buf_remaining);
+    const uint8_t *cursor = transference->cur_buf 
+              + (transference->cur_buf_size - transference->cur_buf_remaining);
+    memcpy(buffer,cursor,to_transfer);
+    transference->cur_buf_remaining -= transference->cur_buf_size;
+
+    /* Need to load next file info? */
+    if(transference->cur_buf_remaining == 0)
+    {
+        if(transference->file_mem)
+        {
+            transference->file_mem = _dpd.fileAPI->read_file(
+                        transference->file_mem, 
+                        &transference->cur_buf, &transference->cur_buf_size);
+            transference->cur_buf_remaining = transference->cur_buf_size;
+        }
+        else
+        {
+            transference->cur_buf = NULL;
+            transference->cur_buf_size = 0;
+        }
+    }
+
+    return to_transfer;
+}
+
+static void str_tolower(char *str,size_t str_len) {
+    for(;*str;++str)
+        *str = tolower(*str);
+}
+
+static int file_agent_send_s3(const struct s3_info *s3,const FileInfo *file) {
+    char sha256[SHA256_HASH_SIZE];
+    char fsha[FILE_NAME_LEN];
+    char path[FILE_NAME_LEN];
+
+    struct s3_transference transference;
+    memset(&transference,0,sizeof(transference));
+    transference.file_mem = file->file_mem;
+
+    memcpy(sha256,file->sha256,sizeof(sha256));
+    sha_to_str(sha256, fsha, sizeof(fsha));
+    str_tolower(fsha,sizeof(fsha));
+    snprintf(path,sizeof(path),S3_PATH "/%s",fsha);
+
+    S3BucketContext bucketContext = {
+        0,
+        s3->bucket,
+        S3ProtocolHTTPS,
+        S3UriStylePath /* or S3UriStyleVirtualHost */,
+        s3->access_key,
+        s3->secret_key
+    };
+
+    S3PutProperties putProperties = {
+        NULL /* contentType */,
+        NULL /* md5 */,
+        NULL /* cacheControl */,
+        NULL /* contentDispositionFilename */,
+        NULL /* contentEncoding */,
+        0    /* expires */,
+        S3CannedAclPrivate /* cannedAcl */,
+        0    /* metaPropertiesCount */,
+        NULL /* metaPropertie */
+    };
+
+    S3PutObjectHandler putObjectHandler = {
+        { NULL /* responsePropertiesCallback */, &responseCompleteCallback },
+        &putObjectDataCallback
+    };
+
+    //do {
+        //S3_put_object(&bucketContext, sample_key, contentLength, NULL, NULL, 0, &putObjectHandler, &data);
+        S3_put_object(&bucketContext, path, file->file_size, &putProperties, NULL , 0, &putObjectHandler, &transference );
+    //}while(S3_status_is_retryable(transference.status));
+
+    if(transference.status != S3StatusOK)
+    {
+        /* Extracted directly from S3 example */
+        if (transference.status < S3StatusErrorAccessDenied)
+        {
+            _dpd.logMsg("File inspect (1): can't upload a file to S3: %s,%s,%s",
+                S3_get_status_name(transference.status), s3->bucket, path);
+        }
+        else 
+        {
+            _dpd.logMsg("File inspect (2): can't upload a file to S3: %s,%s,%s,%s",
+                S3_get_status_name(transference.status),transference.err, s3->bucket, path);
+        }
+    }
+    
+    return 0;
+}
+#endif
+
 /* Close file agent
  * 1) stop capture thread: waiting all files queued to be captured
  * 2) free file queue
@@ -615,6 +819,11 @@ void file_agent_close(void)
         close(sockfd);
         sockfd = 0;
     }
+
+#ifdef HAVE_S3FILE
+    if ( using_s3 )
+        S3_deinitialize();
+#endif
 }
 
 /*

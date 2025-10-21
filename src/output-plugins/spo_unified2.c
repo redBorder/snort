@@ -896,8 +896,9 @@ static void Unified2LogAlert(Packet *p, const char *msg, void *arg, Event *event
             p->ssnptr, p, event->sig_generator, event->sig_id,
             event->event_id, event->ref_time.tv_sec);
 
-    if ( p->xtradata_mask && !(p->packet_flags & PKT_STREAM_INSERT) 
-        && !(p->packet_flags & PKT_REBUILT_STREAM) )
+    // if ( p->xtradata_mask && !(p->packet_flags & PKT_STREAM_INSERT) 
+    //     && !(p->packet_flags & PKT_REBUILT_STREAM) )
+    if ( p->xtradata_mask )
     {
         LogFunction *log_funcs;
         uint32_t max_count = stream_api->get_xtra_data_map(&log_funcs);
@@ -1032,7 +1033,8 @@ static void _Unified2LogPacketAlert(Packet *p, const char *msg,
 
     Unified2Write(write_pkt_buffer, write_len, config);
    
-    if ( p->xtradata_mask && (Active_GetDisposition() >= ACTIVE_DROP) )
+    //if ( p->xtradata_mask && (Active_GetDisposition() >= ACTIVE_DROP) )
+    if ( p->xtradata_mask )
     {
         LogFunction *log_funcs;
         uint32_t max_count = stream_api->get_xtra_data_map(&log_funcs);

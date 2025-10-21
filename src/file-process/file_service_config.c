@@ -89,6 +89,10 @@
 #include "file_api.h"
 #endif
 
+#ifdef SNORT_RELOAD
+bool file_service_reconfigured = false;
+#endif
+
 /*Set default values for file config*/
 static inline void file_service_config_defaults(FileConfig *file_config)
 {
@@ -152,6 +156,17 @@ void FileSSConfigFree(void *config)
 #endif
 
 #ifdef SNORT_RELOAD
+/* Force reconfigure file service
+ *
+ * Args:
+ *    true: reconfigure file service
+ *    false: no change
+ */
+void  file_sevice_reconfig_set(bool reconfigured)
+{
+    file_service_reconfigured = reconfigured;
+}
+
 /* Verify the file service configuration, changing memory settings and depth
  * settings requires snort restart
  */
@@ -177,9 +192,32 @@ int file_sevice_config_verify(SnortConfig *old, SnortConfig *new)
         next = &tmp;
         file_service_config_defaults(next);
     }
+
+#ifdef HAVE_EXTRADATA_FILE
+    /* We know that this is not "to verify", but it's the best place to put
+    this with the less possible modifications*/
+    next->xtra_file_sha256_id   = curr->xtra_file_sha256_id;
+    next->xtra_file_size_id     = curr->xtra_file_size_id;
+    next->xtra_file_name_id     = curr->xtra_file_name_id;
+    next->xtra_file_hostname_id = curr->xtra_file_hostname_id;
+    next->xtra_file_mailfrom_id = curr->xtra_file_mailfrom_id;
+    next->xtra_file_rcptto_id   = curr->xtra_file_rcptto_id;
+    next->xtra_file_headers_id  = curr->xtra_file_headers_id;
+    next->xtra_file_ftp_user_id = curr->xtra_file_ftp_user_id;
+#endif
+
 #if defined (SIDE_CHANNEL) && !defined (REG_TEST)
     check_sidechannel_enabled(curr);
 #endif
+
+    /* Enable file type, file signature or file capture requires a restart*/
+    if (file_service_reconfigured)
+    {
+        ErrorMessage("File service: enable/disable file service"
+                " requires a restart.\n");
+        file_service_reconfigured = false;
+        return -1;
+    }
 
     /* check configurations */
     if (curr->file_capture_memcap != next->file_capture_memcap)
@@ -189,9 +227,31 @@ int file_sevice_config_verify(SnortConfig *old, SnortConfig *new)
         return -1;
     }
 
+    if (curr->file_capture_max_size != next->file_capture_max_size)
+    {
+        ErrorMessage("File service: Changing file capture max size"
+                " requires a restart.\n");
+        return -1;
+    }
+
     if (curr->file_capture_block_size != next->file_capture_block_size)
     {
         ErrorMessage("File service: Changing file capture block size"
+                " requires a restart.\n");
+        return -1;
+    }
+
+    /*Change depth requires restart*/
+    if (curr->file_signature_depth != next->file_signature_depth)
+    {
+        ErrorMessage("File service: Changing file signature depth"
+                " requires a restart.\n");
+        return -1;
+    }
+
+    if (curr->file_type_depth != next->file_type_depth)
+    {
+        ErrorMessage("File service: Changing file type depth"
                 " requires a restart.\n");
         return -1;
     }
